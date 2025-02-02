@@ -1,0 +1,15 @@
+---
+- name: Install required packages
+  hosts: all
+  become: true
+  vars_files:
+    - vars/packages.yml
+  tasks:
+    - name: Install required packages
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/apt_module.html
+      ansible.builtin.apt:
+        name: "{{ install_packages }}"
+        state: present
+        force_apt_get: true
+        update_cache: true
+        install_recommends: false

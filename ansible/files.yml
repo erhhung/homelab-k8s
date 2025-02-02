@@ -1,0 +1,28 @@
+---
+- name: Set up admin user's home directory
+  hosts: all
+  vars_files:
+    - vars/files.yml
+  tasks:
+    - name: Copy dot files
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/copy_module.html
+      ansible.builtin.copy:
+        src: "{{ playbook_dir | dirname }}/{{ item }}"
+        dest: "{{ ansible_user_dir }}/{{ item }}"
+        mode: 0644
+        directory_mode: 0755
+      loop: "{{ copy_files }}"
+      register: copy
+
+    - name: Touch copied files
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/shell_module.html
+      ansible.builtin.shell: |-
+        # restart Bash and load copied .bash_aliases
+        # in order to use my custom touch functions
+        exec /bin/bash -c '
+          . .bash_aliases
+          _touch -t 00 . .sudo_as_admin_successful
+          # zeros out MM:ss file times recursively
+          touchall -t 00 {{ copy_files | join(' ') }}
+        '
+      when: copy.results | selectattr('changed') | list | length

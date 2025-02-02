@@ -1,0 +1,6 @@
+install_packages:
+  - locales
+  - less
+  - rsync
+  - parted
+  - emacs-nox

@@ -1,0 +1,141 @@
+---
+- name: Configure basic settings
+  hosts: all
+  become: true
+  vars_files:
+    - vars/basics.yml
+  pre_tasks:
+    # https://serverfault.com/questions/959026/how-do-i-generate-and-set-the-locale-using-ansible
+    - name: Get existing locale and language
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/command_module.html
+      ansible.builtin.command: localectl status
+      register: locale_status
+      changed_when: false
+
+    - name: Parse LANG from localectl output
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/set_fact_module.html
+      ansible.builtin.set_fact:
+        locale_lang: "{{ locale_status.stdout |
+          regex_search('LANG=([^\n]+)','\\1') |
+          first }}"
+
+    - name: Parse LANGUAGE from localectl output
+      ansible.builtin.set_fact:
+        locale_language: "{{ locale_status.stdout |
+          regex_search('LANGUAGE=([^\n]+)','\\1') |
+          default([locale_lang], true) | first }}"
+  tasks:
+    - name: Set host name to "{{ inventory_hostname }}"
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/hostname_module.html
+      # https://docs.ansible.com/ansible/latest/reference_appendices/special_variables.html
+      ansible.builtin.hostname:
+        name: "{{ inventory_hostname }}"
+
+    - name: Set time zone to "{{ system_time_zone }}"
+      # https://docs.ansible.com/ansible/latest/collections/community/general/timezone_module.html
+      community.general.timezone:
+        name: "{{ system_time_zone }}"
+
+    - name: Generate locale "{{ system_locale }}"
+      # https://docs.ansible.com/ansible/latest/collections/community/general/locale_gen_module.html
+      # requires "locales" package
+      community.general.locale_gen:
+        name: "{{ system_locale }}"
+        state: present
+
+    - name: Set locale to "{{ system_locale }}"
+        and language to "{{ system_language }}"
+      ansible.builtin.command: >-
+        localectl set-locale LANG={{ system_locale }}
+                         LANGUAGE={{ system_language }}
+      when: >-
+        locale_lang != system_locale or
+        locale_language != system_language
+
+- name: Configure network settings
+  hosts: all
+  become: true
+  vars_files:
+    - vars/basics.yml
+  vars:
+    resolvectl_commands:
+      - dns
+      - domain
+    cloud_init_netplan: /etc/netplan/50-cloud-init.yaml
+  pre_tasks:
+    - name: Get existing network settings
+      ansible.builtin.command: resolvectl {{ item }} enX0
+      loop: "{{ resolvectl_commands }}"
+      register: resolvectl
+      changed_when: false
+
+    - name: Parse resolvectl output values
+      vars:
+        csv: "{{ (resolvectl.results[i].stdout |
+          regex_search('.enX0.: ([^\n]+)','\\1') or ['']) | first }}"
+      ansible.builtin.set_fact:
+        # generated facts: "resolvectl_dns" and "resolvectl_domain"
+        "resolvectl_{{ item }}": "{{ csv | split(' ') if csv else [] }}"
+      loop: "{{ resolvectl_commands }}"
+      loop_control:
+        index_var: i
+
+    - # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/debug_module.html
+      ansible.builtin.debug:
+        msg: |-
+          resolvectl_dns: "{{ resolvectl_dns | join(',') }}"
+          resolvectl_domain: "{{ resolvectl_domain | join(',') }}"
+
+    - name: Cloud-init Netplan config enabled?
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/stat_module.html
+      ansible.builtin.stat:
+        path: "{{ item }}"
+      loop:
+        - "{{ cloud_init_netplan }}"
+        - "{{ cloud_init_netplan }}.disabled"
+      register: cloud_init_yaml
+  tasks:
+    - name: Disable cloud-init Netplan config
+      ansible.builtin.command:
+        argv:
+          - mv
+          - "{{ cloud_init_netplan }}"
+          - "{{ cloud_init_netplan }}.disabled"
+      when: >-
+        cloud_init_yaml.results[0].stat.exists and
+        not cloud_init_yaml.results[1].stat.exists
+
+    - name: Create customized Netplan config
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/template_module.html
+      ansible.builtin.template:
+        src: templates/netplan.yaml.j2
+        dest: /etc/netplan/50-ansible-init.yaml
+        mode: 0600
+      when: >-
+        resolvectl_dns != name_servers or
+        resolvectl_domain != search_domains
+      notify: Apply updated Netplan config
+  handlers:
+    - name: Apply updated Netplan config
+      ansible.builtin.command: netplan apply
+
+- name: Customize login MOTD messages
+  hosts: all
+  become: true
+  tasks:
+    - name: Suppress select MOTD messages
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/file_module.html
+      ansible.builtin.file:
+        path: "{{ item }}"
+        mode: 0644
+      loop:
+        - /etc/update-motd.d/60-unminimize
+
+    - name: Skip a line after all MOTDs
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/copy_module.html
+      ansible.builtin.copy:
+        content: |
+          #!/bin/sh
+          echo
+        dest: /etc/update-motd.d/99-skip-line
+        mode: 0755
