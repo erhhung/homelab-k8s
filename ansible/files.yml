@@ -9,11 +9,11 @@
       ansible.builtin.copy:
         src: "{{ playbook_dir | dirname }}/{{ item }}"
         dest: "{{ ansible_user_dir }}/{{ item }}"
-        mode: 0644
-        directory_mode: 0755
+        mode: "0644"
+        directory_mode: "0755"
       loop: "{{ copy_files }}"
-      register: copy
-
+      notify: Touch copied files
+  handlers:
     - name: Touch copied files
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/shell_module.html
       ansible.builtin.shell: |-
@@ -23,6 +23,5 @@
           . .bash_aliases
           _touch -t 00 . .sudo_as_admin_successful
           # zeros out MM:ss file times recursively
-          touchall -t 00 {{ copy_files | join(' ') }}
-        '
-      when: copy.results | selectattr('changed') | list | length
+          touchall -t 00 {{ copy_files | join(' ') }}'
+      changed_when: true

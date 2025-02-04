@@ -49,8 +49,9 @@
         localectl set-locale LANG={{ system_locale }}
                          LANGUAGE={{ system_language }}
       when: >-
-        locale_lang != system_locale or
+        locale_lang     != system_locale or
         locale_language != system_language
+      changed_when: true
 
 - name: Configure network settings
   hosts: all
@@ -80,7 +81,8 @@
       loop_control:
         index_var: i
 
-    - # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/debug_module.html
+    - name: Print existing network settings
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/debug_module.html
       ansible.builtin.debug:
         msg: |-
           resolvectl_dns: "{{ resolvectl_dns | join(',') }}"
@@ -104,20 +106,26 @@
       when: >-
         cloud_init_yaml.results[0].stat.exists and
         not cloud_init_yaml.results[1].stat.exists
+      register: cloud_init_netplan_disabled
+      changed_when: true
 
     - name: Create customized Netplan config
+      # IMPORTANT: if cloud-init Netplan config is disabled, another config
+      # must replace it or else no networking will be configured on reboot!
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/template_module.html
       ansible.builtin.template:
         src: templates/netplan.yaml.j2
         dest: /etc/netplan/50-ansible-init.yaml
-        mode: 0600
+        mode: "0600"
       when: >-
-        resolvectl_dns != name_servers or
-        resolvectl_domain != search_domains
+        resolvectl_dns    != name_servers   or
+        resolvectl_domain != search_domains or
+        cloud_init_netplan_disabled.changed
       notify: Apply updated Netplan config
   handlers:
     - name: Apply updated Netplan config
       ansible.builtin.command: netplan apply
+      changed_when: true
 
 - name: Customize login MOTD messages
   hosts: all
@@ -127,7 +135,7 @@
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/file_module.html
       ansible.builtin.file:
         path: "{{ item }}"
-        mode: 0644
+        mode: "0644"
       loop:
         - /etc/update-motd.d/60-unminimize
 
@@ -138,4 +146,4 @@
           #!/bin/sh
           echo
         dest: /etc/update-motd.d/99-skip-line
-        mode: 0755
+        mode: "0755"

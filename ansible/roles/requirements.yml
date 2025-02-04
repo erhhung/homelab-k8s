@@ -1,0 +1,14 @@
+# https://docs.ansible.com/ansible/latest/galaxy/user_guide.html#installing-roles-and-collections-from-the-same-requirements-yml-file
+# ansible-galaxy install -r roles/requirements.yml
+---
+collections:
+  # https://github.com/rancherfederal/rke2-ansible/blob/main/docs/README.md
+  - name: rancherfederal.rke2
+    source: https://github.com/rancherfederal/rke2-ansible.git
+    type: git
+
+roles:
+  # https://github.com/lablabs/ansible-role-rke2
+  - name: lablabs.rke2
+    src: https://github.com/lablabs/ansible-role-rke2.git
+    scm: git

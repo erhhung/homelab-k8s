@@ -7,12 +7,12 @@ This project manages the configuration and user files for Erhhung's Kubernetes c
 Store `ansible_become_pass` in Ansible Vault:
 
 ```bash
-VAULT_FILE="group_vars/all/vault.yml"
-VAULT_PASS="--vault-password-file=vaultpass.sh"
+VAULTFILE="group_vars/all/vault.yml"
+VAULTPASS="--vault-password-file=vaultpass.sh"
 
 cd ansible
-ansible-vault create $VAULT_FILE $VAULT_PASS
-ansible-vault edit   $VAULT_FILE $VAULT_PASS
+ansible-vault create $VAULTFILE $VAULTPASS
+ansible-vault edit   $VAULTFILE $VAULTPASS
 ```
 
 The Ansible Vault password is stored in macOS Keychain under item "`Home-K8s`" for account "`ansible-vault`".
@@ -25,22 +25,27 @@ however, all privileged operations using `sudo` will require the password stored
 
 ## Playbooks
 
+Set these variables first for the `ansible-playbook` commands below:
+
+```bash
+INVENTORY="--inventory=inventory/hosts.ini"
+VAULTPASS="--vault-password-file=vaultpass.sh"
+```
+
 1. Install required packages
 
     ```bash
-    VAULT_PASS="--vault-password-file=vaultpass.sh"
-    ansible-playbook $VAULT_PASS -i hosts.ini packages.yml
+    ansible-playbook $INVENTORY $VAULTPASS packages.yml
     ```
 
 2. Configure system settings
 
-   2.1. **Host**: host name, time zone, and locale  
-   2.2. **Network**: DNS servers and search domains  
-   2.3. **Login**: Customize login MOTD messages
+    2.1. **Host**: host name, time zone, and locale  
+    2.2. **Network**: DNS servers and search domains  
+    2.3. **Login**: Customize login MOTD messages
 
     ```bash
-    VAULT_PASS="--vault-password-file=vaultpass.sh"
-    ansible-playbook $VAULT_PASS -i hosts.ini basics.yml
+    ansible-playbook $INVENTORY $VAULTPASS basics.yml
     ```
 
 3. Set up admin user's home directory
@@ -48,6 +53,14 @@ however, all privileged operations using `sudo` will require the password stored
     3.1. **Dot files**: `.bash_aliases`, `.emacs`
 
     ```bash
-    VAULT_PASS="--vault-password-file=vaultpass.sh"
-    ansible-playbook $VAULT_PASS -i hosts.ini files.yml
+    ansible-playbook $INVENTORY $VAULTPASS files.yml
+    ```
+
+4. Install Rancher Kubernetes Engine 2
+
+    Installs RKE2 with single control plane node
+    and 3 worker nodes.
+
+    ```bash
+    ansible-playbook $INVENTORY $VAULTPASS rke2.yml
     ```
