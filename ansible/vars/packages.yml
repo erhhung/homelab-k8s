@@ -1,6 +1,10 @@
+# Install packages not included in
+# Ubuntu 24.04 minimal installation
 install_packages:
   - locales
+  - bash-completion
+  - emacs-nox
   - less
+  - lsof
   - rsync
   - parted
-  - emacs-nox

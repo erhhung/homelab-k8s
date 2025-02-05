@@ -1,3 +1,7 @@
+nopasswd_sudo:
+  - /usr/bin/rsync
+  - /usr/bin/lsof
+
 copy_files:
   - .bash_aliases
   - .emacs

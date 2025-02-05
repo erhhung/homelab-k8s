@@ -1,0 +1,2 @@
+k3s_kubeconfig: /etc/rancher/k3s/k3s.yaml
+rke2_kubeconfig: /etc/rancher/rke2/rke2.yaml

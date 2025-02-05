@@ -1,0 +1,3 @@
+{% for cmd in nopasswd_sudo %}
+%sudo ALL=NOPASSWD:{{ cmd }}
+{% endfor %}

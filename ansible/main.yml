@@ -1,0 +1,12 @@
+---
+- name: Include package installs playbook
+  ansible.builtin.import_playbook: packages.yml
+
+- name: Include system settings playbook
+  ansible.builtin.import_playbook: basics.yml
+
+- name: Include home directory setup playbook
+  ansible.builtin.import_playbook: files.yml
+
+- name: Include Kubernetes cluster playbook
+  ansible.builtin.import_playbook: cluster.yml

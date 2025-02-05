@@ -1,10 +1,32 @@
 ---
+- name: Set up shell environment for kubectl
+  hosts: rancher
+  gather_facts: false
+  become: true
+  vars_files:
+    - vars/kubernetes.yml
+  tasks:
+    - name: Make K3s kubeconfig readable
+      vars:
+        file_desc: "K3s kubeconfig"
+        file_path: "{{ k3s_kubeconfig }}"
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
+      ansible.builtin.include_tasks: tasks/readable.yml
+
 - name: Set up admin user's home directory
   hosts: all
   vars_files:
     - vars/files.yml
   tasks:
-    - name: Copy dot files
+    - name: Allow sudo commands without password
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/template_module.html
+      ansible.builtin.template:
+        src: templates/nopasswd.j2
+        dest: /etc/sudoers.d/nopasswd
+        mode: "0440"
+      become: true
+
+    - name: Copy dot files into home directory
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/copy_module.html
       ansible.builtin.copy:
         src: "{{ playbook_dir | dirname }}/{{ item }}"

@@ -20,6 +20,7 @@ The Ansible Vault password is stored in macOS Keychain under item "`Home-K8s`" f
 ## Connections
 
 All managed hosts are running **Ubuntu 24.04** with SSH key from https://github.com/erhhung.keys already authorized.  
+
 Ansible will authenticate as user `erhhung` using private key "`~/.ssh/erhhung.pem`";  
 however, all privileged operations using `sudo` will require the password stored in Vault.
 
@@ -56,11 +57,17 @@ VAULTPASS="--vault-password-file=vaultpass.sh"
     ansible-playbook $INVENTORY $VAULTPASS files.yml
     ```
 
-4. Install Rancher Kubernetes Engine 2
+4. Set up Kubernetes cluster with RKE2
 
     Installs RKE2 with single control plane node
     and 3 worker nodes.
 
     ```bash
-    ansible-playbook $INVENTORY $VAULTPASS rke2.yml
+    ansible-playbook $INVENTORY $VAULTPASS cluster.yml
     ```
+
+Alternatively, **run all 4 playbooks** from the project root folder:
+
+```bash
+./play.sh
+```
