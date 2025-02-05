@@ -1,10 +1,17 @@
 # Install packages not included in
 # Ubuntu 24.04 minimal installation
+
+# see installed packages:
+# apt list --installed
+
 install_packages:
-  - locales
-  - bash-completion
-  - emacs-nox
+  - locales # required by community.general.locale_gen
+  - bash-completion # required by crictl/kubectl completion
   - less
-  - lsof
-  - rsync
+  - lsof # used by custom Bash function "listening"
+  - rsync # required by ansible.posix.synchronize
   - parted
+  - emacs-nox
+  # iptables is required by Calico networking in RKE2:
+  # https://github.com/rancher/rke2/issues/4385#issuecomment-1738848974
+  - iptables

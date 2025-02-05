@@ -1,12 +1,14 @@
-# VS Code thinks "cluster.yaml" is an RKE cluster configuration.
+# VS Code thinks "cluster.yaml" is RKE cluster configuration, so explicitly set schema:
 # yaml-language-server: $schema=https://raw.githubusercontent.com/ansible/ansible-lint/main/src/ansiblelint/schemas/ansible.json
 
 # https://docs.rke2.io/install/quickstart
 ---
+# https://github.com/lablabs/ansible-role-rke2
 - name: Perform RKE2 role
   hosts: cluster
   become: true
   vars_files:
+    - vars/basics.yml
     - vars/lablabs.rke2.yml
   roles:
     # https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_reuse_roles.html#using-roles
