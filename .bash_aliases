@@ -132,9 +132,10 @@ listening() {
         }' | sort -n | uniq | cols
 }
 
-# ===============================================
-# === APPLICABLE ONLY AFTER RKE2 INSTALLATION ===
-# ===============================================
+# ==========================================
+# === APPLICABLE ONLY AFTER RKE2 INSTALL ===
+# ==========================================
+command -v kubectl &> /dev/null || return 0
 
 # set up Bash completion for crictl
 command -v crictl &> /dev/null && {
@@ -144,10 +145,19 @@ command -v crictl &> /dev/null && {
   complete -F _crictl c
 }
 
-# set up Bash completion for kubectl
-command -v kubectl &> /dev/null && {
-  alias k='kubectl'
-  # shellcheck disable=SC1090
-  . <(kubectl completion bash)
-  complete -F __start_kubectl k
+alias k='kubectl'
+# shellcheck disable=SC1090
+. <(kubectl completion bash)
+complete -F __start_kubectl k
+
+# usage: rmevicted [args...]
+# all args, including -A, are
+# passed to "kubectl get pods"
+rmevicted() {
+  # https://stackoverflow.com/questions/46419163/what-will-happen-to-evicted-pods-in-kubernetes#49167987
+  kubectl get pods "$@" -o json | jq '.items[]
+    | select(.status.reason != null)
+    | select(.status.reason | contains("Evicted"))
+    | "kubectl delete pods \(.metadata.name) -n \(.metadata.namespace)"' \
+    | xargs -n 1 -r bash -c
 }

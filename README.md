@@ -7,12 +7,13 @@ This project manages the configuration and user files for Erhhung's Kubernetes c
 Store `ansible_become_pass` in Ansible Vault:
 
 ```bash
-VAULTFILE="group_vars/all/vault.yml"
-VAULTPASS="--vault-password-file=vaultpass.sh"
-
 cd ansible
-ansible-vault create $VAULTFILE $VAULTPASS
-ansible-vault edit   $VAULTFILE $VAULTPASS
+
+export ANSIBLE_CONFIG=./ansible.cfg
+VAULTFILE="group_vars/all/vault.yml"
+
+ansible-vault create $VAULTFILE
+ansible-vault edit   $VAULTFILE
 ```
 
 The Ansible Vault password is stored in macOS Keychain under item "`Home-K8s`" for account "`ansible-vault`".
@@ -26,17 +27,16 @@ however, all privileged operations using `sudo` will require the password stored
 
 ## Playbooks
 
-Set these variables first for the `ansible-playbook` commands below:
+Set the config variable first for the `ansible-playbook` commands below:
 
 ```bash
-INVENTORY="--inventory=inventory/hosts.ini"
-VAULTPASS="--vault-password-file=vaultpass.sh"
+export ANSIBLE_CONFIG=./ansible.cfg
 ```
 
 1. Install required packages
 
     ```bash
-    ansible-playbook $INVENTORY $VAULTPASS packages.yml
+    ansible-playbook packages.yml
     ```
 
 2. Configure system settings
@@ -46,7 +46,7 @@ VAULTPASS="--vault-password-file=vaultpass.sh"
     2.3. **Login**: Customize login MOTD messages
 
     ```bash
-    ansible-playbook $INVENTORY $VAULTPASS basics.yml
+    ansible-playbook basics.yml
     ```
 
 3. Set up admin user's home directory
@@ -54,7 +54,7 @@ VAULTPASS="--vault-password-file=vaultpass.sh"
     3.1. **Dot files**: `.bash_aliases`, `.emacs`
 
     ```bash
-    ansible-playbook $INVENTORY $VAULTPASS files.yml
+    ansible-playbook files.yml
     ```
 
 4. Set up Kubernetes cluster with RKE2
@@ -63,7 +63,7 @@ VAULTPASS="--vault-password-file=vaultpass.sh"
     and 3 worker nodes.
 
     ```bash
-    ansible-playbook $INVENTORY $VAULTPASS cluster.yml
+    ansible-playbook cluster.yml
     ```
 
 Alternatively, **run all 4 playbooks** from the project root folder:

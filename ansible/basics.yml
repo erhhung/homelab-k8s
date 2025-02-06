@@ -1,6 +1,8 @@
 ---
 - name: Configure basic settings
-  hosts: all
+  hosts:
+    - rancher
+    - cluster
   become: true
   vars_files:
     - vars/basics.yml
@@ -54,7 +56,9 @@
       changed_when: true
 
 - name: Configure network settings
-  hosts: all
+  hosts:
+    - rancher
+    - cluster
   become: true
   vars_files:
     - vars/basics.yml
@@ -128,7 +132,9 @@
       changed_when: true
 
 - name: Customize login MOTD messages
-  hosts: all
+  hosts:
+    - rancher
+    - cluster
   become: true
   tasks:
     - name: Suppress select MOTD messages

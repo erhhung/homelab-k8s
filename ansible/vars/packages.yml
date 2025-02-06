@@ -8,6 +8,7 @@ install_packages:
   - locales # required by community.general.locale_gen
   - bash-completion # required by crictl/kubectl completion
   - less
+  - tree
   - lsof # used by custom Bash function "listening"
   - rsync # required by ansible.posix.synchronize
   - parted
@@ -15,3 +16,7 @@ install_packages:
   # iptables is required by Calico networking in RKE2:
   # https://github.com/rancher/rke2/issues/4385#issuecomment-1738848974
   - iptables
+  - dnsutils # provides nslookup/dig/host
+  - iputils-ping
+  - jq
+  - yq

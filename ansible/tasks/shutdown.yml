@@ -1,0 +1,29 @@
+---
+- name: Stop services
+  become: true
+  # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/systemd_service_module.html
+  ansible.builtin.systemd_service:
+    name: "{{ item }}"
+    state: stopped
+  loop: "{{ services }}"
+  when: >-
+    services is defined  and
+    services is iterable and
+    services | length
+
+- name: Run commands
+  # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/command_module.html
+  ansible.builtin.command: "{{ item }}"
+  loop: "{{ commands }}"
+  when: >-
+    commands is defined  and
+    commands is iterable and
+                commands | length
+  changed_when: commands | length
+
+- name: Halt system
+  become: true
+  async: 10
+  poll: 0
+  # https://docs.ansible.com/ansible/latest/collections/community/general/shutdown_module.html
+  community.general.shutdown:

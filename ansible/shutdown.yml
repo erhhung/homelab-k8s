@@ -1,0 +1,37 @@
+---
+- name: Shutdown all (or specified) hosts
+  hosts: "{{ target_hosts }}"
+  vars:
+    # this can be overridden on command-line:
+    # ansible-playbook shutdown.yml -e target_hosts=workers
+    target_hosts:
+      - cluster
+      - rancher
+    # fail fast if host already appears to be shut down
+    ansible_ssh_args: '-o ConnectTimeout=1s -o ConnectionAttempts=1'
+  gather_facts: false
+  ignore_errors: true
+  ignore_unreachable: true
+  become: true
+  tasks:
+    - name: Shutdown worker nodes
+      vars:
+        services:
+          - rke2-agent
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
+      ansible.builtin.include_tasks: tasks/shutdown.yml
+      when: inventory_hostname in groups['workers']
+
+    - name: Shutdown control plane
+      vars:
+        services:
+          - rke2-server
+      ansible.builtin.include_tasks: tasks/shutdown.yml
+      when: inventory_hostname in groups['controlplane']
+
+    - name: Shutdown Rancher Server
+      vars:
+        services:
+          - k3s
+      ansible.builtin.include_tasks: tasks/shutdown.yml
+      when: inventory_hostname == 'rancher'

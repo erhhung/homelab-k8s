@@ -1,6 +1,8 @@
 ---
 - name: Install required packages
-  hosts: all
+  hosts:
+    - rancher
+    - cluster
   become: true
   vars_files:
     - vars/packages.yml

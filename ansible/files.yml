@@ -14,7 +14,9 @@
       ansible.builtin.include_tasks: tasks/readable.yml
 
 - name: Set up admin user's home directory
-  hosts: all
+  hosts:
+    - rancher
+    - cluster
   vars_files:
     - vars/files.yml
   tasks:
@@ -26,8 +28,16 @@
         mode: "0440"
       become: true
 
-    - name: Copy dot files into home directory
+    - name: Suppress apt's script warning message
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/copy_module.html
+      ansible.builtin.copy:
+        dest: /etc/apt/apt.conf.d/90disable-warning
+        content: |
+          Apt::Cmd::Disable-Script-Warning true;
+        mode: "0644"
+      become: true
+
+    - name: Copy dot files into home directory
       ansible.builtin.copy:
         src: "{{ playbook_dir | dirname }}/{{ item }}"
         dest: "{{ ansible_user_dir }}/{{ item }}"
