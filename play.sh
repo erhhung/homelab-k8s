@@ -6,6 +6,9 @@
 
 cd "$(dirname "$0")/ansible"
 
-INVENTORY="--inventory=inventory/hosts.ini"
-VAULTPASS="--vault-password-file=vaultpass.sh"
-ansible-playbook $INVENTORY $VAULTPASS main.yml
+export ANSIBLE_CONFIG=./ansible.cfg
+
+echo -e "\nInstalling roles from requirements...\n"
+ansible-galaxy install -r roles/requirements.yml
+
+ansible-playbook main.yml

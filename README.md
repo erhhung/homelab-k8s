@@ -4,7 +4,7 @@ This project manages the configuration and user files for Erhhung's Kubernetes c
 
 ## Ansible Vault
 
-Store `ansible_become_pass` in Ansible Vault:
+The Ansible Vault password is stored in macOS Keychain under item "`Home-K8s`" for account "`ansible-vault`".
 
 ```bash
 cd ansible
@@ -16,7 +16,11 @@ ansible-vault create $VAULTFILE
 ansible-vault edit   $VAULTFILE
 ```
 
-The Ansible Vault password is stored in macOS Keychain under item "`Home-K8s`" for account "`ansible-vault`".
+Variables stored in Ansible Vault:
+
+* `ansible_become_pass`
+* `k3s_token`
+* `rke2_token`
 
 ## Connections
 
@@ -57,7 +61,13 @@ export ANSIBLE_CONFIG=./ansible.cfg
     ansible-playbook files.yml
     ```
 
-4. Set up Kubernetes cluster with RKE2
+4. Set up Rancher Server on K3s cluster
+
+    ```bash
+    ansible-playbook rancher.yml
+    ```
+
+5. Set up Kubernetes cluster with RKE2
 
     Installs RKE2 with single control plane node
     and 3 worker nodes.
@@ -66,8 +76,22 @@ export ANSIBLE_CONFIG=./ansible.cfg
     ansible-playbook cluster.yml
     ```
 
-Alternatively, **run all 4 playbooks** from the project root folder:
+Alternatively, **run all 5 playbooks** from the project root folder:
 
 ```bash
 ./play.sh
 ```
+
+### Optional Playbooks
+
+1. Shutdown all/specific VMs
+
+    ```bash
+    ansible-playbook shutdown.yml [-e target_hosts={group|host|,...}]
+    ```
+
+2. Restart all/specific VMs
+
+    ```bash
+    ansible-playbook startvms.yml [-e target_hosts={group|host|,...}]
+    ```

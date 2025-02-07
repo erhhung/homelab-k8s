@@ -1,12 +1,33 @@
+# pass the following vars:
+#   file_path <required> absolute path
+#   file_desc <optional> for task name
+#   file_mode <optional> default 0644
+#    dir_mode <optional> default 0755
 ---
-- name: Does {{ file_desc }} exist?
+- name: Ensure parent dirs readable
+  vars:
+    dir_names: "{{ file_path.split('/') }}"
+    dir_paths: |
+      {% set paths = [] %}
+      {% for i in range(2, dir_names | length) %}
+      {%   set _ = paths.append(dir_names[: i] | join('/')) %}
+      {% endfor %}
+      {{ paths }}
+  # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/file_module.html
+  ansible.builtin.file:
+    path: "{{ path }}"
+    mode: "{{ dir_mode | default('0755') }}"
+  loop: "{{ dir_paths }}"
+  loop_control:
+    loop_var: path # "item" is already in use by outer loop
+
+- name: Does {{ file_desc | default('"' ~ (file_path | basename) ~ '"') }} exist?
   # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/stat_module.html
   ansible.builtin.stat:
     path: "{{ file_path }}"
   register: file_check
 
-- name: Make {{ file_desc }} readable
-  # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/file_module.html
+- name: Make {{ file_desc | default('"' ~ (file_path | basename) ~ '"') }} readable
   ansible.builtin.file:
     path: "{{ file_path }}"
     mode: "{{ file_mode | default('0644') }}"

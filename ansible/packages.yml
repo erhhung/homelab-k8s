@@ -1,9 +1,57 @@
 ---
-- name: Install required packages
+# https://helm.sh/docs/intro/install/#from-apt-debianubuntu
+- name: Configure Helm Apt repository
   hosts:
     - rancher
     - cluster
   become: true
+  vars:
+    keyring: /usr/share/keyrings/helm.gpg
+    srcs_list: /etc/apt/sources.list.d/helm.sources
+  pre_tasks:
+    - name: Get machine architecture
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/set_fact_module.html
+      ansible.builtin.set_fact:
+        machine_arch: "{{ 'arm64' if ansible_facts['architecture'] == 'aarch64' else 'amd64' }}"
+
+    - name: Is Apt repo configured?
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/stat_module.html
+      ansible.builtin.stat:
+        path: "{{ item }}"
+      loop:
+        - "{{ keyring }}"
+        - "{{ srcs_list }}"
+      register: apt_repo
+  tasks:
+    - name: Download Helm keyring file
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/shell_module.html
+      ansible.builtin.shell: |
+        set -o pipefail
+        curl https://baltocdn.com/helm/signing.asc | \
+          gpg --dearmor | tee {{ keyring }} > /dev/null
+      args:
+        executable: /bin/bash
+      when: not apt_repo.results[0].stat.exists
+      changed_when: true
+
+    - name: Create Helm sources list
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/copy_module.html
+      ansible.builtin.copy:
+        dest: "{{ srcs_list }}"
+        content: |
+          Types: deb
+          URIs: https://baltocdn.com/helm/stable/debian/
+          Suites: all
+          Components: main
+          Architectures: {{ machine_arch }}
+          Signed-By: {{ keyring }}
+        mode: "0644"
+      when: not apt_repo.results[1].stat.exists
+
+- name: Install required packages
+  hosts:
+    - rancher
+    - cluster
   vars_files:
     - vars/packages.yml
   tasks:
@@ -15,3 +63,15 @@
         force_apt_get: true
         update_cache: true
         install_recommends: false
+      become: true
+
+    - name: Install useful Helm plugins
+      # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/helm_plugin_module.html
+      kubernetes.core.helm_plugin:
+        plugin_name: "{{ item.name if item.name is defined else omit }}"
+        plugin_path: "{{ item.path if item.path is defined else omit }}"
+        state: "{{ item.state if item.state is defined else 'present' }}"
+      loop: "{{ install_helm_plugins }}"
+      # plugins are installed in the user's home
+      # directory under .local/share/helm/plugins
+      become: false

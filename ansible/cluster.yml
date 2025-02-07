@@ -9,6 +9,7 @@
   become: true
   vars_files:
     - vars/basics.yml
+    - vars/kubernetes.yml
     - vars/lablabs.rke2.yml
   roles:
     # https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_reuse_roles.html#using-roles
@@ -26,6 +27,7 @@
   gather_facts: false
   become: true
   vars_files:
+    - vars/basics.yml
     - vars/kubernetes.yml
   tasks:
     - name: Make RKE2 kubeconfig readable
@@ -48,6 +50,7 @@
 #   gather_facts: false
 #   become: true
 #   vars_files:
+#     - vars/basics.yml
 #     - vars/kubernetes.yml
 #   tasks:
 #     - name: Transfer kubeconfig to worker node
@@ -64,6 +67,7 @@
   gather_facts: false
   become: true
   vars_files:
+    - vars/basics.yml
     - vars/kubernetes.yml
   vars:
     kubeconfig_content: "{{ hostvars[groups['controlplane'][0]]['cat_kubeconfig'].stdout }}"

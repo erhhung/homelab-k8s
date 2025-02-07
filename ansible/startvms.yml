@@ -11,24 +11,24 @@
     - name: Resolve target_hosts
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/set_fact_module.html
       ansible.builtin.set_fact:
-        resolved_hosts: >-
-          {%- set hosts = [] -%}
-          {%- for item in target_hosts.split(',') -%}
-            {%- if item in hostvars -%}
-              {%- set _ = hosts.append(item) -%}
-            {%- elif item in groups -%}
-              {%- for host in groups[item] -%}
-                {%- set _ = hosts.append(host) -%}
-              {%- endfor -%}
-            {%- endif -%}
-          {%- endfor -%}
+        resolved_hosts: |
+          {% set hosts = [] %}
+          {% for item in target_hosts.split(',') %}
+          {%   if item in hostvars %}
+          {%     set _ = hosts.append(item) %}
+          {%   elif item in groups %}
+          {%     for host in groups[item] %}
+          {%       set _ = hosts.append(host) %}
+          {%     endfor %}
+          {%   endif %}
+          {% endfor %}
           {{ hosts }}
   tasks:
     - name: Start resolved hosts
       # cannot use ansible.builtin.shell because XCP-ng 8.2 only has Python 3.6,
       # which requires an older version of Ansible that we don't otherwise need
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/raw_module.html
-      ansible.builtin.raw: |-
+      ansible.builtin.raw: |
         # restart Bash and load .bashrc in order
         # to use exported functions and variables
         exec /bin/bash -l -c '
@@ -45,3 +45,4 @@
             suspended) resumevm $uuid "$name" ;;
           esac'
       loop: "{{ resolved_hosts }}"
+      changed_when: true

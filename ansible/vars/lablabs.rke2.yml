@@ -6,18 +6,9 @@ rke2_agents_group_name: workers
 
 rke2_version: v1.32.1+rke2r1 # https://github.com/rancher/rke2/releases
 rke2_architecture: amd64
+
+rke2_additional_sans: "{{ rke2_fqdns }}"
 # rke2_token: {vault.yml}
 
 rke2_server_node_taints: [] # allow control plane node to run workloads
 rke2_agent_node_taints: []
-
-# default CNs: kubernetes, kubernetes.default, kubernetes.default.svc,
-# kubernetes.default.svc.cluster.local, cluster.local, localhost, k8s?
-
-# https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_filters.html#products
-rke2_additional_sans: "{{ groups['controlplane'] |
-  product(search_domains) | map('join','.') | list }}"
-
-# https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_filters.html#searching-strings-with-regular-expressions
-# rke2_additional_sans: "{{ groups['controlplane'] |
-#   map('regex_replace', '^(.+)$', '\\1.' ~ search_domains[0]) | list }}"

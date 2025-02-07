@@ -2,7 +2,9 @@
 
 # shellcheck disable=SC2148 # Tips depend on target shell
 # shellcheck disable=SC2155 # Declare and assign separately
+# shellcheck disable=SC2086 # Double quote prevent globbing
 # shellcheck disable=SC2207 # Prefer mapfile to split output
+# shellcheck disable=SC1090 # Can't follow non-const source
 
 alias sudo='sudo -E '
 alias cdd='cd "$OLDPWD"'
@@ -140,15 +142,21 @@ command -v kubectl &> /dev/null || return 0
 # set up Bash completion for crictl
 command -v crictl &> /dev/null && {
   alias c='crictl'
-  # shellcheck disable=SC1090
-  . <(crictl completion bash)
+  . <(crictl completion bash 2> /dev/null)
   complete -F _crictl c
 }
 
 alias k='kubectl'
-# shellcheck disable=SC1090
-. <(kubectl completion bash)
+# set up Bash completion for kubectl
+. <(kubectl completion bash 2> /dev/null)
 complete -F __start_kubectl k
+
+# set up Bash completion for helm
+command -v helm &> /dev/null && {
+  alias h='helm'
+  . <(helm completion bash 2> /dev/null)
+  complete -F __start_helm h
+}
 
 # usage: rmevicted [args...]
 # all args, including -A, are

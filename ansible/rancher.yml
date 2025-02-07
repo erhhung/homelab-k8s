@@ -1,0 +1,84 @@
+---
+# https://docs.k3s.io/installation/configuration
+- name: Install single-node K3s cluster
+  hosts: rancher
+  become: true
+  vars_files:
+    - vars/basics.yml
+    - vars/kubernetes.yml
+    - vars/rancher.k3s.yml
+  pre_tasks:
+    - name: Show configured server options
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/debug_module.html
+      ansible.builtin.debug:
+        # yeah, this prints the K3s token in plain text
+        msg: "Server options: {{ k3s_opts | join(' ') }}"
+  tasks:
+    - name: Install K3s service by script
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/shell_module.html
+      ansible.builtin.shell: |
+        set -o pipefail
+        curl -sfL https://get.k3s.io | \
+          sh -s - {{ k3s_opts | join(' ') }}
+      args:
+        executable: /bin/bash
+      changed_when: true
+
+    - name: Wait for k3s service to start
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/systemd_service_module.html
+      ansible.builtin.systemd_service:
+        name: k3s
+        state: started
+
+    - name: Create /etc/profile.d/kubectl.sh
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/copy_module.html
+      ansible.builtin.copy:
+        dest: /etc/profile.d/kubectl.sh
+        content: export KUBECONFIG={{ k3s_kubeconfig }}
+        mode: "0644"
+
+    - name: Allow admin user to use crictl
+      vars:
+        file_path: "{{ item.path }}"
+        file_mode: "{{ item.mode }}"
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
+      ansible.builtin.include_tasks: tasks/readable.yml
+      loop:
+        - path: "{{ crictl_config }}"
+        - path: "{{ containerd_socket }}"
+          mode: "0666"
+
+- name: Install Rancher Server on K3s
+  hosts: rancher
+  vars_files:
+    - vars/basics.yml
+    - vars/kubernetes.yml
+    - vars/rancher.k3s.yml
+  tasks:
+    - name: Install cert-manager Helm chart
+      # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/helm_module.html
+      kubernetes.core.helm:
+        kubeconfig: "{{ k3s_kubeconfig }}"
+        context: default
+        chart_repo_url: https://charts.jetstack.io
+        chart_ref: cert-manager
+        release_name: cert-manager
+        release_namespace: cert-manager
+        create_namespace: true
+        release_values:
+          crds:
+            enabled: true
+
+    # https://ranchermanager.docs.rancher.com/getting-started/installation-and-upgrade/install-upgrade-on-a-kubernetes-cluster#install-the-rancher-helm-chart
+    - name: Install Rancher Server Helm chart
+      kubernetes.core.helm:
+        kubeconfig: "{{ k3s_kubeconfig }}"
+        context: default
+        chart_repo_url: https://releases.rancher.com/server-charts/latest
+        chart_ref: rancher
+        release_name: rancher
+        release_namespace: cattle-system
+        create_namespace: true
+        release_values:
+          replicas: 1
+          hostname: "{{ k3s_fqdns[0] }}"

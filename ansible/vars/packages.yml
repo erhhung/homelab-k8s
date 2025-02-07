@@ -5,11 +5,12 @@
 # apt list --installed
 
 install_packages:
-  - locales # required by community.general.locale_gen
+  - apt-transport-https
+  - locales         # required by community.general.locale_gen
   - bash-completion # required by crictl/kubectl completion
   - less
   - tree
-  - lsof # used by custom Bash function "listening"
+  - lsof  # used by custom Bash function "listening"
   - rsync # required by ansible.posix.synchronize
   - parted
   - emacs-nox
@@ -18,5 +19,13 @@ install_packages:
   - iptables
   - dnsutils # provides nslookup/dig/host
   - iputils-ping
+  - python3-pip
   - jq
   - yq
+  - git  # required by kubernetes.core.helm_plugin
+  - helm # requires /etc/apt/sources.list.d/helm.sources
+
+# {name, path, state} all fields optional:
+# https://docs.ansible.com/ansible/latest/collections/kubernetes/core/helm_plugin_module.html
+install_helm_plugins:
+  - path: https://github.com/databus23/helm-diff

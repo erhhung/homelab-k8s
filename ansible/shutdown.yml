@@ -8,7 +8,7 @@
       - cluster
       - rancher
     # fail fast if host already appears to be shut down
-    ansible_ssh_args: '-o ConnectTimeout=1s -o ConnectionAttempts=1'
+    ansible_ssh_args: -o ConnectTimeout=1s -o ConnectionAttempts=1
   gather_facts: false
   ignore_errors: true
   ignore_unreachable: true

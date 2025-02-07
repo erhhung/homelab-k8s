@@ -1,3 +1,6 @@
+# pass the following vars:
+#   services <optional> list of services
+#   commands <optional> list of commands
 ---
 - name: Stop services
   become: true

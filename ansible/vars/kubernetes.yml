@@ -1,2 +1,12 @@
 k3s_kubeconfig: /etc/rancher/k3s/k3s.yaml
 rke2_kubeconfig: /etc/rancher/rke2/rke2.yaml
+
+# https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_filters.html#products
+k3s_fqdns: "{{ ['rancher'] | product(search_domains) | map('join','.') | list }}"
+
+# default CNs: kubernetes, kubernetes.default, kubernetes.default.svc,
+# kubernetes.default.svc.cluster.local, cluster.local, localhost, k8s?
+rke2_fqdns: "{{ groups['controlplane'] | product(search_domains) | map('join','.') | list }}"
+
+# https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_filters.html#searching-strings-with-regular-expressions
+# rke2_fqdns: "{{ groups['controlplane'] | map('regex_replace', '^(.+)$', '\\1.' ~ search_domains[0]) | list }}"

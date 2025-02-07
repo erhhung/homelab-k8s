@@ -1,18 +1,4 @@
 ---
-- name: Set up shell environment for kubectl
-  hosts: rancher
-  gather_facts: false
-  become: true
-  vars_files:
-    - vars/kubernetes.yml
-  tasks:
-    - name: Make K3s kubeconfig readable
-      vars:
-        file_desc: "K3s kubeconfig"
-        file_path: "{{ k3s_kubeconfig }}"
-      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
-      ansible.builtin.include_tasks: tasks/readable.yml
-
 - name: Set up admin user's home directory
   hosts:
     - rancher
@@ -28,7 +14,7 @@
         mode: "0440"
       become: true
 
-    - name: Suppress apt's script warning message
+    - name: Suppress Apt's script warning message
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/copy_module.html
       ansible.builtin.copy:
         dest: /etc/apt/apt.conf.d/90disable-warning
@@ -40,7 +26,7 @@
     - name: Copy dot files into home directory
       ansible.builtin.copy:
         src: "{{ playbook_dir | dirname }}/{{ item }}"
-        dest: "{{ ansible_user_dir }}/{{ item }}"
+        dest: "{{ ansible_facts['user_dir'] }}/{{ item }}"
         mode: "0644"
         directory_mode: "0755"
       loop: "{{ copy_files }}"
@@ -48,12 +34,13 @@
   handlers:
     - name: Touch copied files
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/shell_module.html
-      ansible.builtin.shell: |-
+      ansible.builtin.shell: |
         # restart Bash and load copied .bash_aliases
         # in order to use my custom touch functions
         exec /bin/bash -c '
           . .bash_aliases
-          _touch -t 00 . .sudo_as_admin_successful
-          # zeros out MM:ss file times recursively
-          touchall -t 00 {{ copy_files | join(' ') }}'
+          # zeros out file time MM:ss
+          _touch -t 00 . .sudo_as_admin*
+          # now do the same again but recursively
+          touchall -t 00 {{ copy_files | map('quote') | join(' ') }}'
       changed_when: true

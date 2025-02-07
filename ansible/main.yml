@@ -8,5 +8,8 @@
 - name: Include home directory setup playbook
   ansible.builtin.import_playbook: files.yml
 
+- name: Include Rancher K3s cluster playbook
+  ansible.builtin.import_playbook: rancher.yml
+
 - name: Include Kubernetes cluster playbook
   ansible.builtin.import_playbook: cluster.yml
