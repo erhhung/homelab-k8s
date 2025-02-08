@@ -1,0 +1,20 @@
+# pass the following vars:
+#   target_hosts <required> CSV of groups/hosts
+# sets the following facts:
+#   resolved_hosts list of inventory hosts
+---
+- name: Resolve target_hosts
+  # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/set_fact_module.html
+  ansible.builtin.set_fact:
+    resolved_hosts: |
+      {% set hosts = [] %}
+      {% for item in target_hosts.split(',') %}
+      {%   if item in hostvars %}
+      {%     set _ = hosts.append(item) %}
+      {%   elif item in groups %}
+      {%     for host in groups[item] %}
+      {%       set _ = hosts.append(host) %}
+      {%     endfor %}
+      {%   endif %}
+      {% endfor %}
+      {{ hosts }}

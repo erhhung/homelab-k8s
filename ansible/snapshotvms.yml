@@ -1,0 +1,175 @@
+---
+- name: Snapshot all or specific VMs
+  hosts: "{{ groups['xcp'][0] }}"
+  vars:
+    # To be overridden on command-line:
+    # ansible-playbook snapshotvms.yml
+    #   [-e target_hosts=cluster]
+    #   <-e create_desc="some text">
+    #   <-e delete_date="2025-02-01">
+    #   <-e delete_desc="some text">
+    target_hosts: rancher,cluster
+  gather_facts: false
+  become: true
+  pre_tasks:
+    - name: Validate input vars
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/assert_module.html
+      ansible.builtin.assert:
+        that:
+          - create_desc is     defined and create_desc | length > 0 and
+            delete_desc is not defined and
+            delete_date is not defined or
+            create_desc is not defined and
+            delete_desc is     defined and delete_desc | length > 0 and
+            delete_date is     defined and delete_date | length > 0
+        fail_msg: |
+          Invalid input vars! Must specify for create OR delete
+          Create: create_desc; Delete: delete_date, delete_desc
+        quiet: true
+      changed_when: false
+
+    - name: Gather local facts
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
+      ansible.builtin.include_tasks: tasks/localfacts.yml
+
+    - name: Resolve target_hosts
+      ansible.builtin.include_tasks: tasks/resolvehosts.yml
+
+    - name: Get snapshots JSON
+      # cannot use ansible.builtin.shell because XCP-ng 8.2 only has Python 3.6,
+      # which requires an older version of Ansible that we don't otherwise need
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/raw_module.html
+      ansible.builtin.raw: |
+        # run Bash to load .bashrc in order to
+        # use exported functions and variables
+        cat <<'EOT' | exec /bin/bash -l
+
+        _snapshots --delim='|' | jq -nRSMc '[
+          inputs | split("|") as $a | [
+            {date: $a[0]},
+            {ssid: $a[1]},
+            {vmid: $a[2]} | select(.vmid | tostring | startswith("00000000-") | not),
+            {host: $a[3]} | select(.host != "_NA_"),
+            {desc: $a[4]} | select(.desc != "")
+          ] | add
+        ]'
+        EOT
+      when: >-
+        create_desc is not defined and
+        delete_date is     defined and delete_date | length > 0 and
+        delete_desc is     defined and delete_desc | length > 0
+      register: jq_output
+      changed_when: false
+
+    # - name: Show snapshots JSON
+    #   # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/debug_module.html
+    #   ansible.builtin.debug:
+    #     msg: "JSON: {{ jq_output.stdout }}"
+    #   when: jq_output.stdout is defined
+
+    - name: Parse snapshots JSON
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/set_fact_module.html
+      # https://runebook.dev/en/articles/jinja/templates/index/jinja-filters.selectattr
+      ansible.builtin.set_fact:
+        # Ansible sort is stable,
+        # so sort by date first
+        snapshots: >
+          {{ jq_output.stdout | from_json  |
+             selectattr('date', 'defined') |
+             selectattr('host', 'defined') |
+             sort(attribute='date', reverse=True) |
+             sort(attribute='host') }}
+      when: jq_output.stdout is defined
+
+    # - name: Show snapshot list
+    #   ansible.builtin.debug:
+    #     var: snapshots
+    #   when: snapshots is defined
+
+    - name: Filter snapshot list
+      vars:
+        date_regex: ^{{ delete_date }}
+      ansible.builtin.set_fact:
+        # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/to_datetime_filter.html
+        # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/strftime_filter.html
+        filtered: |
+          {% set filtered = [] %}
+          {% for s in snapshots %}
+          {%   if filtered | selectattr('host', '==', s.host) | length == 0 %}
+          {%     set secs = (s.date | to_datetime('%Y-%m-%dT%H:%M:%SZ')).timestamp() %}
+          {%     set _ = filtered.append({
+                   'host': s.host,
+                   'date': '%Y-%m-%d %I:%M %p' | strftime(secs + tz_offset.in_seconds),
+                   'desc': s.desc,
+                   'uuid': s.ssid,
+                 }) %}
+          {%   endif %}
+          {% endfor %}
+          {{ filtered | selectattr('host', 'in', resolved_hosts) |
+                        selectattr('date', 'match',  date_regex) |
+                        selectattr('desc', 'search', delete_desc, ignorecase=True) }}
+      when: snapshots is defined
+
+    # - name: Show filtered list
+    #   ansible.builtin.debug:
+    #     var: filtered
+    #   when: filtered is defined
+
+    - name: Create or delete mode?
+      ansible.builtin.set_fact:
+        # depends not only on input vars but also on filtered snapshots
+        create_mode: "{{ create_desc is defined and resolved_hosts | length > 0 }}"
+        delete_mode: "{{ filtered    is defined and filtered       | length > 0 }}"
+
+    # - name: Show mode selection
+    #   ansible.builtin.debug:
+    #     msg: |-
+    #       Create mode: {{ create_mode }}
+    #       Delete mode: {{ delete_mode }}
+  tasks:
+    - name: Do create snapshots
+      vars:
+        name_desc: "{{ create_desc if create_desc is defined else '' }}"
+      ansible.builtin.raw: |
+        # run Bash to load .bashrc in order to
+        # use exported functions and variables
+        cat <<'EOT' | exec /bin/bash -l
+
+        uuid_var="UUID_{{ item | upper }}"
+        name_var="NAME_{{ item | upper }}"
+        uuid="${!uuid_var}"
+        name="${!name_var}"
+
+        xe vm-snapshot uuid=$uuid \
+                       new-name-label="[Ansible {{ ansible_play_name }}] $name" \
+                       new-name-description="{{ name_desc }}"
+        EOT
+      loop: "{{ resolved_hosts if create_mode else [] }}"
+      when: create_mode
+      changed_when: true
+
+    - name: Snapshots to delete
+      ansible.builtin.debug:
+        msg: |-
+          {% set  max_len = filtered | map(attribute='host') | map('length') | max -%}
+          {% set host_fmt = '%-' ~ max_len ~ 's' -%}
+          {% for s in filtered -%}
+          {{ host_fmt % s.host  }}  {{ s.date }}  {{ s.desc }}
+          {% endfor %}
+      when: delete_mode
+
+    - name: Ask to confirm delete
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/pause_module.html
+      ansible.builtin.pause:
+        prompt: "Delete snapshots? (y/n)"
+      when: delete_mode
+      register: confirm
+
+    - name: Do delete snapshots
+      ansible.builtin.raw: |
+        xe snapshot-destroy uuid={{ item.uuid }}
+      loop: "{{ filtered if delete_mode else [] }}"
+      loop_control:
+        label: "{{ item.uuid }}|{{ item.host }}"
+      when: confirm is defined and confirm.user_input | lower == 'y'
+      changed_when: true

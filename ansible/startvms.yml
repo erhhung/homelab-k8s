@@ -1,48 +1,38 @@
 ---
-- name: Start all (or specified) VM hosts
+- name: Start all or specific VMs
   hosts: "{{ groups['xcp'][0] }}"
   vars:
-    # this can be overridden on command-line:
+    # target_hosts can be overridden on command-line:
     # ansible-playbook startvms.yml -e target_hosts=rancher
     target_hosts: rancher,cluster
   gather_facts: false
   become: true
   pre_tasks:
     - name: Resolve target_hosts
-      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/set_fact_module.html
-      ansible.builtin.set_fact:
-        resolved_hosts: |
-          {% set hosts = [] %}
-          {% for item in target_hosts.split(',') %}
-          {%   if item in hostvars %}
-          {%     set _ = hosts.append(item) %}
-          {%   elif item in groups %}
-          {%     for host in groups[item] %}
-          {%       set _ = hosts.append(host) %}
-          {%     endfor %}
-          {%   endif %}
-          {% endfor %}
-          {{ hosts }}
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
+      ansible.builtin.include_tasks: tasks/resolvehosts.yml
   tasks:
-    - name: Start resolved hosts
+    - name: Start resolved VMs
       # cannot use ansible.builtin.shell because XCP-ng 8.2 only has Python 3.6,
       # which requires an older version of Ansible that we don't otherwise need
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/raw_module.html
       ansible.builtin.raw: |
-        # restart Bash and load .bashrc in order
-        # to use exported functions and variables
-        exec /bin/bash -l -c '
-          uuid_var="UUID_{{ item | upper }}"
-          name_var="NAME_{{ item | upper }}"
-          uuid="${!uuid_var}"
-          name="${!name_var}"
+        # run Bash to load .bashrc in order to
+        # use exported functions and variables
+        cat <<'EOT' | exec /bin/bash -l
 
-          case "$(vmstate $uuid)" in
-            running)
-              echo "VM \"{{ item }}\" is already running"
-              ;;
-            halted)    startvm  $uuid "$name" ;;
-            suspended) resumevm $uuid "$name" ;;
-          esac'
+        uuid_var="UUID_{{ item | upper }}"
+        name_var="NAME_{{ item | upper }}"
+        uuid="${!uuid_var}"
+        name="${!name_var}"
+
+        case "$(vmstate $uuid)" in
+          running)
+            echo "VM \"{{ item }}\" is already running"
+            ;;
+          halted)    startvm  $uuid "$name" ;;
+          suspended) resumevm $uuid "$name" ;;
+        esac
+        EOT
       loop: "{{ resolved_hosts }}"
       changed_when: true

@@ -1,9 +1,9 @@
 ---
-- name: Shutdown all (or specified) hosts
+- name: Shut down all or specific VMs
   hosts: "{{ target_hosts }}"
   vars:
-    # this can be overridden on command-line:
-    # ansible-playbook shutdown.yml -e target_hosts=workers
+    # target_hosts can be overridden on command-line:
+    # ansible-playbook shutdownvms.yml -e target_hosts=workers
     target_hosts:
       - cluster
       - rancher
@@ -14,7 +14,7 @@
   ignore_unreachable: true
   become: true
   tasks:
-    - name: Shutdown worker nodes
+    - name: Shut down worker nodes
       vars:
         services:
           - rke2-agent
@@ -22,14 +22,14 @@
       ansible.builtin.include_tasks: tasks/shutdown.yml
       when: inventory_hostname in groups['workers']
 
-    - name: Shutdown control plane
+    - name: Shut down control plane
       vars:
         services:
           - rke2-server
       ansible.builtin.include_tasks: tasks/shutdown.yml
       when: inventory_hostname in groups['controlplane']
 
-    - name: Shutdown Rancher Server
+    - name: Shut down Rancher Server
       vars:
         services:
           - k3s

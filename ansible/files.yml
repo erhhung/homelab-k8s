@@ -35,8 +35,8 @@
     - name: Touch copied files
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/shell_module.html
       ansible.builtin.shell: |
-        # restart Bash and load copied .bash_aliases
-        # in order to use my custom touch functions
+        # restart Bash and load .bash_aliases
+        # in order to use my custom functions
         exec /bin/bash -c '
           . .bash_aliases
           # zeros out file time MM:ss

@@ -84,13 +84,30 @@ Alternatively, **run all 5 playbooks** from the project root folder:
 
 ### Optional Playbooks
 
-1. Shutdown all/specific VMs
+1. Shut down all/specific VMs
 
     ```bash
-    ansible-playbook shutdown.yml [-e target_hosts={group|host|,...}]
+    ansible-playbook shutdownvms.yml [-e target_hosts={group|host|,...}]
     ```
 
-2. Restart all/specific VMs
+2. Create/delete VM snapshots
+
+    2.1. Create new snaphots
+
+    ```bash
+    ansible-playbook snapshotvms.yml [-e target_hosts={group|host|,...}] \
+                                     <-e create_desc="snapshot description">
+    ```
+
+    2.2. Delete old snaphots
+
+    ```bash
+    ansible-playbook snapshotvms.yml [-e target_hosts={group|host|,...}] \
+                                     <-e delete_date="YYYY-mm-dd* prefix">
+                                     <-e delete_desc="text to search for">
+    ```
+
+3. Restart all/specific VMs
 
     ```bash
     ansible-playbook startvms.yml [-e target_hosts={group|host|,...}]

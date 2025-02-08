@@ -12,7 +12,7 @@
   when: >-
     services is defined  and
     services is iterable and
-    services | length
+    services | length > 0
 
 - name: Run commands
   # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/command_module.html
@@ -21,8 +21,8 @@
   when: >-
     commands is defined  and
     commands is iterable and
-                commands | length
-  changed_when: commands | length
+                commands | length > 0
+  changed_when: commands | length > 0
 
 - name: Halt system
   become: true
