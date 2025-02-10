@@ -4,7 +4,7 @@
 # see installed packages:
 # apt list --installed
 
-install_packages:
+install_apt_packages:
   - apt-transport-https
   - locales         # required by community.general.locale_gen
   - bash-completion # required by crictl/kubectl completion
@@ -12,7 +12,6 @@ install_packages:
   - tree
   - lsof  # used by custom Bash function "listening"
   - rsync # required by ansible.posix.synchronize
-  - parted
   - emacs-nox
   # iptables is required by Calico networking in RKE2:
   # https://github.com/rancher/rke2/issues/4385#issuecomment-1738848974
@@ -20,10 +19,18 @@ install_packages:
   - dnsutils # provides nslookup/dig/host
   - iputils-ping
   - python3-pip
+  - python3-virtualenv # required by ansible.builtin.pip
   - jq
   - yq
   - git  # required by kubernetes.core.helm_plugin
   - helm # requires /etc/apt/sources.list.d/helm.sources
+
+# packages will be installed under
+# virtualenv ansible_user_dir/.venv
+install_pip_packages:
+  - PyYAML
+  - jsonpatch
+  - kubernetes # required by kubernetes.core.k8s
 
 # {name, path, state} all fields optional:
 # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/helm_plugin_module.html

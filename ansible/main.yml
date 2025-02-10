@@ -13,3 +13,6 @@
 
 - name: Include Kubernetes cluster playbook
   ansible.builtin.import_playbook: cluster.yml
+
+- name: Include local PV storage playbook
+  ansible.builtin.import_playbook: storage.yml

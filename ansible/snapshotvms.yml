@@ -43,6 +43,7 @@
         # run Bash to load .bashrc in order to
         # use exported functions and variables
         cat <<'EOT' | exec /bin/bash -l
+        set -o pipefail
 
         _snapshots --delim='|' | jq -nRSMc '[
           inputs | split("|") as $a | [

@@ -1,6 +1,7 @@
 # Emacs -*-Shell-Script-*- Mode
 
 # shellcheck disable=SC2148 # Tips depend on target shell
+# shellcheck disable=SC1091 # Not following: not input file
 # shellcheck disable=SC2155 # Declare and assign separately
 # shellcheck disable=SC2086 # Double quote prevent globbing
 # shellcheck disable=SC2207 # Prefer mapfile to split output
@@ -134,9 +135,15 @@ listening() {
         }' | sort -n | uniq | cols
 }
 
-# ==========================================
-# === APPLICABLE ONLY AFTER RKE2 INSTALL ===
-# ==========================================
+venv() {
+  local activate="$HOME/.venv/bin/activate"
+  [ -f "$activate" ] && \
+     . "$activate"   || return 0
+}
+
+# ==============================================
+# === APPLICABLE ONLY AFTER K3S/RKE2 INSTALL ===
+# ==============================================
 command -v kubectl &> /dev/null || return 0
 
 # set up Bash completion for crictl
@@ -169,3 +176,7 @@ rmevicted() {
     | "kubectl delete pods \(.metadata.name) -n \(.metadata.namespace)"' \
     | xargs -n 1 -r bash -c
 }
+
+# only installed on Rancher host
+[ -f "$HOME/.rancher_api" ] && \
+   . "$HOME/.rancher_api"

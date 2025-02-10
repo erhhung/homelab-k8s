@@ -1,8 +1,11 @@
 k3s_kubeconfig: /etc/rancher/k3s/k3s.yaml
 rke2_kubeconfig: /etc/rancher/rke2/rke2.yaml
 
+k3s_local_context: rancher
+rke2_local_context: homelab
+
 # https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_filters.html#products
-k3s_fqdns: "{{ ['rancher'] | product(search_domains) | map('join','.') | list }}"
+k3s_fqdns: "{{ [k3s_local_context] | product(search_domains) | map('join','.') | list }}"
 
 # default CNs: kubernetes, kubernetes.default, kubernetes.default.svc,
 # kubernetes.default.svc.cluster.local, cluster.local, localhost, k8s?

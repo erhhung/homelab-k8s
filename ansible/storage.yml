@@ -1,0 +1,45 @@
+---
+# create LVM logical volume /data for
+# Kubernetes local persistent volumes
+- name: Create LVs for local PVs
+  hosts: cluster
+  # https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_strategies.html#rolling-update-batch-size
+  serial: 1
+  become: true
+  vars_files:
+    - vars/storage.yml
+  vars:
+    lv_dev: /dev/{{ data_lv.vg }}/{{ data_lv.lv }}
+  pre_tasks:
+    - name: Check if LV already exists
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/command_module.html
+      ansible.builtin.command: lvdisplay -c {{ lv_dev }}
+      register: lv_exists
+      changed_when: false
+      failed_when: false
+  tasks:
+    - name: Create {{ data_lv.size }} logical volume
+      # https://docs.ansible.com/ansible/latest/collections/community/general/lvol_module.html
+      community.general.lvol:
+        lv: "{{ data_lv.lv }}"
+        vg: "{{ data_lv.vg }}"
+        size: "{{ data_lv.size }}"
+        state: present
+        resizefs: true
+      # lvdisplay returns 5 if LV not found
+      when: lv_exists.rc == 5
+
+    - name: Create {{ data_lv.fs | upper }} filesystem
+      # https://docs.ansible.com/ansible/latest/collections/community/general/filesystem_module.html
+      community.general.filesystem:
+        fstype: "{{ data_lv.fs }}"
+        dev: "{{ lv_dev }}"
+        resizefs: true
+
+    - name: Mount LV on {{ data_lv.mount }}
+      # https://docs.ansible.com/ansible/latest/collections/ansible/posix/mount_module.html
+      ansible.posix.mount:
+        src: "{{ lv_dev }}"
+        path: "{{ data_lv.mount }}"
+        fstype: "{{ data_lv.fs }}"
+        state: mounted

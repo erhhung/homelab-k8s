@@ -24,8 +24,6 @@
 
 - name: Set up shell environment for kubectl
   hosts: controlplane
-  gather_facts: false
-  become: true
   vars_files:
     - vars/basics.yml
     - vars/kubernetes.yml
@@ -38,11 +36,53 @@
       ansible.builtin.include_tasks: tasks/readable.yml
 
     - name: Fetch kubeconfig file content
+      run_once: true
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/command_module.html
       ansible.builtin.command: cat {{ rke2_kubeconfig }}
       when: file_check.stat.exists
       register: cat_kubeconfig
       changed_when: false
+
+    - name: Merge kubeconfig into local
+      vars:
+        kubeconfig: "{{ rke2_kubeconfig }}"
+        context: "{{ rke2_local_context }}"
+      ansible.builtin.include_tasks: tasks/kubeconfig.yml
+
+    # cannot directly pass manifest URL to src argument of
+    # kubernetes.core.k8s module because it does certifcate
+    # validation (its "validate_certs" arg only applies to
+    # connection to the Kube API server)
+    - name: Fetch registration manifest
+      vars:
+        manifest_url: >-
+          {{ hostvars['rancher']['rke2_reg_url'] if 'rke2_reg_url' in hostvars['rancher'] else '' }}
+      run_once: true
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/uri_module.html
+      ansible.builtin.uri:
+        url: "{{ manifest_url }}"
+        validate_certs: false
+        return_content: true
+      when: manifest_url | length > 0
+      register: reg_manifest
+
+    - name: Apply registration manifest
+      vars:
+        # required kubernetes>=24.2 package is only available in user virtualenv
+        ansible_python_interpreter: "{{ ansible_user_virtualenv }}/bin/python3"
+      run_once: true
+      # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_module.html
+      kubernetes.core.k8s:
+        definition: "{{ reg_manifest.content }}"
+        state: present
+        apply: true
+        kubeconfig: "{{ rke2_kubeconfig }}"
+        validate_certs: false
+        wait: true
+        wait_timeout: 30
+      when: >-
+        reg_manifest is defined and
+        reg_manifest.content | length > 0
 
 # https://stackoverflow.com/a/35742157/347685
 # - name: Rsync kubeconfig from control plane
@@ -84,6 +124,6 @@
       ansible.builtin.copy:
         dest: /etc/profile.d/kubectl.sh
         content: |
-          export PATH=$PATH:/var/lib/rancher/rke2/bin
-          export KUBECONFIG={{ rke2_kubeconfig }}
+          export PATH="$PATH:/var/lib/rancher/rke2/bin"
+          export KUBECONFIG="{{ rke2_kubeconfig }}"
         mode: "0644"

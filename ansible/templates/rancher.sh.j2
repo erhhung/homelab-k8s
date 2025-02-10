@@ -1,0 +1,135 @@
+# sourced by .bash_aliases but unused
+[ "$ADMIN_PASS" == none ] && return 0
+
+export RANCHER_URL="https://{{ k3s_fqdns[0] }}"
+
+# rancher_login <admin-pass>
+# returns token if successful
+rancher_login() {
+  curl -sk "$RANCHER_URL/v3-public/localProviders/local?action=login" \
+    -H "Content-Type: application/json" \
+    --data-binary '{
+      "username":    "admin",
+      "password":    "'"$1"'",
+      "description": "'"${TOKEN_DESC:-SSH session}"'"
+    }' | jq -r '"\(.token // "") \(.id // "")" | ltrimstr(" ")'
+}
+
+# attempt login using bootstrap password from Kubernetes secret;
+# if that fails, then try either "rancher_admin_pass" from Vault
+# if script sourced by Ansible, or prompt interactively if user
+# logging in, as bootstrap password must have been changed after
+# initial UI login
+
+# prevent Jinja2 from interpreting Go template
+{%- raw %}
+BOOTSTRAP_PASS=$(kubectl get secret -n cattle-system bootstrap-secret \
+  -o go-template='{{ .data.bootstrapPassword | base64decode }}')
+{%- endraw %}
+
+LOGIN_TOKEN=($(rancher_login "$BOOTSTRAP_PASS"))
+unset BOOTSTRAP_PASS
+
+if [ ! "$LOGIN_TOKEN" ]; then
+  [ "$ADMIN_PASS" ] || {
+    echo
+    # prompt unless already set by Ansible
+    read -sp "Enter Rancher admin password: " ADMIN_PASS
+    echo
+  }
+  # LOGIN_TOKEN is an array: [token, token-id]
+  LOGIN_TOKEN=($(rancher_login "$ADMIN_PASS"))
+  unset ADMIN_PASS
+fi
+
+[ "$LOGIN_TOKEN" ] && {
+  echo -e "Rancher admin login succeeded.\n"
+} || {
+  echo >&2 "Failed logging into Rancher!"
+  return 1
+}
+
+# login token functions just like API token, except
+# that it expires in 15 hours instead of in 89 days
+export API_TOKEN="$LOGIN_TOKEN"
+export LOGIN_TOKEN
+
+rancher_logout() {
+  curl -sk -X POST "$RANCHER_URL/v3/tokens?action=logout" \
+    -H "Authorization: Bearer $LOGIN_TOKEN"
+}
+trap rancher_logout EXIT
+
+# request long-lived token
+# get_token [description]
+get_token() {
+  local token desc="${1:-API token}"
+  token=$(curl -sk "$RANCHER_URL/v3/token" \
+    -H "Authorization: Bearer $LOGIN_TOKEN" \
+    -H  "Content-Type: application/json" \
+    --data-binary '{
+      "type":        "token",
+      "description": "'"$desc"'"
+    }' | jq -r '.token // empty')
+
+  [ "$token" ] && {
+    export API_TOKEN="$token"
+    echo "$token"
+  } || {
+    echo >&2 "Failed requesting $desc!"
+    return 1
+  }
+}
+
+# rancher_api <method> <v3-route> [json-data]
+rancher_api() {
+  [ $# -lt 2 ] && {
+    echo >&2 "rancher_api <method> <v3-route> [json-data]"
+    return 1
+  }
+  local args method=${1^^} url="$RANCHER_URL/v3/$2"
+  args=(-H "Authorization: Bearer $API_TOKEN")
+
+  [ "$3" ] && args+=(
+    -H "Content-Type: application/json"
+    --data-binary "$3"
+  )
+  curl -sk -X "$method" "${args[@]}" "$url"
+}
+
+# object JSON with bi-directional mapping
+# of cluster names to IDs and vice versa
+rancher_clusters() {
+  rancher_api get clusters | jq -cSM '
+    [.data[] | [
+      {key:.name, value:.id},
+      {key:.id,   value:.name}
+    ]] | flatten | from_entries'
+}
+
+# object JSON mapping "<cluster>_Default"
+# and "<cluster>_System" to project IDs
+rancher_projects() {
+  rancher_api get projects | jq -cSM \
+    --argjson clusters "$(rancher_clusters)" '
+    [.data[] | {
+      key: "\($clusters[.clusterId])_\(.name)",
+      value: .id
+    }] | from_entries'
+}
+
+# export cluster/project ID variables
+# where <cluster> is the cluster name:
+# "<cluster>_ID"
+# "<cluster>_DEFAULT_ID"
+# "<cluster>_SYSTEM_ID"
+
+eval "$(rancher_clusters | jq -r 'to_entries[] |
+  select(.key != "local" and
+        (.key | startswith("c-") | not)) |
+  "export \(.key | ascii_upcase)_ID=\"\(.value)\""
+  ')"
+
+eval "$(rancher_projects | jq -r 'to_entries[] |
+  "export \(.key | ascii_upcase)_ID=\"\(.value)\""
+  ')"

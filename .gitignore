@@ -2,3 +2,4 @@
 **/__pycache__/
 **/.ansible/roles
 **/.ansible/collections
+**/*.log

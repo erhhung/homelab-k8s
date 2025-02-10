@@ -19,6 +19,7 @@ ansible-vault edit   $VAULTFILE
 Variables stored in Ansible Vault:
 
 * `ansible_become_pass`
+* `rancher_admin_pass`
 * `k3s_token`
 * `rke2_token`
 
@@ -38,6 +39,10 @@ export ANSIBLE_CONFIG=./ansible.cfg
 ```
 
 1. Install required packages
+
+    1.1. **Tools**: `emacs`, `jq`, `yq`, `git`, and `helm`  
+    1.2. **Python**: Pip packages in user **virtualenv**  
+    1.3. **Helm**: Helm plugins: e.g. `helm-diff`
 
     ```bash
     ansible-playbook packages.yml
@@ -76,11 +81,20 @@ export ANSIBLE_CONFIG=./ansible.cfg
     ansible-playbook cluster.yml
     ```
 
-Alternatively, **run all 5 playbooks** from the project root folder:
+6. Create logical volume for local PVs
+
+    ```bash
+    ansible-playbook storage.yml
+    ```
+
+Alternatively, **run all 6 playbooks** directly from the project root folder:
 
 ```bash
-./play.sh
+# pass options like -v and --step
+./play.sh [ansible-playbook-opts]
 ```
+
+Output from `play.sh` will be logged in "`ansible/ansible.log`".
 
 ### Optional Playbooks
 

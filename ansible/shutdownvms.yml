@@ -12,7 +12,6 @@
   gather_facts: false
   ignore_errors: true
   ignore_unreachable: true
-  become: true
   tasks:
     - name: Shut down worker nodes
       vars:

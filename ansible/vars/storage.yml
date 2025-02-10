@@ -1,0 +1,7 @@
+data_lv:
+  lv: data-lv   # name of logical volume
+  vg: ubuntu-vg # name of volume group
+  fs: xfs       # volume filesystem type
+  # unit capitalization: g=GB and G=GiB
+  size: 20G     # size of logical volume
+  mount: /data  # path to mount volume

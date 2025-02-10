@@ -55,23 +55,34 @@
   vars_files:
     - vars/packages.yml
   tasks:
-    - name: Install required packages
+    - name: Install required Apt packages
+      become: true
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/apt_module.html
       ansible.builtin.apt:
-        name: "{{ install_packages }}"
+        name: "{{ install_apt_packages }}"
         state: present
         force_apt_get: true
         update_cache: true
         install_recommends: false
-      become: true
+      when: install_apt_packages | length > 0
+
+    - name: Install required Pip packages
+      # create virtualenv in user's home directory
+      become: false
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/pip_module.html
+      ansible.builtin.pip:
+        name: "{{ install_pip_packages }}"
+        state: present
+        virtualenv: "{{ ansible_user_virtualenv }}"
+      when: install_pip_packages | length > 0
 
     - name: Install useful Helm plugins
+      # plugins are installed in the user's home
+      # directory under .local/share/helm/plugins
+      become: false
       # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/helm_plugin_module.html
       kubernetes.core.helm_plugin:
         plugin_name: "{{ item.name if item.name is defined else omit }}"
         plugin_path: "{{ item.path if item.path is defined else omit }}"
         state: "{{ item.state if item.state is defined else 'present' }}"
       loop: "{{ install_helm_plugins }}"
-      # plugins are installed in the user's home
-      # directory under .local/share/helm/plugins
-      become: false
