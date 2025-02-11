@@ -140,8 +140,8 @@
             jq -r '.state // empty'
         }
         if [ ! "$cluster_id" ]; then
-          # RKE cluster not imported yet: import using the Rancher API
-          cluster_id=$(cat <<'EOT' | rancher_api post clusters @- | jq -r '.id // empty'
+          # RKE cluster not imported yet: import it using the Rancher API
+          cluster_id=$(rancher_api post clusters @- <<'EOT' | jq -r '.id // empty'
         {
           "import":      true,
           "type":        "cluster",
@@ -173,6 +173,19 @@
               ')
           [ "$reg_url" ] && echo "REGISTER=$reg_url"
         fi
+
+        # customize cluster appearance in the Rancher UI
+        rancher_api put "clusters/$cluster_id" @- <<'EOT' | \
+          jq -cM '.annotations | with_entries(select(.key | startswith("ui.rancher")))'
+        {
+          "name": "{{ rke_cluster_name }}",
+          "annotations": {
+            "ui.rancher/badge-color":      "{{ ui_badge_color }}",
+            "ui.rancher/badge-icon-text":  "{{ ui_badge_icon }}",
+            "ui.rancher/badge-text":       "{{ ui_badge_text }}"
+          }
+        }
+        EOT
 
         # perform CLI login if not already
         config="$HOME/.rancher/cli2.json"

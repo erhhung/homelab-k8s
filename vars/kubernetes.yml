@@ -5,6 +5,10 @@ k3s_cluster_name: rancher
 rke_cluster_name: homelab
 rke_cluster_desc: Erhhung's Kubernetes Cluster at Home
 
+ui_badge_color: "#5a2050"
+ui_badge_icon: LAB
+ui_badge_text: ""
+
 # https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_filters.html#products
 k3s_fqdns: "{{ [k3s_cluster_name] | product(search_domains) | map('join','.') | list }}"
 
