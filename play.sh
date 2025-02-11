@@ -5,7 +5,7 @@
 
 # shellcheck disable=SC2164 # Use cd ... || exit if cd fails
 
-cd "$(dirname "$0")/ansible"
+cd "$(dirname "$0")"
 
 export ANSIBLE_CONFIG=./ansible.cfg
 export ANSIBLE_FORCE_COLOR=true

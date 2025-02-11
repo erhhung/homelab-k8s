@@ -27,7 +27,7 @@
 
     - name: Copy dot files into home directory
       ansible.builtin.copy:
-        src: "{{ playbook_dir | dirname }}/{{ item }}"
+        src: "{{ playbook_dir }}/files/{{ item }}"
         dest: "{{ ansible_facts['user_dir'] }}/{{ item }}"
         mode: "0644"
         directory_mode: "0755"

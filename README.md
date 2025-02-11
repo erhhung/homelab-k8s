@@ -7,8 +7,6 @@ This project manages the configuration and user files for Erhhung's Kubernetes c
 The Ansible Vault password is stored in macOS Keychain under item "`Home-K8s`" for account "`ansible-vault`".
 
 ```bash
-cd ansible
-
 export ANSIBLE_CONFIG=./ansible.cfg
 VAULTFILE="group_vars/all/vault.yml"
 
@@ -87,14 +85,23 @@ export ANSIBLE_CONFIG=./ansible.cfg
     ansible-playbook storage.yml
     ```
 
-Alternatively, **run all 6 playbooks** directly from the project root folder:
+7. Create resources from manifest files
+
+    **IMPORTANT**: Resource manifests must specify the namespaces they wished to be installed  
+    into because the playbook simply applies each one without targeting a specific namespace.
+
+    ```bash
+    ansible-playbook manifests.yml
+    ```
+
+Alternatively, **run all 7 playbooks** automatically in order:
 
 ```bash
 # pass options like -v and --step
 ./play.sh [ansible-playbook-opts]
 ```
 
-Output from `play.sh` will be logged in "`ansible/ansible.log`".
+Output from `play.sh` will be logged in "`ansible.log`".
 
 ### Optional Playbooks
 

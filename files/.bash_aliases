@@ -141,9 +141,9 @@ venv() {
      . "$activate"   || return 0
 }
 
-# ==============================================
-# === APPLICABLE ONLY AFTER K3S/RKE2 INSTALL ===
-# ==============================================
+# =============================================
+# === APPLICABLE ONLY AFTER K3S/RKE INSTALL ===
+# =============================================
 command -v kubectl &> /dev/null || return 0
 
 # set up Bash completion for crictl

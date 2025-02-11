@@ -1,0 +1,28 @@
+# applies all Kubernetes manifests in the "manifests" directory
+# IMPORTANT: manifests must specify namespaces to install into
+---
+- name: Create resources on {{ rke_cluster_name }} cluster
+  hosts: controlplane
+  vars_files:
+    - vars/basics.yml
+    - vars/kubernetes.yml
+  tasks:
+    - name: Apply Kubernetes manifests
+      vars:
+        manifests: "{{ lookup('fileglob', 'manifests/*.yaml', wantlist=True) }}"
+        # required kubernetes>=24.2 package is only available in user virtualenv
+        ansible_python_interpreter: "{{ ansible_user_virtualenv }}/bin/python3"
+      run_once: true
+      # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_module.html
+      kubernetes.core.k8s:
+        definition: "{{ lookup('file', item) }}"
+        state: present
+        apply: true
+        kubeconfig: "{{ rke_kubeconfig }}"
+        validate_certs: false
+        wait: true
+        wait_timeout: 60
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/fileglob_lookup.html
+      loop: "{{ manifests }}"
+      loop_control:
+        label: "{{ item | basename }}"

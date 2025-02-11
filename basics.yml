@@ -100,6 +100,13 @@
         - "{{ cloud_init_netplan }}"
         - "{{ cloud_init_netplan }}.disabled"
       register: cloud_init_yaml
+
+    - name: Get host names in rancher,cluster
+      vars:
+        target_hosts: rancher,cluster
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
+      ansible.builtin.include_tasks: tasks/resolvehosts.yml
+      # sets "resolved_hosts" fact
   tasks:
     - name: Disable cloud-init Netplan config
       ansible.builtin.command:
@@ -126,6 +133,40 @@
         resolvectl_domain != search_domains or
         cloud_init_netplan_disabled.changed
       notify: Apply updated Netplan config
+
+    - name: Comment out 127.0.1.1 /etc/hosts
+      vars:
+        # comment out 127.0.1.1 and add
+        # empty line to end of the file
+        sed_pattern: |-
+          /^(127\.0\.1\.1.+)$/ {
+            s/^/# /
+            s/$/ # prefer non-loopback address/
+          }; $!b; /^$/b; a\\
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/shell_module.html
+      ansible.builtin.shell: |
+        [ -f /etc/hosts.bak ] && exit 2
+        cp -a /etc/hosts /etc/hosts.bak
+        sed -Ei '{{ sed_pattern }}' /etc/hosts
+      register: etc_hosts
+      changed_when: etc_hosts.rc == 0
+      failed_when: >-
+        etc_hosts.rc >  0 and
+        etc_hosts.rc != 2
+
+    - name: Add static entries to /etc/hosts
+      vars:
+        host_addr: "{{ hostvars[item]['ansible_host'] }}"
+        host_fqdn: "{{ [item] | product(search_domains) | map('join','.') | first }}"
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/lineinfile_module.html
+      ansible.builtin.lineinfile:
+        dest: /etc/hosts
+        line: "{{ host_addr }} {{ item }} {{ host_fqdn }}"
+        state: present
+      loop: "{{ resolved_hosts }}"
+      loop_control:
+        label: "{{ host_addr }}|{{ host_fqdn }}"
+
   handlers:
     - name: Apply updated Netplan config
       ansible.builtin.command: netplan apply

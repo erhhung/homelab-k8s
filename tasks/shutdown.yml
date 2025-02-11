@@ -27,7 +27,8 @@
       changed_when: commands | length > 0
 
     - name: Halt system
-      async: 10
-      poll: 0
       # https://docs.ansible.com/ansible/latest/collections/community/general/shutdown_module.html
       community.general.shutdown:
+      # https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_async.html
+      async: 20
+      poll: 0

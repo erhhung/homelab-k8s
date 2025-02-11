@@ -51,7 +51,8 @@
     - name: Merge kubeconfig into local
       vars:
         kubeconfig: "{{ k3s_kubeconfig }}"
-        context: "{{ k3s_local_context }}"
+        context: "{{ k3s_cluster_name }}"
+        server: "{{ k3s_fqdns[0] }}"
       ansible.builtin.include_tasks: tasks/kubeconfig.yml
 
 - name: Install Rancher Server on K3s
@@ -74,6 +75,8 @@
         release_values:
           crds:
             enabled: true
+        wait: true
+      timeout: 300
 
     # https://ranchermanager.docs.rancher.com/getting-started/installation-and-upgrade/install-upgrade-on-a-kubernetes-cluster#install-the-rancher-helm-chart
     - name: Install Rancher Server Helm chart
@@ -88,6 +91,8 @@
         release_values:
           replicas: 1
           hostname: "{{ k3s_fqdns[0] }}"
+        wait: true
+      timeout: 600
 
     # https://github.com/rancher/cli
     - name: Install Rancher CLI utility
@@ -109,63 +114,96 @@
           ./rancher-v${VER}/rancher
       args:
         executable: /bin/bash
-      register: install
-      changed_when: install.rc == 0
+      register: install_cli
+      changed_when: install_cli.rc == 0
       failed_when: >-
-        install.rc != 0 and
-        install.rc != 9
+        install_cli.rc != 0 and
+        install_cli.rc != 9
 
-    - name: Log into Rancher using CLI
+    - name: Import RKE cluster using API
       # noqa risky-shell-pipe
       ansible.builtin.shell: |
         # restart Bash and load .bash_aliases
         # in order to use my custom functions
-        cat <<'EOT' | exec /bin/bash
+        cat <<'EOF' | exec /bin/bash
 
         TOKEN_DESC="Ansible session"
         ADMIN_PASS="{{ rancher_admin_pass }}"
         . .bash_aliases # loads .rancher_api
 
-        cluster="{{ rke2_local_context }}"
+        cluster="{{ rke_cluster_name }}"
         id_var="${cluster^^}_ID"
         cluster_id="${!id_var}"
 
-        [ ! "$cluster_id" ] && {
-          context="$LOCAL_SYSTEM_ID"
-        } || {
-          # RKE2 cluster already imported
-          id_var="${cluster^^}_SYSTEM_ID"
-          context="${!id_var}"
-
-          # show registration manifest URL
-          # to apply on control plane node
-          url=$(rancher_api get clusters/$cluster_id/clusterregistrationtokens | \
-            jq -r '.data[] | select(.name | startswith("crt-")) | .manifestUrl')
-          echo "MANIFEST=$url"
+        get_state() {
+          rancher_api get clusters/$cluster_id | \
+            jq -r '.state // empty'
         }
-
-        # request a long-lived token
-        token=$(get_token "CLI token")
-        rancher login "$RANCHER_URL" \
-          --skip-verify \
-          --token   "$token" \
-          --context "$context"
-
-        rancher_logout # delete $LOGIN_TOKEN
+        if [ ! "$cluster_id" ]; then
+          # RKE cluster not imported yet: import using the Rancher API
+          cluster_id=$(cat <<'EOT' | rancher_api post clusters @- | jq -r '.id // empty'
+        {
+          "import":      true,
+          "type":        "cluster",
+          "name":        "{{ rke_cluster_name }}",
+          "description": "{{ rke_cluster_desc }}"
+        }
         EOT
-      register: cli_login
+          )
+          [ "$cluster_id" ] || {
+            echo >&2 "Cluster import failed!"
+            exit 1
+          }
+          echo "Waiting for cluster state to be \"pending\"..."
+          until [ "$(get_state)" == pending ]; do sleep 1; done
+          export_variables
+        fi
+
+        if [ "$(get_state)" != active ]; then
+          # output registration manifest URL so it can be applied on control plane node
+          reg_url=$(rancher_api get "clusters/$cluster_id/clusterregistrationtokens" | \
+            jq --arg baseUrl "$RANCHER_URL" -r '.data[] |
+              select(.name == "default-token") |
+                if (.manifestUrl // "") != "" then
+                  .manifestUrl
+                elif (.token // "") != "" then
+                  "\($baseUrl)/v3/import/\(.token)_\(.clusterId).yaml"
+                else empty
+                end
+              ')
+          [ "$reg_url" ] && echo "REGISTER=$reg_url"
+        fi
+
+        # perform CLI login if not already
+        config="$HOME/.rancher/cli2.json"
+        [ -f $config ] && \
+          [ "$(jq -r '.Servers[.CurrentServer].tokenKey // empty' $config)" ] || {
+
+          # request a long-lived token
+          token=$(get_token "CLI token")
+          id_var="${cluster^^}_DEFAULT_ID"
+
+          rancher login "$RANCHER_URL" \
+            --skip-verify      \
+            --token   "$token" \
+            --context "${!id_var}"
+        }
+        rancher_logout # delete $LOGIN_TOKEN
+        EOF
+      timeout: 300
+      register: import_rke
       changed_when: true
 
-    - name: Save RKE2 registration URL
+    - name: Save RKE registration URL
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/set_fact_module.html
       ansible.builtin.set_fact:
         # used in cluster.yml
-        rke2_reg_url: >-
-          {% set lines = cli_login.stdout_lines | select('search','^MANIFEST=') | list -%}
-          {{ lines[0].split('MANIFEST=')[1] if lines | length > 0 else '' }}
-      when: cli_login.rc == 0
+        rke_reg_url: >-
+          {% set lines = import_rke.stdout_lines | select('search','^REGISTER=') | list -%}
+          {{ lines[0].split('REGISTER=')[1] if lines | length > 0 else '' }}
+      when: import_rke.rc == 0
 
-    - name: Show RKE2 registration URL
+    - name: Show RKE registration URL
       ansible.builtin.debug:
         msg: |-
-          rke2_reg_url: "{{ rke2_reg_url if rke2_reg_url is defined else '<undefined>' }}"
+          rke_reg_url: "{{ rke_reg_url if rke_reg_url is defined else '<undefined>' }}"

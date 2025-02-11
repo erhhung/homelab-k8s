@@ -12,7 +12,9 @@ rancher_login() {
       "username":    "admin",
       "password":    "'"$1"'",
       "description": "'"${TOKEN_DESC:-SSH session}"'"
-    }' | jq -r '"\(.token // "") \(.id // "")" | ltrimstr(" ")'
+    }' | jq -r 'if type == "object" then (
+          "\(.token // "") \(.id // "")" | ltrimstr(" ")
+       ) else empty end'
 }
 
 # attempt login using bootstrap password from Kubernetes secret;
@@ -23,14 +25,24 @@ rancher_login() {
 
 # prevent Jinja2 from interpreting Go template
 {%- raw %}
-BOOTSTRAP_PASS=$(kubectl get secret -n cattle-system bootstrap-secret \
-  -o go-template='{{ .data.bootstrapPassword | base64decode }}')
+get_init_pass() {
+  kubectl get secret -n cattle-system bootstrap-secret \
+    -o go-template='{{ .data.bootstrapPassword | base64decode }}' 2> /dev/null
+}
 {%- endraw %}
+
+BOOTSTRAP_PASS=$(get_init_pass)
+if [ ! "$BOOTSTRAP_PASS" ]; then
+  echo -e "\nRancher bootstrap secret not found!"
+  echo "Waiting until Rancher is ready..."
+  until [ "$(get_init_pass)" ]; do sleep 1; done
+  BOOTSTRAP_PASS=$(get_init_pass)
+fi
 
 LOGIN_TOKEN=($(rancher_login "$BOOTSTRAP_PASS"))
 unset BOOTSTRAP_PASS
 
-if [ ! "$LOGIN_TOKEN" ]; then
+[ "$LOGIN_TOKEN" ]  && echo || {
   [ "$ADMIN_PASS" ] || {
     echo
     # prompt unless already set by Ansible
@@ -40,12 +52,12 @@ if [ ! "$LOGIN_TOKEN" ]; then
   # LOGIN_TOKEN is an array: [token, token-id]
   LOGIN_TOKEN=($(rancher_login "$ADMIN_PASS"))
   unset ADMIN_PASS
-fi
+}
 
 [ "$LOGIN_TOKEN" ] && {
   echo -e "Rancher admin login succeeded.\n"
 } || {
-  echo >&2 "Failed logging into Rancher!"
+  echo >&2 -e "Failed logging into Rancher!\n"
   return 1
 }
 
@@ -70,7 +82,8 @@ get_token() {
     --data-binary '{
       "type":        "token",
       "description": "'"$desc"'"
-    }' | jq -r '.token // empty')
+    }' | jq -r 'if type == "object" then
+                   .token else empty end')
 
   [ "$token" ] && {
     export API_TOKEN="$token"
@@ -123,13 +136,18 @@ rancher_projects() {
 # "<cluster>_ID"
 # "<cluster>_DEFAULT_ID"
 # "<cluster>_SYSTEM_ID"
+export_variables() {
+  eval "$(rancher_clusters | jq -r 'to_entries[] |
+    select(.key != "local" and
+          (.key | startswith("c-") | not)) |
+    "export \(.key | ascii_upcase)_ID=\"\(.value)\""
+    ')"
+  eval "$(rancher_projects | jq -r 'to_entries[] |
+    "export \(.key | ascii_upcase)_ID=\"\(.value)\""
+    ')"
+}
+export_variables
 
-eval "$(rancher_clusters | jq -r 'to_entries[] |
-  select(.key != "local" and
-        (.key | startswith("c-") | not)) |
-  "export \(.key | ascii_upcase)_ID=\"\(.value)\""
-  ')"
-
-eval "$(rancher_projects | jq -r 'to_entries[] |
-  "export \(.key | ascii_upcase)_ID=\"\(.value)\""
-  ')"
+command -v rancher &> /dev/null && {
+  alias r='rancher'
+}

@@ -16,3 +16,6 @@
 
 - name: Include local PV storage playbook
   ansible.builtin.import_playbook: storage.yml
+
+- name: Include resource manifests playbook
+  ansible.builtin.import_playbook: manifests.yml

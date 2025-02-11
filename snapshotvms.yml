@@ -31,9 +31,11 @@
     - name: Gather local facts
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
       ansible.builtin.include_tasks: tasks/localfacts.yml
+      # registers tz_offset with .in_seconds and .in_hours
 
     - name: Resolve target_hosts
       ansible.builtin.include_tasks: tasks/resolvehosts.yml
+      # sets "resolved_hosts" fact
 
     - name: Get snapshots JSON
       # cannot use ansible.builtin.shell because XCP-ng 8.2 only has Python 3.6,

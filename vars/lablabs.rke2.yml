@@ -7,7 +7,7 @@ rke2_agents_group_name: workers
 rke2_version: v1.32.1+rke2r1 # https://github.com/rancher/rke2/releases
 rke2_architecture: amd64
 
-rke2_additional_sans: "{{ rke2_fqdns }}"
+rke2_additional_sans: "{{ rke_fqdns }}"
 # rke2_token: {vault.yml}
 
 rke2_server_node_taints: [] # allow control plane node to run workloads

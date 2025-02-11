@@ -28,25 +28,26 @@
     - vars/basics.yml
     - vars/kubernetes.yml
   tasks:
-    - name: Make RKE2 kubeconfig readable
+    - name: Make RKE kubeconfig readable
       vars:
-        file_desc: "RKE2 kubeconfig"
-        file_path: "{{ rke2_kubeconfig }}"
+        file_desc: "RKE kubeconfig"
+        file_path: "{{ rke_kubeconfig }}"
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
       ansible.builtin.include_tasks: tasks/readable.yml
 
     - name: Fetch kubeconfig file content
       run_once: true
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/command_module.html
-      ansible.builtin.command: cat {{ rke2_kubeconfig }}
+      ansible.builtin.command: cat {{ rke_kubeconfig }}
       when: file_check.stat.exists
       register: cat_kubeconfig
       changed_when: false
 
     - name: Merge kubeconfig into local
       vars:
-        kubeconfig: "{{ rke2_kubeconfig }}"
-        context: "{{ rke2_local_context }}"
+        kubeconfig: "{{ rke_kubeconfig }}"
+        context: "{{ rke_cluster_name }}"
+        server: "{{ rke_fqdns[0] }}"
       ansible.builtin.include_tasks: tasks/kubeconfig.yml
 
     # cannot directly pass manifest URL to src argument of
@@ -56,7 +57,7 @@
     - name: Fetch registration manifest
       vars:
         manifest_url: >-
-          {{ hostvars['rancher']['rke2_reg_url'] if 'rke2_reg_url' in hostvars['rancher'] else '' }}
+          {{ hostvars['rancher']['rke_reg_url'] if 'rke_reg_url' in hostvars['rancher'] else '' }}
       run_once: true
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/uri_module.html
       ansible.builtin.uri:
@@ -76,12 +77,13 @@
         definition: "{{ reg_manifest.content }}"
         state: present
         apply: true
-        kubeconfig: "{{ rke2_kubeconfig }}"
+        kubeconfig: "{{ rke_kubeconfig }}"
         validate_certs: false
         wait: true
-        wait_timeout: 30
+      timeout: 1800
       when: >-
-        reg_manifest is defined and
+        reg_manifest         is defined and
+        reg_manifest.content is defined and
         reg_manifest.content | length > 0
 
 # https://stackoverflow.com/a/35742157/347685
@@ -97,8 +99,8 @@
 #       # https://docs.ansible.com/ansible/latest/collections/ansible/posix/synchronize_module.html
 #       ansible.posix.synchronize:
 #         mode: push # from control plane to worker
-#         src: "{{ rke2_kubeconfig }}"
-#         dest: "{{ rke2_kubeconfig }}"
+#         src: "{{ rke_kubeconfig }}"
+#         dest: "{{ rke_kubeconfig }}"
 #         use_ssh_args: true
 #       delegate_to: "{{ groups['controlplane'][0] }}"
 
@@ -115,7 +117,7 @@
     - name: Write kubeconfig on worker node
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/copy_module.html
       ansible.builtin.copy:
-        dest: "{{ rke2_kubeconfig }}"
+        dest: "{{ rke_kubeconfig }}"
         content: "{{ kubeconfig_content }}"
         mode: "0644"
       when: inventory_hostname in groups['workers'] and kubeconfig_content
@@ -125,5 +127,5 @@
         dest: /etc/profile.d/kubectl.sh
         content: |
           export PATH="$PATH:/var/lib/rancher/rke2/bin"
-          export KUBECONFIG="{{ rke2_kubeconfig }}"
+          export KUBECONFIG="{{ rke_kubeconfig }}"
         mode: "0644"
