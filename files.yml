@@ -16,7 +16,7 @@
         mode: "0440"
       become: true
 
-    - name: Suppress Apt's script warning message
+    - name: Suppress Apt script warning message
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/copy_module.html
       ansible.builtin.copy:
         dest: /etc/apt/apt.conf.d/90disable-warning

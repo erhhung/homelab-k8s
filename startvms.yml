@@ -19,7 +19,7 @@
       ansible.builtin.raw: |
         # run Bash to load .bashrc in order to
         # use exported functions and variables
-        cat <<'EOT' | exec /bin/bash -l
+        exec /bin/bash -l <<'EOT'
 
         uuid_var="UUID_{{ item | upper }}"
         name_var="NAME_{{ item | upper }}"

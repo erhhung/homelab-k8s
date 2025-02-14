@@ -1,10 +1,17 @@
----
 - name: Get local timezone offset
-  # local custom module
-  local_timezone_offset:
   delegate_to: localhost
   # prevent sudo prompt
   become: false
-  # tz_offset.in_hours and
-  # tz_offset.in_seconds
+  # local custom module
+  local_timezone_offset:
+  # .in_hours and .in_seconds
   register: tz_offset
+
+- name: Set controller facts
+  # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/set_fact_module.html
+  ansible.builtin.set_fact:
+    # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/pipe_lookup.html
+    local_python_interpreter: "{{ lookup('ansible.builtin.pipe', 'which python3') }}"
+    local_tz_offset:
+      in_hours: "{{ tz_offset.in_hours | float }}"
+      in_seconds: "{{ tz_offset.in_seconds | int }}"

@@ -1,0 +1,123 @@
+# pass the following vars:
+#   vcluster <required> vars/vclusters.yml
+---
+# https://www.vcluster.com/install
+- name: Create vCluster "{{ vcluster.name }}"
+  vars:
+    # required kubernetes>=24.2 package is only available in user virtualenv
+    ansible_python_interpreter: "{{ ansible_user_virtualenv }}/bin/python3"
+  run_once: true
+  become: false
+  block:
+    # https://www.vcluster.com/docs/vcluster/introduction/architecture
+    - name: Create vCluster storage
+      vars:
+        pv_list:
+          # - name: vcluster-{{ vcluster.name }}-etcd-pv
+          #   role: etcd # controlPlane.backingStore.etcd.deploy.statefulSet.persistence
+          #   size: "{{ vc_etcd_pv_size }}"
+          - name: vcluster-{{ vcluster.name }}-data-pv
+            role: data # controlPlane.statefulSet.persistence
+            size: "{{ vc_data_pv_size }}"
+      block:
+        - name: Create PV path on node data LV
+          delegate_to: "{{ vcluster.node }}"
+          become: true
+          # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/file_module.html
+          ansible.builtin.file:
+            path: "{{ data_lv.mount }}/{{ item.name }}"
+            state: directory
+            mode: "0755"
+          loop: "{{ pv_list }}"
+          loop_control:
+            label: "{{ vcluster.node }}|{{ item.name }}"
+
+        - name: Create vCluster persistent volume
+          # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_module.html
+          kubernetes.core.k8s:
+            kubeconfig: "{{ rke_kubeconfig }}"
+            # https://kubernetes.io/docs/concepts/storage/volumes/#local
+            definition: |-
+              apiVersion: v1
+              kind: PersistentVolume
+              metadata:
+                name: {{ item.name }}
+                labels:
+                  app: vcluster
+                  release: {{ vcluster.name }}
+                  role: {{ item.role }}
+                  node: {{ vcluster.node }}
+              spec:
+                storageClassName: {{ local_storage_class }}
+                capacity:
+                  storage: {{ item.size }}
+                local:
+                  path: {{ data_lv.mount }}/{{ item.name }}
+                volumeMode: Filesystem
+                accessModes:
+                  - ReadWriteOnce
+                nodeAffinity:
+                  required:
+                    nodeSelectorTerms:
+                    - matchExpressions:
+                      - key: kubernetes.io/hostname
+                        operator: In
+                        values:
+                        - {{ vcluster.node }}
+                persistentVolumeReclaimPolicy: Retain
+            validate:
+              fail_on_error: true
+            state: present
+            apply: true
+            wait: true
+          loop: "{{ pv_list }}"
+          loop_control:
+            label: "{{ item.name }}|{{ item.size }}"
+
+    - name: Install vCluster Helm chart
+      block:
+        - name: Install vCluster Helm chart
+          vars:
+            # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/template_lookup.html
+            values: "{{ lookup('ansible.builtin.template', 'templates/vcluster.yaml.j2') }}"
+          # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/helm_module.html
+          kubernetes.core.helm:
+            kubeconfig: "{{ rke_kubeconfig }}"
+            chart_repo_url: https://charts.loft.sh
+            chart_ref: vcluster
+            release_name: "{{ vcluster.name }}"
+            release_namespace: vcluster-{{ vcluster.name }}
+            create_namespace: true
+            release_values: "{{ values | from_yaml }}"
+            release_state: present
+            atomic: true
+            wait: true
+          timeout: 300
+          register: helm_install
+
+        - name: Fetch vCluster kubeconfig
+          # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_info_module.html
+          kubernetes.core.k8s_info:
+            kubeconfig: "{{ rke_kubeconfig }}"
+            api_version: v1
+            kind: Secret
+            name: vc-{{ vcluster.name }}
+            namespace: vcluster-{{ vcluster.name }}
+          register: vc_secret
+
+        - name: Merge kubeconfig into local
+          vars:
+            # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/b64decode_filter.html
+            kubeconfig: "{{ vc_secret.resources[0].data.config | b64decode }}"
+            context: x{{ vcluster.name }}
+            server: https://{{ vcluster.name }}.{{ vc_domain }}
+          # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
+          ansible.builtin.include_tasks: tasks/kubeconfig.yml
+      rescue:
+        - name: Delete vCluster resources
+          ansible.builtin.include_tasks: tasks/rmvcluster.yml
+
+        - name: Terminate play on failure
+          # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/fail_module.html
+          ansible.builtin.fail:
+            msg: Failed to create vCluster "{{ vcluster.name }}"!

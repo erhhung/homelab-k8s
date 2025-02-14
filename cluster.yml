@@ -1,9 +1,8 @@
 # VS Code thinks "cluster.yaml" is RKE cluster configuration, so explicitly set schema:
 # yaml-language-server: $schema=https://raw.githubusercontent.com/ansible/ansible-lint/main/src/ansiblelint/schemas/ansible.json
-
-# https://docs.rke2.io/install/quickstart
 ---
 # https://github.com/lablabs/ansible-role-rke2
+# https://docs.rke2.io/install/quickstart
 - name: Perform RKE2 role
   hosts: cluster
   become: true
@@ -24,6 +23,7 @@
 
 - name: Set up shell environment for kubectl
   hosts: controlplane
+  gather_facts: true
   vars_files:
     - vars/basics.yml
     - vars/kubernetes.yml
@@ -33,7 +33,7 @@
         file_desc: "RKE kubeconfig"
         file_path: "{{ rke_kubeconfig }}"
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
-      ansible.builtin.include_tasks: tasks/readable.yml
+      ansible.builtin.include_tasks: tasks/mkreadable.yml
 
     - name: Fetch kubeconfig file content
       run_once: true
@@ -47,7 +47,7 @@
       vars:
         kubeconfig: "{{ rke_kubeconfig }}"
         context: "{{ rke_cluster_name }}"
-        server: "{{ rke_fqdns[0] }}"
+        server: https://{{ rke_fqdn }}:6443
       ansible.builtin.include_tasks: tasks/kubeconfig.yml
 
     # cannot directly pass manifest URL to src argument of
@@ -74,11 +74,10 @@
       run_once: true
       # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_module.html
       kubernetes.core.k8s:
+        kubeconfig: "{{ rke_kubeconfig }}"
         definition: "{{ reg_manifest.content }}"
         state: present
         apply: true
-        kubeconfig: "{{ rke_kubeconfig }}"
-        validate_certs: false
         wait: true
       timeout: 1800
       when: >-
@@ -96,13 +95,13 @@
 #     - vars/kubernetes.yml
 #   tasks:
 #     - name: Transfer kubeconfig to worker node
+#       delegate_to: "{{ groups['controlplane'][0] }}"
 #       # https://docs.ansible.com/ansible/latest/collections/ansible/posix/synchronize_module.html
 #       ansible.posix.synchronize:
 #         mode: push # from control plane to worker
 #         src: "{{ rke_kubeconfig }}"
 #         dest: "{{ rke_kubeconfig }}"
 #         use_ssh_args: true
-#       delegate_to: "{{ groups['controlplane'][0] }}"
 
 - name: Set up shell environment for kubectl
   hosts: cluster

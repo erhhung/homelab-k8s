@@ -1,7 +1,7 @@
 # sourced by .bash_aliases but unused
 [ "$ADMIN_PASS" == none ] && return 0
 
-export RANCHER_URL="https://{{ k3s_fqdns[0] }}"
+export RANCHER_URL="https://{{ k3s_fqdn }}"
 
 # rancher_login <admin-pass>
 # returns token if successful

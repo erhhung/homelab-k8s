@@ -1,0 +1,141 @@
+# pass the following vars:
+#   vcluster <required> object {name,node}
+---
+- name: Delete vCluster "{{ vcluster.name }}"
+  vars:
+    # required kubernetes>=24.2 package is only available in user virtualenv
+    ansible_python_interpreter: "{{ ansible_user_virtualenv }}/bin/python3"
+  run_once: true
+  become: false
+  block:
+    - name: Get pods deployed in namespace
+      vars: &local_kubectl_vars
+        ansible_python_interpreter: "{{ local_python_interpreter }}"
+        # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/env_lookup.html
+        user_kubeconfig: "{{ lookup('ansible.builtin.env', 'HOME') }}/.kube/config"
+      # requires Pip package "kubernetes"
+      delegate_to: localhost
+      # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_info_module.html
+      kubernetes.core.k8s_info:
+        kubeconfig: "{{ user_kubeconfig }}"
+        # 'x' prefix matches mkcluster.yml
+        context: x{{ vcluster.name }}
+        api_version: v1
+        kind: Pod
+      register: get_pods
+
+    - name: Ignore vCluster-deployed pods
+      # see vcpods in vars/vclusters.yml
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/set_fact_module.html
+      ansible.builtin.set_fact:
+        user_pods: |
+          {% set pods = [] %}
+          {% for meta in get_pods.resources | map(attribute='metadata') %}
+          {%   set desc = meta.namespace ~'/'~ meta.name %}
+          {#   https://jinja.palletsprojects.com/en/stable/templates/#assignments #}
+          {%   set pod = namespace(desc=desc, found=false) %}
+          {%   for regex in vc_pods %}
+          {%     set pod.found = true if not pod.found and pod.desc | regex_search(regex) %}
+          {%   endfor %}
+          {%   if not pod.found %}
+          {%     set _ = pods.append(pod.desc) %}
+          {%   endif %}
+          {% endfor %}
+          {{ pods }}
+
+    - name: Show pods deployed in namespace
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/debug_module.html
+      ansible.builtin.debug:
+        msg: "{{ user_pods | join('\n') }}"
+      when: user_pods | length > 0
+
+    - name: Prompt for confirmation
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/pause_module.html
+      ansible.builtin.pause:
+        prompt: Delete vCluster? (y/n)
+      when: user_pods | length > 0
+      register: confirm
+
+    - name: Continue with deletion
+      when: >-
+        confirm is not defined or
+        confirm.user_input | lower == 'y'
+      block:
+        - name: Uninstall vCluster Helm release
+          # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/helm_module.html
+          kubernetes.core.helm:
+            kubeconfig: "{{ rke_kubeconfig }}"
+            release_name: "{{ vcluster.name }}"
+            release_namespace: vcluster-{{ vcluster.name }}
+            release_state: absent
+            wait: true
+          # might take a while to kill non-vCluster
+          # resources deployed inside the namespace
+          timeout: 600
+          # during handling of Helm install failure, atomic
+          # install will have already deleted all resources
+          when: >-
+            helm_install is not defined or
+            helm_install.status.name != vcluster.name
+          register: helm_uninstall
+
+        - name: Delete namespace "vcluster-{{ vcluster.name }}"
+          # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_module.html
+          kubernetes.core.k8s:
+            kubeconfig: "{{ rke_kubeconfig }}"
+            api_version: v1
+            kind: Namespace
+            name: vcluster-{{ vcluster.name }}
+            state: absent
+            wait: true
+          timeout: 300
+
+        - name: Delete vCluster storage
+          vars:
+            pv_names:
+              # - vcluster-{{ vcluster.name }}-etcd-pv
+              - vcluster-{{ vcluster.name }}-data-pv
+          block:
+            # should run quickly as bound PVC should
+            # have been deleted by namespace removal
+            - name: Delete vCluster persistent volume
+              kubernetes.core.k8s:
+                kubeconfig: "{{ rke_kubeconfig }}"
+                api_version: v1
+                kind: PersistentVolume
+                name: "{{ item }}"
+                state: absent
+                wait: true
+              loop: "{{ pv_names }}"
+
+            - name: Delete PV path on node data LV
+              delegate_to: "{{ vcluster.node }}"
+              become: true
+              # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/file_module.html
+              ansible.builtin.file:
+                path: "{{ data_lv.mount }}/{{ item }}"
+                state: absent
+              loop: "{{ pv_names }}"
+
+        - name: Delete local kubeconfig context
+          vars:
+            <<: *local_kubectl_vars
+          delegate_to: localhost
+          # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/command_module.html
+          ansible.builtin.command:
+            argv:
+              - kubectl
+              - --kubeconfig
+              - "{{ user_kubeconfig }}"
+              - config
+              - unset
+              # 'x' prefix matches mkcluster.yml
+              - "{{ item }}.x{{ vcluster.name }}"
+          loop:
+            - contexts
+            - clusters
+            - users
+          when: >-
+            helm_uninstall is defined and
+            helm_uninstall.changed
+          changed_when: helm_uninstall.changed

@@ -9,20 +9,20 @@
   tasks:
     - name: Apply Kubernetes manifests
       vars:
-        manifests: "{{ lookup('fileglob', 'manifests/*.yaml', wantlist=True) }}"
+        # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/fileglob_lookup.html
+        manifests: "{{ lookup('ansible.builtin.fileglob', 'manifests/*.y*ml', wantlist=True) }}"
         # required kubernetes>=24.2 package is only available in user virtualenv
         ansible_python_interpreter: "{{ ansible_user_virtualenv }}/bin/python3"
       run_once: true
       # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_module.html
       kubernetes.core.k8s:
-        definition: "{{ lookup('file', item) }}"
+        kubeconfig: "{{ rke_kubeconfig }}"
+        # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/file_lookup.html
+        definition: "{{ lookup('ansible.builtin.file', item) }}"
         state: present
         apply: true
-        kubeconfig: "{{ rke_kubeconfig }}"
-        validate_certs: false
         wait: true
-        wait_timeout: 60
-      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/fileglob_lookup.html
       loop: "{{ manifests }}"
       loop_control:
         label: "{{ item | basename }}"
+      timeout: 60

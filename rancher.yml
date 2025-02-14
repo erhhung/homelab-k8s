@@ -22,7 +22,8 @@
           sh -s - {{ k3s_opts | join(' ') }}
       args:
         executable: /bin/bash
-      changed_when: true
+      register: install_k3s
+      changed_when: install_k3s.stdout.find('No change detected') == -1
 
     - name: Wait for k3s service to start
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/systemd_service_module.html
@@ -42,7 +43,7 @@
         file_path: "{{ item.path }}"
         file_mode: "{{ item.mode }}"
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
-      ansible.builtin.include_tasks: tasks/readable.yml
+      ansible.builtin.include_tasks: tasks/mkreadable.yml
       loop:
         - path: "{{ crictl_config }}"
         - path: "{{ containerd_socket }}"
@@ -52,7 +53,7 @@
       vars:
         kubeconfig: "{{ k3s_kubeconfig }}"
         context: "{{ k3s_cluster_name }}"
-        server: "{{ k3s_fqdns[0] }}"
+        server: https://{{ k3s_fqdn }}:6443
       ansible.builtin.include_tasks: tasks/kubeconfig.yml
 
 - name: Install Rancher Server on K3s
@@ -66,7 +67,6 @@
       # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/helm_module.html
       kubernetes.core.helm:
         kubeconfig: "{{ k3s_kubeconfig }}"
-        context: default
         chart_repo_url: https://charts.jetstack.io
         chart_ref: cert-manager
         release_name: cert-manager
@@ -75,6 +75,7 @@
         release_values:
           crds:
             enabled: true
+        atomic: true
         wait: true
       timeout: 300
 
@@ -82,7 +83,6 @@
     - name: Install Rancher Server Helm chart
       kubernetes.core.helm:
         kubeconfig: "{{ k3s_kubeconfig }}"
-        context: default
         chart_repo_url: https://releases.rancher.com/server-charts/latest
         chart_ref: rancher
         release_name: rancher
@@ -90,7 +90,8 @@
         create_namespace: true
         release_values:
           replicas: 1
-          hostname: "{{ k3s_fqdns[0] }}"
+          hostname: "{{ k3s_fqdn }}"
+        atomic: true
         wait: true
       timeout: 600
 
@@ -105,7 +106,7 @@
         # check if latest version already installed
         BIN=$(command -v rancher) &> /dev/null && {
           ver=$(v=(`rancher --version`); echo ${v[-1]#v})
-          [ "$ver" = "$VER" ] && exit 9 # no change
+          [ "$ver" == "$VER" ] && exit 9 # no change
           BIN=$(dirname "$BIN")
         }
         ARCH=$(uname -m | sed -e 's/x86_64/amd64/' -e 's/aarch64/arm/')
@@ -121,11 +122,11 @@
         install_cli.rc != 9
 
     - name: Import RKE cluster using API
-      # noqa risky-shell-pipe
       ansible.builtin.shell: |
         # restart Bash and load .bash_aliases
         # in order to use my custom functions
-        cat <<'EOF' | exec /bin/bash
+        exec /bin/bash <<'EOF'
+        set -o pipefail
 
         TOKEN_DESC="Ansible session"
         ADMIN_PASS="{{ rancher_admin_pass }}"

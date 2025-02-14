@@ -1,0 +1,51 @@
+---
+- name: Create virtual clusters
+  hosts: controlplane
+  gather_facts: true
+  vars_files:
+    - vars/basics.yml
+    - vars/kubernetes.yml
+    - vars/vclusters.yml
+    - vars/storage.yml
+  pre_tasks:
+    - name: Get controller facts
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
+      ansible.builtin.include_tasks: tasks/localfacts.yml
+      when: local_python_interpreter is not defined
+
+    - name: List existing vClusters
+      vars:
+        keep: "{{ vclusters | map(attribute='name') | to_json }}"
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/shell_module.html
+      ansible.builtin.shell: |
+        # run Bash to load /etc/profile.d/kubectl.sh
+        # so kubectl is in $PATH and KUBECONFIG set
+        exec /bin/bash -l <<'EOT'
+        set -o pipefail
+
+        kubectl get persistentvolumes \
+          -l app=vcluster,role=data -o json | \
+          jq --argjson keep '{{ keep }}' \
+            '[.items[] | .metadata.labels |
+              select(.release | IN($keep[]) | not) |
+              {name:.release, node}] | sort_by(.name)'
+        EOT
+      register: rm_vclusters
+      changed_when: false
+  tasks:
+    - name: Create managed vClusters
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
+      ansible.builtin.include_tasks: tasks/mkvcluster.yml
+      loop: "{{ vclusters }}"
+      loop_control:
+        loop_var: vcluster
+        label: "{{ vcluster.name }}|{{ vcluster.node }}"
+
+    - name: Delete unmanaged vClusters
+      vars:
+        rm_list: "{{ rm_vclusters.stdout | from_json }}"
+      ansible.builtin.include_tasks: tasks/rmvcluster.yml
+      loop: "{{ rm_list }}"
+      loop_control:
+        loop_var: vcluster
+        label: "{{ vcluster.name }}|{{ vcluster.node }}"

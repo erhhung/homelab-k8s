@@ -31,6 +31,7 @@ install_pip_packages:
   - PyYAML
   - jsonpatch
   - kubernetes # required by kubernetes.core.k8s
+  - kubernetes-validate
 
 # {name, path, state} all fields optional:
 # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/helm_plugin_module.html

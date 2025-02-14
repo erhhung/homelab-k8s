@@ -10,11 +10,13 @@ ui_badge_icon: LAB
 ui_badge_text: ""
 
 # https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_filters.html#products
-k3s_fqdns: "{{ [k3s_cluster_name] | product(search_domains) | map('join','.') | list }}"
+k3s_fqdn: "{{ [k3s_cluster_name] | product(search_domains) | map('join','.') | first }}"
 
 # default CNs: kubernetes, kubernetes.default, kubernetes.default.svc,
 # kubernetes.default.svc.cluster.local, cluster.local, localhost, k8s?
-rke_fqdns: "{{ groups['controlplane'] | product(search_domains) | map('join','.') | list }}"
+rke_fqdn: "{{ groups['controlplane'] | product(search_domains) | map('join','.') | first }}"
 
 # https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_filters.html#searching-strings-with-regular-expressions
-# rke_fqdns: "{{ groups['controlplane'] | map('regex_replace', '^(.+)$', '\\1.' ~ search_domains[0]) | list }}"
+# rke_fqdn: "{{ groups['controlplane'] | map('regex_replace', '^(.+)$', '\\1.' ~ search_domains[0]) | first }}"
+
+local_storage_class: local-storage

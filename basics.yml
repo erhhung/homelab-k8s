@@ -135,24 +135,22 @@
       notify: Apply updated Netplan config
 
     - name: Comment out 127.0.1.1 /etc/hosts
-      vars:
-        # comment out 127.0.1.1 and add
-        # empty line to end of the file
-        sed_pattern: |-
-          /^(127\.0\.1\.1.+)$/ {
-            s/^/# /
-            s/$/ # prefer non-loopback address/
-          }; $!b; /^$/b; a\\
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/shell_module.html
       ansible.builtin.shell: |
-        [ -f /etc/hosts.bak ] && exit 2
-        cp -a /etc/hosts /etc/hosts.bak
-        sed -Ei '{{ sed_pattern }}' /etc/hosts
+        [ -f /etc/hosts.bak ] && exit 9
+
+        # comment out 127.0.1.1 and add
+        # empty line to end of the file
+        cp -a /etc/hosts /etc/hosts.bak && \
+          sed -Ei '/^(127\.0\.1\.1.+)$/ {
+            s/^/# /
+            s/$/ # prefer non-loopback address/
+          }; $!b; /^$/b; a\\;' /etc/hosts
       register: etc_hosts
       changed_when: etc_hosts.rc == 0
       failed_when: >-
-        etc_hosts.rc >  0 and
-        etc_hosts.rc != 2
+        etc_hosts.rc != 0 and
+        etc_hosts.rc != 9
 
     - name: Add static entries to /etc/hosts
       vars:
@@ -165,7 +163,7 @@
         state: present
       loop: "{{ resolved_hosts }}"
       loop_control:
-        label: "{{ host_addr }}|{{ host_fqdn }}"
+        label: "{{ host_addr }}|{{ item }}"
 
   handlers:
     - name: Apply updated Netplan config

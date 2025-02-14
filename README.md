@@ -70,10 +70,10 @@ export ANSIBLE_CONFIG=./ansible.cfg
     ansible-playbook rancher.yml
     ```
 
-5. Set up Kubernetes cluster with RKE2
+5. Set up Kubernetes cluster with RKE
 
     Installs RKE2 with single control plane node
-    and 3 worker nodes.
+    and 3 worker nodes, all permitting workloads.
 
     ```bash
     ansible-playbook cluster.yml
@@ -94,7 +94,13 @@ export ANSIBLE_CONFIG=./ansible.cfg
     ansible-playbook manifests.yml
     ```
 
-Alternatively, **run all 7 playbooks** automatically in order:
+8. Create virtual clusters within RKE
+
+    ```bash
+    ansible-playbook vclusters.yml
+    ```
+
+Alternatively, **run all 8 playbooks** automatically in order:
 
 ```bash
 # pass options like -v and --step

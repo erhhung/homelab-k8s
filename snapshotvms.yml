@@ -28,10 +28,11 @@
         quiet: true
       changed_when: false
 
-    - name: Gather local facts
+    - name: Get controller facts
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
       ansible.builtin.include_tasks: tasks/localfacts.yml
-      # registers tz_offset with .in_seconds and .in_hours
+      # registers local_tz_offset.in_seconds and .in_hours
+      when: local_tz_offset is not defined
 
     - name: Resolve target_hosts
       ansible.builtin.include_tasks: tasks/resolvehosts.yml
@@ -44,7 +45,7 @@
       ansible.builtin.raw: |
         # run Bash to load .bashrc in order to
         # use exported functions and variables
-        cat <<'EOT' | exec /bin/bash -l
+        exec /bin/bash -l <<'EOT'
         set -o pipefail
 
         _snapshots --delim='|' | jq -nRSMc '[
@@ -136,7 +137,7 @@
       ansible.builtin.raw: |
         # run Bash to load .bashrc in order to
         # use exported functions and variables
-        cat <<'EOT' | exec /bin/bash -l
+        exec /bin/bash -l <<'EOT'
 
         uuid_var="UUID_{{ item | upper }}"
         name_var="NAME_{{ item | upper }}"
@@ -151,28 +152,30 @@
       when: create_mode
       changed_when: true
 
-    - name: Snapshots to delete
+    - name: Show snapshots to delete
       ansible.builtin.debug:
         msg: |-
           {% set  max_len = filtered | map(attribute='host') | map('length') | max -%}
           {% set host_fmt = '%-' ~ max_len ~ 's' -%}
           {% for s in filtered -%}
-          {{ host_fmt % s.host  }}  {{ s.date }}  {{ s.desc }}
+          {{   host_fmt % s.host }}  {{ s.date }}  {{ s.desc }}
           {% endfor %}
       when: delete_mode
 
-    - name: Ask to confirm delete
+    - name: Prompt for confirmation
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/pause_module.html
       ansible.builtin.pause:
-        prompt: "Delete snapshots? (y/n)"
+        prompt: Delete snapshots? (y/n)
       when: delete_mode
       register: confirm
 
-    - name: Do delete snapshots
+    - name: Continue with deletion
       ansible.builtin.raw: |
         xe snapshot-destroy uuid={{ item.uuid }}
       loop: "{{ filtered if delete_mode else [] }}"
       loop_control:
         label: "{{ item.uuid }}|{{ item.host }}"
-      when: confirm is defined and confirm.user_input | lower == 'y'
+      when: >-
+        confirm is defined and
+        confirm.user_input | lower == 'y'
       changed_when: true

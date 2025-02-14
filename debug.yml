@@ -1,0 +1,63 @@
+---
+- name: Show remote and local facts
+  hosts: controlplane
+  gather_facts: true
+  pre_tasks:
+    - name: Get controller facts
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
+      ansible.builtin.include_tasks: tasks/localfacts.yml
+      when: local_python_interpreter is not defined
+  tasks:
+    - name: Dump "ansible_facts"
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/debug_module.html
+      ansible.builtin.debug:
+        var: ansible_facts
+
+    - name: Dump "ansible_local"
+      ansible.builtin.debug:
+        var: ansible_local
+
+    - name: Local Python interpreter
+      ansible.builtin.debug:
+        var: local_python_interpreter
+
+    - name: Local timezone offset
+      ansible.builtin.debug:
+        var: local_tz_offset
+
+- name: Debug Jinja2 statements and expressions
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Debug filtering functions
+      vars:
+        vc_pods:
+          - ^kube-system/coredns-.*$
+        get_pods: # kubernetes.core.k8s_info
+          resources:
+            - metadata:
+                name: coredns-668c87c5d8-mjp84
+                namespace: kube-system
+            - metadata:
+                name: argocd-application-controller-0
+                namespace: argocd
+        user_pods: |
+          {% set pods = [] %}
+          {% for meta in get_pods.resources | map(attribute='metadata') %}
+          {%   set desc = meta.namespace ~'/'~ meta.name  %}
+          {#   use namespace() to create a scoped object: #}
+          {#   https://jinja.palletsprojects.com/en/stable/templates/#assignments #}
+          {%   set pod = namespace(desc=desc, found=false) %}
+          {%   for regex in vc_pods %}
+          {%     set pod.found = true if not pod.found and pod.desc | regex_search(regex) %}
+          {%   endfor %}
+          {%   if not pod.found %}
+          {%     set _ = pods.append({
+                   'name':      meta.name,
+                   'namespace': meta.namespace
+                 }) %}
+          {%   endif %}
+          {% endfor %}
+          {{ pods }}
+      ansible.builtin.debug:
+        var: user_pods

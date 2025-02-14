@@ -7,8 +7,20 @@ rke2_agents_group_name: workers
 rke2_version: v1.32.1+rke2r1 # https://github.com/rancher/rke2/releases
 rke2_architecture: amd64
 
-rke2_additional_sans: "{{ rke_fqdns }}"
 # rke2_token: {vault.yml}
+rke2_additional_sans:
+  - "{{ rke_fqdn }}"
 
 rke2_server_node_taints: [] # allow control plane node to run workloads
 rke2_agent_node_taints: []
+
+# https://www.vcluster.com/docs/vcluster/manage/accessing-vcluster#expose-vcluster
+# https://docs.rke2.io/networking/networking_services#nginx-ingress-controller
+rke2_ingress_nginx_values:
+  controller:
+    extraArgs:
+      # --enable-ssl-passthrough is required so that
+      # the vCluster ingress controller can generate
+      # and serve the proper SAN certificate for the
+      # Kubernetes API server
+      enable-ssl-passthrough: ""

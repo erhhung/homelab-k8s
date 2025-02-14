@@ -1,0 +1,26 @@
+# vCluster resources:
+# release:   <name>
+# namespace: vcluster-<name>
+# etcd PV:   vcluster-<name>-etcd-pv
+# data PV:   vcluster-<name>-data-pv
+
+# vclusters.node is where etcd and data PVs will be created.
+# IMPORTANT! remember to create DNS record for each vCluster
+# (e.g. learning.vcluster.fourteeners.local) in pfSense that
+# resolve to an RKE control plane host prior to provisioning
+vclusters:
+  - name: learning
+    node: k8s2
+  - name: testing
+    node: k8s4
+
+vc_etcd_pv_size: 5Gi
+vc_data_pv_size: 5Gi
+
+vc_domain: "{{ ['vcluster'] | product(search_domains) | map('join','.') | first }}"
+
+# these pods are provisioned by vCluster, and are not
+# considered when checking if there are user-deployed
+# pods in the namespace prior to vCluster deletion
+vc_pods: # regex matching <namespace>/<pod-name>
+  - ^kube-system/coredns-.*$

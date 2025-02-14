@@ -1,0 +1,85 @@
+# this Jinja2 template is values file for the vCluster Helm chart
+# https://www.vcluster.com/docs/vcluster/configure/vcluster-yaml/
+
+# https://www.vcluster.com/docs/vcluster/configure/vcluster-yaml/sync/
+sync:
+  fromHost:
+    # https://www.vcluster.com/docs/vcluster/configure/vcluster-yaml/sync/from-host/nodes
+    nodes:
+      enabled: true
+      selector:
+        all: true
+    # https://www.vcluster.com/docs/vcluster/configure/vcluster-yaml/sync/from-host/ingress-classes
+    ingressClasses:
+      enabled: true
+    # https://www.vcluster.com/docs/vcluster/configure/vcluster-yaml/sync/from-host/storage-classes
+    storageClasses:
+      enabled: true
+  toHost:
+    # https://www.vcluster.com/docs/vcluster/configure/vcluster-yaml/sync/to-host/storage/persistent-volumes
+    persistentVolumes:
+      enabled: true
+
+# https://www.vcluster.com/docs/vcluster/category/components
+controlPlane:
+  # https://www.vcluster.com/docs/vcluster/configure/vcluster-yaml/control-plane/components/distro/
+  distro:
+    k0s:
+      enabled: true
+
+  # backingStore:
+  #   etcd:
+  #     # https://www.vcluster.com/docs/vcluster/configure/vcluster-yaml/control-plane/components/backing-store/etcd/deploy
+  #     deploy:
+  #       enabled: true
+  #       statefulSet:
+  #         persistence:
+  #           volumeClaim:
+  #             enabled: false
+  #           volumeClaimTemplates:
+  #             - metadata:
+  #                 name: etcd
+  #               spec:
+  #                 storageClassName: {{ local_storage_class }}
+  #                 accessModes:
+  #                   - ReadWriteOnce
+  #                 resources:
+  #                   requests:
+  #                     storage: {{ vc_etcd_pv_size }}
+  #                 selector:
+  #                   matchLabels:
+  #                     app: vcluster
+  #                     release: {{ vcluster.name }}
+  #                     role: etcd
+
+  # https://www.vcluster.com/docs/vcluster/configure/vcluster-yaml/control-plane/deployment/statefulset
+  statefulSet:
+    persistence:
+      volumeClaim:
+        enabled: false
+      volumeClaimTemplates:
+        - metadata:
+            name: data
+          spec:
+            storageClassName: {{ local_storage_class }}
+            accessModes:
+              - ReadWriteOnce
+            resources:
+              requests:
+                storage: {{ vc_data_pv_size }}
+            selector:
+              matchLabels:
+                app: vcluster
+                release: {{ vcluster.name }}
+                role: data
+
+  # https://www.vcluster.com/docs/vcluster/manage/accessing-vcluster?x1=1#expose-vcluster
+  ingress:
+    enabled: true
+    # this domain (e.g. learning.vcluster.fourteeners.local) will be
+    # the vCluster's Kubernetes API server endpoint specified in the
+    # kubeconfig file, and must be created manually (for time being)
+    # in the pfSense DNS Resolver
+    host: {{ vcluster.name }}.{{ vc_domain }}
+    spec:
+      ingressClassName: nginx # installed by default in RKE2
