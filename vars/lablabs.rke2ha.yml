@@ -1,0 +1,12 @@
+# these vars are included to supplement lablabs.rke2.yml
+# only if rke_ha_mode = true (defined in kubernetes.yml)
+
+rke2_ha_mode: "{{ rke_ha_mode }}" # HA control plane
+rke2_ha_mode_keepalived: false # disable Keepalived
+rke2_ha_mode_kubevip: true # install kube-vip LB + VIP
+rke2_api_ip: "{{ hostvars[rke_cluster_name]['ansible_host'] }}"
+rke2_interface: "{{ host_pif }}"
+rke2_loadbalancer_ip_range:
+  range-global: "{{ lb_vip_range.start }}-{{ lb_vip_range.end }}"
+rke2_kubevip_svc_enable: true # watch LoadBalancer
+rke2_kubevip_ipvs_lb_enable: true # LB control plane

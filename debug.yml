@@ -1,6 +1,6 @@
 ---
 - name: Show remote and local facts
-  hosts: controlplane
+  hosts: control_plane
   gather_facts: true
   pre_tasks:
     - name: Get controller facts
@@ -32,17 +32,20 @@
     - name: Show inventory groups
       ansible.builtin.debug:
         msg: |-
-          groups['all']:          {{ groups['all'] }}
-          groups['cluster']:      {{ groups['cluster'] }}
-          groups['controlplane']: {{ groups['controlplane'] }}
-          groups['workers']:      {{ groups['workers'] }}
+          groups['all']:              {{ groups['all'] }}
+          groups['k8s_all']:          {{ groups['k8s_all'] }}
+          groups['cluster']:          {{ groups['cluster'] }}
+          groups['control_plane']:    {{ groups['control_plane'] }}
+          groups['control_plane_ha']: {{ groups['control_plane_ha'] }}
+          groups['workers']:          {{ groups['workers'] }}
+          groups['workers_ha']:       {{ groups['workers_ha'] }}
 
     - name: Generate cluster FQDNs
       vars:
         search_domains: ["fourteeners.local"]
         rke_cluster_name: homelab
         rke_fqdns: >
-          {{ ([rke_cluster_name] + groups['controlplane']) |
+          {{ ([rke_cluster_name] + groups['control_plane']) |
           product(search_domains) | map('join','.') | list }}
       ansible.builtin.debug:
         msg: |-
@@ -51,17 +54,27 @@
 
     - name: Generate hosts entries
       vars:
-        resolved_hosts: ["rancher", "k8s1", "k8s2", "k8s3", "k8s4"]
         search_domains: ["fourteeners.local", "erhhungyuan.com"]
         rke_cluster_name: homelab
+        rke_ha_mode: true
+        k8s_hosts: |
+          {% set hosts = groups['k8s_all'] %}
+          {% if rke_ha_mode %}
+          {%   set _ = hosts.append(rke_cluster_name) %}
+          {% endif %}
+          {{ hosts }}
         host_ip: "{{ hostvars[host]['ansible_host'] }}"
-        host_names: "{{ [host, rke_cluster_name] if host == groups['controlplane'][0] else [host] }}"
+        # if HA mode, the host "homelab" (cluster name) has its own virtual IP
+        # if not HA mode, homelab is an alias for the first control plane node
+        host_names: |
+          {% set use_alias = not rke_ha_mode and host == groups['control_plane'][0] %}
+          {{ [host, rke_cluster_name] if use_alias else [host] }}
         host_fqdns: "{{ host_names | product(search_domains) | map('join', '.')  | list }}"
         host_pairs: "{{ host_fqdns | map('regex_replace', '^([^.]+)', '\\1 \\1') | list }}"
         host_entry: "{{ ([host_ip] + (host_pairs | join(' ')) | split | unique) | join(' ') }}"
       ansible.builtin.debug:
         msg: "{{ host_entry }}"
-      loop: "{{ resolved_hosts }}"
+      loop: "{{ k8s_hosts }}"
       loop_control:
         loop_var: host
         label: "{{ host_ip }}|{{ host }}"

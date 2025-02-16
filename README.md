@@ -158,7 +158,9 @@ Ansible's [ad-hoc commands](https://docs.ansible.com/ansible/latest/command_guid
 1. Restart Kubernetes cluster services on all nodes
 
     ```bash
-    ansible rancher      -m ansible.builtin.service -b -a "name=k3s         state=restarted"
-    ansible controlplane -m ansible.builtin.service -b -a "name=rke2-server state=restarted"
-    ansible workers      -m ansible.builtin.service -b -a "name=rke2-agent  state=restarted"
+    ansible rancher       -m ansible.builtin.service -b -a "name=k3s         state=restarted"
+    ansible control_plane -m ansible.builtin.service -b -a "name=rke2-server state=restarted"
+    ansible workers       -m ansible.builtin.service -b -a "name=rke2-agent  state=restarted"
     ```
+
+    _**NOTE:** substitute target hosts with `control_plane_ha` and `workers_ha` if the RKE cluster was deployed in HA mode._

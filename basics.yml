@@ -1,8 +1,6 @@
 ---
 - name: Configure basic settings
-  hosts:
-    - rancher
-    - cluster
+  hosts: k8s_all
   become: true
   vars_files:
     - vars/basics.yml
@@ -57,9 +55,7 @@
   any_errors_fatal: true
 
 - name: Configure network settings
-  hosts:
-    - rancher
-    - cluster
+  hosts: k8s_all
   become: true
   vars_files:
     - vars/basics.yml
@@ -71,7 +67,7 @@
     cloud_init_netplan: /etc/netplan/50-cloud-init.yaml
   pre_tasks:
     - name: Get existing network settings
-      ansible.builtin.command: resolvectl {{ item }} enX0
+      ansible.builtin.command: resolvectl {{ item }} {{ host_pif }}
       loop: "{{ resolvectl_commands }}"
       register: resolvectl
       changed_when: false
@@ -79,7 +75,7 @@
     - name: Parse resolvectl output values
       vars:
         csv: "{{ (resolvectl.results[i].stdout |
-          regex_search('.enX0.: ([^\n]+)','\\1') or ['']) | first }}"
+          regex_search('.'~ host_pif ~'.: ([^\n]+)','\\1') or ['']) | first }}"
       ansible.builtin.set_fact:
         # generated facts: "resolvectl_dns" and "resolvectl_domain"
         "resolvectl_{{ item }}": "{{ csv | split if csv else [] }}"
@@ -114,7 +110,8 @@
           sed -Ei '/^127\.0\.1\.1\s/ {
             s/^/# /
             s/$/ # prefer non-loopback address/
-          }; $!b; /^$/b; a\\;' /etc/hosts
+          }; $!b; /^$/b; a\\
+        ' /etc/hosts
       register: etc_hosts
       changed_when: etc_hosts.rc == 0
       failed_when: >-
@@ -123,10 +120,19 @@
 
     - name: Add static entries to /etc/hosts
       vars:
-        k8s_hosts: "{{ ['rancher'] + groups['cluster'] }}"
+        k8s_hosts: |
+          {% set hosts = groups['k8s_all'] %}
+          {% if rke_ha_mode %}
+          {%   set _ = hosts.append(rke_cluster_name) %}
+          {% endif %}
+          {{ hosts }}
         host_ip: "{{ hostvars[host]['ansible_host'] }}"
         host_regex: ^{{ host_ip | regex_escape }}\s
-        host_names: "{{ [host, rke_cluster_name] if host == groups['controlplane'][0] else [host] }}"
+        # if HA mode, the host "homelab" (cluster name) has its own virtual IP
+        # if not HA mode, homelab is an alias for the first control plane node
+        host_names: |
+          {% set use_alias = not rke_ha_mode and host == groups['control_plane'][0] %}
+          {{ [host, rke_cluster_name] if use_alias else [host] }}
         host_fqdns: "{{ host_names | product(search_domains) | map('join', '.')  | list }}"
         host_pairs: "{{ host_fqdns | map('regex_replace', '^([^.]+)', '\\1 \\1') | list }}"
         host_entry: "{{ ([host_ip] + (host_pairs | join(' ')) | split | unique) | join(' ') }}"
@@ -173,9 +179,7 @@
   any_errors_fatal: true
 
 - name: Customize login MOTD messages
-  hosts:
-    - rancher
-    - cluster
+  hosts: k8s_all
   become: true
   tasks:
     - name: Suppress select MOTD messages

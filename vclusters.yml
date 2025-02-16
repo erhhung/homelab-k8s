@@ -1,7 +1,7 @@
 ---
 - name: Create virtual clusters
-  hosts: controlplane
-  gather_facts: true
+  hosts: control_plane
+  run_once: true
   vars_files:
     - vars/basics.yml
     - vars/kubernetes.yml

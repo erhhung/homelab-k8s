@@ -2,11 +2,16 @@ system_time_zone: America/Los_Angeles
 system_locale: en_US.UTF-8
 system_language: en_US.UTF-8
 
+host_pif: enX0 # XCP-ng VM physical interface
+subnet_mask: /24
 name_servers:
-  # first address will be used for default gateway
+  # first IP address used as default gateway
   - 192.168.0.1
   - 1.1.1.1
   - 1.0.0.1
-
 search_domains:
   - fourteeners.local
+# virtual IP range reserved for kube-vip
+lb_vip_range:
+  start: 192.168.0.221
+  end: 192.168.0.240

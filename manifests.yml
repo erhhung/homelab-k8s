@@ -2,7 +2,8 @@
 # IMPORTANT: manifests must specify namespaces to install into
 ---
 - name: Create resources on {{ rke_cluster_name }} cluster
-  hosts: controlplane
+  hosts: control_plane
+  run_once: true
   vars_files:
     - vars/basics.yml
     - vars/kubernetes.yml
@@ -13,7 +14,6 @@
         manifests: "{{ lookup('ansible.builtin.fileglob', 'manifests/*.y*ml', wantlist=True) }}"
         # required kubernetes>=24.2 package only in user virtualenv
         ansible_python_interpreter: "{{ venv_python_interpreter }}"
-      run_once: true
       # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_module.html
       kubernetes.core.k8s:
         kubeconfig: "{{ rke_kubeconfig }}"

@@ -1,9 +1,7 @@
 ---
 # https://helm.sh/docs/intro/install/#from-apt-debianubuntu
 - name: Configure Helm Apt repository
-  hosts:
-    - rancher
-    - cluster
+  hosts: k8s_all
   become: true
   vars:
     keyring: /usr/share/keyrings/helm.gpg
@@ -50,9 +48,7 @@
   any_errors_fatal: true
 
 - name: Install required packages
-  hosts:
-    - rancher
-    - cluster
+  hosts: k8s_all
   vars_files:
     - vars/packages.yml
   tasks:

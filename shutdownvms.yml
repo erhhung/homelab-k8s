@@ -1,12 +1,13 @@
 ---
 - name: Shut down all or specific VMs
   hosts: "{{ targets }}"
+  vars_files:
+    - vars/basics.yml
+    - vars/kubernetes.yml
   vars:
     # targets can be overridden on command-line:
     # ansible-playbook shutdownvms.yml -e targets=workers
-    targets:
-      - cluster
-      - rancher
+    targets: k8s_all
     # fail fast if host already appears to be shut down
     ansible_ssh_args: -o ConnectTimeout=1s -o ConnectionAttempts=1
   gather_facts: false
@@ -19,18 +20,18 @@
           - rke2-agent
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
       ansible.builtin.include_tasks: tasks/shutdown.yml
-      when: inventory_hostname in groups['workers']
+      when: inventory_hostname in groups[rke_workers_group]
 
     - name: Shut down control plane
       vars:
         services:
           - rke2-server
       ansible.builtin.include_tasks: tasks/shutdown.yml
-      when: inventory_hostname in groups['controlplane']
+      when: inventory_hostname in groups[rke_control_plane_group]
 
     - name: Shut down Rancher Server
       vars:
         services:
           - k3s
       ansible.builtin.include_tasks: tasks/shutdown.yml
-      when: inventory_hostname == 'rancher'
+      when: inventory_hostname in groups['_rancher']

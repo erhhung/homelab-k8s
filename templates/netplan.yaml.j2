@@ -3,9 +3,9 @@
 network:
   version: 2
   ethernets:
-    enX0:
+    {{ host_pif }}:
       addresses:
-        - {{ ansible_host }}/24
+        - {{ ansible_host ~ subnet_mask }}
       nameservers:
         addresses:
 {% for ns in name_servers %}

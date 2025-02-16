@@ -10,6 +10,22 @@
     - vars/kubernetes.yml
     - vars/lablabs.rke2.yml
   # https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_reuse_roles.html#using-roles
+  pre_tasks:
+    - name: Include vars/lablabs.rke2ha.yml
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_vars_module.html
+      ansible.builtin.include_vars:
+        file: vars/lablabs.rke2ha.yml
+      when: rke_ha_mode
+
+    - name: Ensure odd control plane nodes
+      vars:
+        count: "{{ groups[rke_control_plane_group] | length }}"
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/assert_module.html
+      ansible.builtin.assert:
+        that:
+          - count | int is odd
+        fail_msg: Number of control plane nodes must be odd!
+        success_msg: Deploying {{ count }} control plane nodes.
   tasks:
     # https://github.com/rancherfederal/rke2-ansible
     # - name: Include rancherfederal.rke2.rke2 role
@@ -24,7 +40,7 @@
   any_errors_fatal: true
 
 - name: Set up shell environment for kubectl
-  hosts: controlplane
+  hosts: "{{ rke_control_plane_group }}"
   gather_facts: false
   vars_files:
     - vars/basics.yml
@@ -53,24 +69,6 @@
       ansible.builtin.include_tasks: tasks/kubeconfig.yml
   any_errors_fatal: true
 
-# https://stackoverflow.com/a/35742157/347685
-# - name: Rsync kubeconfig from control plane
-#   hosts: workers
-#   gather_facts: false
-#   become: true
-#   vars_files:
-#     - vars/basics.yml
-#     - vars/kubernetes.yml
-#   tasks:
-#     - name: Transfer kubeconfig to worker node
-#       delegate_to: "{{ groups['controlplane'][0] }}"
-#       # https://docs.ansible.com/ansible/latest/collections/ansible/posix/synchronize_module.html
-#       ansible.posix.synchronize:
-#         mode: push # from control plane to worker
-#         src: "{{ rke_kubeconfig }}"
-#         dest: "{{ rke_kubeconfig }}"
-#         use_ssh_args: true
-
 - name: Set up shell environment for kubectl
   hosts: cluster
   gather_facts: false
@@ -79,7 +77,7 @@
     - vars/basics.yml
     - vars/kubernetes.yml
   vars:
-    kubeconfig_content: "{{ hostvars[groups['controlplane'][0]]['cat_kubeconfig'].stdout }}"
+    kubeconfig_content: "{{ hostvars[groups['control_plane'][0]]['cat_kubeconfig'].stdout }}"
   tasks:
     # kubectl should already be executable,
     # but not parent dirs /var/lib/rancher
@@ -97,7 +95,9 @@
         dest: "{{ rke_kubeconfig }}"
         content: "{{ kubeconfig_content }}"
         mode: "0644"
-      when: inventory_hostname in groups['workers'] and kubeconfig_content
+      when: >-
+        kubeconfig_content != '' and
+        inventory_hostname in groups[rke_workers_group]
 
     - name: Create /etc/profile.d/kubectl.sh
       ansible.builtin.copy:
@@ -109,13 +109,13 @@
   any_errors_fatal: true
 
 - name: Apply supplemental RKE2 configuration
-  hosts: controlplane
-  run_once: true
+  hosts: "{{ rke_control_plane_group }}"
   vars_files:
     - vars/basics.yml
     - vars/kubernetes.yml
   tasks:
     - name: Write CoreDNS HelmChartConfig
+      run_once: true
       become: true
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/template_module.html
       ansible.builtin.template:
@@ -145,6 +145,7 @@
       vars:
         # required kubernetes>=24.2 package only in user virtualenv
         ansible_python_interpreter: "{{ venv_python_interpreter }}"
+      run_once: true
       block:
         - name: Wait for CoreDNS to be ready
           # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_info_module.html

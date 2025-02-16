@@ -1,8 +1,8 @@
 # https://github.com/lablabs/ansible-role-rke2#role-variables
 
 rke2_cluster_group_name: cluster
-rke2_servers_group_name: controlplane
-rke2_agents_group_name: workers
+rke2_servers_group_name: "{{ rke_control_plane_group }}"
+rke2_agents_group_name: "{{ rke_workers_group }}"
 
 rke2_version: v1.32.1+rke2r1 # https://github.com/rancher/rke2/releases
 rke2_architecture: amd64
@@ -37,16 +37,3 @@ rke2_ingress_nginx_values:
       # and serve the proper SAN certificate for the
       # Kubernetes API server
       enable-ssl-passthrough: ""
-
-# ====== HA control plane ======
-# comment out to disable HA mode
-
-rke2_ha_mode: true # deploy control plane in HA mode
-rke2_ha_mode_keepalived: false # disable Keepalived
-rke2_ha_mode_kubevip: true # install kube-vip LB + VIP
-rke2_api_ip: 192.168.0.221 # IP address of kube-vip LB
-rke2_interface: enX0
-rke2_loadbalancer_ip_range:
-  range-global: 192.168.0.221-192.168.0.240
-rke2_kubevip_svc_enable: true # watch LoadBalancer
-rke2_kubevip_ipvs_lb_enable: true # LB control plane
