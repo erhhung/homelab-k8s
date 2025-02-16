@@ -1,0 +1,27 @@
+# save rendered config as /var/lib/rancher/rke2/server/manifests/rke2-coredns-config.yaml
+# on an RKE2 server node, after which rke2-server service on that node must be restarted
+---
+# https://www.suse.com/support/kb/doc/?id=000021179
+# https://github.com/coredns/helm/blob/master/charts/coredns/values.yaml
+
+apiVersion: helm.cattle.io/v1
+kind: HelmChartConfig
+metadata:
+  name: rke2-coredns
+  namespace: kube-system
+spec:
+  valuesContent: |-
+    zoneFiles:
+{% for zone in search_domains %}
+      - filename: {{ zone }}.conf
+        domain: {{ zone }}
+        contents: |
+          {{ zone }}:53 {
+              errors
+              forward . {{ name_servers[0] }}
+              cache 30
+          }
+{% endfor %}
+    extraConfig:
+      import:
+        parameters: /etc/coredns/*.conf

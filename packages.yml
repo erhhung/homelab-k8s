@@ -47,6 +47,7 @@
           Signed-By: {{ keyring }}
         mode: "0644"
       when: not apt_repo.results[1].stat.exists
+  any_errors_fatal: true
 
 - name: Install required packages
   hosts:
@@ -65,6 +66,11 @@
         update_cache: true
         install_recommends: false
       when: install_apt_packages | length > 0
+      # Could fail due to normal Apt updates that
+      # hold the lock, so retry until successful
+      # https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_loops.html#retrying-a-task-until-a-condition-is-met
+      retries: 5
+      delay: 5
 
     - name: Install required Pip packages
       # create virtualenv in user's home directory
@@ -86,3 +92,4 @@
         plugin_path: "{{ item.path if item.path is defined else omit }}"
         state: "{{ item.state if item.state is defined else 'present' }}"
       loop: "{{ install_helm_plugins }}"
+  any_errors_fatal: true

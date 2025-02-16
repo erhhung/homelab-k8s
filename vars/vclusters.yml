@@ -7,7 +7,8 @@
 # vclusters.node is where etcd and data PVs will be created.
 # IMPORTANT! remember to create DNS record for each vCluster
 # (e.g. learning.vcluster.fourteeners.local) in pfSense that
-# resolve to an RKE control plane host prior to provisioning
+# resolve to the RKE control plane (cluster VIP in HA mode)
+# prior to provisioning
 vclusters:
   - name: learning
     node: k8s2

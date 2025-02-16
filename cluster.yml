@@ -1,7 +1,6 @@
 # VS Code thinks "cluster.yaml" is RKE cluster configuration, so explicitly set schema:
 # yaml-language-server: $schema=https://raw.githubusercontent.com/ansible/ansible-lint/main/src/ansiblelint/schemas/ansible.json
 ---
-# https://github.com/lablabs/ansible-role-rke2
 # https://docs.rke2.io/install/quickstart
 - name: Perform RKE2 role
   hosts: cluster
@@ -10,27 +9,30 @@
     - vars/basics.yml
     - vars/kubernetes.yml
     - vars/lablabs.rke2.yml
-  roles:
-    # https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_reuse_roles.html#using-roles
-    - role: lablabs.rke2
+  # https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_reuse_roles.html#using-roles
+  tasks:
+    # https://github.com/rancherfederal/rke2-ansible
+    # - name: Include rancherfederal.rke2.rke2 role
+    #   ansible.builtin.include_role:
+    #     name: rancherfederal.rke2.rke2
 
-# https://github.com/rancherfederal/rke2-ansible
-# - name: Perform RKE2 role
-#   hosts: cluster
-#   become: true
-#   roles:
-#     - role: rancherfederal.rke2.rke2
+    # https://github.com/lablabs/ansible-role-rke2
+    - name: Include lablabs.rke2 role
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_role_module.html
+      ansible.builtin.include_role:
+        name: lablabs.rke2
+  any_errors_fatal: true
 
 - name: Set up shell environment for kubectl
   hosts: controlplane
-  gather_facts: true
+  gather_facts: false
   vars_files:
     - vars/basics.yml
     - vars/kubernetes.yml
   tasks:
     - name: Make RKE kubeconfig readable
       vars:
-        file_desc: "RKE kubeconfig"
+        file_desc: RKE kubeconfig
         file_path: "{{ rke_kubeconfig }}"
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
       ansible.builtin.include_tasks: tasks/mkreadable.yml
@@ -47,43 +49,9 @@
       vars:
         kubeconfig: "{{ rke_kubeconfig }}"
         context: "{{ rke_cluster_name }}"
-        server: https://{{ rke_fqdn }}:6443
+        server: https://{{ rke_fqdns[0] }}:6443
       ansible.builtin.include_tasks: tasks/kubeconfig.yml
-
-    # cannot directly pass manifest URL to src argument of
-    # kubernetes.core.k8s module because it does certifcate
-    # validation (its "validate_certs" arg only applies to
-    # connection to the Kube API server)
-    - name: Fetch registration manifest
-      vars:
-        manifest_url: >-
-          {{ hostvars['rancher']['rke_reg_url'] if 'rke_reg_url' in hostvars['rancher'] else '' }}
-      run_once: true
-      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/uri_module.html
-      ansible.builtin.uri:
-        url: "{{ manifest_url }}"
-        validate_certs: false
-        return_content: true
-      when: manifest_url | length > 0
-      register: reg_manifest
-
-    - name: Apply registration manifest
-      vars:
-        # required kubernetes>=24.2 package is only available in user virtualenv
-        ansible_python_interpreter: "{{ ansible_user_virtualenv }}/bin/python3"
-      run_once: true
-      # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_module.html
-      kubernetes.core.k8s:
-        kubeconfig: "{{ rke_kubeconfig }}"
-        definition: "{{ reg_manifest.content }}"
-        state: present
-        apply: true
-        wait: true
-      timeout: 1800
-      when: >-
-        reg_manifest         is defined and
-        reg_manifest.content is defined and
-        reg_manifest.content | length > 0
+  any_errors_fatal: true
 
 # https://stackoverflow.com/a/35742157/347685
 # - name: Rsync kubeconfig from control plane
@@ -113,6 +81,16 @@
   vars:
     kubeconfig_content: "{{ hostvars[groups['controlplane'][0]]['cat_kubeconfig'].stdout }}"
   tasks:
+    # kubectl should already be executable,
+    # but not parent dirs /var/lib/rancher
+    - name: Make kubectl binary executable
+      vars:
+        file_desc: RKE kubectl
+        file_path: "{{ rke_bin_dir }}/kubectl"
+        file_mode: "0755"
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
+      ansible.builtin.include_tasks: tasks/mkreadable.yml
+
     - name: Write kubeconfig on worker node
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/copy_module.html
       ansible.builtin.copy:
@@ -125,6 +103,128 @@
       ansible.builtin.copy:
         dest: /etc/profile.d/kubectl.sh
         content: |
-          export PATH="$PATH:/var/lib/rancher/rke2/bin"
+          export PATH="$PATH:{{ rke_bin_dir }}"
           export KUBECONFIG="{{ rke_kubeconfig }}"
         mode: "0644"
+  any_errors_fatal: true
+
+- name: Apply supplemental RKE2 configuration
+  hosts: controlplane
+  run_once: true
+  vars_files:
+    - vars/basics.yml
+    - vars/kubernetes.yml
+  tasks:
+    - name: Write CoreDNS HelmChartConfig
+      become: true
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/template_module.html
+      ansible.builtin.template:
+        src: templates/coredns.yaml.j2
+        dest: /var/lib/rancher/rke2/server/manifests/rke2-coredns-config.yaml
+        mode: "0664"
+      register: coredns_config
+
+    - name: Restart rke2-server service
+      become: true
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/service_module.html
+      ansible.builtin.service:
+        name: rke2-server
+        state: restarted
+      # noqa no-handler
+      when: coredns_config.changed
+
+    # whenever the rke2-server service is restarted,
+    # kubeconfig is rewritten with 0600 permissions
+    - name: Make RKE kubeconfig readable
+      vars:
+        file_desc: RKE kubeconfig
+        file_path: "{{ rke_kubeconfig }}"
+      ansible.builtin.include_tasks: tasks/mkreadable.yml
+
+    - name: Register cluster with Rancher
+      vars:
+        # required kubernetes>=24.2 package only in user virtualenv
+        ansible_python_interpreter: "{{ venv_python_interpreter }}"
+      block:
+        - name: Wait for CoreDNS to be ready
+          # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_info_module.html
+          kubernetes.core.k8s_info:
+            kubeconfig: "{{ rke_kubeconfig }}"
+            api_version: apps/v1
+            kind: Deployment
+            name: rke2-coredns-rke2-coredns
+            namespace: kube-system
+          # https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_loops.html#retrying-a-task-until-a-condition-is-met
+          register: coredns_info
+          until: >-
+            coredns_info.resources is defined and
+            coredns_info.resources[0].status.readyReplicas ==
+            coredns_info.resources[0].status.replicas
+          retries: 30
+          delay: 10
+
+        - name: Apply worker role node label
+          # this could also have been done using "k8s_node_label" config variable of RKE2 role
+          # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_module.html
+          kubernetes.core.k8s:
+            kubeconfig: "{{ rke_kubeconfig }}"
+            api_version: v1
+            kind: Node
+            name: "{{ item }}"
+            definition:
+              metadata:
+                labels:
+                  node-role.kubernetes.io/worker: "true"
+            state: patched
+            wait: true
+          # all cluster nodes, including control plane node(s),
+          # can run user workloads, so they are labeled worker
+          # role (control plane nodes have already been labeled
+          # with roles: "control-plane", "etcd", and "master")
+          loop: "{{ groups['cluster'] }}"
+
+        # cannot directly pass manifest URL to src argument of
+        # kubernetes.core.k8s module because it does certifcate
+        # validation (its "validate_certs" arg only applies to
+        # connection to the Kube API server)
+        - name: Fetch registration manifest
+          vars:
+            manifest_url: >-
+              {{ hostvars['rancher']['rke_reg_url'] if 'rke_reg_url' in hostvars['rancher'] else '' }}
+          # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/uri_module.html
+          ansible.builtin.uri:
+            url: "{{ manifest_url }}"
+            validate_certs: false
+            return_content: true
+          when: manifest_url != ''
+          register: reg_manifest
+
+        - name: Apply registration manifest
+          kubernetes.core.k8s:
+            kubeconfig: "{{ rke_kubeconfig }}"
+            definition: "{{ reg_manifest.content }}"
+            state: present
+            apply: true
+            wait: true
+            wait_timeout: 600
+          timeout: 1800
+          when: >-
+            reg_manifest         is defined and
+            reg_manifest.content is defined and
+            reg_manifest.content != ''
+
+        - name: Wait for cluster agent be ready
+          kubernetes.core.k8s_info:
+            kubeconfig: "{{ rke_kubeconfig }}"
+            api_version: apps/v1
+            kind: Deployment
+            name: cattle-cluster-agent
+            namespace: cattle-system
+          register: agent_info
+          until: >-
+            agent_info.resources is defined and
+            agent_info.resources[0].status.readyReplicas ==
+            agent_info.resources[0].status.replicas
+          retries: 30
+          delay: 10
+  any_errors_fatal: true

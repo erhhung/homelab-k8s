@@ -4,6 +4,8 @@ ansible_ssh_private_key_file: "{{ lookup('ansible.builtin.env', 'HOME') }}/.ssh/
 ansible_ssh_common_args: -o StrictHostKeyChecking=no -o ForwardAgent=yes
 # ansible_become_pass: {vault.yml}
 
-ansible_python_interpreter: /usr/bin/python3
-# virtualenv gets created by ansible.builtin.pip in packages.yml
-ansible_user_virtualenv: "{{ ansible_facts['user_dir'] }}/.venv"
+default_python_interpreter: /usr/bin/python3
+ansible_python_interpreter: "{{ default_python_interpreter }}"
+# user virtualenv gets created by ansible.builtin.pip in packages.yml
+ansible_user_virtualenv: /home/{{ ansible_user }}/.venv
+venv_python_interpreter: "{{ ansible_user_virtualenv }}/bin/python3"

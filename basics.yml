@@ -54,6 +54,7 @@
         locale_lang     != system_locale or
         locale_language != system_language
       changed_when: true
+  any_errors_fatal: true
 
 - name: Configure network settings
   hosts:
@@ -62,6 +63,7 @@
   become: true
   vars_files:
     - vars/basics.yml
+    - vars/kubernetes.yml
   vars:
     resolvectl_commands:
       - dns
@@ -80,7 +82,7 @@
           regex_search('.enX0.: ([^\n]+)','\\1') or ['']) | first }}"
       ansible.builtin.set_fact:
         # generated facts: "resolvectl_dns" and "resolvectl_domain"
-        "resolvectl_{{ item }}": "{{ csv | split(' ') if csv else [] }}"
+        "resolvectl_{{ item }}": "{{ csv | split if csv else [] }}"
       loop: "{{ resolvectl_commands }}"
       loop_control:
         index_var: i
@@ -100,14 +102,45 @@
         - "{{ cloud_init_netplan }}"
         - "{{ cloud_init_netplan }}.disabled"
       register: cloud_init_yaml
-
-    - name: Get host names in rancher,cluster
-      vars:
-        target_hosts: rancher,cluster
-      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
-      ansible.builtin.include_tasks: tasks/resolvehosts.yml
-      # sets "resolved_hosts" fact
   tasks:
+    - name: Comment out 127.0.1.1 /etc/hosts
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/shell_module.html
+      ansible.builtin.shell: |
+        [ -f /etc/hosts.bak ] && exit 9
+
+        # comment out 127.0.1.1 and add
+        # empty line to end of the file
+        cp -a /etc/hosts /etc/hosts.bak && \
+          sed -Ei '/^127\.0\.1\.1\s/ {
+            s/^/# /
+            s/$/ # prefer non-loopback address/
+          }; $!b; /^$/b; a\\;' /etc/hosts
+      register: etc_hosts
+      changed_when: etc_hosts.rc == 0
+      failed_when: >-
+        etc_hosts.rc != 0 and
+        etc_hosts.rc != 9
+
+    - name: Add static entries to /etc/hosts
+      vars:
+        k8s_hosts: "{{ ['rancher'] + groups['cluster'] }}"
+        host_ip: "{{ hostvars[host]['ansible_host'] }}"
+        host_regex: ^{{ host_ip | regex_escape }}\s
+        host_names: "{{ [host, rke_cluster_name] if host == groups['controlplane'][0] else [host] }}"
+        host_fqdns: "{{ host_names | product(search_domains) | map('join', '.')  | list }}"
+        host_pairs: "{{ host_fqdns | map('regex_replace', '^([^.]+)', '\\1 \\1') | list }}"
+        host_entry: "{{ ([host_ip] + (host_pairs | join(' ')) | split | unique) | join(' ') }}"
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/lineinfile_module.html
+      ansible.builtin.lineinfile:
+        dest: /etc/hosts
+        regexp: "{{ host_regex }}"
+        line: "{{ host_entry }}"
+        state: present
+      loop: "{{ k8s_hosts }}"
+      loop_control:
+        loop_var: host
+        label: "{{ host_ip }}|{{ host }}"
+
     - name: Disable cloud-init Netplan config
       ansible.builtin.command:
         argv:
@@ -133,42 +166,11 @@
         resolvectl_domain != search_domains or
         cloud_init_netplan_disabled.changed
       notify: Apply updated Netplan config
-
-    - name: Comment out 127.0.1.1 /etc/hosts
-      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/shell_module.html
-      ansible.builtin.shell: |
-        [ -f /etc/hosts.bak ] && exit 9
-
-        # comment out 127.0.1.1 and add
-        # empty line to end of the file
-        cp -a /etc/hosts /etc/hosts.bak && \
-          sed -Ei '/^(127\.0\.1\.1.+)$/ {
-            s/^/# /
-            s/$/ # prefer non-loopback address/
-          }; $!b; /^$/b; a\\;' /etc/hosts
-      register: etc_hosts
-      changed_when: etc_hosts.rc == 0
-      failed_when: >-
-        etc_hosts.rc != 0 and
-        etc_hosts.rc != 9
-
-    - name: Add static entries to /etc/hosts
-      vars:
-        host_addr: "{{ hostvars[item]['ansible_host'] }}"
-        host_fqdn: "{{ [item] | product(search_domains) | map('join','.') | first }}"
-      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/lineinfile_module.html
-      ansible.builtin.lineinfile:
-        dest: /etc/hosts
-        line: "{{ host_addr }} {{ item }} {{ host_fqdn }}"
-        state: present
-      loop: "{{ resolved_hosts }}"
-      loop_control:
-        label: "{{ host_addr }}|{{ item }}"
-
   handlers:
     - name: Apply updated Netplan config
       ansible.builtin.command: netplan apply
       changed_when: true
+  any_errors_fatal: true
 
 - name: Customize login MOTD messages
   hosts:

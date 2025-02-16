@@ -3,8 +3,8 @@
 ---
 - name: Delete vCluster "{{ vcluster.name }}"
   vars:
-    # required kubernetes>=24.2 package is only available in user virtualenv
-    ansible_python_interpreter: "{{ ansible_user_virtualenv }}/bin/python3"
+    # required kubernetes>=24.2 package only in user virtualenv
+    ansible_python_interpreter: "{{ venv_python_interpreter }}"
   run_once: true
   become: false
   block:

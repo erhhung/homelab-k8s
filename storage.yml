@@ -4,7 +4,7 @@
 - name: Create LVs for local PVs
   hosts: cluster
   # https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_strategies.html#rolling-update-batch-size
-  serial: 1
+  # serial: 1
   become: true
   vars_files:
     - vars/storage.yml
@@ -43,3 +43,4 @@
         path: "{{ data_lv.mount }}"
         fstype: "{{ data_lv.fs }}"
         state: mounted
+  any_errors_fatal: true

@@ -41,7 +41,7 @@
         loop_var: vcluster
         label: "{{ vcluster.name }}|{{ vcluster.node }}"
 
-    - name: Delete unmanaged vClusters
+    - name: Delete unknown vClusters
       vars:
         rm_list: "{{ rm_vclusters.stdout | from_json }}"
       ansible.builtin.include_tasks: tasks/rmvcluster.yml
@@ -49,3 +49,4 @@
       loop_control:
         loop_var: vcluster
         label: "{{ vcluster.name }}|{{ vcluster.node }}"
+  any_errors_fatal: true

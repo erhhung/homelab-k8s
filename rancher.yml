@@ -23,7 +23,8 @@
       args:
         executable: /bin/bash
       register: install_k3s
-      changed_when: install_k3s.stdout.find('No change detected') == -1
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/search_test.html
+      changed_when: install_k3s.stdout is not search('No change detected')
 
     - name: Wait for k3s service to start
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/systemd_service_module.html
@@ -55,6 +56,7 @@
         context: "{{ k3s_cluster_name }}"
         server: https://{{ k3s_fqdn }}:6443
       ansible.builtin.include_tasks: tasks/kubeconfig.yml
+  any_errors_fatal: true
 
 - name: Install Rancher Server on K3s
   hosts: rancher
@@ -62,6 +64,9 @@
     - vars/basics.yml
     - vars/kubernetes.yml
     - vars/rancher.k3s.yml
+  vars:
+    # required kubernetes>=24.2 package only in user virtualenv
+    ansible_python_interpreter: "{{ venv_python_interpreter }}"
   tasks:
     - name: Install cert-manager Helm chart
       # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/helm_module.html
@@ -94,6 +99,28 @@
         atomic: true
         wait: true
       timeout: 600
+
+    - name: Set Rancher Server settings
+      # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_module.html
+      kubernetes.core.k8s:
+        kubeconfig: "{{ k3s_kubeconfig }}"
+        api_version: management.cattle.io/v3
+        kind: Setting
+        name: "{{ item.name }}"
+        definition:
+          value: "{{ item.value }}"
+        state: patched
+        wait: true
+      loop:
+        # address delay and failure caused by https://github.com/rancher/rancher/issues/16213
+        - name: server-url
+          value: https://{{ k3s_fqdn }}
+        # bootstrap password will be changed in task
+        # below, so skip UI to change admin password
+        - name: first-login
+          value: "false"
+      loop_control:
+        label: "{{ item.name }}"
 
     # https://github.com/rancher/cli
     - name: Install Rancher CLI utility
@@ -132,6 +159,19 @@
         ADMIN_PASS="{{ rancher_admin_pass }}"
         . .bash_aliases # loads .rancher_api
 
+        if [ "$ADMIN_PASS" ]; then
+          # if .rancher_api logged in with ADMIN_PASS instead of
+          # BOOTSTRAP_PASS, ADMIN_PASS would have been unset, so
+          # change the default password so user won`t be prompted
+          rancher_api post "users?action=changepassword" @- <<EOT
+        {
+          "currentPassword": "$BOOTSTRAP_PASS",
+              "newPassword":     "$ADMIN_PASS"
+        }
+        EOT
+          echo "_CHANGED_ admin password set."
+        fi
+
         cluster="{{ rke_cluster_name }}"
         id_var="${cluster^^}_ID"
         cluster_id="${!id_var}"
@@ -155,6 +195,8 @@
             echo >&2 "Cluster import failed!"
             exit 1
           }
+          echo "_CHANGED_ cluster imported."
+
           echo "Waiting for cluster state to be \"pending\"..."
           until [ "$(get_state)" == pending ]; do sleep 1; done
           export_variables
@@ -163,6 +205,7 @@
         if [ "$(get_state)" != active ]; then
           # output registration manifest URL so it can be applied on control plane node
           reg_url=$(rancher_api get "clusters/$cluster_id/clusterregistrationtokens" | \
+            \
             jq --arg baseUrl "$RANCHER_URL" -r '.data[] |
               select(.name == "default-token") |
                 if (.manifestUrl // "") != "" then
@@ -201,12 +244,14 @@
             --skip-verify      \
             --token   "$token" \
             --context "${!id_var}"
+
+          echo "_CHANGED_ CLI logged in."
         }
         rancher_logout # delete $LOGIN_TOKEN
         EOF
       timeout: 300
       register: import_rke
-      changed_when: true
+      changed_when: import_rke.stdout is search('_CHANGED_')
 
     - name: Save RKE registration URL
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/set_fact_module.html
@@ -214,10 +259,13 @@
         # used in cluster.yml
         rke_reg_url: >-
           {% set lines = import_rke.stdout_lines | select('search','^REGISTER=') | list -%}
-          {{ lines[0].split('REGISTER=')[1] if lines | length > 0 else '' }}
+          {{ lines[0].split('REGISTER=')[1] if lines | length > 0 else none }}
       when: import_rke.rc == 0
 
     - name: Show RKE registration URL
+      vars:
+        is_defined: "{{ rke_reg_url is defined and rke_reg_url is not none }}"
       ansible.builtin.debug:
         msg: |-
-          rke_reg_url: "{{ rke_reg_url if rke_reg_url is defined else '<undefined>' }}"
+          rke_reg_url: {{ '"'~ rke_reg_url ~'"' if is_defined else '<undefined>' }}
+  any_errors_fatal: true

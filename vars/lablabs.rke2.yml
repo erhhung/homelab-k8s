@@ -8,10 +8,23 @@ rke2_version: v1.32.1+rke2r1 # https://github.com/rancher/rke2/releases
 rke2_architecture: amd64
 
 # rke2_token: {vault.yml}
-rke2_additional_sans:
-  - "{{ rke_fqdn }}"
 
-rke2_server_node_taints: [] # allow control plane node to run workloads
+rke2_cluster_domain: cluster.local # don't change default!
+# remember to add homelab.fourteeners.local to pfSense DNS!
+rke2_additional_sans: "{{ [rke_cluster_name] + rke_fqdns }}"
+
+# additional RKE2 server configuration options
+# https://docs.rke2.io/reference/server_config
+# rke2_server_options:
+#   - option: value
+
+# additional RKE2 agent configuration options
+# https://docs.rke2.io/reference/linux_agent_config
+# rke2_agent_options:
+#   - option: value
+
+rke2_server_node_taints: [] # allow control plane to run workloads
+# - "CriticalAddonsOnly=true:NoExecute" # workloads on workers only
 rke2_agent_node_taints: []
 
 # https://www.vcluster.com/docs/vcluster/manage/accessing-vcluster#expose-vcluster
@@ -24,3 +37,16 @@ rke2_ingress_nginx_values:
       # and serve the proper SAN certificate for the
       # Kubernetes API server
       enable-ssl-passthrough: ""
+
+# ====== HA control plane ======
+# comment out to disable HA mode
+
+rke2_ha_mode: true # deploy control plane in HA mode
+rke2_ha_mode_keepalived: false # disable Keepalived
+rke2_ha_mode_kubevip: true # install kube-vip LB + VIP
+rke2_api_ip: 192.168.0.221 # IP address of kube-vip LB
+rke2_interface: enX0
+rke2_loadbalancer_ip_range:
+  range-global: 192.168.0.221-192.168.0.240
+rke2_kubevip_svc_enable: true # watch LoadBalancer
+rke2_kubevip_ipvs_lb_enable: true # LB control plane

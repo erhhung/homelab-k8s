@@ -1,6 +1,6 @@
 # Erhhung's Home Kubernetes Cluster Configuration
 
-This project manages the configuration and user files for Erhhung's Kubernetes cluster at home.
+This project manages the configuration and user files for Erhhung's _high-availability_ Kubernetes cluster at home.
 
 ## Ansible Vault
 
@@ -64,7 +64,7 @@ export ANSIBLE_CONFIG=./ansible.cfg
     ansible-playbook files.yml
     ```
 
-4. Set up Rancher Server on K3s cluster
+4. Set up Rancher Server on a single-node **K3s** cluster
 
     ```bash
     ansible-playbook rancher.yml
@@ -72,8 +72,9 @@ export ANSIBLE_CONFIG=./ansible.cfg
 
 5. Set up Kubernetes cluster with RKE
 
-    Installs RKE2 with single control plane node
-    and 3 worker nodes, all permitting workloads.
+    Installs **RKE2** with a single control plane node and 3 worker nodes, all permitting workloads,  
+    or RKE2 in HA mode with 3 control plane nodes and 1 worker node, all permitting workloads.  
+    _In HA mode, the cluster will be accessible thru a virtual IP address courtesy of `kube-vip`._
 
     ```bash
     ansible-playbook cluster.yml
@@ -94,7 +95,7 @@ export ANSIBLE_CONFIG=./ansible.cfg
     ansible-playbook manifests.yml
     ```
 
-8. Create virtual clusters within RKE
+8. Create virtual clusters within RKE running **K0s**
 
     ```bash
     ansible-playbook vclusters.yml
@@ -114,28 +115,50 @@ Output from `play.sh` will be logged in "`ansible.log`".
 1. Shut down all/specific VMs
 
     ```bash
-    ansible-playbook shutdownvms.yml [-e target_hosts={group|host|,...}]
+    ansible-playbook shutdownvms.yml [-e targets={group|host|,...}]
     ```
 
-2. Create/delete VM snapshots
+2. Create/revert/delete VM snapshots
 
     2.1. Create new snaphots
 
     ```bash
-    ansible-playbook snapshotvms.yml [-e target_hosts={group|host|,...}] \
-                                     <-e create_desc="snapshot description">
+    ansible-playbook snapshotvms.yml [-e targets={group|host|,...}] \
+                                      -e '{"desc":"text description"}'
     ```
 
-    2.2. Delete old snaphots
+    2.2. Revert to snapshots
 
     ```bash
-    ansible-playbook snapshotvms.yml [-e target_hosts={group|host|,...}] \
-                                     <-e delete_date="YYYY-mm-dd* prefix">
-                                     <-e delete_desc="text to search for">
+    ansible-playbook snapshotvms.yml  -e do=revert \
+                                     [-e targets={group|host|,...}]  \
+                                      -e '{"desc":"text to search"}' \
+                                     [-e '{"date":"YYYY-mm-dd prefix"}']
+    ```
+
+    2.3. Delete old snaphots
+
+    ```bash
+    ansible-playbook snapshotvms.yml  -e do=delete \
+                                     [-e targets={group|host|,...}]  \
+                                      -e '{"desc":"text to search"}' \
+                                      -e '{"date":"YYYY-mm-dd prefix"}'
     ```
 
 3. Restart all/specific VMs
 
     ```bash
-    ansible-playbook startvms.yml [-e target_hosts={group|host|,...}]
+    ansible-playbook startvms.yml [-e targets={group|host|,...}]
+    ```
+
+## Troubleshooting
+
+Ansible's [ad-hoc commands](https://docs.ansible.com/ansible/latest/command_guide/intro_adhoc.html#managing-services) are useful in these scenarios.
+
+1. Restart Kubernetes cluster services on all nodes
+
+    ```bash
+    ansible rancher      -m ansible.builtin.service -b -a "name=k3s         state=restarted"
+    ansible controlplane -m ansible.builtin.service -b -a "name=rke2-server state=restarted"
+    ansible workers      -m ansible.builtin.service -b -a "name=rke2-agent  state=restarted"
     ```

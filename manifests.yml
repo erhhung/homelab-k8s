@@ -11,8 +11,8 @@
       vars:
         # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/fileglob_lookup.html
         manifests: "{{ lookup('ansible.builtin.fileglob', 'manifests/*.y*ml', wantlist=True) }}"
-        # required kubernetes>=24.2 package is only available in user virtualenv
-        ansible_python_interpreter: "{{ ansible_user_virtualenv }}/bin/python3"
+        # required kubernetes>=24.2 package only in user virtualenv
+        ansible_python_interpreter: "{{ venv_python_interpreter }}"
       run_once: true
       # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_module.html
       kubernetes.core.k8s:
@@ -26,3 +26,4 @@
       loop_control:
         label: "{{ item | basename }}"
       timeout: 60
+  any_errors_fatal: true

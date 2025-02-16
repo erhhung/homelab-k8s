@@ -25,7 +25,48 @@
       ansible.builtin.debug:
         var: local_tz_offset
 
-- name: Debug Jinja2 statements and expressions
+- name: Show hosts and domain names
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Show inventory groups
+      ansible.builtin.debug:
+        msg: |-
+          groups['all']:          {{ groups['all'] }}
+          groups['cluster']:      {{ groups['cluster'] }}
+          groups['controlplane']: {{ groups['controlplane'] }}
+          groups['workers']:      {{ groups['workers'] }}
+
+    - name: Generate cluster FQDNs
+      vars:
+        search_domains: ["fourteeners.local"]
+        rke_cluster_name: homelab
+        rke_fqdns: >
+          {{ ([rke_cluster_name] + groups['controlplane']) |
+          product(search_domains) | map('join','.') | list }}
+      ansible.builtin.debug:
+        msg: |-
+          rke_fqdns[0]:  {{ rke_fqdns[0]  }}
+          rke_fqdns[1:]: {{ rke_fqdns[1:] }}
+
+    - name: Generate hosts entries
+      vars:
+        resolved_hosts: ["rancher", "k8s1", "k8s2", "k8s3", "k8s4"]
+        search_domains: ["fourteeners.local", "erhhungyuan.com"]
+        rke_cluster_name: homelab
+        host_ip: "{{ hostvars[host]['ansible_host'] }}"
+        host_names: "{{ [host, rke_cluster_name] if host == groups['controlplane'][0] else [host] }}"
+        host_fqdns: "{{ host_names | product(search_domains) | map('join', '.')  | list }}"
+        host_pairs: "{{ host_fqdns | map('regex_replace', '^([^.]+)', '\\1 \\1') | list }}"
+        host_entry: "{{ ([host_ip] + (host_pairs | join(' ')) | split | unique) | join(' ') }}"
+      ansible.builtin.debug:
+        msg: "{{ host_entry }}"
+      loop: "{{ resolved_hosts }}"
+      loop_control:
+        loop_var: host
+        label: "{{ host_ip }}|{{ host }}"
+
+- name: Debug expressions and statements
   hosts: localhost
   gather_facts: false
   tasks:
@@ -61,3 +102,22 @@
           {{ pods }}
       ansible.builtin.debug:
         var: user_pods
+
+    - name: Debug regular expressions
+      vars:
+        find: install
+        text: Host purged; no K3s/Rancher; before installing RKE2
+        found: "{{ text is search(find | regex_escape, ignorecase=true) }}"
+      ansible.builtin.debug:
+        msg: |2-
+           find: {{ find }}
+           text: {{ text }}
+          found: {{ found }}
+
+- name: Useful collection of tasks
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Exit the play successfully
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/meta_module.html
+      ansible.builtin.meta: end_play

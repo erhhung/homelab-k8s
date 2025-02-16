@@ -1,5 +1,6 @@
 k3s_kubeconfig: /etc/rancher/k3s/k3s.yaml
 rke_kubeconfig: /etc/rancher/rke2/rke2.yaml
+rke_bin_dir: /var/lib/rancher/rke2/bin
 
 k3s_cluster_name: rancher
 rke_cluster_name: homelab
@@ -14,7 +15,9 @@ k3s_fqdn: "{{ [k3s_cluster_name] | product(search_domains) | map('join','.') | f
 
 # default CNs: kubernetes, kubernetes.default, kubernetes.default.svc,
 # kubernetes.default.svc.cluster.local, cluster.local, localhost, k8s?
-rke_fqdn: "{{ groups['controlplane'] | product(search_domains) | map('join','.') | first }}"
+rke_fqdns: >
+  {{ ([rke_cluster_name] + groups['controlplane']) |
+  product(search_domains) | map('join','.') | list }}
 
 # https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_filters.html#searching-strings-with-regular-expressions
 # rke_fqdn: "{{ groups['controlplane'] | map('regex_replace', '^(.+)$', '\\1.' ~ search_domains[0]) | first }}"

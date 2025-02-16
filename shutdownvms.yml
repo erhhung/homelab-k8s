@@ -1,10 +1,10 @@
 ---
 - name: Shut down all or specific VMs
-  hosts: "{{ target_hosts }}"
+  hosts: "{{ targets }}"
   vars:
-    # target_hosts can be overridden on command-line:
-    # ansible-playbook shutdownvms.yml -e target_hosts=workers
-    target_hosts:
+    # targets can be overridden on command-line:
+    # ansible-playbook shutdownvms.yml -e targets=workers
+    targets:
       - cluster
       - rancher
     # fail fast if host already appears to be shut down

@@ -40,8 +40,6 @@ if [ ! "$BOOTSTRAP_PASS" ]; then
 fi
 
 LOGIN_TOKEN=($(rancher_login "$BOOTSTRAP_PASS"))
-unset BOOTSTRAP_PASS
-
 [ "$LOGIN_TOKEN" ]  && echo || {
   [ "$ADMIN_PASS" ] || {
     echo
@@ -52,6 +50,10 @@ unset BOOTSTRAP_PASS
   # LOGIN_TOKEN is an array: [token, token-id]
   LOGIN_TOKEN=($(rancher_login "$ADMIN_PASS"))
   unset ADMIN_PASS
+
+  # hide bootstrap secret after admin
+  # password has been changed from UI
+  unset BOOTSTRAP_PASS
 }
 
 [ "$LOGIN_TOKEN" ] && {
