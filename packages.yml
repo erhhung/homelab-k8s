@@ -89,3 +89,29 @@
         state: "{{ item.state if item.state is defined else 'present' }}"
       loop: "{{ install_helm_plugins }}"
   any_errors_fatal: true
+
+- name: Install apps from GitHub releases
+  hosts: k8s_all
+  tasks:
+    - name: Install Fastfetch from GitHub
+      become: true
+      ansible.builtin.shell: |
+        set -o pipefail
+        REL="https://github.com/fastfetch-cli/fastfetch/releases/latest"
+        VER=$(curl -Is $REL | sed -En 's/^location:.+\/tag\/(.+)\r$/\1/p')
+
+        # check if latest version already installed
+        command -v fastfetch &> /dev/null && {
+          ver=$(v=(`fastfetch --version`); echo ${v[1]})
+          [ "$ver" == "$VER" ] && exit 9 # no change
+        }
+        ARCH=$(uname -m | sed -e 's/x86_64/amd64/')
+        curl -fsSL "$REL/download/fastfetch-linux-$ARCH.tar.gz" | \
+          tar -xz -C / --no-same-owner --strip 1 fastfetch-linux-$ARCH
+      args:
+        executable: /bin/bash
+      register: install_ff
+      changed_when: install_ff.rc == 0
+      failed_when: >-
+        install_ff.rc != 0 and
+        install_ff.rc != 9

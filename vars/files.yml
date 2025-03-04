@@ -6,3 +6,4 @@ copy_files:
   - .bash_aliases
   - .emacs
   - .emacs.d/
+  - .config/
