@@ -37,33 +37,33 @@
           kubernetes.core.k8s:
             kubeconfig: "{{ rke_kubeconfig }}"
             # https://kubernetes.io/docs/concepts/storage/volumes/#local
-            definition: |-
+            definition:
               apiVersion: v1
               kind: PersistentVolume
               metadata:
-                name: {{ item.name }}
+                name: "{{ item.name }}"
                 labels:
                   app: vcluster
-                  release: {{ vcluster.name }}
-                  role: {{ item.role }}
-                  node: {{ vcluster.node }}
+                  release: "{{ vcluster.name }}"
+                  role: "{{ item.role }}"
+                  node: "{{ vcluster.node }}"
               spec:
-                storageClassName: {{ local_storage_class }}
+                storageClassName: "{{ local_storage_class }}"
                 capacity:
-                  storage: {{ item.size }}
+                  storage: "{{ item.size }}"
                 local:
-                  path: {{ data_lv.mount }}/{{ item.name }}
+                  path: "{{ data_lv.mount }}/{{ item.name }}"
                 volumeMode: Filesystem
                 accessModes:
                   - ReadWriteOnce
                 nodeAffinity:
                   required:
                     nodeSelectorTerms:
-                    - matchExpressions:
-                      - key: kubernetes.io/hostname
-                        operator: In
-                        values:
-                        - {{ vcluster.node }}
+                      - matchExpressions:
+                          - key: kubernetes.io/hostname
+                            operator: In
+                            values:
+                              - "{{ vcluster.node }}"
                 persistentVolumeReclaimPolicy: Retain
             validate:
               fail_on_error: true

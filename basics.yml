@@ -198,3 +198,40 @@
           echo
         dest: /etc/update-motd.d/99-skip-line
         mode: "0755"
+
+- name: Add CA certs to trust store
+  hosts: k8s_all
+  pre_tasks:
+    - name: Fetch CA certs from PKI
+      run_once: true
+      delegate_to: pki
+      # catting is easier than ansible.builtin.slurp
+      ansible.builtin.command: cat certs/chain.pem
+      register: cat_chain
+      changed_when: false
+  tasks:
+    - name: Add certs to trust store
+      become: true
+      vars:
+        # split chain into individual intermediate and root CA certs
+        chain: "{{ hostvars[groups['k8s_all'][0]]['cat_chain'] }}"
+        # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/regex_findall_filter.html
+        certs: "{{ chain.stdout | ansible.builtin.regex_findall(
+          '(-----BEGIN CERTIFICATE-----(?:\\n\\S+)+\\n-----END CERTIFICATE-----)',
+          multiline=True) }}"
+      ansible.builtin.copy:
+        content: "{{ certs[i] ~'\n' }}"
+        dest: /usr/local/share/ca-certificates/fourteeners_{{ item }}.crt
+        mode: "0644"
+      loop:
+        - intermediate_ca
+        - root_ca
+      loop_control:
+        index_var: i
+      notify: Update CA trust store
+  handlers:
+    - name: Update CA trust store
+      become: true
+      ansible.builtin.command: update-ca-certificates
+      changed_when: true
+  any_errors_fatal: true
