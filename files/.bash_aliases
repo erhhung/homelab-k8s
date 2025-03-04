@@ -135,6 +135,15 @@ listening() {
         }' | sort -n | uniq | cols
 }
 
+# show system information
+# https://github.com/fastfetch-cli/fastfetch
+_fastfetch() {
+  # use custom preset if no args provided
+  [ "$1" ] || set -- -c $HOME/.config/fastfetch/custom.jsonc
+  fastfetch "$@"
+}
+alias ff='_fastfetch'
+
 venv() {
   local activate="$HOME/.venv/bin/activate"
   [ -f "$activate" ] && \
