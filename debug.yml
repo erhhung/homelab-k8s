@@ -79,6 +79,33 @@
         loop_var: host
         label: "{{ host_ip }}|{{ host }}"
 
+- name: Show certificates on CA server
+  hosts: pki
+  gather_facts: false
+  tasks:
+    - name: Fetch cert file
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/command_module.html
+      ansible.builtin.command: cat certs/rancher.pem
+      register: cat_cert
+      changed_when: false
+
+    - name: Print cert file
+      ansible.builtin.debug:
+        msg: "{{cat_cert.stdout }}"
+
+    - name: Print cert file
+      vars:
+        # split chain into individual certs:
+        # host, intermediate CA, and root CA
+        chain: "{{ cat_cert.stdout |
+          regex_findall('(-----BEGIN CERTIFICATE-----(?:\\n\\S+)+\\n-----END CERTIFICATE-----)', multiline=True) }}"
+        certs:
+          # tls.crt: host and intermediate CA certs
+          tls.crt: "{{ chain[:-1] | join('\n') }}"
+          ca.crt: "{{ chain[-1:] | join('\n') }}"
+      ansible.builtin.debug:
+        var: certs
+
 - name: Debug expressions and statements
   hosts: localhost
   gather_facts: false
