@@ -102,6 +102,7 @@
       ansible.builtin.set_fact:
         # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/to_datetime_filter.html
         # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/strftime_filter.html
+        # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/search_test.html
         filtered: |
           {% set filtered = [] %}
           {% for s in snapshots or [] %}

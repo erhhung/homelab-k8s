@@ -18,6 +18,8 @@ install_apt_packages:
   - iptables
   - dnsutils # provides nslookup/dig/host
   - iputils-ping
+  - open-iscsi # required by Longhorn storage engine
+  - nfs-common # required by Longhorn storage engine
   - python3-pip
   - python3-virtualenv # required by ansible.builtin.pip
   - jq

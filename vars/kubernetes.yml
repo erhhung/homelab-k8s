@@ -22,5 +22,3 @@ k3s_fqdn: "{{ [k3s_cluster_name] | product(search_domains) | map('join','.') | f
 rke_fqdns: >
   {{ ([rke_cluster_name] + groups[rke_control_plane_group]) |
       product(search_domains) | map('join','.') | list }}
-
-local_storage_class: local-storage

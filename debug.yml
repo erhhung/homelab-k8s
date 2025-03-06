@@ -147,6 +147,8 @@
       vars:
         find: install
         text: Host purged; no K3s/Rancher; before installing RKE2
+        # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/search_test.html
+        # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/regex_escape_filter.html
         found: "{{ text is search(find | regex_escape, ignorecase=true) }}"
       ansible.builtin.debug:
         msg: |2-
