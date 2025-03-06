@@ -1,6 +1,19 @@
 # Erhhung's Home Kubernetes Cluster Configuration
 
-This project manages the configuration and user files for Erhhung's _high-availability_ Kubernetes cluster at home.
+This project configures and provisions Erhhung's high-availability Kubernetes cluster at home using Rancher.
+
+The top-level Ansible playbook `main.yml` run by `play.sh` will provision 5 VM hosts (`rancher` and `k8s1`..`k8s4`)
+in the XCP-ng "Home" pool, all running Ubuntu Server 24.04 Minimal without customizations besides basic networking
+and authorized SSH key for user `erhhung`.
+
+A single-node K3s Kubernetes cluster will be installed on host `rancher` along with Rancher Server on that cluster.
+A 4-node RKE2 Kubernetes cluster with a high-availability control plane on a virtual IP will be installed on hosts
+`k8s1`..`k8s4`. The Longhorn distributed block storage engine will also be installed on the RKE2 cluster to manage
+a pool of LVM logical volumes created on each cluster node. Finally, one or more virtual clusters running K0s will
+be created for testing and learning purposes.
+
+The Rancher Server UI at https://rancher.fourteeners.local will be provisioned with a TLS certificate from Erhhung's
+private CA server at pki.fourteeners.local.
 
 ## Ansible Vault
 
@@ -50,7 +63,8 @@ export ANSIBLE_CONFIG=./ansible.cfg
 
     2.1. **Host**: host name, time zone, and locale  
     2.2. **Network**: DNS servers and search domains  
-    2.3. **Login**: Customize login MOTD messages
+    2.3. **Login**: Customize login MOTD messages  
+    2.4. **Certs**: Add CA certificates to trust store
 
     ```bash
     ansible-playbook basics.yml
@@ -64,13 +78,13 @@ export ANSIBLE_CONFIG=./ansible.cfg
     ansible-playbook files.yml
     ```
 
-4. Set up Rancher Server on a single-node **K3s** cluster
+4. Set up **Rancher Server** on a single-node **K3s** cluster
 
     ```bash
     ansible-playbook rancher.yml
     ```
 
-5. Set up Kubernetes cluster with RKE
+5. Set up **Kubernetes cluster** with **RKE**
 
     Installs **RKE2** with a single control plane node and 3 worker nodes, all permitting workloads,  
     or RKE2 in HA mode with 3 control plane nodes and 1 worker node, all permitting workloads.  
@@ -80,7 +94,10 @@ export ANSIBLE_CONFIG=./ansible.cfg
     ansible-playbook cluster.yml
     ```
 
-6. Create logical volume for local PVs
+6. Set up **Longhorn** dynamic PV provisioner
+
+    6.1. Create a pool of LVM logical volumes  
+    6.2. Install Longhorn storage components
 
     ```bash
     ansible-playbook storage.yml

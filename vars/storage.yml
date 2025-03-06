@@ -5,3 +5,26 @@ data_lv:
   # unit capitalization: g=GB and G=GiB
   size: 20G     # size of logical volume
   mount: /data  # path to mount volume
+
+local_storage_class: local-storage
+
+longhorn_chart_version: "1.8.1"
+# https://github.com/longhorn/charts/blob/v1.8.x/charts/longhorn/values.yaml
+# https://longhorn.io/docs/1.8.1/references/settings/
+longhorn_chart_values:
+  service:
+    ui:
+      type: Rancher-Proxy
+  persistence:
+    defaultFsType: xfs
+    defaultClassReplicaCount: 2
+  defaultSettings:
+    defaultDataPath: "{{ data_lv.mount }}"
+    defaultReplicaCount: 2
+  longhornUI:
+    replicas: 1
+  metrics:
+    serviceMonitor:
+      # creates a ServiceMonitor resource that Prometheus Operator uses to
+      # automatically discover and scrape metrics from Longhorn components
+      enabled: false # enable only if Prometheus Operator is installed

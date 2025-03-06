@@ -156,6 +156,7 @@
         kubeconfig: "{{ k3s_kubeconfig }}"
         chart_repo_url: https://releases.rancher.com/server-charts/latest
         chart_ref: rancher
+        chart_version: "{{ rancher_chart_version }}"
         release_name: rancher
         release_namespace: cattle-system
         release_values:
@@ -326,6 +327,7 @@
         EOF
       timeout: 300
       register: import_rke
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/search_test.html
       changed_when: import_rke.stdout is search('_CHANGED_')
 
     - name: Save RKE registration URL
@@ -345,7 +347,7 @@
         is_defined: >-
           rke_reg_url is defined  and
           rke_reg_url is not none and
-          rke_reg_url  | length > 0
+          rke_reg_url != ''
       ansible.builtin.debug:
         msg: |-
           rke_cluster: "{{ rke_cluster }}"
