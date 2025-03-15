@@ -6,7 +6,9 @@ metadata:
   # defined in vars/storage.yml
   name: local-storage
   annotations:
-    # Longhorn will create default storage class
+    # default StorageClass is created by Longhorn
     storageclass.kubernetes.io/is-default-class: "false"
 provisioner: kubernetes.io/no-provisioner
 volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: true
+reclaimPolicy: Delete
