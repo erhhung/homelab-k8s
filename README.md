@@ -15,6 +15,12 @@ be created for testing and learning purposes.
 The Rancher Server UI at https://rancher.fourteeners.local will be provisioned with a TLS certificate from Erhhung's
 private CA server at pki.fourteeners.local.
 
+## Cluster Topology
+
+<div style="text-align: center">
+<img src="./topology.drawio.svg" alt="topology.drawio.svg" />
+</div>
+
 ## Ansible Vault
 
 The Ansible Vault password is stored in macOS Keychain under item "`Home-K8s`" for account "`ansible-vault`".

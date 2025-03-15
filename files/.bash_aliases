@@ -144,6 +144,9 @@ _fastfetch() {
 }
 alias ff='_fastfetch'
 
+# ip output in color
+alias ip='ip -c=auto'
+
 venv() {
   local activate="$HOME/.venv/bin/activate"
   [ -f "$activate" ] && \

@@ -106,6 +106,39 @@
           export PATH="$PATH:{{ rke_bin_dir }}"
           export KUBECONFIG="{{ rke_kubeconfig }}"
         mode: "0644"
+
+    - name: Install calicoctl CLI utility
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/shell_module.html
+      ansible.builtin.shell: |
+        # run Bash and source /etc/profile.d
+        # scripts so that kubectl is in PATH
+        exec /bin/bash -l <<'EOF'
+        set -o pipefail
+
+        # get exact version of Calico deployed by RKE2 as part
+        # of the Canal CNI in order to install matching client
+        VER=$(kubectl get ds rke2-canal -n kube-system -o json | \
+          jq -r '.spec.template.spec.containers[] |
+            select(.name == "calico-node").image' | \
+            sed -E 's/^.+:(v[0-9.]+).*$/\1/')
+
+        # check if matching version already installed
+        BIN=$(command -v calicoctl) &> /dev/null && {
+          ver=$(calicoctl version | awk '/Client Version/ {print $3}')
+          [ "$ver" == "$VER" ] && exit 9 # no change
+          BIN=$(dirname "$BIN")
+        } || BIN=/usr/local/bin
+
+        REL="https://github.com/projectcalico/calico/releases/download"
+        ARCH=$(uname -m | sed -e 's/aarch64/arm64/' -e 's/x86_64/amd64/')
+        curl -fsSLo "$BIN/calicoctl" "$REL/$VER/calicoctl-linux-$ARCH"
+        chmod +x    "$BIN/calicoctl"
+        EOF
+      register: calicoctl
+      changed_when: calicoctl.rc == 0
+      failed_when: >-
+        calicoctl.rc != 0 and
+        calicoctl.rc != 9
   any_errors_fatal: true
 
 - name: Apply supplemental RKE2 configuration
