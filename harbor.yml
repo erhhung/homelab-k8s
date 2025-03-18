@@ -91,7 +91,38 @@
     # https://harbor.fourteeners.local/devcenter-api-2.0
     api_base: https://{{ harbor_fqdn }}/api/v2.0
     api_auth: admin:"{{ harbor_admin_pass }}"
+  pre_tasks:
+    - name: Get library project config
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/uri_module.html
+      ansible.builtin.uri:
+        url: "{{ api_base }}/projects/library"
+        # GET does not require authentication
+        validate_certs: false
+        return_content: true
+      register: project_config
   tasks:
+    - name: Configure library project
+      vars:
+        metadata: "{{ project_config.json.metadata }}"
+        auto_sbom: "{{ metadata.auto_sbom_generation | bool }}"
+        auto_scan: "{{ metadata.auto_scan            | bool }}"
+      ansible.builtin.uri:
+        method: PUT
+        url: "{{ api_base }}/projects/library"
+        url_username: admin
+        url_password: "{{ harbor_admin_pass }}"
+        force_basic_auth: true
+        validate_certs: false
+        body_format: json
+        body:
+          metadata:
+            # all values must be strings
+            auto_sbom_generation: "true"
+            auto_scan: "true"
+      when: not auto_sbom or
+            not auto_scan
+      changed_when: true
+
     - name: Add non-admin Harbor users
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/shell_module.html
       ansible.builtin.shell: |
@@ -136,3 +167,4 @@
         create_users.rc != 0 and
         create_users.rc != 9 or
         create_users.stdout is search('errors')
+  any_errors_fatal: true
