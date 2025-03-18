@@ -20,5 +20,8 @@
 - name: Include resource manifests playbook
   ansible.builtin.import_playbook: manifests.yml
 
+- name: Include Harbor registry playbook
+  ansible.builtin.import_playbook: harbor.yml
+
 - name: Include virtual clusters playbook
   ansible.builtin.import_playbook: vclusters.yml

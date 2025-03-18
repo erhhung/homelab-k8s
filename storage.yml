@@ -113,7 +113,7 @@
 
 - name: Install Longhorn components
   # install just on RKE cluster for now
-  hosts: "{{ groups['control_plane'][0] }}"
+  hosts: "{{ rke_control_plane_host }}"
   vars_files:
     - vars/basics.yml
     - vars/kubernetes.yml
@@ -139,3 +139,49 @@
         atomic: true
         wait: true
       timeout: 300
+  any_errors_fatal: true
+
+# https://computingforgeeks.com/configure-nfs-as-kubernetes-persistent-volume-storage/
+- name: Install NFS dynamic provisioners
+  hosts:
+    - "{{ k3s_control_plane_host }}"
+    - "{{ rke_control_plane_host }}"
+  vars_files:
+    - vars/basics.yml
+    - vars/kubernetes.yml
+    - vars/storage.yml
+  vars:
+    # required kubernetes>=24.2 package only in user virtualenv
+    ansible_python_interpreter: "{{ venv_python_interpreter }}"
+    # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/ternary_filter.html
+    cluster: "{{ (inventory_hostname == k3s_control_plane_host) | ternary('k3s','rke') }}"
+  tasks:
+    - name: Install NFS provisioner Helm chart
+      vars:
+        provisioners: "{{ nfs_provisioners | selectattr('cluster','==',cluster) }}"
+        mount_options: "{{ nfs_mount_opts | split(',') }}"
+        storage_class: |
+          {% set storage_class = item.storageClass | combine({
+            'name': item.storageClass.name | default('nfs-'~ item.name)
+          }) %}
+          {{ storage_class }}
+      kubernetes.core.helm:
+        kubeconfig: "{{ vars[cluster ~'_kubeconfig'] }}"
+        chart_repo_url: https://kubernetes-sigs.github.io/nfs-subdir-external-provisioner
+        chart_ref: nfs-subdir-external-provisioner
+        release_name: "{{ item.name }}"
+        release_namespace: nfs-provisioner
+        create_namespace: true
+        # https://github.com/kubernetes-sigs/nfs-subdir-external-provisioner/blob/master/charts/nfs-subdir-external-provisioner/values.yaml
+        release_values:
+          nfs:
+            server: "{{ item.server }}"
+            path: "{{ item.path }}"
+            mountOptions: "{{ mount_options }}"
+          storageClass: "{{ storage_class }}"
+        atomic: true
+        wait: true
+      loop: "{{ provisioners }}"
+      loop_control:
+        label: "{{ item.name }}"
+  any_errors_fatal: true
