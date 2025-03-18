@@ -17,9 +17,9 @@ private CA server at pki.fourteeners.local.
 
 ## Cluster Topology
 
-<div style="text-align: center">
+<p align="center">
 <img src="./topology.drawio.svg" alt="topology.drawio.svg" />
-</div>
+</p>
 
 ## Ansible Vault
 
