@@ -22,8 +22,9 @@ install_apt_packages:
   - nfs-common # required by Longhorn storage engine
   - python3-pip
   - python3-virtualenv # required by ansible.builtin.pip
-  - jq
   - yq
+  - jq
+  - jo
   - git  # required by kubernetes.core.helm_plugin
   - helm # requires /etc/apt/sources.list.d/helm.sources
 

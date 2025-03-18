@@ -134,16 +134,14 @@
             state: present
             apply: true
           loop:
-            - desc: ingress
-              name: tls-rancher-ingress
+            - name: tls-rancher-ingress
               type: kubernetes.io/tls
               data:
                 ca.crt: "{{ chain[-1] | b64encode }}"
                 # tls.crt includes host and intermediate CA certs
                 tls.crt: "{{ chain[:-1] | join('\n') | b64encode }}"
                 tls.key: "{{ certs.results[1].stdout | b64encode }}"
-            - desc: root CA
-              name: tls-ca
+            - name: tls-ca
               data: # include both intermediate and root CA certs
                 cacerts.pem: "{{ chain[1:] | join('\n') | b64encode }}"
           loop_control:
@@ -356,6 +354,7 @@
     # force redeploy cattle-cluster-agent in RKE cluster if Rancher TLS secrets
     # have changed so that CATTLE_CA_CHECKSUM environment variable gets updated
     # https://ranchermanager.docs.rancher.com/getting-started/installation-and-upgrade/resources/update-rancher-certificate#4-reconfigure-rancher-agents-to-trust-the-private-ca
+    # kubectl annotate clusters.management.cattle.io $HOMELAB_ID io.cattle.agent.force.deploy=true
     - name: Redeploy RKE Rancher agents
       kubernetes.core.k8s:
         kubeconfig: "{{ k3s_kubeconfig }}"

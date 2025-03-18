@@ -77,7 +77,7 @@
     - vars/basics.yml
     - vars/kubernetes.yml
   vars:
-    kubeconfig_content: "{{ hostvars[groups['control_plane'][0]]['cat_kubeconfig'].stdout }}"
+    kubeconfig_content: "{{ hostvars[rke_control_plane_host]['cat_kubeconfig'].stdout }}"
   tasks:
     # kubectl should already be executable,
     # but not parent dirs /var/lib/rancher

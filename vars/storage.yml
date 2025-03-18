@@ -28,3 +28,28 @@ longhorn_chart_values:
       # creates a ServiceMonitor resource that Prometheus Operator uses to
       # automatically discover and scrape metrics from Longhorn components
       enabled: false # enable only if Prometheus Operator is installed
+
+# https://computingforgeeks.com/configure-nfs-as-kubernetes-persistent-volume-storage/
+nfs_mount_opts: rw,nosuid,nodev,noexec,hard,timeo=600,retrans=3,rsize=32768,wsize=32768
+# https://github.com/kubernetes-sigs/nfs-subdir-external-provisioner/blob/master/charts/nfs-subdir-external-provisioner/values.yaml
+nfs_provisioners:
+  - cluster: k3s
+    name: qnap
+    server: qnap.fourteeners.local
+    path: /k8s_data/k3s
+    storageClass:
+      # name: "nfs-" + item.name
+      accessModes: ReadWriteOnce
+      volumeBindingMode: Immediate
+      reclaimPolicy: Delete
+      onDelete: delete
+
+  - cluster: rke
+    name: qnap
+    server: qnap.fourteeners.local
+    path: /k8s_data/rke
+    storageClass:
+      accessModes: ReadWriteOnce
+      volumeBindingMode: WaitForFirstConsumer
+      reclaimPolicy: Delete
+      onDelete: retain

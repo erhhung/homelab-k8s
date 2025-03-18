@@ -67,7 +67,7 @@
         # if HA mode, the host "homelab" (cluster name) has its own virtual IP
         # if not HA mode, homelab is an alias for the first control plane node
         host_names: |
-          {% set use_alias = not rke_ha_mode and host == groups['control_plane'][0] %}
+          {% set use_alias = not rke_ha_mode and host == rke_control_plane_host %}
           {{ [host, rke_cluster_name] if use_alias else [host] }}
         host_fqdns: "{{ host_names | product(search_domains) | map('join', '.')  | list }}"
         host_pairs: "{{ host_fqdns | map('regex_replace', '^([^.]+)', '\\1 \\1') | list }}"

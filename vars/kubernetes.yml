@@ -2,6 +2,10 @@ rke_ha_mode: true
 rke_control_plane_group: "{{ 'control_plane_ha' if rke_ha_mode else 'control_plane' }}"
 rke_workers_group: "{{ 'workers_ha' if rke_ha_mode else 'workers' }}"
 
+# control plane hosts
+k3s_control_plane_host: rancher
+rke_control_plane_host: "{{ groups[rke_control_plane_group][0] }}"
+
 k3s_kubeconfig: /etc/rancher/k3s/k3s.yaml
 rke_kubeconfig: /etc/rancher/rke2/rke2.yaml
 rke_bin_dir: /var/lib/rancher/rke2/bin
@@ -14,6 +18,7 @@ ui_badge_color: "#5a2050"
 ui_badge_icon: LAB
 ui_badge_text: ""
 
+# remember to add rancher.fourteeners.local to pfSense DNS!
 # https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_filters.html#products
 k3s_fqdn: "{{ [k3s_cluster_name] | product(search_domains) | map('join','.') | first }}"
 
@@ -22,3 +27,6 @@ k3s_fqdn: "{{ [k3s_cluster_name] | product(search_domains) | map('join','.') | f
 rke_fqdns: >
   {{ ([rke_cluster_name] + groups[rke_control_plane_group]) |
       product(search_domains) | map('join','.') | list }}
+
+k3s_ingress_class: traefik
+rke_ingress_class: nginx
