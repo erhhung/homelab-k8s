@@ -22,7 +22,7 @@ install_apt_packages:
   - nfs-common # required by Longhorn storage engine
   - python3-pip
   - python3-virtualenv # required by ansible.builtin.pip
-  - yq
+  # yq from Apt is not the mikefarah/yq package we want
   - jq
   - jo
   - git  # required by kubernetes.core.helm_plugin

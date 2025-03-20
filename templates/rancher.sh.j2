@@ -23,10 +23,11 @@ rancher_login() {
 # logging in, as bootstrap password must have been changed after
 # initial UI login
 
-# prevent Jinja2 from interpreting Go template
-{%- raw %}
+RANCHER_NAMESPACE="{{ rancher_namespace }}"
+# prevent Jinja2 from evaluating Go template
+{% raw %}
 get_init_pass() {
-  kubectl get secret -n cattle-system bootstrap-secret \
+  kubectl get secret -n "$RANCHER_NAMESPACE" bootstrap-secret \
     -o go-template='{{ .data.bootstrapPassword | base64decode }}' 2> /dev/null
 }
 {%- endraw %}

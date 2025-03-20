@@ -1,5 +1,6 @@
 ---
 - name: Show remote and local facts
+  tags: facts
   hosts: control_plane
   gather_facts: true
   pre_tasks:
@@ -26,6 +27,7 @@
         var: local_tz_offset
 
 - name: Show hosts and domain names
+  tags: hosts
   hosts: localhost
   gather_facts: false
   tasks:
@@ -80,6 +82,7 @@
         label: "{{ host_ip }}|{{ host }}"
 
 - name: Show certificates on CA server
+  tags: certs
   hosts: pki
   gather_facts: false
   tasks:
@@ -97,16 +100,46 @@
       vars:
         # split chain into individual certs:
         # host, intermediate CA, and root CA
-        chain: "{{ cat_cert.stdout |
-          regex_findall('(-----BEGIN CERTIFICATE-----(?:\\n\\S+)+\\n-----END CERTIFICATE-----)', multiline=True) }}"
+        chain: "{{ cat_cert.stdout | regex_findall(
+          '(-----BEGIN CERTIFICATE-----(?:\\n\\S+)+\\n-----END CERTIFICATE-----)',
+          multiline=True) }}"
         certs:
           # tls.crt: host and intermediate CA certs
           tls.crt: "{{ chain[:-1] | join('\n') }}"
-          ca.crt: "{{ chain[-1:] | join('\n') }}"
+          ca.crt: "{{  chain[-1:] | join('\n') }}"
       ansible.builtin.debug:
         var: certs
 
+- name: Dump Helm chart values files
+  tags: values
+  hosts: localhost
+  gather_facts: false
+  vars_files:
+    - vars/basics.yml
+    - vars/kubernetes.yml
+    - vars/harbor.yml
+    - vars/argocd.yml
+  tasks:
+    - name: Write Helm chart values file
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/shell_module.html
+      ansible.builtin.shell: |
+        set -o pipefail
+        jq <<'EOF' | yq -pj -oy > /tmp/{{ item.dest }}
+        {{ item.json }}
+        EOF
+      args:
+        executable: /bin/bash
+      loop:
+        - json: "{{ harbor_chart_values | to_json }}"
+          dest: values-harbor.yaml
+        - json: "{{ argocd_chart_values | to_json }}"
+          dest: values-argocd.yaml
+      loop_control:
+        label: "{{ item.dest }}"
+      changed_when: true
+
 - name: Debug expressions and statements
+  tags: exprs
   hosts: localhost
   gather_facts: false
   tasks:
@@ -157,6 +190,7 @@
           found: {{ found }}
 
 - name: Useful collection of tasks
+  tags: tasks
   hosts: localhost
   gather_facts: false
   tasks:

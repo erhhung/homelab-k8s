@@ -1,6 +1,7 @@
 ---
 # https://docs.k3s.io/installation/configuration
 - name: Install single-node K3s cluster
+  tags: k3s
   hosts: rancher
   become: true
   vars_files:
@@ -58,27 +59,31 @@
       ansible.builtin.include_tasks: tasks/kubeconfig.yml
   any_errors_fatal: true
 
+# https://ranchermanager.docs.rancher.com/getting-started/installation-and-upgrade
 - name: Install Rancher Server on K3s
-  hosts: rancher
+  tags: rancher
+  hosts: "{{ k3s_control_plane_host }}"
   vars_files:
     - vars/basics.yml
     - vars/kubernetes.yml
-    - vars/rancher.k3s.yml
+    - vars/rancher.yml
   vars:
     # required kubernetes>=24.2 package only in user virtualenv
     ansible_python_interpreter: "{{ venv_python_interpreter }}"
+    kubeconfig: "{{ k3s_kubeconfig }}"
   tasks:
     - name: Install cert-manager Helm chart
       # this is technically not required when migrating to using "bring-your-own-cert":
       # https://ranchermanager.docs.rancher.com/getting-started/installation-and-upgrade/install-upgrade-on-a-kubernetes-cluster#3-choose-your-ssl-configuration
       # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/helm_module.html
       kubernetes.core.helm:
-        kubeconfig: "{{ k3s_kubeconfig }}"
+        kubeconfig: "{{ kubeconfig }}"
         chart_repo_url: https://charts.jetstack.io
         chart_ref: cert-manager
         release_name: cert-manager
         release_namespace: cert-manager
         create_namespace: true
+        # https://github.com/cert-manager/cert-manager/blob/master/deploy/charts/cert-manager/values.yaml
         release_values:
           crds:
             enabled: true
@@ -88,91 +93,50 @@
 
     # https://ranchermanager.docs.rancher.com/getting-started/installation-and-upgrade/resources/add-tls-secrets
     # https://ranchermanager.docs.rancher.com/getting-started/installation-and-upgrade/resources/update-rancher-certificate
-    - name: Add Rancher TLS and CA secrets
-      block:
-        - name: Fetch cert files from PKI
-          delegate_to: pki
-          vars:
-            ansible_python_interpreter: "{{ default_python_interpreter }}"
-          # catting is easier than ansible.builtin.slurp
-          # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/command_module.html
-          ansible.builtin.command: cat certs/{{ item }}
-          loop:
-            - rancher.pem # contains intermediate and root CA certs
-            - rancher.key
-          register: certs
-          changed_when: false
+    - name: Create Rancher ingress secret
+      vars:
+        cert_desc: Rancher
+        cert_file: rancher
+        secret_name: tls-rancher-ingress
+        secret_ns: "{{ rancher_namespace }}"
+      ansible.builtin.include_tasks: tasks/tlssecret.yml
 
-        - name: Create cattle-system namespace
-          # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_module.html
-          kubernetes.core.k8s:
-            kubeconfig: "{{ k3s_kubeconfig }}"
-            api_version: v1
-            kind: Namespace
-            name: cattle-system
-            state: present
-
-        - name: Create Rancher TLS secrets
-          vars:
-            # split chain into individual certs: host, intermediate CA, and root CA
-            # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/regex_findall_filter.html
-            chain: "{{ certs.results[0].stdout | ansible.builtin.regex_findall(
-              '(-----BEGIN CERTIFICATE-----(?:\\n\\S+)+\\n-----END CERTIFICATE-----)',
-              multiline=True) }}"
-          kubernetes.core.k8s:
-            kubeconfig: "{{ k3s_kubeconfig }}"
-            definition:
-              apiVersion: v1
-              kind: Secret
-              metadata:
-                name: "{{ item.name }}"
-                namespace: cattle-system
-              type: "{{ item.type if item.type is defined else omit }}"
-              data: "{{ item.data }}"
-            validate:
-              fail_on_error: true
-            state: present
-            apply: true
-          loop:
-            - name: tls-rancher-ingress
-              type: kubernetes.io/tls
-              data:
-                ca.crt: "{{ chain[-1] | b64encode }}"
-                # tls.crt includes host and intermediate CA certs
-                tls.crt: "{{ chain[:-1] | join('\n') | b64encode }}"
-                tls.key: "{{ certs.results[1].stdout | b64encode }}"
-            - name: tls-ca
-              data: # include both intermediate and root CA certs
-                cacerts.pem: "{{ chain[1:] | join('\n') | b64encode }}"
-          loop_control:
-            label: "{{ item.name }}"
-          register: tls_secrets
+    - name: Create Rancher CA secret
+      # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_module.html
+      kubernetes.core.k8s:
+        kubeconfig: "{{ kubeconfig }}"
+        definition:
+          apiVersion: v1
+          kind: Secret
+          metadata:
+            name: tls-ca
+            namespace: "{{ rancher_namespace }}"
+          data:
+            # pem_chain set by above tasks/tlssecret.yml
+            # include both intermediate and root CA certs
+            cacerts.pem: "{{ pem_chain[1:] | join('\n') | b64encode }}"
+        validate:
+          fail_on_error: true
+        state: present
+        apply: true
 
     # https://ranchermanager.docs.rancher.com/getting-started/installation-and-upgrade/install-upgrade-on-a-kubernetes-cluster#install-the-rancher-helm-chart
     - name: Install Rancher Server Helm chart
       kubernetes.core.helm:
-        kubeconfig: "{{ k3s_kubeconfig }}"
+        kubeconfig: "{{ kubeconfig }}"
         chart_repo_url: https://releases.rancher.com/server-charts/latest
         chart_ref: rancher
         chart_version: "{{ rancher_chart_version }}"
         release_name: rancher
-        release_namespace: cattle-system
-        release_values:
-          replicas: 1
-          # https://ranchermanager.docs.rancher.com/getting-started/installation-and-upgrade/install-upgrade-on-a-kubernetes-cluster#5-install-rancher-with-helm-and-your-chosen-certificate-option
-          # IMPORTANT: cert secrets must have already been created!
-          hostname: "{{ k3s_fqdn }}"
-          ingress:
-            tls:
-              source: secret
-          privateCA: true
+        release_namespace: "{{ rancher_namespace }}"
+        release_values: "{{ rancher_chart_values }}"
         atomic: true
         wait: true
       timeout: 600
 
     - name: Set Rancher Server settings
       kubernetes.core.k8s:
-        kubeconfig: "{{ k3s_kubeconfig }}"
+        kubeconfig: "{{ kubeconfig }}"
         api_version: management.cattle.io/v3
         kind: Setting
         name: "{{ item.name }}"
@@ -357,7 +321,7 @@
     # kubectl annotate clusters.management.cattle.io $HOMELAB_ID io.cattle.agent.force.deploy=true
     - name: Redeploy RKE Rancher agents
       kubernetes.core.k8s:
-        kubeconfig: "{{ k3s_kubeconfig }}"
+        kubeconfig: "{{ kubeconfig }}"
         api_version: management.cattle.io/v3
         kind: Cluster
         name: "{{ rke_cluster }}"
@@ -367,6 +331,6 @@
               io.cattle.agent.force.deploy: "true"
         state: patched
       when: >-
-        tls_secrets.changed and
+        tls_secret.changed and
         rke_cluster is match('c-')
   any_errors_fatal: true

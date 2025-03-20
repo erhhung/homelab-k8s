@@ -1,0 +1,105 @@
+# perform "helm diff upgrade" against existing
+# Helm release to determine whether an upgrade
+# is required; returns true if release missing.
+# pass the following vars:
+#   kubeconfig   <required> kubeconfig path
+#   repo_name    <required> repository name
+#   repo_url     <required> repository URL
+#   chart_name   <required> chart name
+#   chart_ver    <required> chart version
+#   release_name <required> release name
+#   release_ns   <required> release namespace
+#   values_json  <required> chart values JSON
+# sets the following facts:
+#   release_exists whether the release exists
+#   needs_upgrade  whether upgrade is needed
+---
+# assumes helm-diff plugin installed
+- name: Do "helm diff upgrade" check
+  become: false
+  vars:
+    # required kubernetes>=24.2 package only in user virtualenv
+    ansible_python_interpreter: "{{ venv_python_interpreter }}"
+  block:
+    - name: Check if release exists
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/command_module.html
+      ansible.builtin.command:
+        argv:
+          - helm
+          - hist
+          - --kubeconfig={{ kubeconfig }}
+          - -n={{ release_ns }}
+          - "{{ release_name }}"
+      register: helm_hist
+      changed_when: false
+      failed_when: false
+
+    - name: Set release_exists fact
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/set_fact_module.html
+      ansible.builtin.set_fact:
+        release_exists: "{{
+          helm_hist.rc == 0 and
+          helm_hist.stdout is search('REVISION')
+          }}"
+        values_file: /tmp/{{ release_name }}-values.yaml
+
+    - name: Add Helm chart repository
+      # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/helm_repository_module.html
+      kubernetes.core.helm_repository:
+        repo_name: "{{ repo_name }}"
+        repo_url: "{{ repo_url }}"
+        repo_state: present
+      when: release_exists
+      changed_when: false
+
+    - name: Write chart values file
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/shell_module.html
+      ansible.builtin.shell: |
+        set -o pipefail
+        jq <<'EOF' | yq -pj -oy > {{ values_file }}
+        {{ values_json }}
+        EOF
+      args:
+        executable: /bin/bash
+      when: release_exists
+      changed_when: false
+
+    - name: Run "helm diff upgrade"
+      ansible.builtin.command:
+        argv:
+          - helm
+          - diff
+          - upgrade
+          - --kubeconfig={{ kubeconfig }}
+          - -n={{ release_ns }}
+          - "{{ release_name }}"
+          - "{{ repo_name }}/{{ chart_name }}"
+          - --version={{ chart_ver }}
+          - -f={{ values_file }}
+          - --show-secrets
+      when: release_exists
+      register: helm_diff
+      changed_when: false
+
+    - name: Set needs_upgrade fact
+      ansible.builtin.set_fact:
+        needs_upgrade: "{{
+          not release_exists or
+          helm_diff.stdout is search('has changed:')
+          }}"
+
+    - name: Delete temp values file
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/file_module.html
+      ansible.builtin.file:
+        path: "{{ values_file }}"
+        state: absent
+      when: release_exists
+      changed_when: false
+
+    - name: Show Helm diff results
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/debug_module.html
+      ansible.builtin.debug:
+        msg: |-
+          release_exists: {{ release_exists }}
+           needs_upgrade: {{ needs_upgrade }}
+  any_errors_fatal: true

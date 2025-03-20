@@ -1,6 +1,7 @@
 ---
 # https://helm.sh/docs/intro/install/#from-apt-debianubuntu
 - name: Configure Helm Apt repository
+  tags: configure
   hosts: k8s_all
   become: true
   vars:
@@ -48,6 +49,7 @@
   any_errors_fatal: true
 
 - name: Install required packages
+  tags: packages
   hosts: k8s_all
   vars_files:
     - vars/packages.yml
@@ -91,10 +93,39 @@
   any_errors_fatal: true
 
 - name: Install apps from GitHub releases
+  tags: github
   hosts: k8s_all
+  gather_facts: false
+  become: true
   tasks:
+    - name: Install mikefarah/yq from GitHub
+      ansible.builtin.shell: |
+        set -o pipefail
+        REL="https://github.com/mikefarah/yq/releases/latest"
+        VER=$(curl -Is $REL | sed -En 's/^location:.+\/tag\/v(.+)\r$/\1/p')
+
+        # check if latest version already installed
+        command -v yq &> /dev/null && {
+          ver=$(v=(`yq --version`); echo ${v[-1]#v})
+          [ "$ver" == "$VER" ] && exit 9 # no change
+        }
+        mkdir -p /tmp/yq
+        ( cd     /tmp/yq
+        ARCH={{ machine_arch }} # amd64 or arm64
+        curl -fsSL "$REL/download/yq_linux_$ARCH.tar.gz" | \
+          tar -xz --no-same-owner
+        cp ./yq_linux_$ARCH /usr/bin/yq
+        ./install-man-page.sh
+        ); rm -rf /tmp/yq
+      args:
+        executable: /bin/bash
+      register: install_yq
+      changed_when: install_yq.rc == 0
+      failed_when: >-
+        install_yq.rc != 0 and
+        install_yq.rc != 9
+
     - name: Install Fastfetch from GitHub
-      become: true
       ansible.builtin.shell: |
         set -o pipefail
         REL="https://github.com/fastfetch-cli/fastfetch/releases/latest"
@@ -105,7 +136,7 @@
           ver=$(v=(`fastfetch --version`); echo ${v[1]})
           [ "$ver" == "$VER" ] && exit 9 # no change
         }
-        ARCH=$(uname -m | sed -e 's/x86_64/amd64/')
+        ARCH=$(uname -m | sed -e 's/x86_64/amd64/') # or aarch64
         curl -fsSL "$REL/download/fastfetch-linux-$ARCH.tar.gz" | \
           tar -xz -C / --no-same-owner --strip 1 fastfetch-linux-$ARCH
       args:
@@ -115,3 +146,4 @@
       failed_when: >-
         install_ff.rc != 0 and
         install_ff.rc != 9
+  any_errors_fatal: true

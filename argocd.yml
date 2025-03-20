@@ -1,0 +1,38 @@
+# https://argo-cd.readthedocs.io/en/stable/getting_started/
+# https://argo-cd.readthedocs.io/en/stable/operator-manual/installation/
+---
+- name: Install Argo CD on RKE cluster
+  hosts: "{{ rke_control_plane_host }}"
+  vars_files:
+    - vars/basics.yml
+    - vars/kubernetes.yml
+    - vars/argocd.yml
+  tasks:
+    - name: Create Argo CD ingress secret
+      vars:
+        cert_desc: Argo CD
+        cert_file: argocd
+        kubeconfig: "{{ rke_kubeconfig }}"
+        secret_name: argocd-server-tls
+        secret_ns: "{{ argocd_namespace }}"
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
+      ansible.builtin.include_tasks: tasks/tlssecret.yml
+
+    # https://github.com/argoproj/argo-helm/tree/main/charts/argo-cd
+    - name: Install Argo CD Helm chart
+      vars:
+        # required kubernetes>=24.2 package only in user virtualenv
+        ansible_python_interpreter: "{{ venv_python_interpreter }}"
+      # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/helm_module.html
+      kubernetes.core.helm:
+        kubeconfig: "{{ rke_kubeconfig }}"
+        chart_repo_url: https://argoproj.github.io/argo-helm
+        chart_ref: argo-cd
+        chart_version: "{{ argocd_chart_version }}"
+        release_name: argocd
+        release_namespace: "{{ argocd_namespace }}"
+        release_values: "{{ argocd_chart_values }}"
+        atomic: true
+        wait: true
+      timeout: 300
+  any_errors_fatal: true

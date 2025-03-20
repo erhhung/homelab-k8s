@@ -11,17 +11,20 @@
 - name: Include Rancher K3s cluster playbook
   ansible.builtin.import_playbook: rancher.yml
 
-- name: Include Kubernetes cluster playbook
+- name: Include Rancher RKE cluster playbook
   ansible.builtin.import_playbook: cluster.yml
 
-- name: Include local PV storage playbook
+- name: Include storage provisioners playbook
   ansible.builtin.import_playbook: storage.yml
 
 - name: Include resource manifests playbook
   ansible.builtin.import_playbook: manifests.yml
 
-- name: Include Harbor registry playbook
+- name: Include Harbor OCI registry playbook
   ansible.builtin.import_playbook: harbor.yml
+
+- name: Include Argo CD GitOps tool playbook
+  ansible.builtin.import_playbook: argocd.yml
 
 - name: Include virtual clusters playbook
   ansible.builtin.import_playbook: vclusters.yml
