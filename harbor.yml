@@ -1,78 +1,58 @@
----
 # https://goharbor.io/
-- name: Install Harbor on K3s
-  hosts: rancher
+# https://goharbor.io/docs/latest/install-config/harbor-ha-helm/
+---
+- name: Install Harbor on K3s cluster
+  hosts: "{{ k3s_control_plane_host }}"
   vars_files:
     - vars/basics.yml
     - vars/kubernetes.yml
     - vars/harbor.yml
   vars:
-    # required kubernetes>=24.2 package only in user virtualenv
-    ansible_python_interpreter: "{{ venv_python_interpreter }}"
+    kubeconfig: "{{ k3s_kubeconfig }}"
+    repo_name: harbor
+    repo_url: https://helm.goharbor.io
+    chart_name: harbor
+    chart_ver: "{{ harbor_chart_version }}"
+    release_name: harbor
+    release_ns: "{{ harbor_namespace }}"
+  pre_tasks:
+    # despite providing fixed values for various secrets and certs
+    # to the Harbor Helm chart, the "helm upgrade" command through
+    # kubernetes.core.helm will always create a new revision, even
+    # when "helm diff upgrade" command outputs nothing, so perform
+    # the check first, and only proceed with the upgrade if needed
+    - name: Check if Helm upgrade needed
+      vars:
+        values_json: "{{ harbor_chart_values | to_json }}"
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
+      ansible.builtin.include_tasks: tasks/helmdiffup.yml
+      # sets needs_upgrade fact
   tasks:
-    - name: Add Harbor TLS+CA secret
-      block:
-        - name: Fetch cert files from PKI
-          delegate_to: pki
-          vars:
-            ansible_python_interpreter: "{{ default_python_interpreter }}"
-          # catting is easier than ansible.builtin.slurp
-          # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/command_module.html
-          ansible.builtin.command: cat certs/{{ item }}
-          loop:
-            - harbor.pem # contains intermediate and root CA certs
-            - harbor.key
-          register: certs
-          changed_when: false
+    - name: Create Harbor ingress secret
+      vars:
+        cert_desc: Harbor
+        cert_file: harbor
+        secret_name: "{{ harbor_chart_values.expose.tls.secret.secretName }}"
+        secret_ns: "{{ release_ns }}"
+      ansible.builtin.include_tasks: tasks/tlssecret.yml
 
-        - name: Create harbor namespace
-          # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_module.html
-          kubernetes.core.k8s:
-            kubeconfig: "{{ k3s_kubeconfig }}"
-            api_version: v1
-            kind: Namespace
-            name: "{{ harbor_namespace }}"
-            state: present
-
-        - name: Create Harbor TLS secret
-          vars:
-            # split chain into individual certs: host, intermediate CA, and root CA
-            # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/regex_findall_filter.html
-            chain: "{{ certs.results[0].stdout | ansible.builtin.regex_findall(
-              '(-----BEGIN CERTIFICATE-----(?:\\n\\S+)+\\n-----END CERTIFICATE-----)',
-              multiline=True) }}"
-          kubernetes.core.k8s:
-            kubeconfig: "{{ k3s_kubeconfig }}"
-            definition:
-              apiVersion: v1
-              kind: Secret
-              metadata:
-                name: "{{ harbor_chart_values.expose.tls.secret.secretName }}"
-                namespace: "{{ harbor_namespace }}"
-              type: kubernetes.io/tls
-              data:
-                ca.crt: "{{ chain[-1] | b64encode }}"
-                # tls.crt includes host and intermediate CA certs
-                tls.crt: "{{ chain[:-1] | join('\n') | b64encode }}"
-                tls.key: "{{ certs.results[1].stdout | b64encode }}"
-            validate:
-              fail_on_error: true
-            state: present
-            apply: true
-
-    # https://goharbor.io/docs/latest/install-config/harbor-ha-helm/
+    # https://github.com/goharbor/harbor-helm/tree/main
     - name: Install Harbor Helm chart
+      vars:
+        # required kubernetes>=24.2 package only in user virtualenv
+        ansible_python_interpreter: "{{ venv_python_interpreter }}"
       # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/helm_module.html
       kubernetes.core.helm:
-        kubeconfig: "{{ k3s_kubeconfig }}"
-        chart_repo_url: https://helm.goharbor.io
-        chart_ref: harbor
-        chart_version: "{{ harbor_chart_version }}"
-        release_name: harbor
-        release_namespace: "{{ harbor_namespace }}"
+        kubeconfig: "{{ kubeconfig }}"
+        chart_repo_url: "{{ repo_url }}"
+        chart_ref: "{{ chart_name }}"
+        chart_version: "{{ chart_ver }}"
+        release_name: "{{ release_name }}"
+        release_namespace: "{{ release_ns }}"
         release_values: "{{ harbor_chart_values }}"
         atomic: true
         wait: true
+      when: needs_upgrade
       timeout: 300
 
     # - name: Install Harbor CLI utility
@@ -81,7 +61,7 @@
   any_errors_fatal: true
 
 - name: Configure Harbor registry
-  hosts: rancher
+  hosts: "{{ k3s_control_plane_host }}"
   gather_facts: false
   vars_files:
     - vars/basics.yml
@@ -104,8 +84,8 @@
     - name: Configure library project
       vars:
         metadata: "{{ project_config.json.metadata }}"
-        auto_sbom: "{{ metadata.auto_sbom_generation | bool }}"
-        auto_scan: "{{ metadata.auto_scan            | bool }}"
+        auto_sbom: "{{ metadata.auto_sbom_generation | default('false') | bool }}"
+        auto_scan: "{{ metadata.auto_scan            | default('false') | bool }}"
       ansible.builtin.uri:
         method: PUT
         url: "{{ api_base }}/projects/library"
@@ -119,8 +99,9 @@
             # all values must be strings
             auto_sbom_generation: "true"
             auto_scan: "true"
-      when: not auto_sbom or
-            not auto_scan
+      when: >-
+        not auto_sbom or
+        not auto_scan
       changed_when: true
 
     - name: Add non-admin Harbor users

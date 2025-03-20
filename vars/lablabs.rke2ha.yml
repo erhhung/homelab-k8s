@@ -8,5 +8,6 @@ rke2_api_ip: "{{ hostvars[rke_cluster_name]['ansible_host'] }}"
 rke2_interface: "{{ host_pif }}"
 rke2_loadbalancer_ip_range:
   range-global: "{{ lb_vip_range.start }}-{{ lb_vip_range.end }}"
+# https://kube-vip.io/docs/usage/kubernetes-services/
 rke2_kubevip_svc_enable: true # watch LoadBalancer
 rke2_kubevip_ipvs_lb_enable: true # LB control plane

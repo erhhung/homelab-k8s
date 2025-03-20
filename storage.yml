@@ -1,6 +1,7 @@
 ---
 # https://github.com/longhorn/charts/tree/v1.8.x/charts/longhorn#prerequisites
 - name: Prepare nodes for Longhorn
+  tags: prepare
   hosts: k8s_all
   become: true
   vars_files:
@@ -69,6 +70,7 @@
 # create LVM logical volume /data for
 # Kubernetes local persistent volumes
 - name: Create LV for Longhorn PVs
+  tags: lvs
   hosts: cluster
   # https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_strategies.html#rolling-update-batch-size
   # serial: 1
@@ -112,6 +114,7 @@
   any_errors_fatal: true
 
 - name: Install Longhorn components
+  tags: longhorn
   # install just on RKE cluster for now
   hosts: "{{ rke_control_plane_host }}"
   vars_files:
@@ -143,6 +146,7 @@
 
 # https://computingforgeeks.com/configure-nfs-as-kubernetes-persistent-volume-storage/
 - name: Install NFS dynamic provisioners
+  tags: nfs
   hosts:
     - "{{ k3s_control_plane_host }}"
     - "{{ rke_control_plane_host }}"

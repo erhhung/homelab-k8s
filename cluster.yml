@@ -3,6 +3,7 @@
 ---
 # https://docs.rke2.io/install/quickstart
 - name: Perform RKE2 role
+  tags: rke2
   hosts: cluster
   become: true
   vars_files:
@@ -40,6 +41,7 @@
   any_errors_fatal: true
 
 - name: Set up shell environment for kubectl
+  tags: kubeconfig
   hosts: "{{ rke_control_plane_group }}"
   gather_facts: false
   vars_files:
@@ -70,6 +72,7 @@
   any_errors_fatal: true
 
 - name: Set up shell environment for kubectl
+  tags: kubectl
   hosts: cluster
   gather_facts: false
   become: true
@@ -142,10 +145,12 @@
   any_errors_fatal: true
 
 - name: Apply supplemental RKE2 configuration
+  tags: configure
   hosts: "{{ rke_control_plane_group }}"
   vars_files:
     - vars/basics.yml
     - vars/kubernetes.yml
+    - vars/rancher.yml
   tasks:
     - name: Write CoreDNS HelmChartConfig
       run_once: true
@@ -253,7 +258,7 @@
             api_version: apps/v1
             kind: Deployment
             name: cattle-cluster-agent
-            namespace: cattle-system
+            namespace: "{{ rancher_namespace }}"
           register: agent_info
           until: >-
             agent_info.resources is defined and

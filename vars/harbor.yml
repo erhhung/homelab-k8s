@@ -1,6 +1,10 @@
 harbor_namespace: harbor
 harbor_host_name: harbor # alias of "rancher"
-# harbor_admin_pass: {vault.yml}
+
+# harbor_secret:       {vault.yml}
+# harbor_token_ca_key: {vault.yml}
+# harbor_db_pass:      {vault.yml}
+# harbor_admin_pass:   {vault.yml}
 
 # remember to add harbor.fourteeners.local to pfSense DNS!
 # https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_filters.html#products
@@ -11,7 +15,6 @@ harbor_chart_version: "1.16.2"
 # https://github.com/goharbor/harbor-helm/blob/main/values.yaml
 harbor_chart_values:
   externalURL: https://{{ harbor_fqdn }}
-  harborAdminPassword: "{{ harbor_admin_pass }}"
   expose:
     type: ingress
     ingress:
@@ -25,9 +28,46 @@ harbor_chart_values:
         secretName: tls-harbor
   # same secret above also has key "ca.crt"
   caSecretName: tls-harbor
-  ipFamily:
-    ipv6:
-      enabled: false
+
+  core:
+    secret: "{{ harbor_secret }}"
+    # xsrfKey must be exactly 32 chars
+    xsrfKey: "{{ harbor_secret * 2 }}"
+    # provide self-signed CA cert for token signing
+    # so that Helm template won't generate new cert
+    # each time, but need to update it when expired:
+    # openssl genrsa -out ca.key -traditional 2048
+    # openssl req -x509 -key ca.key -out ca.crt -sha256 -days 365 \
+    #   -subj /CN=harbor-token-ca -extensions v3_ca -config - <<EOF
+    # [v3_ca]
+    # keyUsage=critical,digitalSignature,keyEncipherment,keyCertSign
+    # extendedKeyUsage=serverAuth,clientAuth
+    # basicConstraints=critical,CA:true
+    # subjectKeyIdentifier=hash
+    # EOF
+    tokenKey: "{{ harbor_token_ca_key }}"
+    # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/file_lookup.html
+    tokenCert: "{{ lookup('ansible.builtin.file', 'vars/harbor/ca.crt', rstrip=false) }}"
+  registry:
+    secret: "{{ harbor_secret }}"
+    credentials:
+      username: admin
+      password: "{{ harbor_admin_pass }}"
+      # username and password values will actually be ignored
+      # because we set htpasswdString to fixed value so that
+      # Helm template won't generate new value each time via
+      # htpasswd function, which uses random salt:
+      # htpasswd -nbBC 10 $HARBOR_USER $HARBOR_PASS | \
+      #                tr -d '\n' | sed 's/$2y/$2a/'
+      htpasswdString: |-
+        admin:$2a$10$DrFWro1.BxgRJ.stQoqSyOx2cjaIC5AoROgDOODjP.NgOj5wFAPWa
+  jobservice:
+    secret: "{{ harbor_secret }}"
+  database:
+    internal:
+      password: "{{ harbor_db_pass }}"
+  harborAdminPassword: "{{ harbor_admin_pass }}"
+
   persistence:
     persistentVolumeClaim:
       # use NFS path on QNAP for high storage
@@ -38,6 +78,9 @@ harbor_chart_values:
       trivy:
         storageClass: nfs-qnap
         size: 5Gi
+  ipFamily:
+    ipv6:
+      enabled: false
   metrics:
     enabled: true
 

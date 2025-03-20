@@ -121,3 +121,4 @@
           # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/fail_module.html
           ansible.builtin.fail:
             msg: Failed to create vCluster "{{ vcluster.name }}"!
+  any_errors_fatal: true

@@ -139,3 +139,4 @@
             helm_uninstall is defined and
             helm_uninstall.changed
           changed_when: helm_uninstall.changed
+  any_errors_fatal: true

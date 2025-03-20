@@ -84,13 +84,12 @@ export ANSIBLE_CONFIG=./ansible.cfg
     ansible-playbook files.yml
     ```
 
-4. Set up **Rancher Server** on a single-node **K3s** cluster
-
+4. Set up **Rancher Server** on single-node **K3s** cluster
     ```bash
     ansible-playbook rancher.yml
     ```
 
-5. Set up **Kubernetes cluster** with **RKE**
+5. Set up **Kubernetes cluster** with **RKE** on 4 nodes
 
     Installs **RKE2** with a single control plane node and 3 worker nodes, all permitting workloads,  
     or RKE2 in HA mode with 3 control plane nodes and 1 worker node, all permitting workloads.  
@@ -119,14 +118,17 @@ export ANSIBLE_CONFIG=./ansible.cfg
     ansible-playbook manifests.yml
     ```
 
-8. Set up **Harbor** private container registry
-
+8. Set up **Harbor** private OCI registry
     ```bash
     ansible-playbook harbor.yml
     ```
 
-9. Create **virtual clusters** in RKE running **K0s**
+9. Set up **Argo CD** GitOps delivery tool
+    ```bash
+    ansible-playbook argocd.yml
+    ```
 
+10. Create **virtual clusters** in RKE running **K0s**
     ```bash
     ansible-playbook vclusters.yml
     ```
@@ -203,7 +205,7 @@ These are additional components to be deployed:
     * Install on K3s and RKE clusters using [`nfs-subdir-external-provisioner`](https://github.com/kubernetes-sigs/nfs-subdir-external-provisioner/) Helm chart
 - [X] [Harbor Container Registry](https://goharbor.io/) — private container registry
     * Install into the same K3s cluster as Rancher Server using [`harbor/harbor`](https://github.com/goharbor/harbor-helm/) Helm chart
-- [ ] [Argo CD Declarative GitOps](https://argo-cd.readthedocs.io/) — manage deployment of other applications in the main RKE cluster
+- [X] [Argo CD Declarative GitOps](https://argo-cd.readthedocs.io/) — manage deployment of other applications in the main RKE cluster
 - [ ] [Prometheus Monitoring Stack](https://github.com/prometheus-operator/kube-prometheus) — Prometheus, Grafana, and rules using the Prometheus Operator
     * Install into the main RKE cluster using [`kube-prometheus-stack`](https://github.com/prometheus-community/helm-charts/blob/main/charts/kube-prometheus-stack/README.md) Helm chart
 - [ ] [Backstage Developer Portal](https://backstage.io/) — software catalog hosted in the main RKE cluster

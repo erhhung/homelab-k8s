@@ -1,0 +1,13 @@
+rancher_namespace: cattle-system
+rancher_chart_version: "2.10.3"
+# https://github.com/rancher/rancher/tree/main/chart
+# https://github.com/rancher/rancher/blob/main/chart/values.yaml
+rancher_chart_values:
+  replicas: 1
+  # https://ranchermanager.docs.rancher.com/getting-started/installation-and-upgrade/install-upgrade-on-a-kubernetes-cluster#5-install-rancher-with-helm-and-your-chosen-certificate-option
+  # IMPORTANT: cert secrets must have already been created!
+  hostname: "{{ k3s_fqdn }}"
+  ingress:
+    tls:
+      source: secret
+  privateCA: true
