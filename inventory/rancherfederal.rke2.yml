@@ -1,4 +1,4 @@
-# https://github.com/rancherfederal/rke2-ansible/blob/main/docs/README.md#defining-your-cluster
+# https://github.com/rancherfederal/rke2-ansible/tree/main/docs/README.md#defining-your-cluster
 ---
 rke2_cluster:
   children:

@@ -23,6 +23,15 @@
 - name: Include Harbor OCI registry playbook
   ansible.builtin.import_playbook: harbor.yml
 
+- name: Include PostgreSQL database playbook
+  ansible.builtin.import_playbook: postgresql.yml
+
+- name: Include Keycloak IAM & OIDC playbook
+  ansible.builtin.import_playbook: keycloak.yml
+
+- name: Include Istio service mesh playbook
+  ansible.builtin.import_playbook: istio.yml
+
 - name: Include Argo CD GitOps tool playbook
   ansible.builtin.import_playbook: argocd.yml
 

@@ -1,6 +1,11 @@
 # https://docs.k3s.io/reference/env-variables
 # https://docs.k3s.io/cli/server
 
+# NOTE: K3s version may be held back by
+# Rancher Server Helm chart requirements
+# https://github.com/k3s-io/k3s/releases
+k3s_version: v1.31.7+k3s1
+
 # curl -sfL https://get.k3s.io | \
 #   sh -s - server [opts...]
 k3s_opts:
@@ -9,6 +14,3 @@ k3s_opts:
   - --write-kubeconfig {{ k3s_kubeconfig }}
   - --write-kubeconfig-mode 644
 # k3s_token: {vault.yml}
-
-crictl_config: /var/lib/rancher/k3s/agent/etc/crictl.yaml
-containerd_socket: /run/k3s/containerd/containerd.sock

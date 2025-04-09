@@ -9,6 +9,7 @@
   vars_files:
     - vars/basics.yml
     - vars/kubernetes.yml
+    - vars/vclusters.yml
     - vars/lablabs.rke2.yml
   # https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_reuse_roles.html#using-roles
   pre_tasks:
@@ -44,7 +45,7 @@
   tags: kubeconfig
   hosts: "{{ rke_control_plane_group }}"
   gather_facts: false
-  vars_files:
+  vars_files: &vars_files
     - vars/basics.yml
     - vars/kubernetes.yml
   tasks:
@@ -76,9 +77,7 @@
   hosts: cluster
   gather_facts: false
   become: true
-  vars_files:
-    - vars/basics.yml
-    - vars/kubernetes.yml
+  vars_files: *vars_files
   vars:
     kubeconfig_content: "{{ hostvars[rke_control_plane_host]['cat_kubeconfig'].stdout }}"
   tasks:
@@ -102,13 +101,26 @@
         kubeconfig_content != '' and
         inventory_hostname in groups[rke_workers_group]
 
-    - name: Create /etc/profile.d/kubectl.sh
+    - name: Create /etc/profile.d/kubernetes.sh
       ansible.builtin.copy:
-        dest: /etc/profile.d/kubectl.sh
+        dest: /etc/profile.d/kubernetes.sh
         content: |
+          # kubectl and crictl are in the same directory
           export PATH="$PATH:{{ rke_bin_dir }}"
-          export KUBECONFIG="{{ rke_kubeconfig }}"
+          export KUBECONFIG={{ rke_kubeconfig }}
+          export CRI_CONFIG_FILE={{ rke_crictl_config }}
+          export CONTAINER_RUNTIME_ENDPOINT={{ rke_containerd_socket }}
         mode: "0644"
+
+    - name: Allow admin user to use crictl
+      vars:
+        file_path: "{{ item.path }}"
+        file_mode: "{{ item.mode }}"
+      ansible.builtin.include_tasks: tasks/mkreadable.yml
+      loop:
+        - path: "{{ rke_crictl_config }}"
+        - path: "{{ rke_containerd_socket }}"
+          mode: "0666"
 
     - name: Install calicoctl CLI utility
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/shell_module.html
@@ -146,20 +158,71 @@
 
 - name: Apply supplemental RKE2 configuration
   tags: configure
-  hosts: "{{ rke_control_plane_group }}"
+  hosts: cluster
   vars_files:
     - vars/basics.yml
     - vars/kubernetes.yml
     - vars/rancher.yml
   tasks:
+    # increase kube-proxy livenessProbe failureThreshold
+    # since it's causing frequent unhealthy pod restarts.
+    # turns out not necessary as it's a Linux kernel bug:
+    # https://bugs.launchpad.net/ubuntu/+source/linux/+bug/2104282
+    # - name: Patch kube-proxy livenessProbe
+    #   become: true
+    #   vars:
+    #     failure_threshold: 12
+    #   ansible.builtin.shell: |
+    #     set -o pipefail
+    #     cd /var/lib/rancher/rke2/agent/pod-manifests
+    #
+    #     yq_expr='.spec.containers[0].livenessProbe.failureThreshold = {{ failure_threshold }}'
+    #     diff=$( diff <(yq -PM . kube-proxy.yaml) <(yq -PM "$yq_expr" kube-proxy.yaml) )
+    #     [ "$diff" ] || exit 9 # no change
+    #
+    #     yq -iPM "$yq_expr" kube-proxy.yaml
+    #   args:
+    #     executable: /bin/bash
+    #   register: patch_pod
+    #   changed_when: patch_pod.rc == 0
+    #   failed_when: >-
+    #     patch_pod.rc != 0 and
+    #     patch_pod.rc != 9
+    #   notify: Restart kube-proxy static pod
+
+    # not sure exactly why kube-proxy doesn't already have
+    # permissions to watch Service, EndpointSlice and Node
+    - name: Update kube-proxy ClusterRole
+      become: true
+      ansible.builtin.copy:
+        # https://docs.rke2.io/advanced#auto-deploying-manifests
+        dest: "{{ rke_manifests_dir }}/kube-proxy-clusterrole.yaml"
+        content: |
+          apiVersion: rbac.authorization.k8s.io/v1
+          kind: ClusterRole
+          metadata:
+            name: system:kube-proxy
+          rules:
+            - apiGroups: [""]
+              resources: ["services", "endpoints", "nodes"]
+              verbs: ["get", "list", "watch"]
+            - apiGroups: ["discovery.k8s.io"]
+              resources: ["endpointslices"]
+              verbs: ["get", "list", "watch"]
+        mode: "0644"
+      when: inventory_hostname == rke_control_plane_host
+      register: kube_proxy_cr
+
+    # https://www.suse.com/support/kb/doc/?id=000021179
     - name: Write CoreDNS HelmChartConfig
-      run_once: true
       become: true
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/template_module.html
       ansible.builtin.template:
         src: templates/coredns.yaml.j2
-        dest: /var/lib/rancher/rke2/server/manifests/rke2-coredns-config.yaml
+        # https://docs.rke2.io/advanced#auto-deploying-manifests
+        dest: "{{ rke_manifests_dir }}/rke2-coredns-config.yaml"
         mode: "0664"
+      when: inventory_hostname == rke_control_plane_host
       register: coredns_config
 
     - name: Restart rke2-server service
@@ -169,7 +232,10 @@
         name: rke2-server
         state: restarted
       # noqa no-handler
-      when: coredns_config.changed
+      when: >-
+        (kube_proxy_cr  is defined and  kube_proxy_cr.changed) or
+        (coredns_config is defined and coredns_config.changed)
+      register: restart_rke
 
     # whenever the rke2-server service is restarted,
     # kubeconfig is rewritten with 0600 permissions
@@ -178,12 +244,15 @@
         file_desc: RKE kubeconfig
         file_path: "{{ rke_kubeconfig }}"
       ansible.builtin.include_tasks: tasks/mkreadable.yml
+      when: >-
+        restart_rke is defined and
+        restart_rke.changed
 
     - name: Register cluster with Rancher
       vars:
         # required kubernetes>=24.2 package only in user virtualenv
         ansible_python_interpreter: "{{ venv_python_interpreter }}"
-      run_once: true
+      when: inventory_hostname == rke_control_plane_host
       block:
         - name: Wait for CoreDNS to be ready
           # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_info_module.html
@@ -196,7 +265,6 @@
           # https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_loops.html#retrying-a-task-until-a-condition-is-met
           register: coredns_info
           until: >-
-            coredns_info.resources is defined and
             coredns_info.resources[0].status.readyReplicas ==
             coredns_info.resources[0].status.replicas
           retries: 30
@@ -261,9 +329,21 @@
             namespace: "{{ rancher_namespace }}"
           register: agent_info
           until: >-
-            agent_info.resources is defined and
             agent_info.resources[0].status.readyReplicas ==
             agent_info.resources[0].status.replicas
           retries: 30
           delay: 10
+  # handlers:
+  #   # restart a static pod by deleting it
+  #   - name: Restart kube-proxy static pod
+  #     vars:
+  #       # required kubernetes>=24.2 package only in user virtualenv
+  #       ansible_python_interpreter: "{{ venv_python_interpreter }}"
+  #     kubernetes.core.k8s:
+  #       kubeconfig: "{{ rke_kubeconfig }}"
+  #       api_version: v1
+  #       kind: Pod
+  #       name: kube-proxy-{{ inventory_hostname }}
+  #       namespace: kube-system
+  #       state: absent
   any_errors_fatal: true

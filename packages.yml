@@ -26,6 +26,7 @@
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/shell_module.html
       ansible.builtin.shell: |
         set -o pipefail
+
         curl https://baltocdn.com/helm/signing.asc | \
           gpg --dearmor | tee {{ keyring }} > /dev/null
       args:
@@ -101,6 +102,7 @@
     - name: Install mikefarah/yq from GitHub
       ansible.builtin.shell: |
         set -o pipefail
+
         REL="https://github.com/mikefarah/yq/releases/latest"
         VER=$(curl -Is $REL | sed -En 's/^location:.+\/tag\/v(.+)\r$/\1/p')
 
@@ -128,6 +130,7 @@
     - name: Install Fastfetch from GitHub
       ansible.builtin.shell: |
         set -o pipefail
+
         REL="https://github.com/fastfetch-cli/fastfetch/releases/latest"
         VER=$(curl -Is $REL | sed -En 's/^location:.+\/tag\/(.+)\r$/\1/p')
 

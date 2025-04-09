@@ -7,12 +7,13 @@
     - vars/basics.yml
     - vars/kubernetes.yml
     - vars/argocd.yml
+  vars:
+    kubeconfig: "{{ rke_kubeconfig }}"
   tasks:
     - name: Create Argo CD ingress secret
       vars:
         cert_desc: Argo CD
         cert_file: argocd
-        kubeconfig: "{{ rke_kubeconfig }}"
         secret_name: argocd-server-tls
         secret_ns: "{{ argocd_namespace }}"
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
@@ -25,7 +26,7 @@
         ansible_python_interpreter: "{{ venv_python_interpreter }}"
       # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/helm_module.html
       kubernetes.core.helm:
-        kubeconfig: "{{ rke_kubeconfig }}"
+        kubeconfig: "{{ kubeconfig }}"
         chart_repo_url: https://argoproj.github.io/argo-helm
         chart_ref: argo-cd
         chart_version: "{{ argocd_chart_version }}"
@@ -35,4 +36,26 @@
         atomic: true
         wait: true
       timeout: 300
+
+    - name: >-
+        {{ 'Enable' if argocd_use_mesh else 'Disable' }}
+        Istio service mesh
+      vars:
+        enabled: "{{ argocd_use_mesh }}"
+        apps_ns: "{{ argocd_namespace }}"
+        services:
+          - argocd-server
+          - argocd-applicationset-controller
+          - argocd-commit-server
+          - argocd-repo-server
+        resources: |
+          {% set res = [] %}
+          {% for svc in services %}
+          {%  set _ = res.append({
+                'kind':'Service',
+                'name': svc
+              }) %}
+          {% endfor %}
+          {{ res }}
+      ansible.builtin.include_tasks: tasks/servicemesh.yml
   any_errors_fatal: true

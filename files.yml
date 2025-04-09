@@ -8,21 +8,21 @@
     - vars/rancher.yml
   tasks:
     - name: Allow sudo commands without password
+      become: true
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/template_module.html
       ansible.builtin.template:
         src: templates/nopasswd.j2
         dest: /etc/sudoers.d/nopasswd
         mode: "0440"
-      become: true
 
     - name: Suppress Apt script warning message
+      become: true
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/copy_module.html
       ansible.builtin.copy:
         dest: /etc/apt/apt.conf.d/90disable-warning
         content: |
           Apt::Cmd::Disable-Script-Warning true;
         mode: "0644"
-      become: true
 
     - name: Copy dot files into home directory
       ansible.builtin.copy:

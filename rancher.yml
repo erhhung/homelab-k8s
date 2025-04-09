@@ -15,11 +15,14 @@
         # yeah, this prints the K3s token in plain text
         msg: "Server options: {{ k3s_opts | join(' ') }}"
   tasks:
+    # https://docs.k3s.io/reference/env-variables
     - name: Install K3s service by script
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/shell_module.html
       ansible.builtin.shell: |
         set -o pipefail
+
         curl -sfL https://get.k3s.io | \
+          INSTALL_K3S_VERSION={{ k3s_version }} \
           sh -s - {{ k3s_opts | join(' ') }}
       args:
         executable: /bin/bash
@@ -33,11 +36,15 @@
         name: k3s
         state: started
 
-    - name: Create /etc/profile.d/kubectl.sh
+    - name: Create /etc/profile.d/kubernetes.sh
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/copy_module.html
       ansible.builtin.copy:
-        dest: /etc/profile.d/kubectl.sh
-        content: export KUBECONFIG={{ k3s_kubeconfig }}
+        dest: /etc/profile.d/kubernetes.sh
+        content: |
+          # kubectl and crictl are in /usr/local/bin
+          export KUBECONFIG={{ k3s_kubeconfig }}
+          export CRI_CONFIG_FILE={{ k3s_crictl_config }}
+          export CONTAINER_RUNTIME_ENDPOINT={{ k3s_containerd_socket }}
         mode: "0644"
 
     - name: Allow admin user to use crictl
@@ -47,8 +54,8 @@
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
       ansible.builtin.include_tasks: tasks/mkreadable.yml
       loop:
-        - path: "{{ crictl_config }}"
-        - path: "{{ containerd_socket }}"
+        - path: "{{ k3s_crictl_config }}"
+        - path: "{{ k3s_containerd_socket }}"
           mode: "0666"
 
     - name: Merge kubeconfig into local
@@ -83,7 +90,7 @@
         release_name: cert-manager
         release_namespace: cert-manager
         create_namespace: true
-        # https://github.com/cert-manager/cert-manager/blob/master/deploy/charts/cert-manager/values.yaml
+        # https://github.com/cert-manager/cert-manager/tree/master/deploy/charts/cert-manager/values.yaml
         release_values:
           crds:
             enabled: true
@@ -159,6 +166,7 @@
       become: true
       ansible.builtin.shell: |
         set -o pipefail
+
         REL="https://github.com/rancher/cli/releases/latest"
         VER=$(curl -Is $REL | sed -En 's/^location:.+\/tag\/v(.+)\r$/\1/p')
 

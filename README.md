@@ -18,7 +18,13 @@ private CA server at pki.fourteeners.local.
 ## Cluster Topology
 
 <p align="center">
-<img src="./topology.drawio.svg" alt="topology.drawio.svg" />
+<img src="images/topology.drawio.svg" alt="topology.drawio.svg" />
+</p>
+
+## Cluster Services
+
+<p align="center">
+<img src="images/services.drawio.svg" alt="services.drawio.svg" />
 </p>
 
 ## Ansible Vault
@@ -31,6 +37,7 @@ VAULTFILE="group_vars/all/vault.yml"
 
 ansible-vault create $VAULTFILE
 ansible-vault edit   $VAULTFILE
+ansible-vault view   $VAULTFILE
 ```
 
 Variables stored in Ansible Vault:
@@ -123,12 +130,27 @@ export ANSIBLE_CONFIG=./ansible.cfg
     ansible-playbook harbor.yml
     ```
 
-9. Set up **Argo CD** GitOps delivery tool
+9. Set up **PostgreSQL** database in _**HA**_ mode
+    ```bash
+    ansible-playbook postgresql.yml
+    ```
+
+10. Set up **Keycloak** IAM & OIDC provider
+    ```bash
+    ansible-playbook keycloak.yml
+    ```
+
+11. Set up **Istio** service mesh in _**ambient**_ mode
+    ```bash
+    ansible-playbook istio.yml
+    ```
+
+12. Set up **Argo CD** GitOps delivery tool
     ```bash
     ansible-playbook argocd.yml
     ```
 
-10. Create **virtual clusters** in RKE running **K0s**
+13. Create **virtual clusters** in RKE running **K0s**
     ```bash
     ansible-playbook vclusters.yml
     ```
@@ -183,6 +205,62 @@ Output from `play.sh` will be logged in "`ansible.log`".
     ansible-playbook startvms.yml [-e targets={group|host|,...}]
     ```
 
+## VM Storage
+
+To expand the VM disk on a cluster node, the VM must be shut down
+(attempting to resize the disk from Xen Orchestra will fail with
+error: `VDI in use`).
+
+Once the VM disk has been expanded, restart the VM and SSH into
+the node to resize the partition and LV.
+
+```bash
+$ sudo su
+
+# verify new size
+$ lsblk /dev/xvda
+
+# resize partition
+$ parted /dev/xvda
+) print
+Warning: Not all of the space available to /dev/xvda appears to be used...
+Fix/Ignore? Fix
+
+) resizepart 3 100%
+# confirm new size
+) print
+) quit
+
+# sync with kernel
+$ partprobe
+
+# confirm new size
+$ lsblk /dev/xvda3
+
+# resize VG volume
+$ pvresize /dev/xvda3
+Physical volume "/dev/xvda3" changed
+1 physical volume(s) resized...
+
+# confirm new size
+$ pvdisplay
+
+# show LV volumes
+$ lvdisplay
+
+# grow desired LV
+$ lvextend -vrl +90%FREE /dev/ubuntu-vg/ubuntu-lv
+Extending logical volume ubuntu-vg/ubuntu-lv to up to...
+fsadm: Executing resize2fs /dev/mapper/ubuntu--vg-ubuntu--lv
+The filesystem on /dev/mapper/ubuntu--vg-ubuntu--lv is now...
+
+# confirm new size
+$ df -h /
+```
+
+After expanding all desired disks, run `./diskfree.sh`
+to verify available disk space on all cluster nodes.
+
 ## Troubleshooting
 
 Ansible's [ad-hoc commands](https://docs.ansible.com/ansible/latest/command_guide/intro_adhoc.html#managing-services) are useful in these scenarios.
@@ -190,12 +268,49 @@ Ansible's [ad-hoc commands](https://docs.ansible.com/ansible/latest/command_guid
 1. Restart Kubernetes cluster services on all nodes
 
     ```bash
-    ansible rancher       -m ansible.builtin.service -b -a "name=k3s         state=restarted"
-    ansible control_plane -m ansible.builtin.service -b -a "name=rke2-server state=restarted"
-    ansible workers       -m ansible.builtin.service -b -a "name=rke2-agent  state=restarted"
+    ansible rancher          -m ansible.builtin.service -b -a "name=k3s         state=restarted"
+    ansible control_plane_ha -m ansible.builtin.service -b -a "name=rke2-server state=restarted"
+    ansible workers_ha       -m ansible.builtin.service -b -a "name=rke2-agent  state=restarted"
     ```
 
-    _**NOTE:** substitute target hosts with `control_plane_ha` and `workers_ha` if the RKE cluster was deployed in HA mode._
+    _**NOTE:** remove `_ha` suffix from target hosts if the RKE cluster was deployed in non-HA mode._
+
+2. All `kube-proxy` static pods on continuous `CrashLoopBackOff`
+
+    This turns out to be a [Linux kernel bug](https://bugs.launchpad.net/ubuntu/+source/linux/+bug/2104282) in `linux-image-6.8.0-56-generic` and above _(discovered on upgrade to `linux-image-6.8.0-57-generic`)_, causing this error in the container logs:
+    ```
+    ip6tables-restore v1.8.9 (nf_tables): unknown option "--xor-mark"
+    ```
+    Workaround is to downgrade to an earlier kernel:
+    ```bash
+    # list installed kernel images
+    ansible -v cluster -a 'bash -c "dpkg -l | grep linux-image"'
+
+    # install working kernel image
+    ansible -v cluster -b -a 'apt-get install -y linux-image-6.8.0-55-generic'
+
+    # GRUB use working kernel image
+    ansible -v cluster -m ansible.builtin.shell -b -a '
+        kernel="6.8.0-55-generic"
+        lvuuid=$(blkid -s UUID -o value /dev/mapper/ubuntu--vg-ubuntu--lv)
+        menuid="gnulinux-advanced-$lvuuid>gnulinux-$kernel-advanced-$lvuuid"
+        sed -Ei "s/^(GRUB_DEFAULT=).+$/\\1\"$menuid\"/" /etc/default/grub
+        grep GRUB_DEFAULT /etc/default/grub
+    '
+    # update /boot/grub/grub.cfg
+    ansible -v cluster -b -a 'update-grub'
+
+    # reboot nodes, one at a time
+    ansible -v cluster -m ansible.builtin.reboot -b -a "post_reboot_delay=120" -f 1
+
+    # confirm working kernel image
+    ansible -v cluster -a 'uname -r'
+
+    # remove old backup kernels only
+    # (keep latest non-working kernel
+    # so upgrade won't install again)
+    ansible -v cluster -b -a 'apt-get autoremove -y --purge'
+    ```
 
 ## Roadmap
 
@@ -206,6 +321,21 @@ These are additional components to be deployed:
 - [X] [Harbor Container Registry](https://goharbor.io/) — private container registry
     * Install into the same K3s cluster as Rancher Server using [`harbor/harbor`](https://github.com/goharbor/harbor-helm/) Helm chart
 - [X] [Argo CD Declarative GitOps](https://argo-cd.readthedocs.io/) — manage deployment of other applications in the main RKE cluster
+- [X] [PostgreSQL Database](https://www.postgresql.org/docs/current/) — install using Bitnami's [`postgresql-ha`](https://github.com/bitnami/charts/tree/main/bitnami/postgresql-ha) Helm chart
 - [ ] [Prometheus Monitoring Stack](https://github.com/prometheus-operator/kube-prometheus) — Prometheus, Grafana, and rules using the Prometheus Operator
-    * Install into the main RKE cluster using [`kube-prometheus-stack`](https://github.com/prometheus-community/helm-charts/blob/main/charts/kube-prometheus-stack/README.md) Helm chart
-- [ ] [Backstage Developer Portal](https://backstage.io/) — software catalog hosted in the main RKE cluster
+    * Install into the main RKE cluster using [`kube-prometheus-stack`](https://github.com/prometheus-community/helm-charts/tree/main/charts/kube-prometheus-stack/README.md) Helm chart
+- [X] [Keycloak IAM & OIDC Provider](https://www.keycloak.org/) — identity and access management and OpenID Connect provider
+- [ ] [Istio Service Mesh](https://istio.io/latest/about/service-mesh/) with [Kiali UI](https://kiali.io/) — secure, observe, trace, and route traffic between cluster workloads
+    * Install into the main RKE cluster using [`istioctl`](https://istio.io/latest/docs/ambient/install/istioctl/)
+    * Install Kiali using [`kiali-operator`](https://kiali.io/docs/installation/installation-guide/install-with-helm/#install-with-operator/) Helm chart
+- [ ] [OpenTelemetry Collector](https://opentelemetry.io/docs/collector/) with [Jaeger UI](https://www.jaegertracing.io/) -- telemetry collector agent and distributed tracing backend
+    * Install into the main RKE cluster using [OpenTelemetry Collector](https://opentelemetry.io/docs/platforms/kubernetes/helm/collector/) Helm chart
+    * Install Jaeger using [Jaeger](https://github.com/jaegertracing/helm-charts/tree/main/charts/jaeger) Helm chart
+- [ ] [MinIO Object Storage](https://github.com/minio/minio) — object storage server and console
+    * Install into the main RKE cluster using [MinIO Operator](https://min.io/docs/minio/kubernetes/upstream/operations/installation.html)
+- [ ] [Velero Backup & Restore](https://velero.io/docs/latest/basic-install) — back up and restore persistent volumes
+    * Install into the main RKE cluster using [Velero](https://github.com/vmware-tanzu/helm-charts/tree/main/charts/velero) Helm chart
+- [ ] [Backstage Developer Portal](https://backstage.io/) — software catalog and developer portal
+- [ ] [Meshery](https://github.com/meshery/meshery) — visual and collaborative GitOps platform
+- [ ] [NATS](https://docs.nats.io/) — high performance message queues (Kafka alternative) with [JetStream](https://docs.nats.io/nats-concepts/jetstream) for persistence
+- [ ] [KEDA](https://keda.sh/) — Kubernetes Event Driven Autoscaler

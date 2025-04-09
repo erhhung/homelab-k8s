@@ -1,0 +1,78 @@
+# enables/disables Istio service mesh (in ambient mode)
+# for specified namespace and enables/disables Waypoint
+# proxy for entire namespace or only specific services.
+# pass the following vars:
+#   kubeconfig  <required> path to kubeconfig
+#   enabled     [optional] use service mesh for namespace?
+#   apps_ns     <required> namespace to apply service mesh
+#   resources   [optional] resources to use Waypoint proxy
+#     - kind: <Namespace|Service>
+#       name: <resource-name>
+#       enabled: [true]
+---
+- name: >-
+    {{ 'Enable' if enabled | default(true) else 'Disable' }}
+    Istio for {{ apps_ns }} namespace
+  become: false
+  vars:
+    # required kubernetes>=24.2 package only in user virtualenv
+    ansible_python_interpreter: "{{ venv_python_interpreter }}"
+    waypoint: "{{ apps_ns ~ '-waypoint' }}"
+  block:
+    - name: >-
+        {{ 'Label' if enabled | default(true) else 'Unlabel' }}
+        {{ apps_ns }} namespace as data plane
+      # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_module.html
+      kubernetes.core.k8s:
+        kubeconfig: "{{ kubeconfig }}"
+        api_version: v1
+        kind: Namespace
+        name: "{{ apps_ns }}"
+        definition:
+          metadata:
+            labels: # set value to null to remove an existing key
+              istio.io/dataplane-mode: >-
+                {{ 'ambient' if enabled | default(true) else null }}
+        state: patched
+
+    # https://istio.io/latest/docs/ambient/usage/waypoint/#deploy-a-waypoint-proxy
+    - name: >-
+        {{ 'Deploy' if enabled | default(true) else 'Delete' }}
+        Waypoint proxy via Gateway API
+      kubernetes.core.k8s:
+        kubeconfig: "{{ kubeconfig }}"
+        namespace: "{{ apps_ns }}"
+        definition:
+          apiVersion: gateway.networking.k8s.io/v1
+          kind: Gateway
+          metadata:
+            name: "{{ waypoint }}"
+            labels:
+              istio.io/waypoint-for: service
+          spec:
+            gatewayClassName: istio-waypoint
+            listeners:
+              - name: mesh
+                port: 15008
+                protocol: HBONE
+        state: "{{ 'present' if enabled | default(true) else 'absent' }}"
+
+    # https://istio.io/latest/docs/ambient/usage/waypoint/#useawaypoint
+    - name: (Un)label resources for Waypoint proxy
+      kubernetes.core.k8s:
+        kubeconfig: "{{ kubeconfig }}"
+        api_version: v1
+        kind: "{{ item.kind }}"
+        name: "{{ item.name }}"
+        namespace: "{{ apps_ns if (item.kind | lower) != 'namespace' else omit }}"
+        definition:
+          metadata:
+            labels: # set value to null to remove an existing key
+              istio.io/use-waypoint: >-
+                {{ waypoint if (enabled | default(true)) and
+                          (item.enabled | default(true)) else null }}
+        state: patched
+      loop: "{{ resources | default([]) }}"
+      loop_control:
+        label: "{{ item.name }}.{{ item.kind | lower }}"
+  any_errors_fatal: true

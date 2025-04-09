@@ -6,9 +6,21 @@ rke_workers_group: "{{ 'workers_ha' if rke_ha_mode else 'workers' }}"
 k3s_control_plane_host: rancher
 rke_control_plane_host: "{{ groups[rke_control_plane_group][0] }}"
 
+# location exported by KUBECONFIG variable
 k3s_kubeconfig: /etc/rancher/k3s/k3s.yaml
 rke_kubeconfig: /etc/rancher/rke2/rke2.yaml
 rke_bin_dir: /var/lib/rancher/rke2/bin
+
+# location exported by CRI_CONFIG_FILE variable
+k3s_crictl_config: /var/lib/rancher/k3s/agent/etc/crictl.yaml
+rke_crictl_config: /var/lib/rancher/rke2/agent/etc/crictl.yaml
+
+# location exported by CONTAINER_RUNTIME_ENDPOINT variable
+k3s_containerd_socket: /run/k3s/containerd/containerd.sock
+rke_containerd_socket: /run/k3s/containerd/containerd.sock # same as K3s!
+
+# https://docs.rke2.io/advanced#auto-deploying-manifests
+rke_manifests_dir: /var/lib/rancher/rke2/server/manifests
 
 k3s_cluster_name: rancher
 rke_cluster_name: homelab
@@ -30,3 +42,6 @@ rke_fqdns: >
 
 k3s_ingress_class: traefik
 rke_ingress_class: nginx
+
+# virtual IP assigned by RKE2 kube-vip
+rke_lb_vip: "{{ lb_vip_range.start }}"

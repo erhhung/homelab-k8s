@@ -48,6 +48,7 @@
         # scripts so that kubectl is in PATH
         exec /bin/bash -l <<'EOF'
         set -o pipefail
+
         # sed command strips colored output
         curl -s {{ script_url }} | bash | \
           sed -r 's/\x1B\[([0-9]{1,3}(;[0-9]{1,2})?)?[mGK]//g'
@@ -117,7 +118,7 @@
   tags: longhorn
   # install just on RKE cluster for now
   hosts: "{{ rke_control_plane_host }}"
-  vars_files:
+  vars_files: &vars_files
     - vars/basics.yml
     - vars/kubernetes.yml
     - vars/storage.yml
@@ -150,10 +151,7 @@
   hosts:
     - "{{ k3s_control_plane_host }}"
     - "{{ rke_control_plane_host }}"
-  vars_files:
-    - vars/basics.yml
-    - vars/kubernetes.yml
-    - vars/storage.yml
+  vars_files: *vars_files
   vars:
     # required kubernetes>=24.2 package only in user virtualenv
     ansible_python_interpreter: "{{ venv_python_interpreter }}"
@@ -176,7 +174,7 @@
         release_name: "{{ item.name }}"
         release_namespace: nfs-provisioner
         create_namespace: true
-        # https://github.com/kubernetes-sigs/nfs-subdir-external-provisioner/blob/master/charts/nfs-subdir-external-provisioner/values.yaml
+        # https://github.com/kubernetes-sigs/nfs-subdir-external-provisioner/tree/master/charts/nfs-subdir-external-provisioner/values.yaml
         release_values:
           nfs:
             server: "{{ item.server }}"

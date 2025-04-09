@@ -12,7 +12,7 @@ harbor_fqdn: "{{ [harbor_host_name] | product(search_domains) | map('join','.') 
 
 harbor_chart_version: "1.16.2"
 # https://goharbor.io/docs/latest/install-config/harbor-ha-helm/
-# https://github.com/goharbor/harbor-helm/blob/main/values.yaml
+# https://github.com/goharbor/harbor-helm/tree/main/values.yaml
 harbor_chart_values:
   externalURL: https://{{ harbor_fqdn }}
   expose:
@@ -93,7 +93,7 @@ harbor_users:
     role: developer # project: library
     # comment: optional
 
-# https://github.com/goharbor/harbor/blob/main/src/portal/src/app/shared/entities/shared.const.ts#L295-L309
+# https://github.com/goharbor/harbor/tree/main/src/portal/src/app/shared/entities/shared.const.ts#L295-L309
 harbor_roles:
   projectAdmin: 1
   maintainer: 4

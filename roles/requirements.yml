@@ -2,7 +2,7 @@
 # ansible-galaxy install -r roles/requirements.yml
 ---
 collections: []
-  # # https://github.com/rancherfederal/rke2-ansible/blob/main/docs/README.md
+  # # https://github.com/rancherfederal/rke2-ansible/tree/main/docs/README.md
   # - name: rancherfederal.rke2
   #   source: https://github.com/rancherfederal/rke2-ansible.git
   #   type: git

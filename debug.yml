@@ -189,6 +189,23 @@
            text: {{ text }}
           found: {{ found }}
 
+    - name: Debug create query string
+      vars:
+        query_params:
+          ssl: "true"
+          sslmode: verify-full
+          sslcert: /tmp/tls/tls.crt
+          sslkey: /tmp/tls/tls.key
+          sslrootcert: /tmp/tls/ca.crt
+        query_string: |-
+          {% set  items = query_params | dict2items -%}
+          {% set params = items | map(attribute='key')    |
+                      zip(items | map(attribute='value')) |
+                      map('join','=') -%}
+          {{ params | join('&') }}
+      ansible.builtin.debug:
+        var: query_string
+
 - name: Useful collection of tasks
   tags: tasks
   hosts: localhost

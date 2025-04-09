@@ -3,7 +3,7 @@
 ---
 - name: Install Harbor on K3s cluster
   hosts: "{{ k3s_control_plane_host }}"
-  vars_files:
+  vars_files: &vars_files
     - vars/basics.yml
     - vars/kubernetes.yml
     - vars/harbor.yml
@@ -63,10 +63,7 @@
 - name: Configure Harbor registry
   hosts: "{{ k3s_control_plane_host }}"
   gather_facts: false
-  vars_files:
-    - vars/basics.yml
-    - vars/kubernetes.yml
-    - vars/harbor.yml
+  vars_files: *vars_files
   vars:
     # https://harbor.fourteeners.local/devcenter-api-2.0
     api_base: https://{{ harbor_fqdn }}/api/v2.0
@@ -108,6 +105,7 @@
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/shell_module.html
       ansible.builtin.shell: |
         set -o pipefail
+
         get_user_id() {
           local api_url="{{ api_base }}/users/search?username=$1"
           curl -sku {{ api_auth }} "$api_url" | jq -r .[].user_id

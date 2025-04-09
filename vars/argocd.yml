@@ -11,7 +11,7 @@ argocd_fqdn: "{{ [argocd_host_name] | product(search_domains) | map('join','.') 
 
 argocd_chart_version: "7.8.12"
 # https://github.com/argoproj/argo-helm/tree/main/charts/argo-cd
-# https://github.com/argoproj/argo-helm/blob/main/charts/argo-cd/values.yaml
+# https://github.com/argoproj/argo-helm/tree/main/charts/argo-cd/values.yaml
 argocd_chart_values:
   crds:
     keep: false # delete on uninstall
@@ -23,7 +23,7 @@ argocd_chart_values:
 
   configs:
     # "argocd-cm" ConfigMap
-    # https://github.com/argoproj/argo-cd/blob/master/docs/operator-manual/argocd-cm.yaml
+    # https://github.com/argoproj/argo-cd/tree/master/docs/operator-manual/argocd-cm.yaml
     # all values under .configs.cm are written into ConfigMap
     cm:
       # allow users to exec into app pods from the Argo CD UI:
@@ -39,7 +39,7 @@ argocd_chart_values:
       # using the Argo CD CLI
       accounts.erhhung: apiKey
     # "argocd-secret" Secret
-    # https://github.com/argoproj/argo-cd/blob/master/docs/operator-manual/argocd-secret.yaml
+    # https://github.com/argoproj/argo-cd/tree/master/docs/operator-manual/argocd-secret.yaml
     secret:
       githubSecret: "{{ github_access_token }}"
       # bcrypt hash of plain-text password:
@@ -64,7 +64,7 @@ argocd_chart_values:
         # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/file_lookup.html
         B9C45C9F62942408: "{{ lookup('ansible.builtin.file', 'vars/argocd/erhhung.asc', rstrip=false) }}"
     # "argocd-cmd-params-cm" ConfigMap
-    # https://github.com/argoproj/argo-cd/blob/master/docs/operator-manual/argocd-cmd-params-cm.yaml
+    # https://github.com/argoproj/argo-cd/tree/master/docs/operator-manual/argocd-cmd-params-cm.yaml
     params:
       controller.ignore.normalizer.jq.timeout: "2s"
       reposerver.parallelism.limit: 2
@@ -100,8 +100,8 @@ argocd_chart_values:
     # homelab environment currently
     enabled: false
   server:
-    # "argocd-server-tls" Secret will
-    # be created manually by Ansible
+    # "argocd-server-tls" Secret
+    # will be created by Ansible
     certificateSecret:
       enabled: false
     ingress:
@@ -121,3 +121,6 @@ argocd_chart_values:
   notifications:
     metrics:
       <<: *metrics
+
+# Istio service mesh?
+argocd_use_mesh: true

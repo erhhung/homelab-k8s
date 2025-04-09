@@ -1,8 +1,12 @@
 exclude_paths:
   - .ansible/
   - group_vars/all/vault.yml
+
+# https://ansible.readthedocs.io/projects/lint/rules/
 skip_list:
-  - name[template]
-  - jinja[spacing]
+  - name[template] # {{ .. }} in task name
+  - yaml[colons]   # 2+ spaces after colon
+  - yaml[comments] # no space after # char
+  - jinja[spacing] # no spaces around vars
   - run-once[task]
   - key-order[task]

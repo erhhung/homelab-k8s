@@ -1,0 +1,192 @@
+# https://istio.io/latest/about/faq/#install-method-selection
+# https://istio.io/latest/docs/ambient/install/istioctl/
+---
+- name: Install istioctl for RKE cluster
+  tags: istioctl
+  hosts: "{{ rke_control_plane_group }}"
+  gather_facts: false
+  become: true
+  vars_files: &vars_files
+    - vars/basics.yml
+    - vars/kubernetes.yml
+    - vars/istio.yml
+  tasks:
+    # https://istio.io/latest/docs/setup/additional-setup/download-istio-release/
+    - name: Install istioctl CLI utility
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/shell_module.html
+      ansible.builtin.shell: |
+        set -o pipefail
+        cd /opt
+
+        [ -d istio-{{ istio_version }} ] && exit 9 # no change
+
+        curl -fsSL https://istio.io/downloadIstio | \
+          ISTIO_VERSION={{ istio_version }} \
+          TARGET_ARCH=$(uname -m) sh - || exit
+
+        # point /opt/istio to installed version
+        ln -sf istio-{{ istio_version }} istio
+      args:
+        executable: /bin/bash
+      register: install_istioctl
+      changed_when: install_istioctl.rc == 0
+      failed_when: >-
+        install_istioctl.rc != 0 and
+        install_istioctl.rc != 9
+
+    # istioctl should already be executable,
+    # but not its parent dirs /opt/istio/bin
+    - name: Make istioctl binary executable
+      vars:
+        file_desc: istioctl
+        file_path: "{{ istio_bin_dir }}/istioctl"
+        file_mode: "0755"
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
+      ansible.builtin.include_tasks: tasks/mkreadable.yml
+
+    - name: Create /etc/profile.d/istioctl.sh
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/copy_module.html
+      ansible.builtin.copy:
+        dest: /etc/profile.d/istioctl.sh
+        content: |
+          export PATH="$PATH:{{ istio_bin_dir }}"
+        mode: "0644"
+  any_errors_fatal: true
+
+- name: Install K8s Gateway API CRDs
+  tags: gateway
+  hosts: "{{ rke_control_plane_host }}"
+  vars_files: *vars_files
+  vars:
+    # required kubernetes>=24.2 package only in user virtualenv
+    ansible_python_interpreter: "{{ venv_python_interpreter }}"
+  tasks:
+    - name: Install Gateway API CRDs
+      # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_module.html
+      kubernetes.core.k8s:
+        kubeconfig: "{{ rke_kubeconfig }}"
+        src: "{{ k8s_gateway_api_crds_url }}"
+        state: present
+        apply: true
+        wait: true
+  any_errors_fatal: true
+
+- name: Install Istio control plane
+  tags: istio
+  hosts: "{{ rke_control_plane_host }}"
+  gather_facts: false
+  vars_files: *vars_files
+  tasks:
+    - name: Create ~/.istio subdirectory
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/file_module.html
+      ansible.builtin.file:
+        state: directory
+        path: .istio
+        mode: "0755"
+
+    - name: Prepare custom IstioOperator
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/template_module.html
+      ansible.builtin.template:
+        src: templates/istio.yaml.j2
+        dest: .istio/custom.yaml
+        mode: "0644"
+      register: istio_cr
+
+    - name: Install Istio in ambient mode
+      ansible.builtin.shell: |
+        # run Bash then source /etc/profile.d
+        # scripts so that istioctl is in PATH
+        exec /bin/bash -l <<'EOF'
+        set -o pipefail
+
+        if [ {{ istio_cr.changed }} == False ]; then
+          # compare istioctl version to mesh version
+
+          same_ver=$(istioctl version -o json 2> /dev/null | \
+            jq -r '.clientVersion.version == ((
+              (.meshVersion // [])[] | select(.Component == "pilot") | .Info.version
+              ) // "")')
+          [ "$same_ver" == true ] && exit 9 # no change
+        fi
+
+        # progress output and success message are all sent to stderr
+        istioctl install \
+          --set profile=ambient \
+          -f .istio/custom.yaml \
+          --skip-confirmation
+        EOF
+      register: install_istio
+      changed_when: install_istio.rc == 0
+      failed_when: >-
+        install_istio.stderr is not search('installed successfully') and
+        install_istio.rc != 0 and
+        install_istio.rc != 9
+      timeout: 300
+  any_errors_fatal: true
+
+- name: Install Kiali dashboard
+  tags: kiali
+  hosts: "{{ rke_control_plane_host }}"
+  gather_facts: false
+  vars_files: *vars_files
+  vars:
+    # required kubernetes>=24.2 package only in user virtualenv
+    ansible_python_interpreter: "{{ venv_python_interpreter }}"
+    kubeconfig: "{{ rke_kubeconfig }}"
+  tasks:
+    # https://kiali.io/docs/installation/installation-guide/install-with-helm/#operator-only-install
+    - name: Install Kiali Operator Helm chart
+      # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/helm_module.html
+      kubernetes.core.helm:
+        kubeconfig: "{{ kubeconfig }}"
+        chart_repo_url: https://kiali.org/helm-charts
+        chart_ref: kiali-operator
+        chart_version: "{{ kiali_operator_chart_version }}"
+        release_name: kiali-operator
+        release_namespace: "{{ kiali_operator_namespace }}"
+        create_namespace: true
+        atomic: true
+        wait: true
+
+    # https://kiali.io/docs/configuration/authentication/openid/#set-up-with-no-namespace-access-control-support
+    - name: Create Kiali OpenID secret
+      kubernetes.core.k8s:
+        kubeconfig: "{{ kubeconfig }}"
+        definition:
+          apiVersion: v1
+          kind: Secret
+          metadata:
+            name: kiali-openid
+            namespace: "{{ kiali_namespace }}"
+          type: Opaque
+          data:
+            oidc-secret: "{{ kiali_oidc_client_secret | b64encode }}"
+        validate:
+          fail_on_error: true
+        state: present
+        apply: true
+
+    - name: Create Kiali ingress secret
+      vars:
+        cert_desc: Kiali
+        cert_file: kiali
+        secret_name: kiali-ingress-tls
+        secret_ns: "{{ kiali_namespace }}"
+        create_ns: false
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
+      ansible.builtin.include_tasks: tasks/tlssecret.yml
+
+    # Kiali Operator shall deploy Kiali
+    - name: Create Kiali custom resource
+      kubernetes.core.k8s:
+        kubeconfig: "{{ kubeconfig }}"
+        definition:
+          apiVersion: kiali.io/v1alpha1
+          kind: Kiali
+          metadata:
+            name: kiali
+            namespace: "{{ kiali_namespace }}"
+          spec: "{{ kiali_cr_spec }}"
+        state: present
+        apply: true
+  any_errors_fatal: true
