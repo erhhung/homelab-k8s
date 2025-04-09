@@ -1,0 +1,94 @@
+# https://github.com/istio/istio/releases/latest
+istio_version: "1.25.1"
+istio_bin_dir: /opt/istio/bin
+
+# https://istio.io/latest/docs/ambient/install/istioctl/#install-or-upgrade-the-kubernetes-gateway-api-crds
+k8s_gateway_api_version: "1.2.1"
+k8s_gateway_api_crds_url: >-
+  https://github.com/kubernetes-sigs/gateway-api/releases/download/v{{
+  k8s_gateway_api_version }}/standard-install.yaml
+
+istio_namespace: istio-system
+kiali_namespace: "{{ istio_namespace }}"
+kiali_host_name: kiali # alias of "homelab"
+
+# remember to add  kiali.fourteeners.local to pfSense DNS
+# as an alias of homelab.fourteeners.local: 192.168.0.221
+# https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_filters.html#products
+kiali_fqdn: "{{ [kiali_host_name] | product(search_domains) | map('join','.') | first }}"
+
+# https://kiali.io/docs/installation/installation-guide/install-with-helm/#install-with-operator
+kiali_operator_namespace: kiali-operator
+kiali_operator_chart_version: "2.7.1"
+kiali_supported_image_version: "v2.4"
+
+kiali_oidc_client_id: kiali
+# kiali_oidc_client_secret: {vault.yml}
+# sso.fourteeners.local is same host as keycloak.fourteeners.local
+kiali_oidc_issuer_uri: https://sso.fourteeners.local/realms/homelab
+
+# https://kiali.io/docs/configuration/kialis.kiali.io/
+kiali_cr_spec:
+  version: "{{ kiali_supported_image_version }}"
+
+  # support SSO login using OIDC integration with Keycloak, but
+  # disable namespace access control because that would require
+  # the cluster to have already been connected with OIDC, which
+  # isn't possible since Keycloak also runs in this RKE cluster
+  # https://kiali.io/docs/configuration/authentication/openid/#set-up-with-no-namespace-access-control-support
+  auth:
+    strategy: openid
+    openid:
+      disable_rbac: true
+      insecure_skip_verify_tls: true
+      client_id: "{{ kiali_oidc_client_id }}"
+      issuer_uri: "{{ kiali_oidc_issuer_uri }}"
+      scopes:
+        - openid # required
+        - basic
+        - email
+        - profile
+      username_claim: name # purely informational
+
+  deployment:
+    secret_name: kiali-openid
+    ingress:
+      enabled: true
+      # https://kiali.io/docs/configuration/kialis.kiali.io/#.spec.deployment.ingress.override_yaml
+      override_yaml:
+        metadata:
+          annotations:
+            nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+            # redirect root domain to dashboard at /kiali
+            nginx.ingress.kubernetes.io/server-snippet: |
+              location = / {
+                return 302 $scheme://$host/kiali;
+              }
+        spec:
+          ingressClassName: "{{ rke_ingress_class }}"
+          tls:
+            - hosts:
+                - "{{ kiali_fqdn }}"
+              secretName: kiali-ingress-tls
+          rules:
+            - host: "{{ kiali_fqdn }}"
+              http:
+                paths:
+                  - path: /kiali
+                    pathType: Prefix
+                    backend:
+                      service:
+                        name: kiali
+                        port:
+                          number: 20001
+    resources:
+      requests:
+        cpu: 50m
+        memory: 64Mi
+      limits:
+        memory: 1Gi
+
+  # https://kiali.io/docs/configuration/kialis.kiali.io/#.spec.identity
+  identity:
+    cert_file: "" # disable HTTPS from ingress
+    private_key_file: ""

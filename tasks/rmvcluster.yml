@@ -5,7 +5,6 @@
   vars:
     # required kubernetes>=24.2 package only in user virtualenv
     ansible_python_interpreter: "{{ venv_python_interpreter }}"
-  run_once: true
   become: false
   block:
     - name: Get pods deployed in namespace

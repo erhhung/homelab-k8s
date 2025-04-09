@@ -1,0 +1,31 @@
+# this Istio installation CR will be overlaid
+# over the ambient profile IstioOperator CR:
+#
+# apiVersion: install.istio.io/v1alpha1
+# kind: IstioOperator
+# spec:
+#   values:
+#     profile: ambient
+#   components:
+#     cni:
+#       enabled: true
+#     ztunnel:
+#       enabled: true
+#     ingressGateways:
+#       - name: istio-ingressgateway
+#         enabled: false
+---
+apiVersion: install.istio.io/v1alpha1
+kind: IstioOperator
+spec:
+  # https://istio.io/latest/docs/reference/config/istio.mesh.v1alpha1/#MeshConfig
+  meshConfig:
+    enableTracing: true
+  # https://istio.io/latest/docs/reference/config/istio.operator.v1alpha1/#IstioComponentSetSpec
+  components:
+    ztunnel:
+      k8s:
+        resources:
+          requests:
+            cpu: 100m
+            memory: 200Mi

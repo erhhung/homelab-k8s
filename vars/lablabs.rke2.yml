@@ -4,14 +4,17 @@ rke2_cluster_group_name: cluster
 rke2_servers_group_name: "{{ rke_control_plane_group }}"
 rke2_agents_group_name: "{{ rke_workers_group }}"
 
-rke2_version: v1.32.1+rke2r1 # https://github.com/rancher/rke2/releases
+# https://github.com/rancher/rke2/releases
+rke2_version: v1.32.3+rke2r1
 rke2_architecture: amd64
 
 # rke2_token: {vault.yml}
 
 rke2_cluster_domain: cluster.local # don't change default!
 # remember to add homelab.fourteeners.local to pfSense DNS!
-rke2_additional_sans: "{{ [rke_cluster_name] + rke_fqdns }}"
+# include *.vcluster.fourteeners.local for vCluster domains
+rke2_additional_sans: |
+  {{ [rke_cluster_name] + rke_fqdns + ['"*.'~ vc_domain ~'"'] }}
 
 # additional RKE2 server configuration options
 # https://docs.rke2.io/reference/server_config
@@ -27,10 +30,27 @@ rke2_server_node_taints: [] # allow control plane to run workloads
 # - "CriticalAddonsOnly=true:NoExecute" # workloads on workers only
 rke2_agent_node_taints: []
 
-# https://www.vcluster.com/docs/vcluster/manage/accessing-vcluster#expose-vcluster
+rke2_kube_proxy_arg:
+  - nodeport-addresses=primary
+
 # https://docs.rke2.io/networking/networking_services#nginx-ingress-controller
 rke2_ingress_nginx_values:
+  # https://github.com/kubernetes/ingress-nginx/tree/main/charts/ingress-nginx
+  # https://github.com/kubernetes/ingress-nginx/tree/main/charts/ingress-nginx/values.yaml
   controller:
+    # https://kubernetes.github.io/ingress-nginx/user-guide/nginx-configuration/configmap
+    config:
+      # allow annotation group ServerSnippet (risk: Critical) in
+      # my homelab environment, but likely bad security practice
+      # https://kubernetes.github.io/ingress-nginx/user-guide/nginx-configuration/configmap/#annotations-risk-level
+      # https://kubernetes.github.io/ingress-nginx/user-guide/nginx-configuration/annotations-risk
+      annotations-risk-level: Critical
+
+    # allow nginx.ingress.kubernetes.io/*-snippet
+    # annotations, such as ones added by Keycloak
+    allowSnippetAnnotations: true
+
+    # https://www.vcluster.com/docs/vcluster/manage/accessing-vcluster#expose-vcluster
     extraArgs:
       # --enable-ssl-passthrough is required so that
       # the vCluster ingress controller can generate

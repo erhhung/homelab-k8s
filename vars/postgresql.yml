@@ -1,0 +1,99 @@
+postgresql_namespace: postgresql
+
+pgpool_cluster_host: postgresql-pgpool.{{ postgresql_namespace }}.svc.cluster.local
+
+# postgresql_pass: {vault.yml}
+#  pgpool_db_pass: {vault.yml}
+
+# in order to log in using client TLS cert, generate
+# a cert at pki.fourteeners.local using CN=<db_user>
+postgresql_users:
+  - erhhung
+  - "{{ keycloak_db_user }}"
+
+postgresql_chart_version: "15.3.8"
+# https://github.com/bitnami/charts/tree/main/bitnami/postgresql-ha
+# https://github.com/bitnami/charts/tree/main/bitnami/postgresql-ha/values.yaml
+postgresql_chart_values:
+  nameOverride: postgresql # instead of "postgresql-ha"
+
+  global:
+    defaultStorageClass: "{{ default_storage_class }}"
+    postgresql: &global_postgresql
+      password: "{{ postgresql_pass }}" # user "postgres"
+      repmgrPassword: "{{ postgresql_pass }}" # user "repmgr"
+    pgpool: &global_pgpool
+      adminPassword: "{{ postgresql_pass }}" # user "admin"
+
+  postgresql:
+    # duplicate global settings or
+    # else helm diff upgrade fails
+    <<: *global_postgresql
+
+    # https://github.com/bitnami/charts/tree/main/bitnami/postgresql-ha#securing-traffic-using-tls
+    tls: &postgresql_tls
+      enabled: true
+      certificatesSecret: postgresql-tls
+      certFilename: tls.crt
+      certKeyFilename: tls.key
+      certCAFilename: ca.crt
+
+    # https://github.com/bitnami/charts/tree/main/bitnami/postgresql-ha#resource-requests-and-limits
+    # use a preset instead of explicitly configuring resources:
+    # none, nano, micro, small, medium, large, xlarge, 2xlarge
+    # https://github.com/bitnami/charts/tree/main/bitnami/common/templates/_resources.tpl
+    resourcesPreset: micro
+
+    # https://github.com/bitnami/charts/tree/main/bitnami/postgresql-ha#initialize-a-fresh-instance
+    initdbScripts:
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/template_lookup.html
+      initpgdbs.sql: "{{ lookup('ansible.builtin.template', 'templates/initpgdbs.sql.j2') }}"
+
+  pgpool:
+    # duplicate global settings or
+    # else helm diff upgrade fails
+    <<: *global_pgpool
+
+    # use same certificate as postgresql:
+    # SANs: postgresql.fourteeners.local
+    #         postgres.fourteeners.local
+    #               pg.fourteeners.local
+    #     *.postgresql.svc.cluster.local
+    #     *.postgresql.svc
+    # https://github.com/bitnami/charts/tree/main/bitnami/postgresql-ha#securing-traffic-using-tls
+    tls: *postgresql_tls
+
+    # use a preset instead of explicitly configuring resources:
+    # none, nano, micro, small, medium, large, xlarge, 2xlarge
+    resourcesPreset: micro
+    # resources: ~
+
+    customUsers:
+      # semicolon-separated list of usernames & passwords
+      # of users that will connect to database via pgpool
+      usernames: "{{ postgresql_users | join(';') }}"
+      passwords: |-
+        {% set pwds = [] -%}
+        {% for _ in postgresql_users -%}
+        {%   set _ = pwds.append(pgpool_db_pass) -%}
+        {% endfor -%}
+        {{ pwds | join(';') }}
+
+  persistence:
+    size: 10Gi
+    mountPath: /postgresql
+
+  service:
+    # remember to add postgresql.fourteeners.local (also postgres.
+    # and pg.) to pfSense DNS using kube virtual IP 192.168.0.222
+    # https://github.com/bitnami/charts/tree/main/bitnami/postgresql-ha#configure-the-way-how-to-expose-postgresql
+    type: LoadBalancer
+    # https://docs.ansible.com/ansible/latest/collections/ansible/utils/ipmath_filter.html
+    # (requires Python "netaddr" package on Ansible controller)
+    loadBalancerIP: "{{ rke_lb_vip | ansible.utils.ipmath(1) }}"
+
+  metrics:
+    # https://github.com/bitnami/charts/tree/main/bitnami/postgresql-ha#prometheus-metrics
+    enabled: true
+    serviceMonitor:
+      enabled: false # enable only if Prometheus Operator is installed

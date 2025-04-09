@@ -1,7 +1,6 @@
 ---
 - name: Create virtual clusters
-  hosts: control_plane
-  run_once: true
+  hosts: "{{ rke_control_plane_host }}"
   vars_files:
     - vars/basics.yml
     - vars/kubernetes.yml
@@ -18,8 +17,8 @@
         keep: "{{ vclusters | map(attribute='name') | to_json }}"
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/shell_module.html
       ansible.builtin.shell: |
-        # run Bash to load /etc/profile.d/kubectl.sh
-        # so kubectl is in $PATH and KUBECONFIG set
+        # run Bash to load /etc/profile.d/kubernetes.sh
+        # so kubectl is in $PATH and KUBECONFIG is set
         exec /bin/bash -l <<'EOT'
         set -o pipefail
 

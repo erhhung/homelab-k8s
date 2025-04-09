@@ -72,6 +72,10 @@ controlPlane:
                 app: vcluster
                 release: {{ vcluster.name }}
                 role: data
+    resources:
+      requests:
+        cpu: 100m
+        memory: 200Mi
 
   # https://www.vcluster.com/docs/vcluster/manage/accessing-vcluster?x1=1#expose-vcluster
   ingress:

@@ -6,10 +6,11 @@ data_lv:
   size: 20G     # size of logical volume
   mount: /data  # path to mount volume
 
+default_storage_class: longhorn
 local_storage_class: local-storage
 
 longhorn_chart_version: "1.8.1"
-# https://github.com/longhorn/charts/blob/v1.8.x/charts/longhorn/values.yaml
+# https://github.com/longhorn/charts/tree/v1.8.x/charts/longhorn/values.yaml
 # https://longhorn.io/docs/1.8.1/references/settings/
 longhorn_chart_values:
   service:
@@ -31,7 +32,7 @@ longhorn_chart_values:
 
 # https://computingforgeeks.com/configure-nfs-as-kubernetes-persistent-volume-storage/
 nfs_mount_opts: rw,nosuid,nodev,noexec,hard,timeo=600,retrans=3,rsize=32768,wsize=32768
-# https://github.com/kubernetes-sigs/nfs-subdir-external-provisioner/blob/master/charts/nfs-subdir-external-provisioner/values.yaml
+# https://github.com/kubernetes-sigs/nfs-subdir-external-provisioner/tree/master/charts/nfs-subdir-external-provisioner/values.yaml
 nfs_provisioners:
   - cluster: k3s
     name: qnap

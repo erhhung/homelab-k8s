@@ -158,23 +158,30 @@ venv() {
 # =============================================
 command -v kubectl &> /dev/null || return 0
 
-# set up Bash completion for crictl
-command -v crictl &> /dev/null && {
-  alias c='crictl'
-  . <(crictl completion bash 2> /dev/null)
-  complete -F _crictl c
-}
-
 alias k='kubectl'
 # set up Bash completion for kubectl
 . <(kubectl completion bash 2> /dev/null)
-complete -F __start_kubectl k
+complete -o default -F __start_kubectl k
 
 # set up Bash completion for helm
 command -v helm &> /dev/null && {
   alias h='helm'
   . <(helm completion bash 2> /dev/null)
-  complete -F __start_helm h
+  complete -o default -F __start_helm h
+}
+
+# set up Bash completion for crictl
+command -v crictl &> /dev/null && {
+  alias c='crictl'
+  . <(crictl completion bash 2> /dev/null)
+  complete -o default -F _crictl c
+}
+
+# set up Bash completion for istioctl
+command -v istioctl &> /dev/null && {
+  alias i='istioctl'
+  . <(istioctl completion bash 2> /dev/null)
+  complete -o default -F __start_istioctl i
 }
 
 # usage: rmevicted [args...]
