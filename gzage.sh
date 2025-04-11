@@ -20,6 +20,21 @@
   exit 1
 }
 
+# require given commands
+# to be $PATH accessible
+# example: reqcmds age || return
+reqcmds() {
+  local cmd
+  for cmd in "$@"; do
+    command -v "$cmd" &> /dev/null && continue
+    echo >&2 "Please install \"$cmd\" first!"
+    return 1
+  done
+}
+
+# ensure required tools installed
+reqcmds ansible-vault age || exit
+
 set -euo pipefail
 cd "$(dirname "$0")"
 
