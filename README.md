@@ -27,6 +27,18 @@ private CA server at pki.fourteeners.local.
 <img src="images/services.drawio.svg" alt="services.drawio.svg" />
 </p>
 
+### Service Endpoints
+
+|                       Service URL | Description
+|----------------------------------:|:----------------------
+| https://rancher.fourteeners.local | Rancher Server console
+|  https://harbor.fourteeners.local | Harbor OCI registry
+|     https://sso.fourteeners.local | Keycloak IAM console
+|        postgres.fourteeners.local | PostgreSQL via Pgpool _(mTLS only)_
+|   https://kiali.fourteeners.local | Kiali dashboard
+| https://grafana.fourteeners.local | Grafana dashboard
+|  https://argocd.fourteeners.local | Argo CD console
+
 ## Ansible Vault
 
 The Ansible Vault password is stored in macOS Keychain under item "`Home-K8s`" for account "`ansible-vault`".
@@ -40,12 +52,20 @@ ansible-vault edit   $VAULTFILE
 ansible-vault view   $VAULTFILE
 ```
 
-Variables stored in Ansible Vault:
+Some variables stored in Ansible Vault _(there are many more)_:
 
-* `ansible_become_pass`
-* `rancher_admin_pass`
-* `k3s_token`
-* `rke2_token`
+|   Infrastructure Secrets   |    User Passwords
+|:--------------------------:|:-------------------:
+| `ansible_become_pass`      | `rancher_admin_pass`
+| `github_access_token`      | `harbor_admin_pass`
+| `age_secret_key`           | `keycloak_admin_pass`
+| `k3s_token`                | `grafana_admin_pass`
+| `rke2_token`               | `argocd_admin_pass`
+| `harbor_secret`            |
+| `harbor_ca_key`            |
+| `postgresql_pass`          |
+| `keycloak_smtp_pass`       |
+| `kiali_oidc_client_secret` |
 
 ## Connections
 
@@ -64,9 +84,9 @@ export ANSIBLE_CONFIG=./ansible.cfg
 
 1. Install required packages
 
-    1.1. **Tools**: `emacs`, `jq`, `yq`, `git`, and `helm`  
-    1.2. **Python**: Pip packages in user **virtualenv**  
-    1.3. **Helm**: Helm plugins: e.g. `helm-diff`
+    1.1. **Tools** — `emacs`, `jq`, `yq`, `git`, and `helm`  
+    1.2. **Python** — Pip packages in user **virtualenv**  
+    1.3. **Helm** — Helm plugins: e.g. `helm-diff`
 
     ```bash
     ansible-playbook packages.yml
@@ -74,10 +94,10 @@ export ANSIBLE_CONFIG=./ansible.cfg
 
 2. Configure system settings
 
-    2.1. **Host**: host name, time zone, and locale  
-    2.2. **Network**: DNS servers and search domains  
-    2.3. **Login**: Customize login MOTD messages  
-    2.4. **Certs**: Add CA certificates to trust store
+    2.1. **Host** — host name, time zone, and locale  
+    2.2. **Network** — DNS servers and search domains  
+    2.3. **Login** — customize login MOTD messages  
+    2.4. **Certs** — add CA certificates to trust store
 
     ```bash
     ansible-playbook basics.yml
@@ -108,9 +128,9 @@ export ANSIBLE_CONFIG=./ansible.cfg
 
 6. Set up **Longhorn** dynamic PV provisioner
 
-    6.1. Create a pool of LVM logical volumes  
-    6.2. Install Longhorn storage components  
-    6.3. Install NFS dynamic PV provisioners
+    6.1. Creates a pool of LVM logical volumes  
+    6.2. Installs Longhorn storage components  
+    6.3. Installs NFS dynamic PV provisioners
 
     ```bash
     ansible-playbook storage.yml
@@ -131,11 +151,17 @@ export ANSIBLE_CONFIG=./ansible.cfg
     ```
 
 9. Set up **PostgreSQL** database in _**HA**_ mode
+
+    9.1. Runs initialization SQL script to create roles and databases for downstream applications
+
     ```bash
     ansible-playbook postgresql.yml
     ```
 
 10. Set up **Keycloak** IAM & OIDC provider
+
+    10.1. Bootstraps PostgreSQL database with `Homelab` realm, user `erhhung`, and OIDC clients
+
     ```bash
     ansible-playbook keycloak.yml
     ```
@@ -325,7 +351,7 @@ These are additional components to be deployed:
 - [ ] [Prometheus Monitoring Stack](https://github.com/prometheus-operator/kube-prometheus) — Prometheus, Grafana, and rules using the Prometheus Operator
     * Install into the main RKE cluster using [`kube-prometheus-stack`](https://github.com/prometheus-community/helm-charts/tree/main/charts/kube-prometheus-stack/README.md) Helm chart
 - [X] [Keycloak IAM & OIDC Provider](https://www.keycloak.org/) — identity and access management and OpenID Connect provider
-- [ ] [Istio Service Mesh](https://istio.io/latest/about/service-mesh/) with [Kiali UI](https://kiali.io/) — secure, observe, trace, and route traffic between cluster workloads
+- [X] [Istio Service Mesh](https://istio.io/latest/about/service-mesh/) with [Kiali UI](https://kiali.io/) — secure, observe, trace, and route traffic between cluster workloads
     * Install into the main RKE cluster using [`istioctl`](https://istio.io/latest/docs/ambient/install/istioctl/)
     * Install Kiali using [`kiali-operator`](https://kiali.io/docs/installation/installation-guide/install-with-helm/#install-with-operator/) Helm chart
 - [ ] [OpenTelemetry Collector](https://opentelemetry.io/docs/collector/) with [Jaeger UI](https://www.jaegertracing.io/) -- telemetry collector agent and distributed tracing backend

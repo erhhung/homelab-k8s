@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 
 # Show available disk space on all cluster nodes
+# (assumes `ssh <host>` works without password
+# for hosts: rancher, k8s1, k8s2, k8s3, k8s4)
 
  NOCLR='\033[0m'
 YELLOW='\033[1;33m'
