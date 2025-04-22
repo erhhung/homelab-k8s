@@ -1,0 +1,158 @@
+# https://docs.opensearch.org/docs/latest/opensearch/
+# https://docs.opensearch.org/docs/latest/dashboards/
+---
+# https://docs.opensearch.org/docs/latest/install-and-configure/install-opensearch/helm/
+- name: Install OpenSearch on RKE cluster
+  tags: opensearch
+  hosts: "{{ rke_control_plane_host }}"
+  gather_facts: false
+  vars_files: &vars_files
+    - vars/basics.yml
+    - vars/kubernetes.yml
+    - vars/storage.yml
+    - vars/opensearch.yml
+    - vars/kibana.yml
+  vars:
+    # required kubernetes>=24.2 package only in user virtualenv
+    ansible_python_interpreter: "{{ venv_python_interpreter }}"
+    values: "{{ opensearch_chart_values }}"
+    kubeconfig: "{{ rke_kubeconfig }}"
+    create_ns: false
+  pre_tasks:
+    - name: Is OpenSearch already running?
+      # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_info_module.html
+      kubernetes.core.k8s_info:
+        kubeconfig: "{{ kubeconfig }}"
+        api_version: apps/v1
+        kind: StatefulSet
+        name: "{{ values.masterService }}"
+        namespace: "{{ opensearch_namespace }}"
+      register: opensearch_info
+  tasks:
+    # cert also used by OpenSearch ingress
+    - name: Create OpenSearch node secret
+      vars:
+        # Java requires key file to
+        # be in PKCS#8 / PEM format
+        cert_desc: OpenSearch node
+        cert_file: opensearch
+        secret_name: "{{ values.extraVolumes[0].secret.secretName }}"
+        secret_ns: "{{ opensearch_namespace }}"
+        create_ns: true
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
+      ansible.builtin.include_tasks: tasks/k8s/secrets/tls.yml
+
+    - name: Create OpenSearch admin secret
+      vars:
+        # Java requires key file to
+        # be in PKCS#8 / PEM format
+        cert_desc: OpenSearch admin
+        cert_file: opensearch_admin
+        secret_name: "{{ values.extraVolumes[1].secret.secretName }}"
+        secret_ns: "{{ opensearch_namespace }}"
+      ansible.builtin.include_tasks: tasks/k8s/secrets/tls.yml
+
+    - name: Create OpenSearch passwords secret
+      vars:
+        secret_name: "{{ values.extraEnvs[0].valueFrom.secretKeyRef.name }}"
+        secret_ns: "{{ opensearch_namespace }}"
+        secret_data:
+          opensearch_admin_password: "{{ opensearch_admin_pass }}"
+          kibana_opensearch_password: "{{ kibana_os_pass }}"
+      ansible.builtin.include_tasks: tasks/k8s/secrets/generic.yml
+
+    - name: Create OpenSearch security secret
+      vars:
+        secret_name: "{{ values.securityConfig.internalUsersSecret }}"
+        secret_ns: "{{ opensearch_namespace }}"
+        secret_data: "{{ opensearch_security_config }}"
+      ansible.builtin.include_tasks: tasks/k8s/secrets/generic.yml
+      register: security_secret
+
+    - name: Notify if security secret changed
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/debug_module.html
+      ansible.builtin.debug:
+        msg: Handler will be triggered
+      when: security_secret is changed
+      # noqa: no-handler because "notify"
+      # cannot be used with include_tasks
+      notify: Apply updated security config
+
+    # https://github.com/opensearch-project/helm-charts/tree/main/charts/opensearch
+    - name: Install OpenSearch Helm chart
+      # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/helm_module.html
+      kubernetes.core.helm:
+        kubeconfig: "{{ kubeconfig }}"
+        chart_repo_url: https://opensearch-project.github.io/helm-charts
+        chart_ref: opensearch
+        chart_version: "{{ opensearch_chart_version }}"
+        release_name: opensearch
+        release_namespace: "{{ opensearch_namespace }}"
+        release_values: "{{ opensearch_chart_values }}"
+        atomic: true
+        wait: true
+      # it can take a long time to pull container images
+      # and provision storage and start each StatefulSet
+      # pod sequentially due to the OrderedReady policy
+      timeout: 600
+  handlers:
+    - name: Apply updated security config
+      # a handler cannot have block of subtasks, so the
+      # tasks have been refactored into a separate file
+      ansible.builtin.include_tasks: tasks/opensearch/security.yml
+      when: >-
+        opensearch_info.resources[0] is defined and
+        opensearch_info.resources[0].status.readyReplicas ==
+                         opensearch_chart_values.replicas
+  any_errors_fatal: true
+
+# https://docs.opensearch.org/docs/latest/install-and-configure/install-dashboards/helm/
+- name: Install OpenSearch Dashboards
+  tags: kibana
+  hosts: "{{ rke_control_plane_host }}"
+  gather_facts: false
+  vars_files: *vars_files
+  tasks:
+    - name: Create Dashboards ingress secret
+      vars:
+        cert_desc: Dashboards ingress
+        cert_file: kibana
+        kubeconfig: "{{ rke_kubeconfig }}"
+        secret_name: "{{ dashboards_chart_values.secretMounts[0].secretName }}"
+        secret_ns: "{{ kibana_namespace }}"
+        create_ns: false
+      ansible.builtin.include_tasks: tasks/k8s/secrets/tls.yml
+
+    # https://github.com/opensearch-project/helm-charts/tree/main/charts/opensearch-dashboards
+    - name: Install Dashboards Helm chart
+      vars:
+        # required kubernetes>=24.2 package only in user virtualenv
+        ansible_python_interpreter: "{{ venv_python_interpreter }}"
+      kubernetes.core.helm:
+        kubeconfig: "{{ rke_kubeconfig }}"
+        chart_repo_url: https://opensearch-project.github.io/helm-charts
+        chart_ref: opensearch-dashboards
+        chart_version: "{{ dashboards_chart_version }}"
+        release_name: opensearch-dashboards
+        release_namespace: "{{ kibana_namespace }}"
+        release_values: "{{ dashboards_chart_values }}"
+        atomic: true
+        wait: true
+      timeout: 300
+
+    - name: Wait until Dashboards is ready
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/uri_module.html
+      ansible.builtin.uri:
+        url: https://{{ kibana_fqdn }}/
+        validate_certs: false
+      # https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_loops.html#retrying-a-task-until-a-condition-is-met
+      register: site_check
+      until: site_check.status == 200
+      retries: 30
+      delay: 1
+
+    - name: Customize Dashboards settings
+      vars:
+        settings: "{{ kibana_settings }}"
+      ansible.builtin.include_tasks: tasks/kibana/settings.yml
+  any_errors_fatal: true

@@ -1,0 +1,133 @@
+# create saved search in OpenSearch Dashboards
+#
+# pass the following vars:
+#   title       <required> saved search title
+#   description [optional] search description
+#   fields      <required> selected fields
+#   patterns    <required> index patterns
+# requires vars from:
+#   vars/opensearch.yml
+#   vars/kibana.yml
+#   vars/logging.yml
+# sets the following facts:
+#   saved_search_id
+---
+- name: Create saved search
+  become: false
+  vars:
+    uri_params: &uri_params
+      url_username: admin
+      url_password: "{{ opensearch_admin_pass }}"
+      force_basic_auth: true
+      validate_certs: false
+      return_content: true
+    # https://opensearch-project.github.io/OpenSearch-Dashboards/docs/openapi/saved_objects/
+    saved_objs_url: https://{{ kibana_fqdn }}/api/saved_objects
+  block:
+    - name: Get index patterns
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/uri_module.html
+      ansible.builtin.uri:
+        <<: *uri_params
+        url: "{{ saved_objs_url }}/_find?type=index-pattern&fields=title&per_page=1000"
+      register: index_patterns
+
+    - name: Get IDs of patterns
+      vars:
+        saved_objs: "{{ index_patterns.json.saved_objects }}"
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/set_fact_module.html
+      ansible.builtin.set_fact:
+        pattern_ids: |
+          {% set ids = [] %}
+          {% for pat in patterns %}
+          {%   set obj = saved_objs | selectattr('attributes.title', '==', pat) |
+                 first | default(none) %}
+          {%   if obj %}
+          {%     set _ = ids.append(obj.id) %}
+          {%   endif %}
+          {% endfor  %}
+          {{ ids     }}
+
+    - name: Get saved searches
+      ansible.builtin.uri:
+        <<: *uri_params
+        url: "{{ saved_objs_url }}/_find?type=search&fields=title&per_page=1000"
+      register: saved_searches
+
+    - name: Find existing search
+      vars:
+        saved_objs: "{{ saved_searches.json.saved_objects }}"
+        # https://runebook.dev/en/articles/jinja/templates/index/jinja-filters.selectattr
+        existing: "{{ saved_objs | selectattr('attributes.title', '==', title) |
+          first | default(none) }}"
+      ansible.builtin.set_fact:
+        existing_id: "{{ existing.id if existing }}"
+
+    - name: Get existing search
+      ansible.builtin.uri:
+        <<: *uri_params
+        url: "{{ saved_objs_url }}/search/{{ existing_id }}"
+      register: saved_search
+      when: existing_id
+
+    - name: Need to save search?
+      vars:
+        search: "{{ saved_search.json }}"
+        attrs: "{{ search.attributes }}"
+        columns: "{{ attrs.columns }}"
+        ref_ids: "{{ search.references | map(attribute='id') }}"
+      ansible.builtin.set_fact:
+        needs_save: |
+          {# use namespace() to create a scoped object #}
+          {# https://jinja.palletsprojects.com/en/stable/templates/#assignments #}
+          {% set ns = namespace(needs=false)     %}
+          {% if description != attrs.description %}
+          {%   set ns.needs = true %}
+          {# https://docs.ansible.com/ansible/latest/collections/ansible/builtin/difference_filter.html #}
+          {% elif columns | difference(fields) or
+                   fields | difference(columns) %}
+          {%   set ns.needs = true %}
+          {% elif pattern_ids | difference(ref_ids) or
+                      ref_ids | difference(pattern_ids) %}
+          {%   set ns.needs = true %}
+          {% endif    %}
+          {{ ns.needs }}
+      when: >-
+        saved_search.status is defined and
+        saved_search.status == 200
+
+    - name: Create saved search
+      vars:
+        desc: "{{ description | default('') }}"
+        refs: |
+          {% set refs = [] %}
+          {% for id in pattern_ids %}
+          {%   set _ = refs.append({
+                  'id':    id,
+                  'name': 'kibanaSavedObjectMeta.searchSourceJSON.index',
+                  'type': 'index-pattern'
+                }) %}
+          {% endfor %}
+          {{ refs   }}
+      ansible.builtin.uri:
+        <<: *uri_params
+        method: POST
+        url: "{{ saved_objs_url }}/search/{{ existing_id }}?overwrite=true"
+        headers:
+          osd-xsrf: "true"
+        body_format: json
+        body:
+          attributes:
+            title: "{{ title }}"
+            description: "{{ desc if desc else omit }}"
+            columns: "{{ fields }}"
+          references: "{{ refs }}"
+      register: save_search
+      when: >-
+        needs_save is not defined or
+        needs_save
+      changed_when: save_search.status == 200
+
+    - name: Set saved_search_id
+      ansible.builtin.set_fact:
+        saved_search_id: "{{ existing_id or save_search.json.id }}"
+  any_errors_fatal: true

@@ -1,6 +1,8 @@
 ---
 - name: Start all or specific VMs
-  hosts: "{{ groups['xcp'][0] }}"
+  hosts: "{{ xcp_master }}"
+  vars_files:
+    - vars/xcp.yml
   vars:
     # targets can be overridden on command-line:
     # ansible-playbook startvms.yml -e targets=rancher
@@ -12,7 +14,7 @@
       vars:
         target_hosts: "{{ targets }}"
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
-      ansible.builtin.include_tasks: tasks/resolvehosts.yml
+      ansible.builtin.include_tasks: tasks/hosts/resolve.yml
   tasks:
     - name: Start resolved VMs
       # cannot use ansible.builtin.shell because XCP-ng 8.2 only has Python 3.6,
@@ -38,3 +40,4 @@
         EOT
       loop: "{{ resolved_hosts }}"
       changed_when: true
+  any_errors_fatal: true

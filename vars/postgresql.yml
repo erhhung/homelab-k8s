@@ -47,7 +47,8 @@ postgresql_chart_values:
     # https://github.com/bitnami/charts/tree/main/bitnami/postgresql-ha#initialize-a-fresh-instance
     initdbScripts:
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/template_lookup.html
-      initpgdbs.sql: "{{ lookup('ansible.builtin.template', 'templates/initpgdbs.sql.j2') }}"
+      initpgdbs.sql: "{{ lookup('ansible.builtin.template',
+        playbook_dir ~ '/templates/initpgdbs.sql.j2') }}"
 
   pgpool:
     # duplicate global settings or
@@ -80,7 +81,8 @@ postgresql_chart_values:
         {{ pwds | join(';') }}
 
   persistence:
-    size: 10Gi
+    storageClass: "{{ default_storage_class }}"
+    size: 3Gi
     mountPath: /postgresql
 
   service:
@@ -89,8 +91,8 @@ postgresql_chart_values:
     # https://github.com/bitnami/charts/tree/main/bitnami/postgresql-ha#configure-the-way-how-to-expose-postgresql
     type: LoadBalancer
     # https://docs.ansible.com/ansible/latest/collections/ansible/utils/ipmath_filter.html
-    # (requires Python "netaddr" package on Ansible controller)
-    loadBalancerIP: "{{ rke_lb_vip | ansible.utils.ipmath(1) }}"
+    # (requires Python package "netaddr" on Ansible controller)
+    loadBalancerIP: "{{ rke_lb_vip | ansible.utils.ipmath(1) }}" # port 5432
 
   metrics:
     # https://github.com/bitnami/charts/tree/main/bitnami/postgresql-ha#prometheus-metrics

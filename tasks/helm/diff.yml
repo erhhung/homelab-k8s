@@ -1,6 +1,7 @@
 # perform "helm diff upgrade" against existing
 # Helm release to determine whether an upgrade
-# is required; returns true if release missing.
+# is required; returns true if release missing
+#
 # pass the following vars:
 #   kubeconfig   <required> kubeconfig path
 #   repo_name    <required> repository name

@@ -1,0 +1,295 @@
+opensearch_namespace: opensearch
+opensearch_host_names: # aliases of "homelab"
+  - opensearch
+  - es
+opensearch_cluster_name: opensearch
+# opensearch_admin_pass: {vault.yml}
+#        kibana_os_pass: {vault.yml}
+
+# remember to add opensearch.fourteeners.local and es.fourteeners.local
+# to pfSense DNS as aliases of homelab.fourteeners.local: 192.168.0.221
+# https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_filters.html#products
+opensearch_fqdns: "{{ opensearch_host_names | product(search_domains) | map('join','.') }}"
+
+# plugins.security in opensearch.yml
+# https://docs.opensearch.org/docs/latest/install-and-configure/configuring-opensearch/security-settings/
+opensearch_security_plugin:
+  ssl: # https://docs.opensearch.org/docs/latest/security/configuration/generate-certificates/
+    transport:
+      # paths must be relative to "<OPENSEARCH_HOME>/config"
+      # Java requires key file to be in PKCS#8 / PEM format:
+      # openssl pkcs8 -topk8 -inform PEM -outform PEM -in tls.key \
+      #               -v1 PBE-SHA1-3DES -nocrypt | sponge tls.key
+      pemcert_filepath: tls/node/tls.crt
+      pemkey_filepath: tls/node/tls.key
+      pemtrustedcas_filepath: tls/node/ca.crt
+      enforce_hostname_verification: false
+    http:
+      enabled: true
+      pemcert_filepath: tls/node/tls.crt
+      pemkey_filepath: tls/node/tls.key
+      pemtrustedcas_filepath: tls/node/ca.crt
+
+  allow_unsafe_democertificates: false
+  allow_default_init_securityindex: true
+  authcz:
+    admin_dn:
+      - CN=erhhung,OU=Homelab,O=Fourteeners,L=Home,ST=California,C=US
+  nodes_dn:
+    # openssl x509 -in opensearchnode.pem -subject -nameopt RFC2253 -noout | sed 's/^subject=//'
+    - CN=node.opensearch.svc.cluster.local,OU=Homelab,O=Fourteeners,L=Home,ST=California,C=US
+
+  audit.type: noop
+  enable_snapshot_restore_privilege: true
+  check_snapshot_restore_write_privileges: true
+  restapi:
+    roles_enabled:
+      - all_access
+      - security_rest_api_access
+  system_indices:
+    enabled: true
+    indices:
+      - .opendistro-alerting-config
+      - .opendistro-alerting-alert*
+      - .opendistro-anomaly-results*
+      - .opendistro-anomaly-detector*
+      - .opendistro-anomaly-checkpoints
+      - .opendistro-anomaly-detection-state
+      - .opendistro-asynchronous-search-response*
+      - .opendistro-notebooks
+      - .opendistro-reports-*
+      - .opendistro-notifications-*
+
+# opensearch-security Secret
+opensearch_security_config:
+  # https://opensearch.org/docs/latest/security/configuration/yaml/#internal_usersyml
+  # bcrypt hash of plain-text password:
+  # htpasswd -nbBC 11 "" "$ADMIN_PASS" | \
+  #       tr -d ':\n' | sed 's/$2y/$2b/'
+  internal_users.yml: |
+    _meta:
+      type: internalusers
+      config_version: 2
+    admin:
+      description: Cluster administrator
+      hash: {{ opensearch_admin_pass |
+        ansible.builtin.password_hash('bcrypt',
+        salt=bcrypt_salt, rounds=bcrypt_rounds) }}
+      reserved: true
+      backend_roles:
+        - admin
+    erhhung: # YAML anchor does not work!
+      description: Cluster administrator
+      hash: {{ opensearch_admin_pass |
+        ansible.builtin.password_hash('bcrypt',
+        salt=bcrypt_salt, rounds=bcrypt_rounds) }}
+      reserved: false
+      backend_roles:
+        - admin
+    kibana:
+      description: Dashboards system user
+      hash: {{ kibana_os_pass |
+        ansible.builtin.password_hash('bcrypt',
+        salt=bcrypt_salt, rounds=bcrypt_rounds) }}
+      reserved: true
+      backend_roles: []
+    fluent:
+      description: Fluent Bit/d log writer
+      hash: {{ fluent_os_pass |
+        ansible.builtin.password_hash('bcrypt',
+        salt=bcrypt_salt, rounds=bcrypt_rounds) }}
+      reserved: true
+      backend_roles: []
+  # https://opensearch.org/docs/latest/security/configuration/yaml/#rolesyml
+  roles.yml: |
+    _meta:
+      type: roles
+      config_version: 2
+    kibana_system:
+      # https://docs.opensearch.org/docs/latest/security/access-control/default-action-groups/#cluster-level
+      cluster_permissions:
+        - cluster_monitor
+      # https://docs.opensearch.org/docs/latest/security/access-control/default-action-groups/#index-level
+      index_permissions:
+        - index_patterns:
+            - "*"
+          allowed_actions:
+            - manage_aliases
+        - index_patterns:
+            - .kibana*
+            - .opensearch_dashboards*
+          allowed_actions:
+            - manage
+            - search
+            - crud
+      tenant_permissions:
+        - tenant_patterns:
+            - "*"
+          allowed_actions:
+            - kibana_all_write
+            - opensearch_dashboards_all_write
+    fluent_writer:
+      cluster_permissions:
+        - cluster_composite_ops
+      index_permissions:
+        - index_patterns:
+            - fluent*
+          allowed_actions:
+            - create_index
+            - crud
+  # https://opensearch.org/docs/latest/security/configuration/yaml/#roles_mappingyml
+  # https://opensearch.org/docs/latest/security/access-control/users-roles/#predefined-roles
+  roles_mapping.yml: |
+    _meta:
+      type: rolesmapping
+      config_version: 2
+    all_access: # predefined
+      reserved: true
+      hidden: false
+      backend_roles:
+        - admin
+      hosts: []
+      users:
+        - admin
+        - erhhung
+      and_backend_roles: []
+    kibana_system:
+      users:
+        - kibana
+    fluent_writer:
+      users:
+        - fluent
+
+opensearch_chart_version: "2.32.0"
+# https://github.com/opensearch-project/helm-charts/tree/main/charts/opensearch
+# https://github.com/opensearch-project/helm-charts/tree/main/charts/opensearch/values.yaml
+opensearch_chart_values:
+  replicas: 3
+
+  clusterName: "{{ opensearch_cluster_name }}"
+  # NOTE: this value is referenced in vars/logging.yml
+  masterService: "{{ opensearch_cluster_name }}-master"
+  opensearchJavaOpts: -Xms256M -Xmx256M
+
+  extraEnvs:
+    - name: OPENSEARCH_INITIAL_ADMIN_PASSWORD
+      valueFrom:
+        secretKeyRef:
+          name: opensearch-passwords
+          key: opensearch_admin_password
+
+  config:
+    opensearch.yml: |
+      cluster.name: {{ opensearch_cluster_name }}
+      network.host: "0.0.0.0"
+      plugins:
+        # https://opensearch.org/docs/latest/install-and-configure/configuring-opensearch/security-settings/
+        security:
+          {# https://docs.ansible.com/ansible/latest/collections/ansible/builtin/to_nice_yaml_filter.html -#}
+          {# https://tedboy.github.io/jinja2/templ14.html#indent -#}
+          {{ opensearch_security_plugin | ansible.builtin.to_nice_yaml(indent=2, sort_keys=false) |
+                                          indent(4) }}
+
+  extraVolumes:
+    # keep this order!
+    - name: node-tls
+      secret:
+        # opensearch-node-tls Secret
+        # will be created by Ansible
+        secretName: opensearch-node-tls
+    - name: admin-tls
+      secret:
+        # opensearch-admin-tls Secret
+        # will be created by Ansible
+        secretName: opensearch-admin-tls
+    - name: extras
+      emptyDir: {}
+
+  extraVolumeMounts:
+    - name: extras
+      mountPath: /usr/share/opensearch/config/tls
+      subPath: tls
+
+  extraInitContainers:
+    # https://docs.opensearch.org/docs/latest/security/configuration/index/
+    # https://docs.opensearch.org/docs/latest/security/configuration/generate-certificates/#optional-generate-node-and-client-certificates
+    - name: chmod-tls
+      image: busybox
+      command:
+        - /bin/sh
+        - -c
+        - |
+          mkdir /extras/tls
+          cd    /extras/tls
+          for dir in node admin; do
+            mkdir     $dir
+            cp   /tls/$dir/*.crt \
+                 /tls/$dir/*.key $dir
+            chmod 600 $dir/*.*
+            chmod 700 $dir .
+          done
+      volumeMounts:
+        - name: extras
+          mountPath: /extras
+        # volumes mounted in pod
+        # by extraVolumes above
+        - name: node-tls
+          mountPath: /tls/node
+          readOnly: true
+        - name: admin-tls
+          mountPath: /tls/admin
+          readOnly: true
+
+  rbac:
+    create: true
+  securityConfig: # all files in same secret
+    internalUsersSecret: opensearch-security # internal_users.yml
+    rolesSecret: opensearch-security # roles.yml
+    rolesMappingSecret: opensearch-security # roles_mapping.yml
+
+  podAnnotations:
+    # since the Helm template does not include security config checksum
+    # when specifying individual secrets like we do above as opposed to
+    # providing securityConfig.config.data to replace all config files,
+    # we manually add that same annotation so that StatefulSet pods get
+    # restarted when security config is updated
+    securityconfigchecksum: |-
+      {# https://docs.ansible.com/ansible/latest/collections/ansible/builtin/hash_filter.html -#}
+      {% set hash = opensearch_security_config |
+                       ansible.builtin.to_yaml |
+                       ansible.builtin.hash('sha256') -%}
+      {{ hash[:63] }}
+
+  persistence:
+    storageClass: "{{ default_storage_class }}"
+    size: 5Gi
+  resources:
+    requests:
+      cpu: 200m
+      memory: 128Mi
+
+  # avoid CPU surge in weak cluster
+  podManagementPolicy: OrderedReady
+
+  ingress: # port 9200
+    enabled: true
+    ingressClassName: "{{ rke_ingress_class }}"
+    tls:
+      - secretName: opensearch-node-tls
+        hosts: "{{ opensearch_fqdns }}"
+    annotations:
+      nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+      nginx.ingress.kubernetes.io/ssl-passthrough: "true"
+    hosts: "{{ opensearch_fqdns }}"
+
+  plugins:
+    enabled: true
+    # https://docs.opensearch.org/docs/latest/install-and-configure/plugins/#available-plugins
+    # additional: https://github.com/opensearch-project/OpenSearch/tree/main/plugins
+    # https://docs.opensearch.org/docs/latest/install-and-configure/plugins/
+    installList: []
+      # - telemetry-otel
+      # - repository-s3
+
+  serviceMonitor:
+    enabled: false # enable only if Prometheus Operator is installed

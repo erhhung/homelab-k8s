@@ -1,0 +1,118 @@
+# https://docs.fluentbit.io/manual
+# https://chronosphere.io/fluent-bit-academy
+# https://github.com/fluent/fluent-operator
+---
+- name: Install Fluent Bit on RKE cluster
+  tags: fluentbit
+  hosts: "{{ rke_control_plane_host }}"
+  gather_facts: false
+  vars_files: &vars_files
+    - vars/basics.yml
+    - vars/kubernetes.yml
+    - vars/storage.yml
+    - vars/opensearch.yml
+    - vars/logging.yml
+    - vars/kibana.yml
+  vars:
+    # required kubernetes>=24.2 package only in user virtualenv
+    ansible_python_interpreter: "{{ venv_python_interpreter }}"
+    kubeconfig: "{{ rke_kubeconfig }}"
+    secret_ns: "{{ logging_namespace }}"
+  tasks:
+    - name: Create Fluent passwords secret
+      vars:
+        opensearch: "{{ fluent_operator_chart_values.fluentbit.output.opensearch }}"
+        secret_name: "{{ opensearch.httpPassword.valueFrom.secretKeyRef.name }}"
+        secret_data:
+          fluent_opensearch_username: fluent
+          fluent_opensearch_password: "{{ fluent_os_pass }}"
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
+      ansible.builtin.include_tasks: tasks/k8s/secrets/generic.yml
+
+    # https://docs.fluentbit.io/manual/administration/transport-security
+    - name: Create Fluent plugin secret
+      vars:
+        cert_desc: Fluent plugin
+        cert_file: fluent
+        secret_name: "{{ fluent_operator_chart_values.fluentbit.secrets[0] }}"
+        create_ns: false
+      ansible.builtin.include_tasks: tasks/k8s/secrets/tls.yml
+
+    # https://github.com/fluent/helm-charts/tree/main/charts/fluent-operator
+    - name: Install Fluent Operator Helm chart
+      # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/helm_module.html
+      kubernetes.core.helm:
+        kubeconfig: "{{ kubeconfig }}"
+        chart_repo_url: https://fluent.github.io/helm-charts
+        chart_ref: fluent-operator
+        chart_version: "{{ fluent_operator_chart_version }}"
+        release_name: fluent-operator
+        release_namespace: "{{ logging_namespace }}"
+        release_values: "{{ fluent_operator_chart_values }}"
+        atomic: true
+        wait: true
+      timeout: 300
+
+    - name: Examine existing ClusterFilter spec
+      # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_info_module.html
+      kubernetes.core.k8s_info: &k8s_info
+        kubeconfig: "{{ kubeconfig }}"
+        api_version: fluentbit.fluent.io/v1alpha2
+        kind: ClusterFilter
+        name: kubernetes
+        namespace: "{{ logging_namespace }}"
+      register: cluster_filter
+
+    - name: Remove more fields in ClusterFilter
+      vars:
+        # replace ClusterFilter.spec.filters[2].modify.rules in Helm template
+        rules: "{{ cluster_filter.resources[0].spec.filters[2].modify.rules |
+          map(attribute='remove') }}"
+      # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_json_patch_module.html
+      kubernetes.core.k8s_json_patch:
+        <<: *k8s_info
+        patch:
+          - op: replace
+            path: /spec/filters/2/modify/rules
+            value: |
+              {% set rules = [] %}
+              {% for field in remove_log_fields %}
+              {%   set _ = rules.append({
+                     'remove': field
+                   }) %}
+              {% endfor %}
+              {{ rules }}
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/difference_filter.html
+      when: remove_log_fields | ansible.builtin.difference(rules)
+  any_errors_fatal: true
+
+- name: Configure Dashboards for logs
+  tags: kibana
+  hosts: "{{ rke_control_plane_host }}"
+  gather_facts: false
+  vars_files: *vars_files
+  vars:
+    log_search: "{{ saved_log_search }}"
+  tasks:
+    - name: Create index pattern for logs
+      vars:
+        pattern: "{{ log_search.index_pattern }}"
+        time_field: "{{ log_search.time_field }}"
+      ansible.builtin.include_tasks: tasks/kibana/indexpat.yml
+      # sets index_pattern_id fact
+
+    - name: Create saved search for logs
+      vars:
+        title: "{{ log_search.title }}"
+        description: "{{ log_search.description }}"
+        fields: "{{ log_search.selected_fields }}"
+        patterns: "{{ [log_search.index_pattern] }}"
+      ansible.builtin.include_tasks: tasks/kibana/search.yml
+      # sets saved_search_id fact
+
+    - name: Set Dashboards landing page
+      vars:
+        settings:
+          defaultRoute: /app/data-explorer/discover/#/view/{{ saved_search_id }}
+      ansible.builtin.include_tasks: tasks/kibana/settings.yml
+  any_errors_fatal: true

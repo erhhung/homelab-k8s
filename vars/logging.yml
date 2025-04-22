@@ -1,0 +1,70 @@
+logging_namespace: logging
+
+# fluent_os_pass: {vault.yml}
+
+fluent_operator_chart_version: "3.3.0"
+# https://github.com/fluent/helm-charts/tree/main/charts/fluent-operator
+# https://github.com/fluent/helm-charts/tree/main/charts/fluent-operator/values.yaml
+fluent_operator_chart_values:
+  containerRuntime: "{{ container_runtime }}"
+
+  fluentbit:
+    enable: true
+    crdsEnable: true
+    # https://doc.crds.dev/github.com/fluent/fluent-operator/fluentbit.fluent.io/FluentBit/v1alpha2#spec-secrets
+    secrets:
+      - fluent-plugin-tls
+
+    input:
+      tail:
+        memBufLimit: 10MB
+    output:
+      # https://github.com/fluent/fluent-operator/tree/master/docs/plugins/fluentbit/output/open_search.md
+      # https://docs.fluentbit.io/manual/pipeline/outputs/opensearch (shows default values)
+      # https://github.com/fluent/helm-charts/tree/main/charts/fluent-operator/templates/fluentbit-output-opensearch.yaml
+      # https://doc.crds.dev/github.com/fluent/fluent-operator/fluentbit.fluent.io/ClusterOutput/v1alpha2#spec-opensearch
+      opensearch:
+        host: "{{ opensearch_chart_values.masterService }}.{{ opensearch_namespace }}.svc.cluster.local"
+        tls:
+          caFile: /fluent-bit/secrets/fluent-plugin-tls/ca.crt
+          crtFile: /fluent-bit/secrets/fluent-plugin-tls/tls.crt
+          keyFile: /fluent-bit/secrets/fluent-plugin-tls/tls.key
+        httpUser:
+          valueFrom:
+            secretKeyRef:
+              name: fluent-passwords
+              key: fluent_opensearch_username
+        httpPassword:
+          valueFrom:
+            secretKeyRef:
+              name: fluent-passwords
+              key: fluent_opensearch_password
+        suppressTypeName: true # _type is deprecated in OpenSearch
+    filter:
+      multiline:
+        enable: false # chart does not create any ClusterParser CRs
+        emitterMemBufLimit: 10 # MB
+
+    serviceMonitor:
+      enable: false # enable only if Prometheus Operator is installed
+
+# replace ClusterFilter.spec.filters[2].modify.rules in Helm template:
+# https://github.com/fluent/helm-charts/tree/main/charts/fluent-operator/templates/fluentbit-clusterfilter-kubernetes.yaml
+remove_log_fields:
+  - stream
+  - kubernetes_host
+  - kubernetes_pod_ip
+  - kubernetes_pod_id
+  - kubernetes_docker_id
+  - kubernetes_container_hash
+
+saved_log_search:
+  title: k8s-logs
+  description: Search Kubernetes logs
+  index_pattern: fluent-bit*
+  time_field: time
+  selected_fields:
+    - kubernetes.namespace_name
+    - kubernetes.pod_name
+    - kubernetes.container_name
+    - log

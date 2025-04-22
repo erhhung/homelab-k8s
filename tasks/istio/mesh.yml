@@ -1,6 +1,7 @@
 # enables/disables Istio service mesh (in ambient mode)
 # for specified namespace and enables/disables Waypoint
-# proxy for entire namespace or only specific services.
+# proxy for entire namespace or only specific services
+#
 # pass the following vars:
 #   kubeconfig  <required> path to kubeconfig
 #   enabled     [optional] use service mesh for namespace?

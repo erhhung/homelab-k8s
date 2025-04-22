@@ -27,17 +27,50 @@ private CA server at pki.fourteeners.local.
 <img src="images/services.drawio.svg" alt="services.drawio.svg" />
 </p>
 
-### Service Endpoints
+## Service Endpoints
 
-|                       Service URL | Description
+|                  Service Endpoint | Description
 |----------------------------------:|:----------------------
 | https://rancher.fourteeners.local | Rancher Server console
 |  https://harbor.fourteeners.local | Harbor OCI registry
+| opensearch.fourteeners.local:9200 | OpenSearch _(HTTPS only)_
+|  https://kibana.fourteeners.local | OpenSearch Dashboards
+|   postgres.fourteeners.local:5432 | PostgreSQL via Pgpool _(mTLS only)_
 |     https://sso.fourteeners.local | Keycloak IAM console
-|        postgres.fourteeners.local | PostgreSQL via Pgpool _(mTLS only)_
 |   https://kiali.fourteeners.local | Kiali dashboard
 | https://grafana.fourteeners.local | Grafana dashboard
 |  https://argocd.fourteeners.local | Argo CD console
+
+## Service Installers
+
+- [X] [NFS Dynamic Provisioners](https://computingforgeeks.com/configure-nfs-as-kubernetes-persistent-volume-storage/) — create PVs on NFS shares
+    * Install on K3s and RKE clusters using [`nfs-subdir-external-provisioner`](https://github.com/kubernetes-sigs/nfs-subdir-external-provisioner/) Helm chart
+- [X] [Harbor Container Registry](https://goharbor.io/) — private container registry
+    * Install into the same K3s cluster as Rancher Server using [`harbor/harbor`](https://github.com/goharbor/harbor-helm/) Helm chart
+- [X] [OpenSearch Logging Stack](https://opensearch.org/docs/latest/) — aggregate and filter logs using OpenSearch and Fluent Bit
+    * Install into the main RKE cluster using [`opensearch`](https://opensearch.org/docs/latest/install-and-configure/install-opensearch/helm/) and [`opensearch-dashboards`](https://opensearch.org/docs/latest/install-and-configure/install-dashboards/helm/) Helm charts
+    * Instal Fluent Bit using [`fluent-operator`](https://github.com/fluent/fluent-operator) Helm chart and `FluentBit` CR
+- [ ] [Prometheus Monitoring Stack](https://github.com/prometheus-operator/kube-prometheus) — Prometheus, Grafana, and rules using the Prometheus Operator
+    * Install into the main RKE cluster using [`kube-prometheus-stack`](https://github.com/prometheus-community/helm-charts/tree/main/charts/kube-prometheus-stack/README.md) Helm chart
+- [X] [PostgreSQL Database](https://www.postgresql.org/docs/current/) — SQL database used by Keycloak and other applications
+    * Install using Bitnami's [`postgresql-ha`](https://github.com/bitnami/charts/tree/main/bitnami/postgresql-ha) Helm chart
+- [X] [Keycloak IAM & OIDC Provider](https://www.keycloak.org/) — identity and access management and OpenID Connect provider
+- [X] [Istio Service Mesh](https://istio.io/latest/about/service-mesh/) with [Kiali UI](https://kiali.io/) — secure, observe, trace, and route traffic between cluster workloads
+    * Install into the main RKE cluster using [`istioctl`](https://istio.io/latest/docs/ambient/install/istioctl/)
+    * Install Kiali using [`kiali-operator`](https://kiali.io/docs/installation/installation-guide/install-with-helm/#install-with-operator/) Helm chart and `Kiali` CR
+- [X] [Argo CD Declarative GitOps](https://argo-cd.readthedocs.io/) — manage deployment of other applications in the main RKE cluster
+- [ ] [Kubernetes Metrics Server](https://github.com/kubernetes-sigs/metrics-server) — enable [HorizontalPodAutoscaler](https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/) and [VerticalPodAutoscaler](https://github.com/kubernetes/autoscaler/tree/master/vertical-pod-autoscaler/)
+- [ ] [OpenTelemetry Collector](https://opentelemetry.io/docs/collector/) with [Jaeger UI](https://www.jaegertracing.io/) -- telemetry collector agent and distributed tracing backend
+    * Install into the main RKE cluster using [OpenTelemetry Collector](https://opentelemetry.io/docs/platforms/kubernetes/helm/collector/) Helm chart
+    * Install Jaeger using [Jaeger](https://github.com/jaegertracing/helm-charts/tree/main/charts/jaeger) Helm chart
+- [ ] [MinIO Object Storage](https://github.com/minio/minio) — object storage server and console
+    * Install into the main RKE cluster using [MinIO Operator](https://min.io/docs/minio/kubernetes/upstream/operations/installation.html)
+- [ ] [Velero Backup & Restore](https://velero.io/docs/latest/basic-install) — back up and restore persistent volumes
+    * Install into the main RKE cluster using [Velero](https://github.com/vmware-tanzu/helm-charts/tree/main/charts/velero) Helm chart
+- [ ] [Backstage Developer Portal](https://backstage.io/) — software catalog and developer portal
+- [ ] [Meshery](https://github.com/meshery/meshery) — visual and collaborative GitOps platform
+- [ ] [NATS](https://docs.nats.io/) — high performance message queues (Kafka alternative) with [JetStream](https://docs.nats.io/nats-concepts/jetstream) for persistence
+- [ ] [KEDA](https://keda.sh/) — Kubernetes Event Driven Autoscaler
 
 ## Ansible Vault
 
@@ -58,12 +91,15 @@ Some variables stored in Ansible Vault _(there are many more)_:
 |:--------------------------:|:-------------------:
 | `ansible_become_pass`      | `rancher_admin_pass`
 | `github_access_token`      | `harbor_admin_pass`
-| `age_secret_key`           | `keycloak_admin_pass`
-| `k3s_token`                | `grafana_admin_pass`
-| `rke2_token`               | `argocd_admin_pass`
-| `harbor_secret`            |
+| `age_secret_key`           | `opensearch_admin_pass`
+| `k3s_token`                | `keycloak_admin_pass`
+| `rke2_token`               | `grafana_admin_pass`
+| `harbor_secret`            | `argocd_admin_pass`
 | `harbor_ca_key`            |
+| `dashboards_os_pass`       |
+| `fluent_os_pass`           |
 | `postgresql_pass`          |
+| `keycloak_db_pass`         |
 | `keycloak_smtp_pass`       |
 | `kiali_oidc_client_secret` |
 
@@ -150,33 +186,47 @@ export ANSIBLE_CONFIG=./ansible.cfg
     ansible-playbook harbor.yml
     ```
 
-9. Set up **PostgreSQL** database in _**HA**_ mode
+9. Set up **OpenSearch** cluster in _**HA**_ mode
 
-    9.1. Runs initialization SQL script to create roles and databases for downstream applications
+    9.1. Configures the OpenSearch security plugin (users and roles) for downstream applications  
+    9.2. Installs **OpenSearch Dashboards** UI
+
+    ```bash
+    ansible-playbook opensearch.yml
+    ```
+
+10. Set up **Fluent Bit** to ingest logs into OpenSearch
+    ```bash
+    ansible-playbook logging.yml
+    ```
+
+11. Set up **PostgreSQL** database in _**HA**_ mode
+
+    11.1. Runs initialization SQL script to create roles and databases for downstream applications
 
     ```bash
     ansible-playbook postgresql.yml
     ```
 
-10. Set up **Keycloak** IAM & OIDC provider
+12. Set up **Keycloak** IAM & OIDC provider
 
-    10.1. Bootstraps PostgreSQL database with `Homelab` realm, user `erhhung`, and OIDC clients
+    12.1. Bootstraps PostgreSQL database with realm `homelab`, user `erhhung`, and OIDC clients
 
     ```bash
     ansible-playbook keycloak.yml
     ```
 
-11. Set up **Istio** service mesh in _**ambient**_ mode
+13. Set up **Istio** service mesh in _**ambient**_ mode
     ```bash
     ansible-playbook istio.yml
     ```
 
-12. Set up **Argo CD** GitOps delivery tool
+14. Set up **Argo CD** GitOps delivery tool
     ```bash
     ansible-playbook argocd.yml
     ```
 
-13. Create **virtual clusters** in RKE running **K0s**
+15. Create **virtual clusters** in RKE running **K0s**
     ```bash
     ansible-playbook vclusters.yml
     ```
@@ -337,31 +387,3 @@ Ansible's [ad-hoc commands](https://docs.ansible.com/ansible/latest/command_guid
     # so upgrade won't install again)
     ansible -v cluster -b -a 'apt-get autoremove -y --purge'
     ```
-
-## Roadmap
-
-These are additional components to be deployed:
-
-- [X] [NFS Dynamic Provisioners](https://computingforgeeks.com/configure-nfs-as-kubernetes-persistent-volume-storage/) — create PVs on NFS shares
-    * Install on K3s and RKE clusters using [`nfs-subdir-external-provisioner`](https://github.com/kubernetes-sigs/nfs-subdir-external-provisioner/) Helm chart
-- [X] [Harbor Container Registry](https://goharbor.io/) — private container registry
-    * Install into the same K3s cluster as Rancher Server using [`harbor/harbor`](https://github.com/goharbor/harbor-helm/) Helm chart
-- [X] [Argo CD Declarative GitOps](https://argo-cd.readthedocs.io/) — manage deployment of other applications in the main RKE cluster
-- [X] [PostgreSQL Database](https://www.postgresql.org/docs/current/) — install using Bitnami's [`postgresql-ha`](https://github.com/bitnami/charts/tree/main/bitnami/postgresql-ha) Helm chart
-- [ ] [Prometheus Monitoring Stack](https://github.com/prometheus-operator/kube-prometheus) — Prometheus, Grafana, and rules using the Prometheus Operator
-    * Install into the main RKE cluster using [`kube-prometheus-stack`](https://github.com/prometheus-community/helm-charts/tree/main/charts/kube-prometheus-stack/README.md) Helm chart
-- [X] [Keycloak IAM & OIDC Provider](https://www.keycloak.org/) — identity and access management and OpenID Connect provider
-- [X] [Istio Service Mesh](https://istio.io/latest/about/service-mesh/) with [Kiali UI](https://kiali.io/) — secure, observe, trace, and route traffic between cluster workloads
-    * Install into the main RKE cluster using [`istioctl`](https://istio.io/latest/docs/ambient/install/istioctl/)
-    * Install Kiali using [`kiali-operator`](https://kiali.io/docs/installation/installation-guide/install-with-helm/#install-with-operator/) Helm chart
-- [ ] [OpenTelemetry Collector](https://opentelemetry.io/docs/collector/) with [Jaeger UI](https://www.jaegertracing.io/) -- telemetry collector agent and distributed tracing backend
-    * Install into the main RKE cluster using [OpenTelemetry Collector](https://opentelemetry.io/docs/platforms/kubernetes/helm/collector/) Helm chart
-    * Install Jaeger using [Jaeger](https://github.com/jaegertracing/helm-charts/tree/main/charts/jaeger) Helm chart
-- [ ] [MinIO Object Storage](https://github.com/minio/minio) — object storage server and console
-    * Install into the main RKE cluster using [MinIO Operator](https://min.io/docs/minio/kubernetes/upstream/operations/installation.html)
-- [ ] [Velero Backup & Restore](https://velero.io/docs/latest/basic-install) — back up and restore persistent volumes
-    * Install into the main RKE cluster using [Velero](https://github.com/vmware-tanzu/helm-charts/tree/main/charts/velero) Helm chart
-- [ ] [Backstage Developer Portal](https://backstage.io/) — software catalog and developer portal
-- [ ] [Meshery](https://github.com/meshery/meshery) — visual and collaborative GitOps platform
-- [ ] [NATS](https://docs.nats.io/) — high performance message queues (Kafka alternative) with [JetStream](https://docs.nats.io/nats-concepts/jetstream) for persistence
-- [ ] [KEDA](https://keda.sh/) — Kubernetes Event Driven Autoscaler

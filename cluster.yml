@@ -54,7 +54,7 @@
         file_desc: RKE kubeconfig
         file_path: "{{ rke_kubeconfig }}"
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
-      ansible.builtin.include_tasks: tasks/mkreadable.yml
+      ansible.builtin.include_tasks: tasks/fs/readable.yml
 
     - name: Fetch kubeconfig file content
       run_once: true
@@ -69,7 +69,7 @@
         kubeconfig: "{{ rke_kubeconfig }}"
         context: "{{ rke_cluster_name }}"
         server: https://{{ rke_fqdns[0] }}:6443
-      ansible.builtin.include_tasks: tasks/kubeconfig.yml
+      ansible.builtin.include_tasks: tasks/k8s/kubeconfig.yml
   any_errors_fatal: true
 
 - name: Set up shell environment for kubectl
@@ -89,7 +89,7 @@
         file_path: "{{ rke_bin_dir }}/kubectl"
         file_mode: "0755"
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
-      ansible.builtin.include_tasks: tasks/mkreadable.yml
+      ansible.builtin.include_tasks: tasks/fs/readable.yml
 
     - name: Write kubeconfig on worker node
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/copy_module.html
@@ -109,17 +109,17 @@
           export PATH="$PATH:{{ rke_bin_dir }}"
           export KUBECONFIG={{ rke_kubeconfig }}
           export CRI_CONFIG_FILE={{ rke_crictl_config }}
-          export CONTAINER_RUNTIME_ENDPOINT={{ rke_containerd_socket }}
+          export CONTAINER_RUNTIME_ENDPOINT={{ containerd_socket }}
         mode: "0644"
 
     - name: Allow admin user to use crictl
       vars:
         file_path: "{{ item.path }}"
         file_mode: "{{ item.mode }}"
-      ansible.builtin.include_tasks: tasks/mkreadable.yml
+      ansible.builtin.include_tasks: tasks/fs/readable.yml
       loop:
         - path: "{{ rke_crictl_config }}"
-        - path: "{{ rke_containerd_socket }}"
+        - path: "{{ containerd_socket }}"
           mode: "0666"
 
     - name: Install calicoctl CLI utility
@@ -243,7 +243,7 @@
       vars:
         file_desc: RKE kubeconfig
         file_path: "{{ rke_kubeconfig }}"
-      ansible.builtin.include_tasks: tasks/mkreadable.yml
+      ansible.builtin.include_tasks: tasks/fs/readable.yml
       when: >-
         restart_rke is defined and
         restart_rke.changed

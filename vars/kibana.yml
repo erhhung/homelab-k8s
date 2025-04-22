@@ -1,0 +1,93 @@
+kibana_namespace: opensearch
+kibana_host_name: kibana # alias of "homelab"
+
+# kibana_os_pass: {vault.yml}
+
+# remember to add kibana.fourteeners.local to pfSense DNS
+# as an alias of homelab.fourteeners.local: 192.168.0.221
+# https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_filters.html#products
+kibana_fqdn: "{{ [kibana_host_name] | product(search_domains) | map('join','.') | first }}"
+
+dashboards_chart_version: "2.28.0"
+# https://github.com/opensearch-project/helm-charts/tree/main/charts/opensearch-dashboards
+# https://github.com/opensearch-project/helm-charts/tree/main/charts/opensearch-dashboards/values.yaml
+dashboards_chart_values:
+  opensearchHosts: https://{{ opensearch_chart_values.masterService }}.{{ opensearch_namespace }}.svc:9200
+
+  # opensearchAccount:
+  #   secret: opensearch-passwords
+  extraEnvs:
+    - name: OPENSEARCH_USERNAME
+      value: kibana
+    - name: OPENSEARCH_PASSWORD
+      valueFrom:
+        secretKeyRef:
+          name: opensearch-passwords
+          key: kibana_opensearch_password
+
+  config:
+    # https://github.com/opensearch-project/OpenSearch-Dashboards/tree/main/config/opensearch_dashboards.yml
+    opensearch_dashboards.yml: |
+      {% raw -%}
+      server:
+        name: dashboards
+        host: "{{ .Values.serverHost }}"
+      {% endraw %}
+        ssl:
+          enabled: true
+          certificate: /tls/tls.crt
+          key: /tls/tls.key
+      opensearch:
+        ssl: &ssl_cas
+          certificateAuthorities:
+            - /tls/ca.crt
+      data_source:
+        ssl: *ssl_cas
+
+  secretMounts:
+    - name: tls
+      secretName: dashboards-tls
+      path: /tls
+
+  resources:
+    requests:
+      cpu: 200m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+  ingress:
+    enabled: true
+    ingressClassName: "{{ rke_ingress_class }}"
+    tls:
+      - secretName: dashboards-tls
+        hosts:
+          - "{{ kibana_fqdn }}"
+    annotations:
+      nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+      nginx.ingress.kubernetes.io/ssl-passthrough: "true"
+    hosts:
+      - host: "{{ kibana_fqdn }}"
+        paths:
+          - path: /
+            backend:
+              servicePort: http
+
+  plugins:
+    enabled: true
+    # https://docs.opensearch.org/docs/latest/install-and-configure/install-dashboards/plugins/#available-plugins
+    installList: []
+      # - dashboards-observability
+
+  serviceMonitor:
+    enabled: false # enable only if Prometheus Operator is installed
+
+# apply custom settings available on
+# old: Dashboards Management => Advanced settings or
+# new: Settings and setup => Application settings page:
+# POST https://kibana.fourteeners.local/api/opensearch-dashboards/settings
+kibana_settings:
+  "theme:darkMode": true
+  "home:useNewHomePage": true
+  "savedObjects:perPage": 50

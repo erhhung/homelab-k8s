@@ -39,8 +39,8 @@
           {%   if not pod.found %}
           {%     set _ = pods.append(pod.desc) %}
           {%   endif %}
-          {% endfor %}
-          {{ pods }}
+          {% endfor  %}
+          {{ pods    }}
 
     - name: Show pods deployed in namespace
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/debug_module.html

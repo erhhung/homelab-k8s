@@ -80,22 +80,22 @@
         cert_desc: Keycloak ingress
         cert_file: keycloak
         secret_type: tls
-        secret_name: keycloakx-ingress-tls
+        secret_name: "{{ keycloakx_chart_values.ingress.tls[0].secretName }}"
         secret_ns: "{{ keycloak_namespace }}"
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
-      ansible.builtin.include_tasks: tasks/tlssecret.yml
+      ansible.builtin.include_tasks: tasks/k8s/secrets/tls.yml
 
-    - name: Create Keycloak pgpool secret
+    - name: Create Keycloak DB secret
       vars:
-        # JDBC driver requires tls.key
-        # to be in PKCS#8 / DER format
-        cert_desc: Keycloak pgpool
-        cert_file: keycloakdb
+        # Java requires key file to
+        # be in PKCS#8 / DER format
+        cert_desc: Keycloak DB
+        cert_file: keycloak_db
         secret_type: generic # not tls because key is in binary format
-        secret_name: keycloakx-pgpool-tls
+        secret_name: keycloakx-db-tls
         secret_ns: "{{ keycloak_namespace }}"
         create_ns: false
-      ansible.builtin.include_tasks: tasks/tlssecret.yml
+      ansible.builtin.include_tasks: tasks/k8s/secrets/tls.yml
 
     - name: Create keycloakx-admin ConfigMap
       vars:

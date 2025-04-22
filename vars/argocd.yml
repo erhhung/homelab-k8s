@@ -43,12 +43,13 @@ argocd_chart_values:
     secret:
       githubSecret: "{{ github_access_token }}"
       # bcrypt hash of plain-text password:
-      # htpasswd -nbBC 10 "" $ARGOCD_PASS | \
-      #    tr -d ':\n' | sed 's/$2y/$2a/'
-      argocdServerAdminPassword: &argocd_pass |-
-        $2a$10$TJweEusGRp0EWRRUtayqCu4a9er34MJI8Hpt9P1KVHNrll1NyhEoa
+      # htpasswd -nbBC 11 "" $ARGOCD_PASS | \
+      #       tr -d ':\n' | sed 's/$2y/$2b/'
+      argocdServerAdminPassword: &argocd_pass >-
+        {{ argocd_admin_pass | ansible.builtin.password_hash('bcrypt',
+                               salt=bcrypt_salt, rounds=bcrypt_rounds) }}
       argocdServerAdminPasswordMtime: &argocd_pass_mtime |-
-        2025-03-17T00:00:00Z
+        2025-03-20T00:00:00Z
       extra:
         # set password of additional
         # users created in argocd-cm
@@ -102,6 +103,7 @@ argocd_chart_values:
   server:
     # "argocd-server-tls" Secret
     # will be created by Ansible
+    # https://argo-cd.readthedocs.io/en/stable/operator-manual/tls/#tls-certificates-used-by-argocd-server
     certificateSecret:
       enabled: false
     ingress:
