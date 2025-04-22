@@ -14,15 +14,15 @@ keycloak_db_name: keycloak
 keycloak_db_user: keycloak
 # use {{ pgpool_db_pass }}
 
-# JDBC driver requires tls.key to be in PKCS#8 / DER format:
+# Java requires key file to be in PKCS#8 / DER format:
 # openssl pkcs8 -topk8 -inform PEM -outform DER -in tls.key -nocrypt | sponge tls.key
 keycloak_jdbc_params:
   ssl: "true"
   sslmode: verify-full
-  # mounted volume: /opt/keycloak/tls/pgpool
-  sslcert: /opt/keycloak/tls/pgpool/tls.crt
-  sslkey: /opt/keycloak/tls/pgpool/tls.key
-  sslrootcert: /opt/keycloak/tls/pgpool/ca.crt
+  # mounted volume: /opt/keycloak/tls/db
+  sslcert: /opt/keycloak/tls/db/tls.crt
+  sslkey: /opt/keycloak/tls/db/tls.key
+  sslrootcert: /opt/keycloak/tls/db/ca.crt
 
 # file is in "keycloakx-dbsql" ConfigMap
 keycloak_sql_gz_b64: keycloak.sql.gz.b64
@@ -94,16 +94,16 @@ keycloakx_chart_values:
     enabled: true
 
   extraVolumes: |
+    - name: db-tls
+      secret:
+        # keycloakx-db-tls Secret
+        # will be created by Ansible
+        secretName: keycloakx-db-tls
     - name: ingress-tls
       secret:
         # keycloakx-ingress-tls Secret
         # will be created by Ansible
         secretName: keycloakx-ingress-tls
-    - name: pgpool-tls
-      secret:
-        # keycloakx-pgpool-tls Secret
-        # will be created by Ansible
-        secretName: keycloakx-pgpool-tls
     - name: keycloak-sql
       configMap:
         name: keycloakx-dbsql
@@ -113,11 +113,11 @@ keycloakx_chart_values:
 
   # keycloak container
   extraVolumeMounts: |
+    - name: db-tls
+      mountPath: /opt/keycloak/tls/db
+      readOnly: true
     - name: ingress-tls
       mountPath: /opt/keycloak/tls/ingress
-      readOnly: true
-    - name: pgpool-tls
-      mountPath: /opt/keycloak/tls/pgpool
       readOnly: true
     - name: profile-sh
       mountPath: /etc/profile.d/sh.local
@@ -185,10 +185,12 @@ keycloakx_chart_values:
         - name: PGSSLROOTCERT
           value: /tls/ca.crt
       volumeMounts:
+        - name: db-tls
+          mountPath: /tls
+          readOnly: true
         - name: keycloak-sql
           mountPath: /sql
-        - name: pgpool-tls
-          mountPath: /tls
+          readOnly: true
 
   resources:
     requests:

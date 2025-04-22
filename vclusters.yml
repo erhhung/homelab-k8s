@@ -1,3 +1,5 @@
+# https://www.vcluster.com/
+# https://www.vcluster.com/docs/vcluster/introduction/architecture
 ---
 - name: Create virtual clusters
   hosts: "{{ rke_control_plane_host }}"
@@ -34,7 +36,7 @@
   tasks:
     - name: Create managed vClusters
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
-      ansible.builtin.include_tasks: tasks/mkvcluster.yml
+      ansible.builtin.include_tasks: tasks/vcluster/create.yml
       loop: "{{ vclusters }}"
       loop_control:
         loop_var: vcluster
@@ -43,7 +45,7 @@
     - name: Delete unknown vClusters
       vars:
         rm_list: "{{ rm_vclusters.stdout | from_json }}"
-      ansible.builtin.include_tasks: tasks/rmvcluster.yml
+      ansible.builtin.include_tasks: tasks/vcluster/delete.yml
       loop: "{{ rm_list }}"
       loop_control:
         loop_var: vcluster

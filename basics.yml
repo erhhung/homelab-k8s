@@ -1,6 +1,6 @@
 ---
-- name: Configure basic settings
-  tags: locale
+- name: Configure system settings
+  tags: system
   hosts: k8s_all
   become: true
   vars_files:
@@ -53,6 +53,20 @@
         locale_lang     != system_locale or
         locale_language != system_language
       changed_when: true
+
+    - name: Adjust Linux kernel parameters
+      # https://docs.ansible.com/ansible/latest/collections/ansible/posix/sysctl_module.html
+      ansible.posix.sysctl:
+        name: "{{ item.key }}"
+        value: "{{ item.value | string }}"
+        sysctl_set: true
+        state: present
+        # reload sysctl.conf after all changes
+        reload: "{{ i == sysctl | length - 1 }}"
+      loop: "{{ sysctl }}"
+      loop_control:
+        label: "{{ item.key }}"
+        index_var: i
   any_errors_fatal: true
 
 - name: Configure network settings
@@ -85,12 +99,12 @@
       loop_control:
         index_var: i
 
-    - name: Print existing network settings
-      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/debug_module.html
-      ansible.builtin.debug:
-        msg: |-
-          resolvectl_dns: "{{ resolvectl_dns | join(',') }}"
-          resolvectl_domain: "{{ resolvectl_domain | join(',') }}"
+    # - name: Print existing network settings
+    #   # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/debug_module.html
+    #   ansible.builtin.debug:
+    #     msg: |-
+    #       resolvectl_dns: "{{ resolvectl_dns | join(',') }}"
+    #       resolvectl_domain: "{{ resolvectl_domain | join(',') }}"
 
     - name: Cloud-init Netplan config enabled?
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/stat_module.html
@@ -204,7 +218,7 @@
   any_errors_fatal: true
 
 - name: Add CA certs to trust store
-  tags: ca_certs
+  tags: certs
   hosts: k8s_all
   pre_tasks:
     - name: Fetch CA certs from PKI

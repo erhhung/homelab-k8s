@@ -42,7 +42,7 @@
         file_path: "{{ istio_bin_dir }}/istioctl"
         file_mode: "0755"
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
-      ansible.builtin.include_tasks: tasks/mkreadable.yml
+      ansible.builtin.include_tasks: tasks/fs/readable.yml
 
     - name: Create /etc/profile.d/istioctl.sh
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/copy_module.html
@@ -133,6 +133,8 @@
     # required kubernetes>=24.2 package only in user virtualenv
     ansible_python_interpreter: "{{ venv_python_interpreter }}"
     kubeconfig: "{{ rke_kubeconfig }}"
+    secret_ns: "{{ kiali_namespace }}"
+    create_ns: false
   tasks:
     # https://kiali.io/docs/installation/installation-guide/install-with-helm/#operator-only-install
     - name: Install Kiali Operator Helm chart
@@ -150,31 +152,18 @@
 
     # https://kiali.io/docs/configuration/authentication/openid/#set-up-with-no-namespace-access-control-support
     - name: Create Kiali OpenID secret
-      kubernetes.core.k8s:
-        kubeconfig: "{{ kubeconfig }}"
-        definition:
-          apiVersion: v1
-          kind: Secret
-          metadata:
-            name: kiali-openid
-            namespace: "{{ kiali_namespace }}"
-          type: Opaque
-          data:
-            oidc-secret: "{{ kiali_oidc_client_secret | b64encode }}"
-        validate:
-          fail_on_error: true
-        state: present
-        apply: true
+      vars:
+        secret_name: "{{ kiali_cr_spec.deployment.secret_name }}"
+        secret_data:
+          oidc-secret: "{{ kiali_oidc_client_secret }}"
+      ansible.builtin.include_tasks: tasks/k8s/secrets/generic.yml
 
     - name: Create Kiali ingress secret
       vars:
         cert_desc: Kiali
         cert_file: kiali
-        secret_name: kiali-ingress-tls
-        secret_ns: "{{ kiali_namespace }}"
-        create_ns: false
-      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
-      ansible.builtin.include_tasks: tasks/tlssecret.yml
+        secret_name: "{{ kiali_cr_spec.deployment.ingress.override_yaml.spec.tls[0].secretName }}"
+      ansible.builtin.include_tasks: tasks/k8s/secrets/tls.yml
 
     # Kiali Operator shall deploy Kiali
     - name: Create Kiali custom resource

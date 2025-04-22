@@ -1,0 +1,44 @@
+# these tasks are included by "Apply updated security config"
+# handler, which, apparently, cannot have a block of subtasks
+---
+# security config change would trigger
+# a rolling update of StatefulSet pods
+- name: Wait for OpenSearch to be ready
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ kubeconfig }}"
+    api_version: apps/v1
+    kind: StatefulSet
+    name: "{{ opensearch_chart_values.masterService }}"
+    namespace: "{{ opensearch_namespace }}"
+  # https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_loops.html#retrying-a-task-until-a-condition-is-met
+  register: opensearch_info
+  until: >-
+    opensearch_info.resources[0].status.readyReplicas ==
+    opensearch_info.resources[0].status.replicas
+  retries: 30
+  delay: 10
+
+# https://docs.opensearch.org/docs/latest/security/configuration/security-admin/
+# it is sufficient to run securityadmin.sh on a single pod
+# because the config is stored in the .opendistro_security
+# index, which gets replicated to all other nodes
+- name: Run OpenSearch securityadmin.sh
+  vars:
+    home_dir: /usr/share/opensearch
+    plugin_dir: "{{ home_dir }}/plugins/opensearch-security"
+    config_dir: "{{ home_dir }}/config"
+    tls_dir: "{{ config_dir }}/tls/admin"
+    command: >-
+      {{ plugin_dir }}/tools/securityadmin.sh
+      -cd  {{ config_dir }}/opensearch-security
+      -cert   {{ tls_dir }}/tls.crt
+      -key    {{ tls_dir }}/tls.key
+      -cacert {{ tls_dir }}/ca.crt
+      -nhnv -icl
+  # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_exec_module.html
+  kubernetes.core.k8s_exec:
+    kubeconfig: "{{ kubeconfig }}"
+    namespace: "{{ opensearch_namespace }}"
+    pod: "{{ opensearch_chart_values.masterService }}-0"
+    container: opensearch
+    command: "{{ command }}"

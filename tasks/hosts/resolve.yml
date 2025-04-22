@@ -1,5 +1,5 @@
 # pass the following vars:
-#   target_hosts <required> CSV of groups/hosts
+#   target_hosts <required> groups/hosts CSV
 # sets the following facts:
 #   resolved_hosts list of inventory hosts
 ---

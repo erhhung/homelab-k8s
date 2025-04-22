@@ -1,0 +1,61 @@
+# create index pattern in OpenSearch Dashboards
+#
+# pass the following vars:
+#   pattern    <required> index pattern
+#   time_field [optional] default=@timestamp
+# requires vars from:
+#   vars/opensearch.yml
+#   vars/kibana.yml
+#   vars/logging.yml
+# sets the following facts:
+#   index_pattern_id
+---
+- name: Create index pattern
+  become: false
+  vars:
+    uri_params: &uri_params
+      url_username: admin
+      url_password: "{{ opensearch_admin_pass }}"
+      force_basic_auth: true
+      validate_certs: false
+      return_content: true
+    # https://opensearch-project.github.io/OpenSearch-Dashboards/docs/openapi/saved_objects/
+    saved_objs_url: https://{{ kibana_fqdn }}/api/saved_objects
+  block:
+    - name: Get existing patterns
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/uri_module.html
+      ansible.builtin.uri:
+        <<: *uri_params
+        url: "{{ saved_objs_url }}/_find?type=index-pattern&fields=title&per_page=1000"
+      register: index_patterns
+
+    - name: Need to create pattern?
+      vars:
+        # https://runebook.dev/en/articles/jinja/templates/index/jinja-filters.selectattr
+        existing: "{{ index_patterns.json.saved_objects |
+          selectattr('attributes.title', '==', pattern) |
+          first | default(none) }}"
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/set_fact_module.html
+      ansible.builtin.set_fact:
+        existing_id: "{{ existing.id if existing }}"
+
+    - name: Create index pattern
+      ansible.builtin.uri:
+        <<: *uri_params
+        method: POST
+        url: "{{ saved_objs_url }}/index-pattern"
+        headers:
+          osd-xsrf: "true"
+        body_format: json
+        body:
+          attributes:
+            title: "{{ pattern }}"
+            timeFieldName: "{{ time_field | default('@timestamp') }}"
+      register: create_pattern
+      when: existing_id == ''
+      changed_when: create_pattern.status == 200
+
+    - name: Set index_pattern_id
+      ansible.builtin.set_fact:
+        index_pattern_id: "{{ existing_id or create_pattern.json.id }}"
+  any_errors_fatal: true

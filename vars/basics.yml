@@ -2,6 +2,10 @@ system_time_zone: America/Los_Angeles
 system_locale: en_US.UTF-8
 system_language: en_US.UTF-8
 
+sysctl: # adjust Linux kernel parameters
+  - key: vm.max_map_count
+    value: 262144
+
 host_pif: enX0 # XCP-ng VM physical interface
 subnet_mask: /24
 name_servers:

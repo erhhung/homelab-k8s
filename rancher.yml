@@ -44,7 +44,7 @@
           # kubectl and crictl are in /usr/local/bin
           export KUBECONFIG={{ k3s_kubeconfig }}
           export CRI_CONFIG_FILE={{ k3s_crictl_config }}
-          export CONTAINER_RUNTIME_ENDPOINT={{ k3s_containerd_socket }}
+          export CONTAINER_RUNTIME_ENDPOINT={{ containerd_socket }}
         mode: "0644"
 
     - name: Allow admin user to use crictl
@@ -52,10 +52,10 @@
         file_path: "{{ item.path }}"
         file_mode: "{{ item.mode }}"
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
-      ansible.builtin.include_tasks: tasks/mkreadable.yml
+      ansible.builtin.include_tasks: tasks/fs/readable.yml
       loop:
         - path: "{{ k3s_crictl_config }}"
-        - path: "{{ k3s_containerd_socket }}"
+        - path: "{{ containerd_socket }}"
           mode: "0666"
 
     - name: Merge kubeconfig into local
@@ -63,7 +63,7 @@
         kubeconfig: "{{ k3s_kubeconfig }}"
         context: "{{ k3s_cluster_name }}"
         server: https://{{ k3s_fqdn }}:6443
-      ansible.builtin.include_tasks: tasks/kubeconfig.yml
+      ansible.builtin.include_tasks: tasks/k8s/kubeconfig.yml
   any_errors_fatal: true
 
 # https://ranchermanager.docs.rancher.com/getting-started/installation-and-upgrade
@@ -106,26 +106,19 @@
         cert_file: rancher
         secret_name: tls-rancher-ingress
         secret_ns: "{{ rancher_namespace }}"
-      ansible.builtin.include_tasks: tasks/tlssecret.yml
+      ansible.builtin.include_tasks: tasks/k8s/secrets/tls.yml
+      register: ingress_secret
 
     - name: Create Rancher CA secret
-      # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_module.html
-      kubernetes.core.k8s:
-        kubeconfig: "{{ kubeconfig }}"
-        definition:
-          apiVersion: v1
-          kind: Secret
-          metadata:
-            name: tls-ca
-            namespace: "{{ rancher_namespace }}"
-          data:
-            # pem_chain set by above tasks/tlssecret.yml
-            # include both intermediate and root CA certs
-            cacerts.pem: "{{ pem_chain[1:] | join('\n') | b64encode }}"
-        validate:
-          fail_on_error: true
-        state: present
-        apply: true
+      vars:
+        secret_name: tls-ca
+        secret_ns: "{{ rancher_namespace }}"
+        create_ns: false
+        secret_data:
+          # pem_chain fact set by tasks/k8s/secrets/tls.yml
+          # above contains both intermediate & root CA certs
+          cacerts.pem: "{{ pem_chain[1:] | join('\n') }}"
+      ansible.builtin.include_tasks: tasks/k8s/secrets/generic.yml
 
     # https://ranchermanager.docs.rancher.com/getting-started/installation-and-upgrade/install-upgrade-on-a-kubernetes-cluster#install-the-rancher-helm-chart
     - name: Install Rancher Server Helm chart
@@ -339,6 +332,6 @@
               io.cattle.agent.force.deploy: "true"
         state: patched
       when: >-
-        tls_secret.changed and
-        rke_cluster is match('c-')
+        ingress_secret is changed and
+           rke_cluster is match('c-')
   any_errors_fatal: true

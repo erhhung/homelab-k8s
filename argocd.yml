@@ -10,6 +10,7 @@
   vars:
     kubeconfig: "{{ rke_kubeconfig }}"
   tasks:
+    # https://argo-cd.readthedocs.io/en/stable/operator-manual/tls/#tls-certificates-used-by-argocd-server
     - name: Create Argo CD ingress secret
       vars:
         cert_desc: Argo CD
@@ -17,7 +18,7 @@
         secret_name: argocd-server-tls
         secret_ns: "{{ argocd_namespace }}"
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
-      ansible.builtin.include_tasks: tasks/tlssecret.yml
+      ansible.builtin.include_tasks: tasks/k8s/secrets/tls.yml
 
     # https://github.com/argoproj/argo-helm/tree/main/charts/argo-cd
     - name: Install Argo CD Helm chart
@@ -38,7 +39,7 @@
       timeout: 300
 
     - name: >-
-        {{ 'Enable' if argocd_use_mesh else 'Disable' }}
+        {{ 'Enable' if enabled else 'Disable' }}
         Istio service mesh
       vars:
         enabled: "{{ argocd_use_mesh }}"
@@ -57,5 +58,5 @@
               }) %}
           {% endfor %}
           {{ res }}
-      ansible.builtin.include_tasks: tasks/servicemesh.yml
+      ansible.builtin.include_tasks: tasks/istio/mesh.yml
   any_errors_fatal: true

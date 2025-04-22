@@ -23,6 +23,12 @@
 - name: Include Harbor OCI registry playbook
   ansible.builtin.import_playbook: harbor.yml
 
+- name: Include OpenSearch cluster playbook
+  ansible.builtin.import_playbook: opensearch.yml
+
+- name: Include Fluent Bit logging playbook
+  ansible.builtin.import_playbook: logging.yml
+
 - name: Include PostgreSQL database playbook
   ansible.builtin.import_playbook: postgresql.yml
 

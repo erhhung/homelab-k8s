@@ -1,6 +1,8 @@
 ---
 - name: Create/revert/delete VM snapshots
-  hosts: "{{ groups['xcp'][0] }}"
+  hosts: "{{ xcp_master }}"
+  vars_files:
+    - vars/xcp.yml
   vars:
     # To be overridden on command-line:
     # ansible-playbook snapshotvms.yml
@@ -43,8 +45,8 @@
     - name: Resolve target hosts
       vars:
         target_hosts: "{{ targets }}"
-      ansible.builtin.include_tasks: tasks/resolvehosts.yml
-      # sets "resolved_hosts" fact
+      ansible.builtin.include_tasks: tasks/hosts/resolve.yml
+      # sets resolved_hosts fact
 
     - name: Get snapshots JSON
       # cannot use ansible.builtin.shell because XCP-ng 8.2 only has Python 3.6,
@@ -177,3 +179,4 @@
             label: "{{ item.uuid }}|{{ item.host }}"
           when: confirm.user_input | lower == 'y'
           changed_when: true
+  any_errors_fatal: true

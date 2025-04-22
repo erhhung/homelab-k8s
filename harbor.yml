@@ -25,7 +25,7 @@
       vars:
         values_json: "{{ harbor_chart_values | to_json }}"
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
-      ansible.builtin.include_tasks: tasks/helmdiffup.yml
+      ansible.builtin.include_tasks: tasks/helm/diff.yml
       # sets needs_upgrade fact
   tasks:
     - name: Create Harbor ingress secret
@@ -34,7 +34,7 @@
         cert_file: harbor
         secret_name: "{{ harbor_chart_values.expose.tls.secret.secretName }}"
         secret_ns: "{{ release_ns }}"
-      ansible.builtin.include_tasks: tasks/tlssecret.yml
+      ansible.builtin.include_tasks: tasks/k8s/secrets/tls.yml
 
     # https://github.com/goharbor/harbor-helm/tree/main
     - name: Install Harbor Helm chart

@@ -1,0 +1,60 @@
+# set OpenSearch Dashboards settings
+#
+# pass the following vars:
+#   settings <required> dictionary
+# requires vars from:
+#   vars/opensearch.yml
+#   vars/kibana.yml
+---
+- name: Apply Dashboards settings
+  become: false
+  vars:
+    uri_params: &uri_params
+      url: https://{{ kibana_fqdn }}/api/opensearch-dashboards/settings
+      url_username: admin
+      url_password: "{{ opensearch_admin_pass }}"
+      force_basic_auth: true
+      validate_certs: false
+  block:
+    - name: Get existing settings
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/uri_module.html
+      ansible.builtin.uri:
+        <<: *uri_params
+        # ignore if Dashboards
+        # is not installed yet
+        status_code: [200, 404]
+        return_content: true
+      register: osd_settings
+
+    - name: Need to apply settings?
+      vars:
+        existing: "{{ osd_settings.json.settings }}"
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/set_fact_module.html
+      ansible.builtin.set_fact:
+        needs_apply: |
+          {# use namespace() to create a scoped object #}
+          {# https://jinja.palletsprojects.com/en/stable/templates/#assignments #}
+          {% set ns = namespace(needs=false)    %}
+          {% for key, value in settings.items() %}
+          {%   if not ns.needs and (key not in existing or existing[key].userValue != value) %}
+          {%      set ns.needs = true %}
+          {%   endif  %}
+          {% endfor   %}
+          {{ ns.needs }}
+      when: osd_settings.status == 200
+
+    - name: Apply custom settings
+      ansible.builtin.uri:
+        <<: *uri_params
+        method: POST
+        headers:
+          osd-xsrf: "true"
+        body_format: json
+        body:
+          changes: "{{ settings }}"
+      register: apply_settings
+      when: >-
+        needs_apply is not defined or
+        needs_apply
+      changed_when: apply_settings.status == 200
+  any_errors_fatal: true

@@ -15,9 +15,9 @@ rke_bin_dir: /var/lib/rancher/rke2/bin
 k3s_crictl_config: /var/lib/rancher/k3s/agent/etc/crictl.yaml
 rke_crictl_config: /var/lib/rancher/rke2/agent/etc/crictl.yaml
 
+container_runtime: containerd
 # location exported by CONTAINER_RUNTIME_ENDPOINT variable
-k3s_containerd_socket: /run/k3s/containerd/containerd.sock
-rke_containerd_socket: /run/k3s/containerd/containerd.sock # same as K3s!
+containerd_socket: /run/k3s/containerd/containerd.sock
 
 # https://docs.rke2.io/advanced#auto-deploying-manifests
 rke_manifests_dir: /var/lib/rancher/rke2/server/manifests
