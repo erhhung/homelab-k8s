@@ -19,7 +19,6 @@
       url_username: admin
       url_password: "{{ opensearch_admin_pass }}"
       force_basic_auth: true
-      validate_certs: false
       return_content: true
     # https://opensearch-project.github.io/OpenSearch-Dashboards/docs/openapi/saved_objects/
     saved_objs_url: https://{{ kibana_fqdn }}/api/saved_objects

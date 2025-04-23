@@ -59,7 +59,12 @@ private CA server at pki.fourteeners.local.
     * Install into the main RKE cluster using [`istioctl`](https://istio.io/latest/docs/ambient/install/istioctl/)
     * Install Kiali using [`kiali-operator`](https://kiali.io/docs/installation/installation-guide/install-with-helm/#install-with-operator/) Helm chart and `Kiali` CR
 - [X] [Argo CD Declarative GitOps](https://argo-cd.readthedocs.io/) — manage deployment of other applications in the main RKE cluster
+    * Install into the main RKE cluster using [`argo-cd`](https://github.com/argoproj/argo-helm/tree/main/charts/argo-cd) Helm chart
+- [ ] [Certificate Manager](https://cert-manager.io/) — X.509 certificate management for Kubernetes
+    * Install into the main RKE cluster using [`cert-manager`](https://cert-manager.io/docs/installation/helm/) Helm chart
+    * Integrate with the private CA using [ACME `ClusterIssuer`](https://cert-manager.io/docs/configuration/acme/)
 - [ ] [Kubernetes Metrics Server](https://github.com/kubernetes-sigs/metrics-server) — enable [HorizontalPodAutoscaler](https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/) and [VerticalPodAutoscaler](https://github.com/kubernetes/autoscaler/tree/master/vertical-pod-autoscaler/)
+    * Install into the main RKE cluster using [`metrics-server`](https://github.com/kubernetes-sigs/metrics-server/tree/master/charts/metrics-server) Helm chart
 - [ ] [OpenTelemetry Collector](https://opentelemetry.io/docs/collector/) with [Jaeger UI](https://www.jaegertracing.io/) -- telemetry collector agent and distributed tracing backend
     * Install into the main RKE cluster using [OpenTelemetry Collector](https://opentelemetry.io/docs/platforms/kubernetes/helm/collector/) Helm chart
     * Install Jaeger using [Jaeger](https://github.com/jaegertracing/helm-charts/tree/main/charts/jaeger) Helm chart

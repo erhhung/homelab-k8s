@@ -213,17 +213,34 @@
       when: inventory_hostname == rke_control_plane_host
       register: kube_proxy_cr
 
-    # https://www.suse.com/support/kb/doc/?id=000021179
-    - name: Write CoreDNS HelmChartConfig
+    - name: Create Nginx ingress secret
+      vars:
+        kubeconfig: "{{ rke_kubeconfig }}"
+        cert_desc: Nginx ingress
+        cert_file: nginx
+        secret_name: "{{ nginx_default_tls_secret }}"
+        secret_ns: kube-system
+        create_ns: false
+      ansible.builtin.include_tasks: tasks/k8s/secrets/tls.yml
+      when: inventory_hostname == rke_control_plane_host
+
+    # https://docs.rke2.io/advanced#auto-deploying-manifests
+    - name: Write HelmChartConfig manifests
       become: true
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/template_module.html
       ansible.builtin.template:
-        src: templates/coredns.yaml.j2
-        # https://docs.rke2.io/advanced#auto-deploying-manifests
-        dest: "{{ rke_manifests_dir }}/rke2-coredns-config.yaml"
+        src: "{{ item.src }}"
+        dest: "{{ rke_manifests_dir }}/{{ item.dest }}"
         mode: "0664"
+      loop:
+        - src: templates/coredns.yaml.j2
+          dest: rke2-coredns-config.yaml
+        - src: templates/nginx.yaml.j2
+          dest: rke2-ingress-nginx-config.yaml
+      loop_control:
+        label: "{{ item.dest }}"
       when: inventory_hostname == rke_control_plane_host
-      register: coredns_config
+      register: chart_configs
 
     - name: Restart rke2-server service
       become: true
@@ -233,8 +250,10 @@
         state: restarted
       # noqa no-handler
       when: >-
-        (kube_proxy_cr  is defined and  kube_proxy_cr.changed) or
-        (coredns_config is defined and coredns_config.changed)
+        kube_proxy_cr is defined and
+        kube_proxy_cr.changed    or
+        chart_configs is defined and
+        chart_configs.results  | map(attribute='changed') is any
       register: restart_rke
 
     # whenever the rke2-server service is restarted,
@@ -290,35 +309,20 @@
           # with roles: "control-plane", "etcd", and "master")
           loop: "{{ groups['cluster'] }}"
 
-        # cannot directly pass manifest URL to src argument of
-        # kubernetes.core.k8s module because it does certifcate
-        # validation (its "validate_certs" arg only applies to
-        # connection to the Kube API server)
-        - name: Fetch registration manifest
+        - name: Apply registration manifest
           vars:
             manifest_url: >-
-              {{ hostvars['rancher']['rke_reg_url'] if 'rke_reg_url' in hostvars['rancher'] else '' }}
-          # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/uri_module.html
-          ansible.builtin.uri:
-            url: "{{ manifest_url }}"
-            validate_certs: false
-            return_content: true
-          when: manifest_url != ''
-          register: reg_manifest
-
-        - name: Apply registration manifest
+              {{ hostvars['rancher']['rke_reg_url'] if 'rke_reg_url' in
+                 hostvars['rancher'] }}
           kubernetes.core.k8s:
             kubeconfig: "{{ rke_kubeconfig }}"
-            definition: "{{ reg_manifest.content }}"
+            src: manifest_url
             state: present
             apply: true
             wait: true
             wait_timeout: 600
           timeout: 1800
-          when: >-
-            reg_manifest         is defined and
-            reg_manifest.content is defined and
-            reg_manifest.content != ''
+          when: manifest_url
 
         - name: Wait for cluster agent be ready
           kubernetes.core.k8s_info:

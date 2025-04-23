@@ -144,7 +144,6 @@
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/uri_module.html
       ansible.builtin.uri:
         url: https://{{ kibana_fqdn }}/
-        validate_certs: false
       # https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_loops.html#retrying-a-task-until-a-condition-is-met
       register: site_check
       until: site_check.status == 200

@@ -1,0 +1,20 @@
+# save rendered config as /var/lib/rancher/rke2/server/manifests/rke2-ingress-nginx-config.yaml
+# on an RKE2 server node, after which rke2-server service on that node must be restarted:
+# https://docs.rke2.io/helm#customizing-packaged-components-with-helmchartconfig
+---
+# https://github.com/kubernetes/ingress-nginx/tree/main/charts/ingress-nginx/values.yaml
+
+apiVersion: helm.cattle.io/v1
+kind: HelmChartConfig
+metadata:
+  name: rke2-ingress-nginx
+  namespace: kube-system
+spec:
+  valuesContent: |-
+    controller:
+      extraArgs:
+        # this arg cannot be specified as part of the Ansible role variables
+        # because the role creates the Kubernetes cluster itself, which must
+        # already be available to create the secret before the Nginx ingress
+        # controller starts
+        default-ssl-certificate: kube-system/{{ nginx_default_tls_secret }}

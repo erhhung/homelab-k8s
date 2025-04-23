@@ -74,7 +74,6 @@
       ansible.builtin.uri:
         url: "{{ api_base }}/projects/library"
         # GET does not require authentication
-        validate_certs: false
         return_content: true
       register: project_config
   tasks:
@@ -89,7 +88,6 @@
         url_username: admin
         url_password: "{{ harbor_admin_pass }}"
         force_basic_auth: true
-        validate_certs: false
         body_format: json
         body:
           metadata:

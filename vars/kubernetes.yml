@@ -43,5 +43,19 @@ rke_fqdns: >
 k3s_ingress_class: traefik
 rke_ingress_class: nginx
 
+# remember to create nginx.pem with SANs:
+#    homelab.fourteeners.local homelab 192.168.0.221
+#       k8s1.fourteeners.local k8s1    192.168.0.171
+#       k8s2.fourteeners.local k8s2    192.168.0.172
+#       k8s3.fourteeners.local k8s3    192.168.0.173
+# *.vcluster.fourteeners.local
+# kubernetes
+# kubernetes.default
+# kubernetes.default.svc
+# kubernetes.default.svc.cluster.local
+#                        cluster.local 10.43.0.1
+#                        localhost     127.0.0.1
+nginx_default_tls_secret: rke2-ingress-nginx-default-tls
+
 # virtual IP assigned by RKE2 kube-vip
 rke_lb_vip: "{{ lb_vip_range.start }}"
