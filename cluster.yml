@@ -9,8 +9,8 @@
   vars_files:
     - vars/basics.yml
     - vars/kubernetes.yml
-    - vars/vclusters.yml
     - vars/lablabs.rke2.yml
+    - vars/vclusters.yml
   # https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_reuse_roles.html#using-roles
   pre_tasks:
     - name: Include vars/lablabs.rke2ha.yml
@@ -162,6 +162,7 @@
   vars_files:
     - vars/basics.yml
     - vars/kubernetes.yml
+    - vars/lablabs.rke2.yml
     - vars/rancher.yml
   tasks:
     # increase kube-proxy livenessProbe failureThreshold

@@ -32,28 +32,3 @@ rke2_agent_node_taints: []
 
 rke2_kube_proxy_arg:
   - nodeport-addresses=primary
-
-# https://docs.rke2.io/networking/networking_services#nginx-ingress-controller
-rke2_ingress_nginx_values:
-  # https://github.com/kubernetes/ingress-nginx/tree/main/charts/ingress-nginx
-  # https://github.com/kubernetes/ingress-nginx/tree/main/charts/ingress-nginx/values.yaml
-  controller:
-    # https://kubernetes.github.io/ingress-nginx/user-guide/nginx-configuration/configmap
-    config:
-      # allow annotation group ServerSnippet (risk: Critical) in
-      # my homelab environment, but likely bad security practice
-      # https://kubernetes.github.io/ingress-nginx/user-guide/nginx-configuration/configmap/#annotations-risk-level
-      # https://kubernetes.github.io/ingress-nginx/user-guide/nginx-configuration/annotations-risk
-      annotations-risk-level: Critical
-
-    # allow nginx.ingress.kubernetes.io/*-snippet
-    # annotations, such as ones added by Keycloak
-    allowSnippetAnnotations: true
-
-    # https://www.vcluster.com/docs/vcluster/manage/accessing-vcluster#expose-vcluster
-    extraArgs:
-      # --enable-ssl-passthrough is required so that
-      # the vCluster ingress controller can generate
-      # and serve the proper SAN certificate for the
-      # Kubernetes API server
-      enable-ssl-passthrough: ""

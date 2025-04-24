@@ -2,6 +2,7 @@
 # on an RKE2 server node, after which rke2-server service on that node must be restarted:
 # https://docs.rke2.io/helm#customizing-packaged-components-with-helmchartconfig
 ---
+# https://docs.rke2.io/networking/networking_services#nginx-ingress-controller
 # https://github.com/kubernetes/ingress-nginx/tree/main/charts/ingress-nginx/values.yaml
 
 apiVersion: helm.cattle.io/v1
@@ -12,9 +13,24 @@ metadata:
 spec:
   valuesContent: |-
     controller:
+      # https://kubernetes.github.io/ingress-nginx/user-guide/nginx-configuration/configmap
+      config:
+        # allow annotation group ServerSnippet (risk: Critical) in
+        # my homelab environment, but likely bad security practice
+        # https://kubernetes.github.io/ingress-nginx/user-guide/nginx-configuration/configmap/#annotations-risk-level
+        # https://kubernetes.github.io/ingress-nginx/user-guide/nginx-configuration/annotations-risk
+        annotations-risk-level: Critical
+
+      # allow nginx.ingress.kubernetes.io/*-snippet
+      # annotations, such as ones added by Keycloak
+      allowSnippetAnnotations: true
+
+      # https://www.vcluster.com/docs/vcluster/manage/accessing-vcluster#expose-vcluster
       extraArgs:
-        # this arg cannot be specified as part of the Ansible role variables
-        # because the role creates the Kubernetes cluster itself, which must
-        # already be available to create the secret before the Nginx ingress
-        # controller starts
         default-ssl-certificate: kube-system/{{ nginx_default_tls_secret }}
+
+        # --enable-ssl-passthrough is required so that
+        # the vCluster ingress controller can generate
+        # and serve the proper SAN certificate for the
+        # Kubernetes API server
+        enable-ssl-passthrough: ""
