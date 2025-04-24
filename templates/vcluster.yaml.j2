@@ -86,4 +86,4 @@ controlPlane:
     # in the pfSense DNS Resolver
     host: {{ vcluster.name }}.{{ vc_domain }}
     spec:
-      ingressClassName: nginx # installed by default in RKE2
+      ingressClassName: {{ rke_ingress_class }}
