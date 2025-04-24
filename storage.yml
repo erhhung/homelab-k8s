@@ -4,7 +4,9 @@
   tags: prepare
   hosts: k8s_all
   become: true
-  vars_files:
+  vars_files: &vars_files1
+    - vars/basics.yml
+    - vars/kubernetes.yml
     - vars/storage.yml
   pre_tasks:
     - name: Is iscsi_tcp module loaded?
@@ -55,8 +57,12 @@
         EOF
       timeout: 120
       register: env_check
-      # only need to run once on K3s + RKE2 clusters
-      when: inventory_hostname in ['rancher','k8s1']
+      # run once in each cluster
+      when: >-
+        inventory_hostname in [
+          k3s_control_plane_host,
+          rke_control_plane_host
+        ]
       changed_when: false
 
     - name: Show environment check results
@@ -118,10 +124,8 @@
   tags: longhorn
   # install just on RKE cluster for now
   hosts: "{{ rke_control_plane_host }}"
-  vars_files: &vars_files
-    - vars/basics.yml
-    - vars/kubernetes.yml
-    - vars/storage.yml
+  gather_facts: false
+  vars_files: *vars_files1
   vars:
     # required kubernetes>=24.2 package only in user virtualenv
     ansible_python_interpreter: "{{ venv_python_interpreter }}"
@@ -146,12 +150,13 @@
   any_errors_fatal: true
 
 # https://computingforgeeks.com/configure-nfs-as-kubernetes-persistent-volume-storage/
-- name: Install NFS dynamic provisioners
+- name: Install NFS dynamic provisioner
   tags: nfs
   hosts:
     - "{{ k3s_control_plane_host }}"
     - "{{ rke_control_plane_host }}"
-  vars_files: *vars_files
+  gather_facts: false
+  vars_files: *vars_files1
   vars:
     # required kubernetes>=24.2 package only in user virtualenv
     ansible_python_interpreter: "{{ venv_python_interpreter }}"
@@ -160,7 +165,7 @@
   tasks:
     - name: Install NFS provisioner Helm chart
       vars:
-        provisioners: "{{ nfs_provisioners | selectattr('cluster','==',cluster) }}"
+        provisioners: "{{ nfs_provisioners | selectattr('cluster', '==', cluster) }}"
         mount_options: "{{ nfs_mount_opts | split(',') }}"
         storage_class: |
           {% set storage_class = item.storageClass | combine({
@@ -186,4 +191,235 @@
       loop: "{{ provisioners }}"
       loop_control:
         label: "{{ item.name }}"
+  any_errors_fatal: true
+
+# https://operator.min.io/
+# https://resources.min.io/
+- name: Install MinIO storage for QNAP
+  tags: minio
+  hosts: "{{ rke_control_plane_host }}"
+  gather_facts: false
+  vars_files: &vars_files2
+    - vars/basics.yml
+    - vars/kubernetes.yml
+    - vars/storage.yml
+    - vars/minio.yml
+  vars:
+    # required kubernetes>=24.2 package only in user virtualenv
+    ansible_python_interpreter: "{{ venv_python_interpreter }}"
+
+    kubeconfig: "{{ rke_kubeconfig }}"
+    secret_ns: "{{ minio_tenant_namespace }}"
+    create_ns: false
+  tasks:
+    # https://min.io/docs/minio/kubernetes/upstream/operations/install-deploy-manage/deploy-operator-helm.html
+    - name: Install MinIO Operator Helm chart
+      kubernetes.core.helm:
+        kubeconfig: "{{ kubeconfig }}"
+        chart_repo_url: https://operator.min.io
+        chart_ref: operator
+        chart_version: "{{ minio_operator_chart_version }}"
+        release_name: operator
+        release_namespace: "{{ minio_operator_namespace }}"
+        create_namespace: true
+        release_values: "{{ minio_operator_chart_values }}"
+        atomic: true
+        wait: true
+      timeout: 300
+
+    - name: Create MinIO ingress secret
+      vars:
+        cert_desc: MinIO ingress
+        cert_file: minio
+        secret_name: "{{ minio_tenant_chart_values.ingress.api.tls[0].secretName }}"
+        create_ns: true
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
+      ansible.builtin.include_tasks: tasks/k8s/secrets/tls.yml
+      # sets pem_chain fact
+
+    - name: Create MinIO CA certs secret
+      vars:
+        secret_type: tls
+        secret_name: "{{ minio_tenant_chart_values.tenant.certificate.externalCaCertSecret[0].name }}"
+        secret_data:
+          # pem_chain fact set by tasks/k8s/secrets/tls.yml
+          # above contains both intermediate & root CA certs
+          tls.crt: "{{ pem_chain[1:] | join('\n') }}"
+          tls.key: "" # N/A but required by type tls
+      ansible.builtin.include_tasks: tasks/k8s/secrets/generic.yml
+
+    # NOTE: these secrets do not appear to be used
+    # by references in TenantSpec.users because no
+    # users get created--we do it explicitly using
+    # mc in the next play
+    # https://min.io/docs/minio/kubernetes/upstream/reference/operator-crd.html#tenantspec
+    - name: Create MinIO user credentials
+      vars:
+        secret_name: minio-creds-{{ item.access_key }}
+        secret_data:
+          CONSOLE_ACCESS_KEY: "{{ item.access_key }}"
+          CONSOLE_SECRET_KEY: "{{ item.secret_key }}"
+      ansible.builtin.include_tasks: tasks/k8s/secrets/generic.yml
+      loop: "{{ minio_users }}"
+      loop_control:
+        label: "{{ item.access_key }}"
+
+    # https://min.io/docs/minio/kubernetes/upstream/operations/install-deploy-manage/deploy-minio-tenant.html
+    # https://min.io/docs/minio/kubernetes/upstream/operations/install-deploy-manage/deploy-minio-tenant-helm.html
+    - name: Install MinIO Tenant Helm chart
+      kubernetes.core.helm:
+        kubeconfig: "{{ kubeconfig }}"
+        chart_repo_url: https://operator.min.io
+        chart_ref: tenant
+        chart_version: "{{ minio_tenant_chart_version }}"
+        release_name: tenant
+        release_namespace: "{{ minio_tenant_namespace }}"
+        release_values: "{{ minio_tenant_chart_values }}"
+        atomic: true
+        wait: true
+      timeout: 300
+
+    - name: Wait until MinIO tenant is ready
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/uri_module.html
+      ansible.builtin.uri:
+        url: https://{{ minio_fqdns[1] }}/
+        status_code: [403]
+      # https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_loops.html#retrying-a-task-until-a-condition-is-met
+      register: tenant_check
+      until: tenant_check.status == 403
+      retries: 30
+      delay: 2
+  any_errors_fatal: true
+
+- name: Create MinIO users/groups/buckets
+  tags: buckets
+  hosts: cluster
+  gather_facts: false
+  vars_files: *vars_files2
+  tasks:
+    # https://min.io/docs/minio/linux/reference/minio-mc-admin.html#installation
+    - name: Install MinIO client
+      become: true
+      ansible.builtin.shell: |
+        cd /usr/local/bin
+        set -o pipefail
+
+        ARCH=$(uname -m | sed -e 's/aarch64/arm64/' -e 's/x86_64/amd64/')
+        BIN="https://dl.min.io/client/mc/release/linux-$ARCH/mc"
+        v=$(curl -fsSL "$BIN.minisig" | grep RELEASE)
+        VER=$(v="${v##*.}"; echo "${v%T*}")
+
+        # check if latest version already installed
+        command -v mc &> /dev/null && {
+          v=$(mc --version | grep RELEASE)
+          ver=$(v="${v#*.}"; echo "${v%%T*}")
+          [ "$ver" == "$VER" ] && exit 9 # no change
+        }
+        curl -fsSLO $BIN
+        chmod +x mc
+      args:
+        executable: /bin/bash
+      register: install_mc
+      changed_when: install_mc.rc == 0
+      failed_when: >-
+        install_mc.rc != 0 and
+        install_mc.rc != 9
+
+    - name: Configure MinIO client
+      vars:
+        root_user: "{{ minio_tenant_chart_values.tenant.configSecret }}"
+      ansible.builtin.shell: |
+        # set MC_CONFIG_DIR
+        . ~/.bash_aliases
+
+        echo "MC_CONFIG_DIR=$MC_CONFIG_DIR"
+        [ -d "$MC_CONFIG_DIR" ] && exit 9 # no change
+        mkdir -p "$MC_CONFIG_DIR"
+
+        mc config host add local \
+          https://{{ minio_fqdns[1] }} \
+             {{ root_user.accessKey }} \
+            '{{ root_user.secretKey }}'
+      args:
+        executable: /bin/bash
+      register: config_mc
+      changed_when: config_mc.rc == 0
+      failed_when: >-
+        config_mc.rc != 0 and
+        config_mc.rc != 9
+
+    - name: Create users/groups/buckets
+      # mc is installed on all hosts
+      # but run commands on just one
+      when: inventory_hostname == rke_control_plane_host
+      ansible.builtin.shell: |
+        # set MC_CONFIG_DIR
+        . ~/.bash_aliases
+        set -o pipefail
+
+        # get list of existing users:
+        # https://min.io/docs/minio/linux/reference/minio-mc-admin/mc-admin-user-list.html
+        users="$(mc admin user ls local --json | jq -r .accessKey)"
+        {% for user in minio_users %}
+
+        grep -q "^{{ user.access_key }}$" <<< "$users" || {
+          # https://min.io/docs/minio/linux/reference/minio-mc-admin/mc-admin-user-add.html
+          mc admin user add local   \
+              {{ user.access_key }} \
+             '{{ user.secret_key }}'
+          rc=0
+
+          {% if user.policies is defined and user.policies %}
+          # https://min.io/docs/minio/linux/reference/minio-mc-admin/mc-admin-policy-attach.html
+          mc admin policy attach local       \
+             {{ user.policies | join(' ') }} \
+              --user {{ user.access_key }}
+          {% endif %}
+        }
+        {% endfor %}
+
+        # get list of existing groups:
+        # https://min.io/docs/minio/linux/reference/minio-mc-admin/mc-admin-group.html#mc.admin.group.ls
+        groups="$(mc admin group ls local --json | jq -r .groups[])"
+        {% for group in minio_groups %}
+
+        grep -q "^{{ group.name }}$" <<< "$groups" || {
+          # cannot create a group with no members, so
+          # must create after users have been created:
+          # https://min.io/docs/minio/linux/reference/minio-mc-admin/mc-admin-group.html#mc.admin.group.add
+          mc admin group add local \
+              {{ group.name }}     \
+              {{ group.members | join(' ') }}
+          rc=0
+
+          {% if group.policies is defined and group.policies %}
+          mc admin policy attach local        \
+             {{ group.policies | join(' ') }} \
+              --group {{ group.name }}
+          {% endif %}
+        }
+        {% endfor %}
+
+        # get list of existing buckets:
+        # https://min.io/docs/minio/linux/reference/minio-mc/mc-ls.html
+        buckets="$(mc ls local --json | jq -r .key)"
+        {% for bucket in minio_buckets %}
+
+        grep -q "^{{ bucket.name }}/$" <<< "$buckets" || {
+          # https://min.io/docs/minio/linux/reference/minio-mc/mc-mb.html
+          mc mb   {{ bucket.options | join(' ') if
+                     bucket.options is defined and
+                     bucket.options }} \
+            local/{{ bucket.name }}
+          rc=0
+        }
+        {% endfor %}
+        exit ${rc-9}
+      args:
+        executable: /bin/bash
+      register: mc_create
+      changed_when: mc_create.rc == 0
+      failed_when: >-
+        mc_create.rc != 0 and
+        mc_create.rc != 9
   any_errors_fatal: true

@@ -1,13 +1,14 @@
 data_lv:
-  lv: data-lv   # name of logical volume
+  lv: data-lv # name of logical volume
   vg: ubuntu-vg # name of volume group
-  fs: xfs       # volume filesystem type
+  fs: xfs # volume filesystem type
   # unit capitalization: g=GB and G=GiB
-  size: 20G     # size of logical volume
-  mount: /data  # path to mount volume
+  size: 20G # size of logical volume
+  mount: /data # path to mount volume
 
 default_storage_class: longhorn
 local_storage_class: local-storage
+nfs_storage_class: nfs-qnap
 
 longhorn_chart_version: "1.8.1"
 # https://github.com/longhorn/charts/tree/v1.8.x/charts/longhorn/values.yaml
@@ -39,7 +40,7 @@ nfs_provisioners:
     server: qnap.fourteeners.local
     path: /k8s_data/k3s
     storageClass:
-      # name: "nfs-" + item.name
+      name: "{{ nfs_storage_class }}"
       accessModes: ReadWriteOnce
       volumeBindingMode: Immediate
       reclaimPolicy: Delete
@@ -50,6 +51,7 @@ nfs_provisioners:
     server: qnap.fourteeners.local
     path: /k8s_data/rke
     storageClass:
+      name: "{{ nfs_storage_class }}"
       accessModes: ReadWriteOnce
       volumeBindingMode: WaitForFirstConsumer
       reclaimPolicy: Delete

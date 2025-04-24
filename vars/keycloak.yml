@@ -1,9 +1,11 @@
+# keycloak_admin_pass: {vault.yml}
+#      pgpool_db_pass: {vault.yml}
+
 keycloak_namespace: keycloak
 keycloak_host_names: # aliases of "homelab"
   - keycloak
   - iam
   - sso
-# keycloak_admin_pass: {vault.yml}
 
 # remember to add keycloak.fourteeners.local (also iam. and sso.) to
 # pfSense DNS as aliases of homelab.fourteeners.local: 192.168.0.221

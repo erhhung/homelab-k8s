@@ -1,7 +1,7 @@
+# kibana_os_pass: {vault.yml}
+
 kibana_namespace: opensearch
 kibana_host_name: kibana # alias of "homelab"
-
-# kibana_os_pass: {vault.yml}
 
 # remember to add kibana.fourteeners.local to pfSense DNS
 # as an alias of homelab.fourteeners.local: 192.168.0.221
@@ -59,11 +59,10 @@ dashboards_chart_values:
 
   ingress:
     enabled: true
-    ingressClassName: "{{ rke_ingress_class }}"
     tls:
       - secretName: dashboards-tls
-        hosts:
-          - "{{ kibana_fqdn }}"
+        hosts: "{{ [kibana_fqdn] }}"
+    ingressClassName: "{{ rke_ingress_class }}"
     annotations:
       nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
       nginx.ingress.kubernetes.io/ssl-passthrough: "true"

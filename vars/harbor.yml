@@ -1,10 +1,10 @@
-harbor_namespace: harbor
-harbor_host_name: harbor # alias of "rancher"
-
 # harbor_secret:     {vault.yml}
 # harbor_ca_key:     {vault.yml}
 # harbor_db_pass:    {vault.yml}
 # harbor_admin_pass: {vault.yml}
+
+harbor_namespace: harbor
+harbor_host_name: harbor # alias of "rancher"
 
 # remember to add harbor.fourteeners.local to pfSense DNS!
 # https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_filters.html#products

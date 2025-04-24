@@ -1,8 +1,8 @@
-argocd_namespace: argocd
-argocd_host_name: argocd # alias of "homelab"
-
 # argocd_admin_pass:   {vault.yml}
 # github_access_token: {vault.yml}
+
+argocd_namespace: argocd
+argocd_host_name: argocd # alias of "homelab"
 
 # remember to add argocd.fourteeners.local to pfSense DNS
 # as an alias of homelab.fourteeners.local: 192.168.0.221
