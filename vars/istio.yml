@@ -67,9 +67,8 @@ kiali_cr_spec:
         spec:
           ingressClassName: "{{ rke_ingress_class }}"
           tls:
-            - hosts:
-                - "{{ kiali_fqdn }}"
-              secretName: kiali-ingress-tls
+            - secretName: kiali-ingress-tls
+              hosts: "{{ [kiali_fqdn] }}"
           rules:
             - host: "{{ kiali_fqdn }}"
               http:

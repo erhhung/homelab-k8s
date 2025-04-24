@@ -156,32 +156,36 @@ venv() {
 # =============================================
 # === APPLICABLE ONLY AFTER K3S/RKE INSTALL ===
 # =============================================
-command -v kubectl &> /dev/null || return 0
 
-alias k='kubectl'
-# set up Bash completion for kubectl
-. <(kubectl completion bash 2> /dev/null)
-complete -o default -F __start_kubectl k
+command -v kubectl &> /dev/null && {
+  alias k='kubectl'
+  # set up Bash completion for kubectl
+  . <(kubectl completion bash 2> /dev/null)
+  complete -o default -F __start_kubectl k
+}
 
-# set up Bash completion for helm
 command -v helm &> /dev/null && {
   alias h='helm'
   . <(helm completion bash 2> /dev/null)
   complete -o default -F __start_helm h
 }
 
-# set up Bash completion for crictl
 command -v crictl &> /dev/null && {
   alias c='crictl'
   . <(crictl completion bash 2> /dev/null)
   complete -o default -F _crictl c
 }
 
-# set up Bash completion for istioctl
 command -v istioctl &> /dev/null && {
   alias i='istioctl'
   . <(istioctl completion bash 2> /dev/null)
   complete -o default -F __start_istioctl i
+}
+
+command -v mc &> /dev/null && {
+  complete -C "$(which mc)" mc
+  export MC_CONFIG_DIR="$HOME/.config/minio"
+  export MC_DISABLE_PAGER=1
 }
 
 # usage: rmevicted [args...]

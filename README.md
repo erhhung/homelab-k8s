@@ -1,6 +1,6 @@
 # Erhhung's Home Kubernetes Cluster Configuration
 
-This project configures and provisions Erhhung's high-availability Kubernetes cluster at home using Rancher.
+This project configures and provisions Erhhung's high-availability Kubernetes cluster `homelab` using Rancher.
 
 The top-level Ansible playbook `main.yml` run by `play.sh` will provision 5 VM hosts (`rancher` and `k8s1`..`k8s4`)
 in the XCP-ng "Home" pool, all running Ubuntu Server 24.04 Minimal without customizations besides basic networking
@@ -33,6 +33,8 @@ private CA server at pki.fourteeners.local.
 |----------------------------------:|:----------------------
 | https://rancher.fourteeners.local | Rancher Server console
 |  https://harbor.fourteeners.local | Harbor OCI registry
+|   https://minio.fourteeners.local | MinIO console
+|      https://s3.fourteeners.local | MinIO S3 API
 | opensearch.fourteeners.local:9200 | OpenSearch _(HTTPS only)_
 |  https://kibana.fourteeners.local | OpenSearch Dashboards
 |   postgres.fourteeners.local:5432 | PostgreSQL via Pgpool _(mTLS only)_
@@ -41,7 +43,7 @@ private CA server at pki.fourteeners.local.
 | https://grafana.fourteeners.local | Grafana dashboard
 |  https://argocd.fourteeners.local | Argo CD console
 
-## Service Installers
+## Installation Sources
 
 - [X] [NFS Dynamic Provisioners](https://computingforgeeks.com/configure-nfs-as-kubernetes-persistent-volume-storage/) — create PVs on NFS shares
     * Install on K3s and RKE clusters using [`nfs-subdir-external-provisioner`](https://github.com/kubernetes-sigs/nfs-subdir-external-provisioner/) Helm chart
@@ -63,12 +65,10 @@ private CA server at pki.fourteeners.local.
 - [ ] [Certificate Manager](https://cert-manager.io/) — X.509 certificate management for Kubernetes
     * Install into the main RKE cluster using [`cert-manager`](https://cert-manager.io/docs/installation/helm/) Helm chart
     * Integrate with the private CA using [ACME `ClusterIssuer`](https://cert-manager.io/docs/configuration/acme/)
-- [ ] [Kubernetes Metrics Server](https://github.com/kubernetes-sigs/metrics-server) — enable [HorizontalPodAutoscaler](https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/) and [VerticalPodAutoscaler](https://github.com/kubernetes/autoscaler/tree/master/vertical-pod-autoscaler/)
-    * Install into the main RKE cluster using [`metrics-server`](https://github.com/kubernetes-sigs/metrics-server/tree/master/charts/metrics-server) Helm chart
 - [ ] [OpenTelemetry Collector](https://opentelemetry.io/docs/collector/) with [Jaeger UI](https://www.jaegertracing.io/) -- telemetry collector agent and distributed tracing backend
     * Install into the main RKE cluster using [OpenTelemetry Collector](https://opentelemetry.io/docs/platforms/kubernetes/helm/collector/) Helm chart
     * Install Jaeger using [Jaeger](https://github.com/jaegertracing/helm-charts/tree/main/charts/jaeger) Helm chart
-- [ ] [MinIO Object Storage](https://github.com/minio/minio) — object storage server and console
+- [X] [MinIO Object Storage](https://github.com/minio/minio) — object storage server and console
     * Install into the main RKE cluster using [MinIO Operator](https://min.io/docs/minio/kubernetes/upstream/operations/installation.html)
 - [ ] [Velero Backup & Restore](https://velero.io/docs/latest/basic-install) — back up and restore persistent volumes
     * Install into the main RKE cluster using [Velero](https://github.com/vmware-tanzu/helm-charts/tree/main/charts/velero) Helm chart
@@ -96,12 +96,12 @@ Some variables stored in Ansible Vault _(there are many more)_:
 |:--------------------------:|:-------------------:
 | `ansible_become_pass`      | `rancher_admin_pass`
 | `github_access_token`      | `harbor_admin_pass`
-| `age_secret_key`           | `opensearch_admin_pass`
-| `k3s_token`                | `keycloak_admin_pass`
-| `rke2_token`               | `grafana_admin_pass`
-| `harbor_secret`            | `argocd_admin_pass`
-| `harbor_ca_key`            |
-| `dashboards_os_pass`       |
+| `age_secret_key`           | `minio_admin_pass`
+| `k3s_token`                | `minio_root_pass`
+| `rke2_token`               | `opensearch_admin_pass`
+| `harbor_secret`            | `keycloak_admin_pass`
+| `harbor_ca_key`            | `grafana_admin_pass`
+| `dashboards_os_pass`       | `argocd_admin_pass`
 | `fluent_os_pass`           |
 | `postgresql_pass`          |
 | `keycloak_db_pass`         |
@@ -146,7 +146,8 @@ export ANSIBLE_CONFIG=./ansible.cfg
 
 3. Set up admin user's home directory
 
-    3.1. **Dot files**: `.bash_aliases`, `.emacs`
+    3.1. **Dot files**: `.bash_aliases`, `.emacs`  
+    3.2. **Config files**: `htop`, `fastfetch`
 
     ```bash
     ansible-playbook files.yml
@@ -159,19 +160,21 @@ export ANSIBLE_CONFIG=./ansible.cfg
 
 5. Set up **Kubernetes cluster** with **RKE** on 4 nodes
 
-    Installs **RKE2** with a single control plane node and 3 worker nodes, all permitting workloads,  
-    or RKE2 in HA mode with 3 control plane nodes and 1 worker node, all permitting workloads.  
-    _In HA mode, the cluster will be accessible thru a virtual IP address courtesy of `kube-vip`._
+    Install **RKE2** with a single control plane node and 3 worker nodes, all permitting workloads,  
+    or RKE2 in HA mode with 3 control plane nodes and 1 worker node, all permitting workloads  
+    _(in HA mode, the cluster will be accessible thru a **virtual IP** address courtesy of `kube-vip`)._
 
     ```bash
     ansible-playbook cluster.yml
     ```
 
-6. Set up **Longhorn** dynamic PV provisioner
+6. Set up **Longhorn** dynamic PV provisioner  
+   Set up **MinIO** object storage in _**HA**_ mode
 
-    6.1. Creates a pool of LVM logical volumes  
-    6.2. Installs Longhorn storage components  
-    6.3. Installs NFS dynamic PV provisioners
+    6.1. Create a pool of LVM logical volumes  
+    6.2. Install Longhorn storage components  
+    6.3. Install NFS dynamic PV provisioner  
+    6.4. Install MinIO tenant using NFS PVs
 
     ```bash
     ansible-playbook storage.yml
@@ -193,8 +196,8 @@ export ANSIBLE_CONFIG=./ansible.cfg
 
 9. Set up **OpenSearch** cluster in _**HA**_ mode
 
-    9.1. Configures the OpenSearch security plugin (users and roles) for downstream applications  
-    9.2. Installs **OpenSearch Dashboards** UI
+    9.1. Configure the OpenSearch security plugin (users and roles) for downstream applications  
+    9.2. Install **OpenSearch Dashboards** UI
 
     ```bash
     ansible-playbook opensearch.yml
@@ -207,7 +210,7 @@ export ANSIBLE_CONFIG=./ansible.cfg
 
 11. Set up **PostgreSQL** database in _**HA**_ mode
 
-    11.1. Runs initialization SQL script to create roles and databases for downstream applications
+    11.1. Run initialization SQL script to create roles and databases for downstream applications
 
     ```bash
     ansible-playbook postgresql.yml
@@ -215,7 +218,7 @@ export ANSIBLE_CONFIG=./ansible.cfg
 
 12. Set up **Keycloak** IAM & OIDC provider
 
-    12.1. Bootstraps PostgreSQL database with realm `homelab`, user `erhhung`, and OIDC clients
+    12.1. Bootstrap PostgreSQL database with realm `homelab`, user `erhhung`, and OIDC clients
 
     ```bash
     ansible-playbook keycloak.yml

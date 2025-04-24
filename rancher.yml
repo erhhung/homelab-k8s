@@ -108,8 +108,9 @@
         secret_ns: "{{ rancher_namespace }}"
       ansible.builtin.include_tasks: tasks/k8s/secrets/tls.yml
       register: ingress_secret
+      # sets pem_chain fact
 
-    - name: Create Rancher CA secret
+    - name: Create Rancher CA certs secret
       vars:
         secret_name: tls-ca
         secret_ns: "{{ rancher_namespace }}"

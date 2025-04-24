@@ -10,6 +10,7 @@ install_apt_packages:
   - bash-completion # required by crictl/kubectl completion
   - less
   - tree
+  - htop
   - lsof  # used by custom Bash function "listening"
   - rsync # required by ansible.posix.synchronize
   - emacs-nox

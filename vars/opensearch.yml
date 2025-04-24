@@ -1,10 +1,11 @@
+# opensearch_admin_pass: {vault.yml}
+#        kibana_os_pass: {vault.yml}
+
 opensearch_namespace: opensearch
+opensearch_cluster_name: opensearch
 opensearch_host_names: # aliases of "homelab"
   - opensearch
   - es
-opensearch_cluster_name: opensearch
-# opensearch_admin_pass: {vault.yml}
-#        kibana_os_pass: {vault.yml}
 
 # remember to add opensearch.fourteeners.local and es.fourteeners.local
 # to pfSense DNS as aliases of homelab.fourteeners.local: 192.168.0.221
@@ -273,10 +274,10 @@ opensearch_chart_values:
 
   ingress: # port 9200
     enabled: true
-    ingressClassName: "{{ rke_ingress_class }}"
     tls:
       - secretName: opensearch-node-tls
         hosts: "{{ opensearch_fqdns }}"
+    ingressClassName: "{{ rke_ingress_class }}"
     annotations:
       nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
       nginx.ingress.kubernetes.io/ssl-passthrough: "true"

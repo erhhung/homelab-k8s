@@ -1,0 +1,170 @@
+# minio_admin_pass: {vault.yml}
+#  minio_root_pass: {vault.yml}
+
+minio_users: # non-root
+  - access_key: erhhung
+    secret_key: "{{ minio_admin_pass }}"
+    # https://min.io/docs/minio/linux/administration/identity-access-management/policy-based-access-control.html#built-in-policies
+    # policies:
+    #   - readwrite
+
+minio_groups:
+  - name: admins
+    members: # at least one user required
+      - erhhung
+    policies:
+      - consoleAdmin
+
+minio_buckets:
+  - name: workouts
+    # https://min.io/docs/minio/linux/reference/minio-mc/mc-mb.html#parameters
+    # options:
+    #   - --with-versioning
+
+minio_host_names: # aliases of "homelab"
+  - minio # console
+  - s3 # S3 API
+
+# remember to add minio.fourteeners.local and s3.fourteeners.local to
+# pfSense DNS as aliases of homelab.fourteeners.local:  192.168.0.221
+# https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_filters.html#products
+minio_fqdns: "{{ minio_host_names | product(search_domains) | map('join','.') }}"
+
+minio_tenant_name: homelab
+minio_pool_name: qnap-pool
+
+minio_operator_namespace: minio-operator
+minio_tenant_namespace: minio
+
+# https://min.io/docs/minio/kubernetes/upstream/operations/install-deploy-manage/deploy-operator-helm.html
+# https://min.io/docs/minio/kubernetes/upstream/operations/install-deploy-manage/deploy-minio-tenant-helm.html
+minio_operator_chart_version: "7.1.0"
+minio_tenant_chart_version: "7.1.0"
+
+# https://github.com/minio/operator/tree/master/helm/operator
+# https://github.com/minio/operator/blob/master/helm/operator/values.yaml
+# https://min.io/docs/minio/kubernetes/upstream/reference/operator-chart-values.html
+minio_operator_chart_values:
+  operator:
+    replicaCount: 1
+    # https://github.com/minio/operator/tree/master/docs/env-variables.md
+    env:
+      - name: SUBNET_BASE_URL
+        value: ""
+    resources:
+      requests:
+        cpu: 50m
+        memory: 64Mi
+        ephemeral-storage: 50Mi
+
+# https://github.com/minio/operator/tree/master/helm/tenant
+# https://github.com/minio/operator/tree/master/helm/tenant/values.yaml
+# https://min.io/docs/minio/kubernetes/upstream/reference/tenant-chart-values.html
+minio_tenant_chart_values:
+  tenant:
+    name: "{{ minio_tenant_name }}"
+
+    # https://min.io/docs/minio/kubernetes/upstream/reference/operator-crd.html#pool
+    pools:
+      - name: "{{ minio_pool_name }}"
+        # servers = StatefulSet replicas (4 minimum)
+        servers: "{{ groups['cluster'] | length }}"
+        volumesPerServer: 1
+        size: 10Gi # per volume
+        storageClassName: "{{ nfs_storage_class }}"
+        affinity: # one pod per worker node per pool
+          podAntiAffinity:
+            requiredDuringSchedulingIgnoredDuringExecution:
+              - topologyKey: kubernetes.io/hostname
+                labelSelector:
+                  matchExpressions:
+                    - key: v1.min.io/pool
+                      operator: In
+                      values:
+                        - "{{ minio_pool_name }}"
+
+    features:
+      # requires wildcard subdomains on all domains in certificate
+      bucketDNS: true
+      domains:
+        minio:
+          - "{{ minio_fqdns[1] }}"
+          - minio.{{ minio_tenant_namespace }}.svc
+          - minio.{{ minio_tenant_namespace }}.svc.cluster.local
+          - "{{ minio_tenant_name }}-hl.{{ minio_tenant_namespace }}.svc.cluster.local"
+        console: "{{ minio_fqdns[0] }}"
+      enableSFTP: false
+
+    # create secret defining MINIO_ROOT_USER and MINIO_ROOT_PASSWORD environment variables:
+    # https://min.io/docs/minio/linux/reference/minio-server/settings/root-credentials.html
+    # https://min.io/docs/minio/kubernetes/upstream/administration/identity-access-management/minio-user-management.html#minio-root-user
+    configSecret:
+      name: minio-creds-root
+      accessKey: root
+      secretKey: "{{ minio_root_pass }}"
+
+    # pre-create users (secrets containing credentials must be created manually beforehand)
+    # https://min.io/docs/minio/kubernetes/upstream/reference/operator-crd.html#tenantspec
+    # THIS DOES NOT WORK
+    users: |
+      {% set users = [] %}
+      {% for user in minio_users %}
+      {%   set _ = users.append({
+             'name': 'minio-creds-'~ user.access_key
+           }) %}
+      {% endfor %}
+      {{ users  }}
+
+    # pre-create buckets
+    # THIS DOES NOT WORK
+    buckets: |
+      {% set buckets = [] %}
+      {% for bucket in minio_buckets %}
+      {%   set _ = buckets.append({
+             'name': bucket.name
+           }) %}
+      {% endfor  %}
+      {{ buckets }}
+
+    # https://min.io/docs/minio/kubernetes/upstream/operations/network-encryption.html
+    # https://min.io/docs/minio/kubernetes/upstream/reference/operator-crd.html#localcertificatereference
+    certificate:
+      requestAutoCert: false
+      externalCaCertSecret:
+        - name: minio-ca-tls
+          type: kubernetes.io/tls
+      externalCertSecret:
+        - name: minio-ingress-tls
+          type: kubernetes.io/tls
+
+    # these are default values: if true, service types will be
+    # LoadBalancer, which we don't need since we use Ingresses
+    # https://blog.min.io/expose-minio-eks/
+    exposeServices:
+      minio: false
+      console: false
+
+  ingress:
+    api:
+      enabled: true
+      tls:
+        - secretName: minio-ingress-tls
+          hosts:
+            - "{{ minio_fqdns[1] }}"
+            # allow bucket DNS feature
+            - "*.{{ minio_fqdns[1] }}"
+      ingressClassName: "{{ rke_ingress_class }}"
+      annotations: &ingress_annotations
+        nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+        nginx.ingress.kubernetes.io/ssl-passthrough: "true"
+      # Helm template will also create
+      # rule for *.{{ minio_fqdns[1] }}
+      host: "{{ minio_fqdns[1] }}"
+    console:
+      enabled: true
+      tls:
+        - secretName: minio-ingress-tls
+          hosts: "{{ [minio_fqdns[0]] }}"
+      ingressClassName: "{{ rke_ingress_class }}"
+      annotations: *ingress_annotations
+      host: "{{ minio_fqdns[0] }}"
