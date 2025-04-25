@@ -244,6 +244,10 @@ Alternatively, **run all playbooks** automatically in order:
 ```bash
 # pass options like -v and --step
 ./play.sh [ansible-playbook-opts]
+
+# run all playbooks starting from "storage"
+# ("storage" is a playbook tag in main.yml)
+./play.sh storage-
 ```
 
 Output from `play.sh` will be logged in "`ansible.log`".
@@ -339,13 +343,43 @@ $ lvextend -vrl +90%FREE /dev/ubuntu-vg/ubuntu-lv
 Extending logical volume ubuntu-vg/ubuntu-lv to up to...
 fsadm: Executing resize2fs /dev/mapper/ubuntu--vg-ubuntu--lv
 The filesystem on /dev/mapper/ubuntu--vg-ubuntu--lv is now...
-
-# confirm new size
-$ df -h /
 ```
 
 After expanding all desired disks, run `./diskfree.sh`
-to verify available disk space on all cluster nodes.
+to verify available disk space on all cluster nodes:
+
+```bash
+$ ./diskfree.sh
+
+rancher
+-------
+Filesystem      Size  Used Avail Use% Mounted on
+/dev/xvda2       32G   18G   13G  60% /
+
+k8s1
+----
+Filesystem                         Size  Used Avail Use% Mounted on
+/dev/mapper/ubuntu--vg-ubuntu--lv   50G   21G   27G  44% /
+/dev/mapper/ubuntu--vg-data--lv     30G  781M   30G   3% /data
+
+k8s2
+----
+Filesystem                         Size  Used Avail Use% Mounted on
+/dev/mapper/ubuntu--vg-ubuntu--lv   50G   22G   26G  47% /
+/dev/mapper/ubuntu--vg-data--lv     30G  781M   30G   3% /data
+
+k8s3
+----
+Filesystem                         Size  Used Avail Use% Mounted on
+/dev/mapper/ubuntu--vg-ubuntu--lv   50G   23G   25G  48% /
+/dev/mapper/ubuntu--vg-data--lv     30G  1.2G   29G   4% /data
+
+k8s4
+----
+Filesystem                         Size  Used Avail Use% Mounted on
+/dev/mapper/ubuntu--vg-ubuntu--lv   50G   27G   21G  57% /
+/dev/mapper/ubuntu--vg-data--lv     30G  1.2G   29G   4% /data
+```
 
 ## Troubleshooting
 
