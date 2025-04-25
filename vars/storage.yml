@@ -3,7 +3,7 @@ data_lv:
   vg: ubuntu-vg # name of volume group
   fs: xfs # volume filesystem type
   # unit capitalization: g=GB and G=GiB
-  size: 90%FREE # size of logical volume
+  size: 95%FREE # size of logical volume
   mount: /data # path to mount volume
 
 default_storage_class: longhorn
