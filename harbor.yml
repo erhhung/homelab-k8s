@@ -51,7 +51,6 @@
         release_namespace: "{{ release_ns }}"
         release_values: "{{ harbor_chart_values }}"
         atomic: true
-        wait: true
       when: needs_upgrade
       timeout: 300
 

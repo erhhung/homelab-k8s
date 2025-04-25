@@ -50,7 +50,6 @@
         release_namespace: "{{ logging_namespace }}"
         release_values: "{{ fluent_operator_chart_values }}"
         atomic: true
-        wait: true
       timeout: 300
 
     - name: Examine existing ClusterFilter spec

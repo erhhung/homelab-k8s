@@ -1,6 +1,6 @@
 # Erhhung's Home Kubernetes Cluster Configuration
 
-This project configures and provisions Erhhung's high-availability Kubernetes cluster `homelab` using Rancher.
+This project provisions and configures Erhhung's high-availability Kubernetes cluster `homelab` using Rancher.
 
 The top-level Ansible playbook `main.yml` run by `play.sh` will provision 5 VM hosts (`rancher` and `k8s1`..`k8s4`)
 in the XCP-ng "Home" pool, all running Ubuntu Server 24.04 Minimal without customizations besides basic networking
@@ -332,7 +332,9 @@ $ pvdisplay
 # show LV volumes
 $ lvdisplay
 
-# grow desired LV
+# set exact LV size (G=GiB)
+$ lvextend -vrL 50G /dev/ubuntu-vg/ubuntu-lv
+# or grow LV by percentage
 $ lvextend -vrl +90%FREE /dev/ubuntu-vg/ubuntu-lv
 Extending logical volume ubuntu-vg/ubuntu-lv to up to...
 fsadm: Executing resize2fs /dev/mapper/ubuntu--vg-ubuntu--lv
@@ -368,30 +370,37 @@ Ansible's [ad-hoc commands](https://docs.ansible.com/ansible/latest/command_guid
     Workaround is to downgrade to an earlier kernel:
     ```bash
     # list installed kernel images
-    ansible -v cluster -a 'bash -c "dpkg -l | grep linux-image"'
+    ansible -v k8s_all -a 'bash -c "dpkg -l | grep linux-image"'
 
     # install working kernel image
-    ansible -v cluster -b -a 'apt-get install -y linux-image-6.8.0-55-generic'
+    ansible -v k8s_all -b -a 'apt-get install -y linux-image-6.8.0-55-generic'
 
     # GRUB use working kernel image
+    ansible -v rancher -m ansible.builtin.shell -b -a '
+        kernel="6.8.0-55-generic"
+        dvuuid=$(blkid -s UUID -o value /dev/xvda2)
+        menuid="gnulinux-advanced-$dvuuid>gnulinux-$kernel-advanced-$dvuuid"
+        sed -Ei "s/^(GRUB_DEFAULT=).+$/\\1\"$menuid\"/" /etc/default/grub
+        grep GRUB_DEFAULT /etc/default/grub
+    '
     ansible -v cluster -m ansible.builtin.shell -b -a '
         kernel="6.8.0-55-generic"
-        lvuuid=$(blkid -s UUID -o value /dev/mapper/ubuntu--vg-ubuntu--lv)
-        menuid="gnulinux-advanced-$lvuuid>gnulinux-$kernel-advanced-$lvuuid"
+        dvuuid=$(blkid -s UUID -o value /dev/mapper/ubuntu--vg-ubuntu--lv)
+        menuid="gnulinux-advanced-$dvuuid>gnulinux-$kernel-advanced-$dvuuid"
         sed -Ei "s/^(GRUB_DEFAULT=).+$/\\1\"$menuid\"/" /etc/default/grub
         grep GRUB_DEFAULT /etc/default/grub
     '
     # update /boot/grub/grub.cfg
-    ansible -v cluster -b -a 'update-grub'
+    ansible -v k8s_all -b -a 'update-grub'
 
     # reboot nodes, one at a time
-    ansible -v cluster -m ansible.builtin.reboot -b -a "post_reboot_delay=120" -f 1
+    ansible -v k8s_all -m ansible.builtin.reboot -b -a "post_reboot_delay=120" -f 1
 
     # confirm working kernel image
-    ansible -v cluster -a 'uname -r'
+    ansible -v k8s_all -a 'uname -r'
 
     # remove old backup kernels only
     # (keep latest non-working kernel
     # so upgrade won't install again)
-    ansible -v cluster -b -a 'apt-get autoremove -y --purge'
+    ansible -v k8s_all -b -a 'apt-get autoremove -y --purge'
     ```

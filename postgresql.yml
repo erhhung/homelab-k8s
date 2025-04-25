@@ -35,6 +35,5 @@
         release_namespace: "{{ postgresql_namespace }}"
         release_values: "{{ postgresql_chart_values }}"
         atomic: true
-        wait: true
       timeout: 300
   any_errors_fatal: true

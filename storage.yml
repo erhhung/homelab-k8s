@@ -21,7 +21,7 @@
     - name: Load iscsi_tcp kernel module
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/command_module.html
       ansible.builtin.command: modprobe iscsi_tcp
-      when: iscsi_tcp.rc != 0
+      when: iscsi_tcp.rc
       changed_when: true
 
     - name: Enable and start iSCSI daemon
@@ -145,7 +145,6 @@
         create_namespace: true
         release_values: "{{ longhorn_chart_values }}"
         atomic: true
-        wait: true
       timeout: 300
   any_errors_fatal: true
 
@@ -168,8 +167,9 @@
         provisioners: "{{ nfs_provisioners | selectattr('cluster', '==', cluster) }}"
         mount_options: "{{ nfs_mount_opts | split(',') }}"
         storage_class: |
-          {% set storage_class = item.storageClass | combine({
-            'name': item.storageClass.name | default('nfs-'~ item.name)
+          {# https://docs.ansible.com/ansible/latest/collections/ansible/builtin/combine_filter.html #}
+          {% set storage_class = item.storageClass | ansible.builtin.combine({
+               'name': item.storageClass.name | default('nfs-'~ item.name)
           }) %}
           {{ storage_class }}
       kubernetes.core.helm:
@@ -187,7 +187,6 @@
             mountOptions: "{{ mount_options }}"
           storageClass: "{{ storage_class }}"
         atomic: true
-        wait: true
       loop: "{{ provisioners }}"
       loop_control:
         label: "{{ item.name }}"
@@ -224,7 +223,6 @@
         create_namespace: true
         release_values: "{{ minio_operator_chart_values }}"
         atomic: true
-        wait: true
       timeout: 300
 
     - name: Create MinIO ingress secret
@@ -276,7 +274,6 @@
         release_namespace: "{{ minio_tenant_namespace }}"
         release_values: "{{ minio_tenant_chart_values }}"
         atomic: true
-        wait: true
       timeout: 300
 
     - name: Wait until MinIO tenant is ready
@@ -304,7 +301,8 @@
         cd /usr/local/bin
         set -o pipefail
 
-        ARCH=$(uname -m | sed -e 's/aarch64/arm64/' -e 's/x86_64/amd64/')
+        ARCH=$(uname -m | sed -e 's/aarch64/arm64/' \
+                              -e  's/x86_64/amd64/')
         BIN="https://dl.min.io/client/mc/release/linux-$ARCH/mc"
         v=$(curl -fsSL "$BIN.minisig" | grep RELEASE)
         VER=$(v="${v##*.}"; echo "${v%T*}")
@@ -332,9 +330,8 @@
         # set MC_CONFIG_DIR
         . ~/.bash_aliases
 
-        echo "MC_CONFIG_DIR=$MC_CONFIG_DIR"
-        [ -d "$MC_CONFIG_DIR" ] && exit 9 # no change
-        mkdir -p "$MC_CONFIG_DIR"
+        [  -d "$MC_CONFIG_DIR" ] && exit 9 # no change
+        mkdir "$MC_CONFIG_DIR"
 
         mc config host add local \
           https://{{ minio_fqdns[1] }} \
