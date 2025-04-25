@@ -1,45 +1,60 @@
 ---
 - name: Include package installs playbook
   ansible.builtin.import_playbook: packages.yml
+  tags: packages
 
 - name: Include system settings playbook
   ansible.builtin.import_playbook: basics.yml
+  tags: basics
 
 - name: Include home directory setup playbook
   ansible.builtin.import_playbook: files.yml
+  tags: files
 
 - name: Include Rancher K3s cluster playbook
   ansible.builtin.import_playbook: rancher.yml
+  tags: rancher
 
 - name: Include Rancher RKE cluster playbook
   ansible.builtin.import_playbook: cluster.yml
+  tags: cluster
 
 - name: Include storage provisioners playbook
   ansible.builtin.import_playbook: storage.yml
+  tags: storage
 
 - name: Include resource manifests playbook
   ansible.builtin.import_playbook: manifests.yml
+  tags: manifests
 
 - name: Include Harbor OCI registry playbook
   ansible.builtin.import_playbook: harbor.yml
+  tags: harbor
 
 - name: Include OpenSearch cluster playbook
   ansible.builtin.import_playbook: opensearch.yml
+  tags: opensearch
 
 - name: Include Fluent Bit logging playbook
   ansible.builtin.import_playbook: logging.yml
+  tags: logging
 
 - name: Include PostgreSQL database playbook
   ansible.builtin.import_playbook: postgresql.yml
+  tags: postgresql
 
 - name: Include Keycloak IAM & OIDC playbook
   ansible.builtin.import_playbook: keycloak.yml
+  tags: keycloak
 
 - name: Include Istio service mesh playbook
   ansible.builtin.import_playbook: istio.yml
+  tags: istio
 
 - name: Include Argo CD GitOps tool playbook
   ansible.builtin.import_playbook: argocd.yml
+  tags: argocd
 
 - name: Include virtual clusters playbook
   ansible.builtin.import_playbook: vclusters.yml
+  tags: vclusters

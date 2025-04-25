@@ -89,12 +89,12 @@
         release_name: opensearch
         release_namespace: "{{ opensearch_namespace }}"
         release_values: "{{ opensearch_chart_values }}"
+        wait_timeout: 10m0s
         atomic: true
-        wait: true
       # it can take a long time to pull container images
       # and provision storage and start each StatefulSet
       # pod sequentially due to the OrderedReady policy
-      timeout: 600
+      timeout: 1800
   handlers:
     - name: Apply updated security config
       # a handler cannot have block of subtasks, so the
@@ -137,7 +137,6 @@
         release_namespace: "{{ kibana_namespace }}"
         release_values: "{{ dashboards_chart_values }}"
         atomic: true
-        wait: true
       timeout: 300
 
     - name: Wait until Dashboards is ready

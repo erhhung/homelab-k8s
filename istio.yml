@@ -148,7 +148,6 @@
         release_namespace: "{{ kiali_operator_namespace }}"
         create_namespace: true
         atomic: true
-        wait: true
 
     # https://kiali.io/docs/configuration/authentication/openid/#set-up-with-no-namespace-access-control-support
     - name: Create Kiali OpenID secret

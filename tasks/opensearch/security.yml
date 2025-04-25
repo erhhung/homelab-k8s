@@ -13,6 +13,7 @@
   # https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_loops.html#retrying-a-task-until-a-condition-is-met
   register: opensearch_info
   until: >-
+    opensearch_info.resources[0] is defined and
     opensearch_info.resources[0].status.readyReplicas ==
     opensearch_info.resources[0].status.replicas
   retries: 30

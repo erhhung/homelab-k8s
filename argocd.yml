@@ -35,7 +35,6 @@
         release_namespace: "{{ argocd_namespace }}"
         release_values: "{{ argocd_chart_values }}"
         atomic: true
-        wait: true
       timeout: 300
 
     - name: >-

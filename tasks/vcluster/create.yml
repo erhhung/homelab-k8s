@@ -91,7 +91,6 @@
             release_values: "{{ values | from_yaml }}"
             release_state: present
             atomic: true
-            wait: true
           timeout: 300
           register: helm_install
 

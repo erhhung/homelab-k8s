@@ -144,6 +144,9 @@ minio_tenant_chart_values:
       minio: false
       console: false
 
+    metrics:
+      enabled: true
+
   ingress:
     api:
       enabled: true

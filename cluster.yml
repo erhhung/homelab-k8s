@@ -144,8 +144,9 @@
           BIN=$(dirname "$BIN")
         } || BIN=/usr/local/bin
 
+        ARCH=$(uname -m | sed -e 's/aarch64/arm64/' \
+                              -e  's/x86_64/amd64/')
         REL="https://github.com/projectcalico/calico/releases/download"
-        ARCH=$(uname -m | sed -e 's/aarch64/arm64/' -e 's/x86_64/amd64/')
         curl -fsSLo "$BIN/calicoctl" "$REL/$VER/calicoctl-linux-$ARCH"
         chmod +x    "$BIN/calicoctl"
         EOF
@@ -285,6 +286,7 @@
           # https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_loops.html#retrying-a-task-until-a-condition-is-met
           register: coredns_info
           until: >-
+            coredns_info.resources[0] is defined and
             coredns_info.resources[0].status.readyReplicas ==
             coredns_info.resources[0].status.replicas
           retries: 30
@@ -317,11 +319,11 @@
                  hostvars['rancher'] }}
           kubernetes.core.k8s:
             kubeconfig: "{{ rke_kubeconfig }}"
-            src: manifest_url
+            src: "{{ manifest_url }}"
             state: present
             apply: true
             wait: true
-            wait_timeout: 600
+            wait_timeout: 10m0s
           timeout: 1800
           when: manifest_url
 
@@ -334,6 +336,7 @@
             namespace: "{{ rancher_namespace }}"
           register: agent_info
           until: >-
+            agent_info.resources[0] is defined and
             agent_info.resources[0].status.readyReplicas ==
             agent_info.resources[0].status.replicas
           retries: 30

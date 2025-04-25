@@ -113,11 +113,13 @@
         }
         mkdir -p /tmp/yq
         ( cd     /tmp/yq
-        ARCH={{ machine_arch }} # amd64 or arm64
-        curl -fsSL "$REL/download/yq_linux_$ARCH.tar.gz" | \
-          tar -xz --no-same-owner
-        cp ./yq_linux_$ARCH /usr/bin/yq
-        ./install-man-page.sh
+
+          ARCH={{ machine_arch }} # amd64 or arm64
+          curl -fsSL "$REL/download/yq_linux_$ARCH.tar.gz" | \
+            tar -xz --no-same-owner
+          cp ./yq_linux_$ARCH /usr/bin/yq
+          ./install-man-page.sh
+
         ); rm -rf /tmp/yq
       args:
         executable: /bin/bash
