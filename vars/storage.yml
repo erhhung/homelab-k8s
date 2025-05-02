@@ -33,7 +33,10 @@ longhorn_chart_values:
 
 # https://computingforgeeks.com/configure-nfs-as-kubernetes-persistent-volume-storage/
 nfs_mount_opts: rw,nosuid,nodev,noexec,hard,timeo=600,retrans=3,rsize=32768,wsize=32768
+
 # https://github.com/kubernetes-sigs/nfs-subdir-external-provisioner/tree/master/charts/nfs-subdir-external-provisioner/values.yaml
+# NOTE: storage class settings cannot be changed
+# after creation without deletion and recreation
 nfs_provisioners:
   - cluster: k3s
     name: qnap
@@ -55,4 +58,4 @@ nfs_provisioners:
       accessModes: ReadWriteOnce
       volumeBindingMode: WaitForFirstConsumer
       reclaimPolicy: Delete
-      onDelete: retain
+      onDelete: delete

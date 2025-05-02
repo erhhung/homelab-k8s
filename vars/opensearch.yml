@@ -12,15 +12,23 @@ opensearch_host_names: # aliases of "homelab"
 # https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_filters.html#products
 opensearch_fqdns: "{{ opensearch_host_names | product(search_domains) | map('join','.') }}"
 
+opensearch_secrets:
+  node-tls: opensearch-node-tls # inter-node and ingress
+  admin-tls: opensearch-admin-tls # run securityadmin.sh
+  passwords: opensearch-passwords
+  security: opensearch-security
+
 # plugins.security in opensearch.yml
 # https://docs.opensearch.org/docs/latest/install-and-configure/configuring-opensearch/security-settings/
 opensearch_security_plugin:
   ssl: # https://docs.opensearch.org/docs/latest/security/configuration/generate-certificates/
     transport:
-      # paths must be relative to "<OPENSEARCH_HOME>/config"
       # Java requires key file to be in PKCS#8 / PEM format:
       # openssl pkcs8 -topk8 -inform PEM -outform PEM -in tls.key \
       #               -v1 PBE-SHA1-3DES -nocrypt | sponge tls.key
+      # paths must be relative to "<OPENSEARCH_HOME>/config"
+      # "tls/" is created by extraInitContainers and mounted
+      # by extraVolumeMounts
       pemcert_filepath: tls/node/tls.crt
       pemkey_filepath: tls/node/tls.key
       pemtrustedcas_filepath: tls/node/ca.crt
@@ -176,8 +184,8 @@ opensearch_chart_values:
     - name: OPENSEARCH_INITIAL_ADMIN_PASSWORD
       valueFrom:
         secretKeyRef:
-          name: opensearch-passwords
-          key: opensearch_admin_password
+          name: "{{ opensearch_secrets['passwords'] }}"
+          key: admin
 
   config:
     opensearch.yml: |
@@ -191,18 +199,21 @@ opensearch_chart_values:
           {{ opensearch_security_plugin | ansible.builtin.to_nice_yaml(indent=2, sort_keys=false) |
                                           indent(4) }}
 
+  persistence:
+    storageClass: "{{ default_storage_class }}"
+    size: 5Gi # allocate enough for logging
+
   extraVolumes:
-    # keep this order!
     - name: node-tls
       secret:
         # opensearch-node-tls Secret
         # will be created by Ansible
-        secretName: opensearch-node-tls
+        secretName: "{{ opensearch_secrets['node-tls'] }}"
     - name: admin-tls
       secret:
         # opensearch-admin-tls Secret
         # will be created by Ansible
-        secretName: opensearch-admin-tls
+        secretName: "{{ opensearch_secrets['admin-tls'] }}"
     - name: extras
       emptyDir: {}
 
@@ -243,10 +254,11 @@ opensearch_chart_values:
 
   rbac:
     create: true
+
   securityConfig: # all files in same secret
-    internalUsersSecret: opensearch-security # internal_users.yml
-    rolesSecret: opensearch-security # roles.yml
-    rolesMappingSecret: opensearch-security # roles_mapping.yml
+    internalUsersSecret: "{{ opensearch_secrets['security'] }}" # internal_users.yml
+    rolesSecret: "{{ opensearch_secrets['security'] }}" # roles.yml
+    rolesMappingSecret: "{{ opensearch_secrets['security'] }}" # roles_mapping.yml
 
   podAnnotations:
     # since the Helm template does not include security config checksum
@@ -261,9 +273,6 @@ opensearch_chart_values:
                        ansible.builtin.hash('sha256') -%}
       {{ hash[:63] }}
 
-  persistence:
-    storageClass: "{{ default_storage_class }}"
-    size: 5Gi
   resources:
     requests:
       cpu: 200m
@@ -275,7 +284,7 @@ opensearch_chart_values:
   ingress: # port 9200
     enabled: true
     tls:
-      - secretName: opensearch-node-tls
+      - secretName: "{{ opensearch_secrets['node-tls'] }}"
         hosts: "{{ opensearch_fqdns }}"
     ingressClassName: "{{ rke_ingress_class }}"
     annotations:

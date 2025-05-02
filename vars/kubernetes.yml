@@ -9,11 +9,13 @@ rke_control_plane_host: "{{ groups[rke_control_plane_group][0] }}"
 # location exported by KUBECONFIG variable
 k3s_kubeconfig: /etc/rancher/k3s/k3s.yaml
 rke_kubeconfig: /etc/rancher/rke2/rke2.yaml
-rke_bin_dir: /var/lib/rancher/rke2/bin
 
 # location exported by CRI_CONFIG_FILE variable
 k3s_crictl_config: /var/lib/rancher/k3s/agent/etc/crictl.yaml
 rke_crictl_config: /var/lib/rancher/rke2/agent/etc/crictl.yaml
+
+rke_tls_dir: /var/lib/rancher/rke2/server/tls
+rke_bin_dir: /var/lib/rancher/rke2/bin
 
 container_runtime: containerd
 # location exported by CONTAINER_RUNTIME_ENDPOINT variable

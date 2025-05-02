@@ -39,6 +39,10 @@
   ansible.builtin.import_playbook: logging.yml
   tags: logging
 
+- name: Include Prometheus monitoring playbook
+  ansible.builtin.import_playbook: monitoring.yml
+  tags: monitoring
+
 - name: Include PostgreSQL database playbook
   ansible.builtin.import_playbook: postgresql.yml
   tags: postgresql

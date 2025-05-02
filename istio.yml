@@ -152,7 +152,7 @@
     # https://kiali.io/docs/configuration/authentication/openid/#set-up-with-no-namespace-access-control-support
     - name: Create Kiali OpenID secret
       vars:
-        secret_name: "{{ kiali_cr_spec.deployment.secret_name }}"
+        secret_name: "{{ kiali_secrets['openid'] }}"
         secret_data:
           oidc-secret: "{{ kiali_oidc_client_secret }}"
       ansible.builtin.include_tasks: tasks/k8s/secrets/generic.yml
@@ -161,8 +161,8 @@
       vars:
         cert_desc: Kiali
         cert_file: kiali
-        secret_name: "{{ kiali_cr_spec.deployment.ingress.override_yaml.spec.tls[0].secretName }}"
-      ansible.builtin.include_tasks: tasks/k8s/secrets/tls.yml
+        secret_name: "{{ kiali_secrets['ingress'] }}"
+      ansible.builtin.include_tasks: tasks/k8s/secrets/tls.pki.yml
 
     # Kiali Operator shall deploy Kiali
     - name: Create Kiali custom resource
@@ -177,4 +177,21 @@
           spec: "{{ kiali_cr_spec }}"
         state: present
         apply: true
+
+    - name: Wait for Kiali to be ready
+      # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_info_module.html
+      kubernetes.core.k8s_info:
+        kubeconfig: "{{ kubeconfig }}"
+        api_version: apps/v1
+        kind: Deployment
+        name: kiali
+        namespace: "{{ kiali_namespace }}"
+      # https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_loops.html#retrying-a-task-until-a-condition-is-met
+      register: kiali_info
+      until: >-
+        kiali_info.resources[0] is defined and
+        kiali_info.resources[0].status.readyReplicas ==
+        kiali_info.resources[0].status.replicas
+      retries: 30
+      delay: 10
   any_errors_fatal: true

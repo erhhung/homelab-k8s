@@ -1,0 +1,729 @@
+# grafana_admin_pass: {vault.yml}
+
+monitoring_namespace: monitoring
+monitoring_stack_name: prometheus-stack
+# aliases of "homelab"
+monitoring_host_names:
+  prometheus:
+    - metrics
+    - prometheus
+  thanos:
+    - thanos
+  alertmanager:
+    - alertmanager
+    - alerts
+  grafana:
+    - grafana
+    - monitoring
+
+# remember to add all domain names to pfSense DNS as
+# aliases of homelab.fourteeners.local: 192.168.0.221
+# https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_filters.html#products
+monitoring_fqdns: |
+  {% set fqdns = {} %}
+  {% for service, hosts in monitoring_host_names.items() %}
+  {%   set _ = fqdns.update({
+         service: hosts | product(search_domains) | map('join','.')
+       }) %}
+  {% endfor %}
+  {{ fqdns }}
+
+monitoring_secrets:
+  etcd: monitoring-etcd-tls
+  client: monitoring-client-tls
+  ingress: monitoring-ingress-tls
+  credentials: monitoring-credentials
+
+prometheus_stack_chart_version: "70.8.0"
+# https://github.com/prometheus-community/helm-charts/tree/main/charts/kube-prometheus-stack
+# https://github.com/prometheus-community/helm-charts/tree/main/charts/kube-prometheus-stack/values.yaml
+# https://github.com/prometheus-operator/prometheus-operator/tree/main/Documentation/api-reference/api.md
+prometheus_stack_chart_values:
+  # NOTE: if changing the stack/release name and re-installing the Helm release,
+  # be sure to manually delete the "<stack_name>-kubelet" service in kube-system
+  # namespace, or else "found duplicate series for the match group" error occurs
+  nameOverride: "{{ monitoring_stack_name }}"
+
+  # https://github.com/prometheus-community/helm-charts/tree/main/charts/kube-prometheus-stack/charts/crds
+  crds:
+    enabled: true
+    upgradeJob: # since Helm has no ability
+      enabled: true # feature is in preview
+
+  # ======================================== Operator ========================================
+  #
+  # https://prometheus-operator.dev/docs/
+  # https://prometheus-operator.dev/docs/getting-started/installation/#install-using-helm-chart
+  prometheusOperator:
+    enabled: true
+    revisionHistoryLimit: 1
+
+    prometheusInstanceNamespaces:
+      - "{{ monitoring_namespace }}"
+    thanosRulerInstanceNamespaces:
+      - "{{ monitoring_namespace }}"
+    alertmanagerInstanceNamespaces:
+      - "{{ monitoring_namespace }}"
+    alertmanagerConfigNamespaces: []
+
+    resources:
+      requests:
+        cpu: 10m
+        memory: 24Mi
+      limits:
+        cpu: 20m
+        memory: 64Mi
+
+    tls:
+      enabled: true
+
+    serviceMonitor:
+      selfMonitor: true
+
+  # ======================================= Prometheus =======================================
+  #
+  # https://prometheus.io/docs/prometheus/latest/configuration/configuration/
+  prometheus:
+    enabled: true
+    agentMode: false
+
+    # https://github.com/prometheus-operator/prometheus-operator/tree/main/Documentation/api-reference/api.md#prometheusspec
+    prometheusSpec:
+      # total pods = replicas * shards
+      replicas: 3
+      shards: 1
+
+      # soft:  prefer different nodes
+      # hard: require different nodes
+      podAntiAffinity: hard
+
+      resources:
+        requests:
+          cpu: 250m
+          memory: 512Mi
+
+      # https://github.com/prometheus-operator/prometheus-operator/tree/main/Documentation/platform/storage.md
+      storageSpec:
+        volumeClaimTemplate:
+          spec:
+            storageClassName: "{{ default_storage_class }}"
+            accessModes: ["ReadWriteOnce"]
+            resources:
+              requests:
+                storage: 3Gi
+
+      persistentVolumeClaimRetentionPolicy:
+        whenScaled: Retain
+        whenDeleted: Delete
+
+      # data retention period
+      retention: 14d # 2 weeks
+
+      tsdb:
+        # allow out-of-order samples because
+        # there may be lag in a slow cluster
+        outOfOrderTimeWindow: 5s
+
+      # https://github.com/prometheus-operator/prometheus-operator/tree/main/Documentation/api-reference/api.md#queryspec
+      query: # QuerySpec
+        maxConcurrency: 4
+        maxSamples: 50000
+        timeout: 30s
+
+      externalUrl: https://{{ monitoring_fqdns['prometheus'] | first }}
+
+      # https://github.com/prometheus-operator/prometheus-operator/tree/main/Documentation/api-reference/api.md#prometheuswebspec
+      web: # PrometheusWebSpec
+        # WebTLSConfig (web server certificate):
+        # https://github.com/prometheus-operator/prometheus-operator/tree/main/Documentation/api-reference/api.md#webtlsconfig
+        tlsConfig: &web_tls
+          # IMPORTANT! file-based configs using certFile/keyFile/clientCAFile
+          # do NOT work--they yield an invalid pod volume SecretVolumeSource
+          # for "web-config-tls-secret-key-*" that has no "secretName" field
+
+          cert: # SecretOrConfigMap
+            secret: # SecretKeySelector
+              name: "{{ monitoring_secrets['ingress'] }}"
+              key: tls.crt
+          # certFile: /tls/server/tls.crt
+          keySecret: # SecretKeySelector
+            name: "{{ monitoring_secrets['ingress'] }}"
+            key: tls.key
+          # keyFile: /tls/server/tls.key
+          client_ca: # SecretOrConfigMap
+            secret:
+              name: "{{ monitoring_secrets['ingress'] }}"
+              key: ca.crt
+          # clientCAFile: /tls/server/ca.crt
+          # https://pkg.go.dev/crypto/tls#ClientAuthType
+          clientAuthType: RequestClientCert
+
+      volumes:
+        # provide Thanos gRPC server cert
+        - name: tls-server
+          secret:
+            secretName: "{{ monitoring_secrets['ingress'] }}"
+        # provide Thanos CA certs so it can
+        # verify MinIO's server certificate
+        - name: tls-client
+          secret:
+            secretName: "{{ monitoring_secrets['client'] }}"
+        # allow Prometheus to scrape etcd
+        - name: tls-etcd
+          secret:
+            secretName: "{{ monitoring_secrets['etcd'] }}"
+
+      # mounts for all containers except "thanos-sidecar"
+      volumeMounts:
+        - name: tls-server
+          mountPath: /tls/server
+          readOnly: true
+        - name: tls-client
+          mountPath: /tls/client
+          readOnly: true
+        - name: tls-etcd
+          mountPath: /tls/etcd
+          readOnly: true
+
+      # inject additional containers, e.g. adding
+      # an authentication proxy like oauth2-proxy
+      containers:
+        # - name: oauth2-proxy
+        # TODO: integrate oauth2-proxy using Keycloak:
+        # https://github.com/oauth2-proxy/oauth2-proxy
+
+        # this performs a merge patch on the
+        # operator-generated "thanos-sidecar"
+        - name: thanos-sidecar
+          volumeMounts:
+            - name: tls-server
+              mountPath: /tls/server
+              readOnly: true
+            - name: tls-client
+              mountPath: /tls/client
+              readOnly: true
+
+      # https://github.com/prometheus-operator/prometheus-operator/tree/main/Documentation/api-reference/api.md#thanosspec
+      thanos: # ThanosSpec
+        grpcServerTlsConfig:
+          # https://github.com/prometheus-operator/prometheus-operator/tree/main/Documentation/api-reference/api.md#tlsconfig
+          # only certFile, keyFile, caFile are supported
+          certFile: /tls/server/tls.crt
+          keyFile: /tls/server/tls.key
+          caFile: /tls/server/ca.crt
+          insecureSkipVerify: true
+
+        objectStorageConfig:
+          # create secret containing MinIO credentials:
+          # https://thanos.io/tip/thanos/storage.md/#s3
+          secret:
+            type: S3
+            config:
+              # both bucket and user are
+              # created by vars/minio.yml
+              bucket: metrics
+              endpoint: "{{ minio_s3api_fqdn }}"
+              region: us-east-1
+              access_key: thanos
+              secret_key: "{{ minio_client_pass }}"
+              http_config:
+                tls_config:
+                  # mounted by patched container
+                  cert_file: /tls/client/tls.crt
+                  key_file: /tls/client/tls.key
+                  ca_file: /tls/client/ca.crt
+                  # insecure_skip_verify: true
+
+      # https://github.com/prometheus-operator/prometheus-operator/tree/main/Documentation/api-reference/api.md#alertmanagerendpoints
+      alertingEndpoints: # AlertmanagerEndpoints[]
+        - name: "{{ monitoring_stack_name }}-alertmanager"
+          port: http-web
+          scheme: https
+          pathPrefix: /
+          enableHttp2: true
+          tlsConfig:
+            certFile: /tls/client/tls.crt
+            keyFile: /tls/client/tls.key
+            caFile: /tls/client/ca.crt
+            # must skip certificate verification here because
+            # the Prometheus notifier component fails to send
+            # alerts to Alertmanager due to failure to verify
+            # the certificate because it does not contain any
+            # IP SANs: https://10.42.xx.xx:9093/api/v2/alerts
+            # and IP SAN cannot contain wildcards for pod IPs
+            insecureSkipVerify: true
+
+    # ==END== prometheusSpec
+
+    service: # port 9090
+      enabled: true
+
+    ingress:
+      enabled: true
+      tls:
+        - secretName: "{{ monitoring_secrets['ingress'] }}"
+          hosts: "{{ monitoring_fqdns['prometheus'] }}"
+      ingressClassName: "{{ rke_ingress_class }}"
+      annotations:
+        nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+        nginx.ingress.kubernetes.io/ssl-passthrough: "true"
+      hosts: "{{ monitoring_fqdns['prometheus'] }}"
+      paths: ["/"]
+      pathType: Prefix
+
+    serviceMonitor:
+      selfMonitor: true
+      scheme: https
+
+      # TLSConfig (mTLS client certificate):
+      # https://github.com/prometheus-operator/prometheus-operator/tree/main/Documentation/api-reference/api.md#tlsconfig
+      tlsConfig: &safe_tls
+        cert: # SecretOrConfigMap
+          secret:
+            name: "{{ monitoring_secrets['client'] }}"
+            key: tls.crt
+        keySecret: # SecretKeySelector
+          name: "{{ monitoring_secrets['client'] }}"
+          key: tls.key
+        ca: # SecretOrConfigMap
+          secret:
+            name: "{{ monitoring_secrets['client'] }}"
+            key: ca.crt
+        insecureSkipVerify: true
+
+    thanosService: # for Thanos service discovery
+      enabled: true
+
+    # https://thanos.io/tip/components/query.md
+    thanosServiceExternal: # for Thanos ingress
+      enabled: true
+      type: ClusterIP
+
+    thanosIngress:
+      enabled: true
+      tls:
+        - secretName: "{{ monitoring_secrets['ingress'] }}"
+          hosts: "{{ monitoring_fqdns['thanos'] }}"
+      ingressClassName: "{{ rke_ingress_class }}"
+      annotations:
+        nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+      hosts: "{{ monitoring_fqdns['thanos'] }}"
+      paths: ["/"]
+      pathType: Prefix
+
+    thanosServiceMonitor:
+      enabled: true
+      scheme: https
+      tlsConfig: *safe_tls
+
+  # best to keep rules on Prometheus itself:
+  # https://thanos.io/tip/components/rule.md
+  thanosRuler:
+    enabled: false
+
+  # ====================================== Alertmanager ======================================
+  #
+  # https://prometheus.io/docs/alerting/alertmanager/
+  alertmanager:
+    enabled: true
+
+    # https://github.com/prometheus-operator/prometheus-operator/tree/main/Documentation/api-reference/api.md#alertmanagerspec
+    alertmanagerSpec:
+      replicas: 3
+
+      # soft:  prefer different nodes
+      # hard: require different nodes
+      podAntiAffinity: hard
+
+      resources:
+        requests:
+          cpu: 50m
+          memory: 64Mi
+
+      # https://github.com/prometheus-operator/prometheus-operator/tree/main/Documentation/platform/storage.md
+      storage:
+        volumeClaimTemplate:
+          spec:
+            # Alertmanager has less demanding storage
+            # requirements than Prometheus, so we can
+            # use plentiful storage on NAS
+            storageClassName: "{{ nfs_storage_class }}"
+            accessModes: ["ReadWriteOnce"]
+            resources:
+              requests:
+                storage: 512Mi
+
+      persistentVolumeClaimRetentionPolicy:
+        whenScaled: Retain
+        whenDeleted: Delete
+
+      # data retention period
+      retention: 168h # 7 days
+
+      # https://github.com/prometheus-operator/prometheus-operator/tree/main/Documentation/api-reference/api.md#alertmanagerwebspec
+      web: # AlertmanagerWebSpec
+        # WebTLSConfig (web server certificate):
+        # https://github.com/prometheus-operator/prometheus-operator/tree/main/Documentation/api-reference/api.md#webtlsconfig
+        tlsConfig: *web_tls
+
+      # https://github.com/prometheus-operator/prometheus-operator/blob/main/Documentation/api-reference/api.md#clustertlsconfig
+      clusterTLS: # ClusterTLSConfig
+        server: *web_tls # WebTLSConfig
+        client: *safe_tls # SafeTLSConfig
+
+      # inject additional containers, e.g. adding
+      # an authentication proxy like oauth2-proxy
+      containers: []
+        # TODO: integrate oauth2-proxy using Keycloak:
+        # https://github.com/oauth2-proxy/oauth2-proxy
+
+    # ==END== alertmanagerSpec
+
+    ingress:
+      enabled: true
+      tls:
+        - secretName: "{{ monitoring_secrets['ingress'] }}"
+          hosts: "{{ monitoring_fqdns['alertmanager'] }}"
+      ingressClassName: "{{ rke_ingress_class }}"
+      annotations:
+        nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+        nginx.ingress.kubernetes.io/ssl-passthrough: "true"
+      hosts: "{{ monitoring_fqdns['alertmanager'] }}"
+      paths: ["/"]
+      pathType: Prefix
+
+    serviceMonitor:
+      selfMonitor: true
+      scheme: https
+      tlsConfig: *safe_tls
+
+  # ======================================== Grafana ========================================
+  #
+  # https://prometheus.io/docs/visualization/grafana/
+  grafana: # subchart values
+    enabled: true
+
+    defaultDashboardsEnabled: true
+    defaultDashboardsEditable: true
+    defaultDashboardsTimezone: browser
+    defaultDashboardsInterval: 5m
+
+    # settings below are defined by Grafana Helm chart:
+    # https://github.com/grafana/helm-charts/tree/main/charts/grafana
+    # https://github.com/grafana/helm-charts/tree/main/charts/grafana/values.yaml
+    replicas: 1
+    revisionHistoryLimit: 1
+
+    admin:
+      existingSecret: "{{ monitoring_secrets['credentials'] }}"
+      userKey: grafana-admin-username
+      passwordKey: grafana-admin-password
+
+    persistence:
+      enabled: true
+      type: StatefulSet
+      storageClassName: "{{ default_storage_class }}"
+      accessModes: ["ReadWriteOnce"]
+      size: 2Gi
+      # allow PVC deletion when
+      # Helm release is deleted
+      finalizers: []
+
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        cpu: 500m
+        memory: 640Mi
+
+    sidecar:
+      dashboards:
+        enabled: true
+        enableNewTablePanelSyntax: true
+      datasources:
+        enabled: true
+        # disable default (Prometheus) data source because its endpoint URL in
+        # the Helm template does not use HTTPS, and there is no way to specify
+        # jsonData.tlsAuthWithCACert and secureJsonData.tlsCACert using values
+        # in this block. Instead, we use the additionalDataSources block below
+        defaultDatasourceEnabled: false
+        alertmanager:
+          # due to the same issue as above, we
+          # define using additionalDataSources
+          enabled: false
+      plugins:
+        enabled: false
+      alerts:
+        enabled: false
+      notifiers:
+        enabled: false
+
+    # https://grafana.com/docs/grafana/latest/administration/provisioning/#datasources
+    # https://boredconsultant.com/2022/06/27/Grafana-Datasource-With-Custom-CA-Certificate/
+    # https://grafana.com/docs/grafana/latest/administration/provisioning/#example-data-source-configuration-file
+    additionalDataSources:
+      - name: Prometheus
+        type: prometheus
+        uid: prometheus
+        url: https://{{ monitoring_stack_name }}-prometheus.{{ monitoring_namespace }}.svc.cluster.local:9090/
+        access: proxy
+        jsonData:
+          tlsAuthWithCACert: true
+          timeInterval: 30s
+        secureJsonData:
+          tlsCACert: "{{ ca_certs }}"
+        isDefault: true
+
+      - name: Alertmanager
+        type: alertmanager
+        uid: alertmanager
+        url: https://{{ monitoring_stack_name }}-alertmanager.{{ monitoring_namespace }}.svc.cluster.local:9093/
+        access: proxy
+        jsonData:
+          tlsAuthWithCACert: true
+          implementation: prometheus
+          handleGrafanaManagedAlerts: false
+        secureJsonData:
+          tlsCACert: "{{ ca_certs }}"
+
+    # inject additional containers, e.g. adding
+    # an authentication proxy like oauth2-proxy
+    extraContainers: ""
+      # TODO: integrate oauth2-proxy using Keycloak:
+      # https://github.com/oauth2-proxy/oauth2-proxy
+
+    ingress:
+      enabled: true
+      tls:
+        - secretName: "{{ monitoring_secrets['ingress'] }}"
+          hosts: "{{ monitoring_fqdns['grafana'] }}"
+      ingressClassName: "{{ rke_ingress_class }}"
+      annotations:
+        nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+      hosts: "{{ monitoring_fqdns['grafana'] }}"
+      path: /
+      pathType: Prefix
+
+    serviceMonitor:
+      enabled: true
+      scheme: https
+      tlsConfig: *safe_tls
+
+  # =================================== kube-state-metrics ===================================
+  #
+  # https://github.com/kubernetes/kube-state-metrics
+  kubeStateMetrics:
+    enabled: true
+
+  # https://github.com/prometheus-community/helm-charts/tree/main/charts/kube-state-metrics
+  # https://github.com/prometheus-community/helm-charts/tree/main/charts/kube-state-metrics/values.yaml
+  kube-state-metrics: # subchart values
+
+    resources:
+      requests:
+        cpu: 10m
+        memory: 16Mi
+      limits:
+        cpu: 50m
+        memory: 64Mi
+
+    volumes:
+      # volume to be mounted in
+      # kube-rbac-proxy sidecar
+      - name: tls-server
+        secret:
+          secretName: "{{ monitoring_secrets['ingress'] }}"
+
+    # https://github.com/brancz/kube-rbac-proxy#usage
+    kubeRBACProxy:
+      # disabling for now due to bug in the Helm chart
+      # with readiness and liveness probes using HTTPS:
+      # https://github.com/prometheus-community/helm-charts/issues/5529
+      enabled: false
+
+      volumeMounts:
+        - name: tls-server
+          mountPath: /tls/server
+          readOnly: true
+
+      extraArgs:
+        - --tls-cert-file=/tls/server/tls.crt
+        - --tls-private-key-file=/tls/server/tls.key
+        - --client-ca-file=/tls/server/ca.crt
+
+    prometheus:
+      monitor:
+        enabled: true
+        scheme: https
+        enableHttp2: true
+        tlsConfig: *safe_tls
+
+    collectors:
+      - certificatesigningrequests
+      - configmaps
+      - cronjobs
+      - daemonsets
+      - deployments
+      - endpoints
+      - horizontalpodautoscalers
+      - ingresses
+      - jobs
+      - leases
+      - limitranges
+      - mutatingwebhookconfigurations
+      - namespaces
+      - networkpolicies
+      - nodes
+      - persistentvolumeclaims
+      - persistentvolumes
+      - poddisruptionbudgets
+      - pods
+      - replicasets
+      - replicationcontrollers
+      - resourcequotas
+      - secrets
+      - services
+      - statefulsets
+      - storageclasses
+      - validatingwebhookconfigurations
+      - volumeattachments
+      # - ingressclasses
+      # - clusterrolebindings
+      # - clusterroles
+      # - roles
+
+  # ====================================== Node Exporter =====================================
+  #
+  # https://github.com/prometheus/node_exporter
+  nodeExporter: # deploy DaemonSet
+    enabled: true
+
+    operatingSystems:
+      linux:
+        enabled: true
+      aix:
+        enabled: false
+      darwin:
+        enabled: false
+
+  # https://github.com/prometheus-community/helm-charts/tree/main/charts/prometheus-node-exporter
+  # https://github.com/prometheus-community/helm-charts/tree/main/charts/prometheus-node-exporter/values.yaml
+  prometheus-node-exporter: # subchart values
+
+    resources:
+      requests:
+        cpu: 10m
+        memory: 8Mi
+      limits:
+        cpu: 20m
+        memory: 32Mi
+
+    extraVolumes:
+      - name: tls-server
+        secret:
+          secretName: "{{ monitoring_secrets['ingress'] }}"
+
+    # https://github.com/brancz/kube-rbac-proxy#usage
+    kubeRBACProxy:
+      enabled: true
+
+      extraVolumeMounts:
+        - name: tls-server
+          mountPath: /tls/server
+          readOnly: true
+
+      extraArgs:
+        # default args already specify --config-file, but mounted
+        # ConfigMap will be overridden by ".extraManifests" below
+        - --tls-cert-file=/tls/server/tls.crt
+        - --tls-private-key-file=/tls/server/tls.key
+        - --client-ca-file=/tls/server/ca.crt
+
+    prometheus:
+      monitor:
+        enabled: true
+        scheme: https
+        tlsConfig: *safe_tls
+
+  # ======================================== Exporters =======================================
+  #
+  kubelet:
+    enabled: true
+
+  # requires RKE2 server options "etcd-expose-metrics: true"
+  # and "etcd-arg: - listen-metrics-urls=http://node-ip:2381"
+  kubeEtcd:
+    enabled: true
+    service:
+      enabled: true
+      selector:
+        component: etcd
+
+    serviceMonitor:
+      enabled: true
+      scheme: http
+      # must use file-based certs
+      # certFile: /tls/etcd/tls.crt
+      # keyFile: /tls/etcd/tls.key
+      # caFile: /tls/etcd/ca.crt
+
+  kubeApiServer:
+    enabled: true
+
+  # requires component arg
+  # "bind-address=0.0.0.0"
+  kubeControllerManager:
+    enabled: true
+    service:
+      enabled: true
+      selector:
+        component: kube-controller-manager
+
+  # requires component arg
+  # "bind-address=0.0.0.0"
+  kubeScheduler:
+    enabled: true
+    service:
+      enabled: true
+      selector:
+        component: kube-scheduler
+
+  kubeProxy:
+    enabled: true
+    service:
+      enabled: true
+      selector:
+        component: kube-proxy
+
+  coreDns: # no kubeDns
+    enabled: true
+    service:
+      enabled: true
+      selector:
+        k8s-app: kube-dns
+
+  # ======================================== Manifests =======================================
+  #
+  extraManifests:
+    - apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        # this overrides the ConfigMap created by the prometheus-node-exporter
+        # Helm chart because the provided resource-based authorization doesn't
+        # work--maybe the ServiceAccount doesn't have ClusterRole that allows
+        # "tokenreviews" & "subjectaccessreviews"? So we use static rule that
+        # only allows the client cert holder to access the /metrics endpoint:
+        # https://github.com/prometheus-community/helm-charts/tree/main/charts/prometheus-node-exporter/templates/rbac-configmap.yaml
+        # https://github.com/brancz/kube-rbac-proxy/tree/master/examples/static-auth
+        name: "{{ monitoring_stack_name }}-prometheus-node-exporter-rbac-config"
+      data:
+        config-file.yaml: |+
+          authorization:
+            static:
+              - user:
+                  # client cert CN
+                  name: monitoring
+                verb: get
+                resourceRequest: false
+                path: /metrics

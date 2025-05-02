@@ -15,10 +15,10 @@
       vars:
         cert_desc: Argo CD
         cert_file: argocd
-        secret_name: argocd-server-tls
+        secret_name: "{{ argocd_secrets['server'] }}"
         secret_ns: "{{ argocd_namespace }}"
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
-      ansible.builtin.include_tasks: tasks/k8s/secrets/tls.yml
+      ansible.builtin.include_tasks: tasks/k8s/secrets/tls.pki.yml
 
     # https://github.com/argoproj/argo-helm/tree/main/charts/argo-cd
     - name: Install Argo CD Helm chart

@@ -8,7 +8,19 @@ postgresql_users:
   - "{{ keycloak_db_user }}"
 
 postgresql_namespace: postgresql
+postgresql_host_names: # 192.168.0.222
+  - postgresql
+  - postgres
+  - pg
+
+# remember to add postgresql.fourteeners.local (also postgres.
+# and pg.) to pfSense DNS using kube virtual IP 192.168.0.222
+# https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_filters.html#products
+postgresql_fqdns: "{{ postgresql_host_names | product(search_domains) | map('join','.') }}"
 pgpool_cluster_host: postgresql-pgpool.{{ postgresql_namespace }}.svc.cluster.local
+
+postgresql_secrets:
+  node-tls: postgresql-tls
 
 postgresql_chart_version: "15.3.8"
 # https://github.com/bitnami/charts/tree/main/bitnami/postgresql-ha
@@ -24,15 +36,20 @@ postgresql_chart_values:
     pgpool: &global_pgpool
       adminPassword: "{{ postgresql_pass }}" # user "admin"
 
+  persistence:
+    storageClass: "{{ default_storage_class }}"
+    size: 2Gi
+    mountPath: /postgresql
+
   postgresql:
     # duplicate global settings or
     # else helm diff upgrade fails
     <<: *global_postgresql
 
     # https://github.com/bitnami/charts/tree/main/bitnami/postgresql-ha#securing-traffic-using-tls
-    tls: &postgresql_tls
+    tls: &node_tls
       enabled: true
-      certificatesSecret: postgresql-tls
+      certificatesSecret: "{{ postgresql_secrets['node-tls'] }}"
       certFilename: tls.crt
       certKeyFilename: tls.key
       certCAFilename: ca.crt
@@ -42,6 +59,7 @@ postgresql_chart_values:
     # none, nano, micro, small, medium, large, xlarge, 2xlarge
     # https://github.com/bitnami/charts/tree/main/bitnami/common/templates/_resources.tpl
     resourcesPreset: micro
+    # resources: ~
 
     # https://github.com/bitnami/charts/tree/main/bitnami/postgresql-ha#initialize-a-fresh-instance
     initdbScripts:
@@ -61,7 +79,7 @@ postgresql_chart_values:
     #     *.postgresql.svc.cluster.local
     #     *.postgresql.svc
     # https://github.com/bitnami/charts/tree/main/bitnami/postgresql-ha#securing-traffic-using-tls
-    tls: *postgresql_tls
+    tls: *node_tls
 
     # use a preset instead of explicitly configuring resources:
     # none, nano, micro, small, medium, large, xlarge, 2xlarge
@@ -79,14 +97,9 @@ postgresql_chart_values:
         {% endfor -%}
         {{ pwds | join(';') }}
 
-  persistence:
-    storageClass: "{{ default_storage_class }}"
-    size: 3Gi
-    mountPath: /postgresql
-
   service:
-    # remember to add postgresql.fourteeners.local (also postgres.
-    # and pg.) to pfSense DNS using kube virtual IP 192.168.0.222
+    # since PostgreSQL does not talk HTTP, we do not create
+    # an Ingress; instead, we create a LoadBalancer service:
     # https://github.com/bitnami/charts/tree/main/bitnami/postgresql-ha#configure-the-way-how-to-expose-postgresql
     type: LoadBalancer
     # https://docs.ansible.com/ansible/latest/collections/ansible/utils/ipmath_filter.html

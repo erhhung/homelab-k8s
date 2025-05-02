@@ -39,6 +39,13 @@
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_role_module.html
       ansible.builtin.include_role:
         name: lablabs.rke2
+
+      # NOTE: once lots of workloads are running in the cluster, and config change
+      # triggers the task "lablabs.rke2 : Restart RKE2 service on <node>", Ansible
+      # may fail with error "Unable to restart service rke2-server.service" due to
+      # timeout. Simply restart the service (and likely etcd pod) manually on each
+      # node (systemctl restart rke2-server), wait for kube-system pods to settle,
+      # and then re-run this playbook.
   any_errors_fatal: true
 
 - name: Set up shell environment for kubectl
@@ -223,7 +230,7 @@
         secret_name: "{{ nginx_default_tls_secret }}"
         secret_ns: kube-system
         create_ns: false
-      ansible.builtin.include_tasks: tasks/k8s/secrets/tls.yml
+      ansible.builtin.include_tasks: tasks/k8s/secrets/tls.pki.yml
       when: inventory_hostname == rke_control_plane_host
 
     # https://docs.rke2.io/advanced#auto-deploying-manifests
@@ -323,7 +330,7 @@
             state: present
             apply: true
             wait: true
-            wait_timeout: 10m0s
+            wait_timeout: 10m0s # requires wait=true
           timeout: 1800
           when: manifest_url
 

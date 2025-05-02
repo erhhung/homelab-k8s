@@ -6,15 +6,20 @@
 harbor_namespace: harbor
 harbor_host_name: harbor # alias of "rancher"
 
-# remember to add harbor.fourteeners.local to pfSense DNS!
+# remember to add harbor.fourteeners.local to pfSense DNS
+# as an alias of rancher.fourteeners.local: 192.168.0.164
 # https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_filters.html#products
 harbor_fqdn: "{{ [harbor_host_name] | product(search_domains) | map('join','.') | first }}"
 
-harbor_chart_version: "1.16.2"
+harbor_secrets:
+  ingress: harbor-ingress-tls
+
+harbor_chart_version: "1.17.0"
 # https://goharbor.io/docs/latest/install-config/harbor-ha-helm/
 # https://github.com/goharbor/harbor-helm/tree/main/values.yaml
 harbor_chart_values:
   externalURL: https://{{ harbor_fqdn }}
+
   expose:
     type: ingress
     ingress:
@@ -24,10 +29,21 @@ harbor_chart_values:
     tls:
       certSource: secret
       secret:
-        # has keys "tls.crt" and "tls.key"
-        secretName: tls-harbor
-  # same secret above also has key "ca.crt"
-  caSecretName: tls-harbor
+        # has keys "tls.crt" & "tls.key"
+        secretName: "{{ harbor_secrets['ingress'] }}"
+  # secret expected to have key "ca.crt"
+  caSecretName: "{{ harbor_secrets['ingress'] }}"
+
+  persistence:
+    persistentVolumeClaim:
+      # use NFS path on QNAP for high storage
+      # components; use local-path for others
+      registry:
+        storageClass: "{{ nfs_storage_class }}"
+        size: 20Gi
+      trivy:
+        storageClass: "{{ nfs_storage_class }}"
+        size: 5Gi
 
   core:
     secret: "{{ harbor_secret }}"
@@ -48,6 +64,7 @@ harbor_chart_values:
     tokenKey: "{{ harbor_ca_key }}"
     # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/file_lookup.html
     tokenCert: "{{ lookup('ansible.builtin.file', 'vars/harbor/ca.crt', rstrip=false) }}"
+
   registry:
     secret: "{{ harbor_secret }}"
     credentials:
@@ -61,6 +78,7 @@ harbor_chart_values:
       #                tr -d '\n' | sed 's/$2y/$2a/'
       htpasswdString: |-
         admin:$2a$10$DrFWro1.BxgRJ.stQoqSyOx2cjaIC5AoROgDOODjP.NgOj5wFAPWa
+
   jobservice:
     secret: "{{ harbor_secret }}"
   database:
@@ -68,16 +86,6 @@ harbor_chart_values:
       password: "{{ harbor_db_pass }}"
   harborAdminPassword: "{{ harbor_admin_pass }}"
 
-  persistence:
-    persistentVolumeClaim:
-      # use NFS path on QNAP for high storage
-      # components; use local-path for others
-      registry:
-        storageClass: nfs-qnap
-        size: 20Gi
-      trivy:
-        storageClass: nfs-qnap
-        size: 5Gi
   ipFamily:
     ipv6:
       enabled: false
@@ -90,7 +98,7 @@ harbor_users:
     email: erhhung@gmail.com
     # 8+ chars w/ upper + lower + digit
     password: "{{ harbor_admin_pass }}"
-    role: developer # project: library
+    role: maintainer # project: library
     # comment: optional
 
 # https://github.com/goharbor/harbor/tree/main/src/portal/src/app/shared/entities/shared.const.ts#L295-L309

@@ -35,12 +35,13 @@ private CA server at pki.fourteeners.local.
 |  https://harbor.fourteeners.local | Harbor OCI registry
 |   https://minio.fourteeners.local | MinIO console
 |      https://s3.fourteeners.local | MinIO S3 API
+| https://grafana.fourteeners.local | Grafana dashboards
+| https://metrics.fourteeners.local | Prometheus web UI
 | opensearch.fourteeners.local:9200 | OpenSearch _(HTTPS only)_
 |  https://kibana.fourteeners.local | OpenSearch Dashboards
 |   postgres.fourteeners.local:5432 | PostgreSQL via Pgpool _(mTLS only)_
 |     https://sso.fourteeners.local | Keycloak IAM console
 |   https://kiali.fourteeners.local | Kiali dashboard
-| https://grafana.fourteeners.local | Grafana dashboard
 |  https://argocd.fourteeners.local | Argo CD console
 
 ## Installation Sources
@@ -52,8 +53,9 @@ private CA server at pki.fourteeners.local.
 - [X] [OpenSearch Logging Stack](https://opensearch.org/docs/latest/) — aggregate and filter logs using OpenSearch and Fluent Bit
     * Install into the main RKE cluster using [`opensearch`](https://opensearch.org/docs/latest/install-and-configure/install-opensearch/helm/) and [`opensearch-dashboards`](https://opensearch.org/docs/latest/install-and-configure/install-dashboards/helm/) Helm charts
     * Instal Fluent Bit using [`fluent-operator`](https://github.com/fluent/fluent-operator) Helm chart and `FluentBit` CR
-- [ ] [Prometheus Monitoring Stack](https://github.com/prometheus-operator/kube-prometheus) — Prometheus, Grafana, and rules using the Prometheus Operator
+- [X] [Prometheus Monitoring Stack](https://github.com/prometheus-operator/kube-prometheus) — Prometheus, Grafana, and rules using the Prometheus Operator
     * Install into the main RKE cluster using [`kube-prometheus-stack`](https://github.com/prometheus-community/helm-charts/tree/main/charts/kube-prometheus-stack/README.md) Helm chart
+    * [ ] Add authentication to Prometheus, Thanos, and Alertmanager UIs using [`oauth2-proxy`](https://github.com/oauth2-proxy/oauth2-proxy) sidecar
 - [X] [PostgreSQL Database](https://www.postgresql.org/docs/current/) — SQL database used by Keycloak and other applications
     * Install using Bitnami's [`postgresql-ha`](https://github.com/bitnami/charts/tree/main/bitnami/postgresql-ha) Helm chart
 - [X] [Keycloak IAM & OIDC Provider](https://www.keycloak.org/) — identity and access management and OpenID Connect provider
@@ -62,9 +64,11 @@ private CA server at pki.fourteeners.local.
     * Install Kiali using [`kiali-operator`](https://kiali.io/docs/installation/installation-guide/install-with-helm/#install-with-operator/) Helm chart and `Kiali` CR
 - [X] [Argo CD Declarative GitOps](https://argo-cd.readthedocs.io/) — manage deployment of other applications in the main RKE cluster
     * Install into the main RKE cluster using [`argo-cd`](https://github.com/argoproj/argo-helm/tree/main/charts/argo-cd) Helm chart
+- [ ] [Kubernetes Metacontroller](https://metacontroller.github.io/metacontroller/) — enable easy creation of custom controllers
+    * Install into the main RKE cluster using [`metacontroller`](https://metacontroller.github.io/metacontroller/guide/helm-install.html) Helm chart
 - [ ] [Certificate Manager](https://cert-manager.io/) — X.509 certificate management for Kubernetes
     * Install into the main RKE cluster using [`cert-manager`](https://cert-manager.io/docs/installation/helm/) Helm chart
-    * Integrate with the private CA using [ACME `ClusterIssuer`](https://cert-manager.io/docs/configuration/acme/)
+    * [ ] Integrate with private CA `pki.fourteeners.local` using [ACME `ClusterIssuer`](https://cert-manager.io/docs/configuration/acme/)
 - [ ] [OpenTelemetry Collector](https://opentelemetry.io/docs/collector/) with [Jaeger UI](https://www.jaegertracing.io/) -- telemetry collector agent and distributed tracing backend
     * Install into the main RKE cluster using [OpenTelemetry Collector](https://opentelemetry.io/docs/platforms/kubernetes/helm/collector/) Helm chart
     * Install Jaeger using [Jaeger](https://github.com/jaegertracing/helm-charts/tree/main/charts/jaeger) Helm chart
@@ -96,12 +100,13 @@ Some variables stored in Ansible Vault _(there are many more)_:
 |:--------------------------:|:-------------------:
 | `ansible_become_pass`      | `rancher_admin_pass`
 | `github_access_token`      | `harbor_admin_pass`
-| `age_secret_key`           | `minio_admin_pass`
-| `k3s_token`                | `minio_root_pass`
+| `age_secret_key`           | `minio_root_pass`
+| `k3s_token`                | `minio_admin_pass`
 | `rke2_token`               | `opensearch_admin_pass`
-| `harbor_secret`            | `keycloak_admin_pass`
-| `harbor_ca_key`            | `grafana_admin_pass`
-| `dashboards_os_pass`       | `argocd_admin_pass`
+| `harbor_secret`            | `grafana_admin_pass`
+| `harbor_ca_key`            | `keycloak_admin_pass`
+| `minio_client_pass`        | `argocd_admin_pass`
+| `dashboards_os_pass`       |
 | `fluent_os_pass`           |
 | `postgresql_pass`          |
 | `keycloak_db_pass`         |
@@ -208,33 +213,38 @@ export ANSIBLE_CONFIG=./ansible.cfg
     ansible-playbook logging.yml
     ```
 
-11. Set up **PostgreSQL** database in _**HA**_ mode
+11. Set up **Prometheus** & **Grafana** in _**HA**_ mode
+    ```bash
+    ansible-playbook monitoring.yml
+    ```
 
-    11.1. Run initialization SQL script to create roles and databases for downstream applications
+12. Set up **PostgreSQL** database in _**HA**_ mode
+
+    12.1. Run initialization SQL script to create roles and databases for downstream applications
 
     ```bash
     ansible-playbook postgresql.yml
     ```
 
-12. Set up **Keycloak** IAM & OIDC provider
+13. Set up **Keycloak** IAM & OIDC provider
 
-    12.1. Bootstrap PostgreSQL database with realm `homelab`, user `erhhung`, and OIDC clients
+    13.1. Bootstrap PostgreSQL database with realm `homelab`, user `erhhung`, and OIDC clients
 
     ```bash
     ansible-playbook keycloak.yml
     ```
 
-13. Set up **Istio** service mesh in _**ambient**_ mode
+14. Set up **Istio** service mesh in _**ambient**_ mode
     ```bash
     ansible-playbook istio.yml
     ```
 
-14. Set up **Argo CD** GitOps delivery tool
+15. Set up **Argo CD** GitOps delivery tool
     ```bash
     ansible-playbook argocd.yml
     ```
 
-15. Create **virtual clusters** in RKE running **K0s**
+16. Create **virtual clusters** in RKE running **K0s**
     ```bash
     ansible-playbook vclusters.yml
     ```

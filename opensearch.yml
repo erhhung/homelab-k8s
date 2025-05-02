@@ -36,11 +36,11 @@
         # be in PKCS#8 / PEM format
         cert_desc: OpenSearch node
         cert_file: opensearch
-        secret_name: "{{ values.extraVolumes[0].secret.secretName }}"
+        secret_name: "{{ opensearch_secrets['node-tls'] }}"
         secret_ns: "{{ opensearch_namespace }}"
         create_ns: true
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
-      ansible.builtin.include_tasks: tasks/k8s/secrets/tls.yml
+      ansible.builtin.include_tasks: tasks/k8s/secrets/tls.pki.yml
 
     - name: Create OpenSearch admin secret
       vars:
@@ -48,22 +48,22 @@
         # be in PKCS#8 / PEM format
         cert_desc: OpenSearch admin
         cert_file: opensearch_admin
-        secret_name: "{{ values.extraVolumes[1].secret.secretName }}"
+        secret_name: "{{ opensearch_secrets['admin-tls'] }}"
         secret_ns: "{{ opensearch_namespace }}"
-      ansible.builtin.include_tasks: tasks/k8s/secrets/tls.yml
+      ansible.builtin.include_tasks: tasks/k8s/secrets/tls.pki.yml
 
     - name: Create OpenSearch passwords secret
       vars:
-        secret_name: "{{ values.extraEnvs[0].valueFrom.secretKeyRef.name }}"
+        secret_name: "{{ opensearch_secrets['passwords'] }}"
         secret_ns: "{{ opensearch_namespace }}"
         secret_data:
-          opensearch_admin_password: "{{ opensearch_admin_pass }}"
-          kibana_opensearch_password: "{{ kibana_os_pass }}"
+          admin: "{{ opensearch_admin_pass }}"
+          kibana: "{{ kibana_os_pass }}"
       ansible.builtin.include_tasks: tasks/k8s/secrets/generic.yml
 
     - name: Create OpenSearch security secret
       vars:
-        secret_name: "{{ values.securityConfig.internalUsersSecret }}"
+        secret_name: "{{ opensearch_secrets['security'] }}"
         secret_ns: "{{ opensearch_namespace }}"
         secret_data: "{{ opensearch_security_config }}"
       ansible.builtin.include_tasks: tasks/k8s/secrets/generic.yml
@@ -89,8 +89,9 @@
         release_name: opensearch
         release_namespace: "{{ opensearch_namespace }}"
         release_values: "{{ opensearch_chart_values }}"
-        wait_timeout: 10m0s
         atomic: true
+        wait: true
+        wait_timeout: 10m0s # requires wait=true
       # it can take a long time to pull container images
       # and provision storage and start each StatefulSet
       # pod sequentially due to the OrderedReady policy
@@ -118,10 +119,10 @@
         cert_desc: Dashboards ingress
         cert_file: kibana
         kubeconfig: "{{ rke_kubeconfig }}"
-        secret_name: "{{ dashboards_chart_values.secretMounts[0].secretName }}"
+        secret_name: "{{ dashboards_secrets['ingress'] }}"
         secret_ns: "{{ kibana_namespace }}"
         create_ns: false
-      ansible.builtin.include_tasks: tasks/k8s/secrets/tls.yml
+      ansible.builtin.include_tasks: tasks/k8s/secrets/tls.pki.yml
 
     # https://github.com/opensearch-project/helm-charts/tree/main/charts/opensearch-dashboards
     - name: Install Dashboards Helm chart

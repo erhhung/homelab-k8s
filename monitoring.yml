@@ -1,0 +1,81 @@
+# https://prometheus-operator.dev/
+# https://github.com/prometheus-operator/kube-prometheus
+# https://runbooks.prometheus-operator.dev/runbooks
+---
+- name: Install Prometheus monitoring stack
+  tags: stack
+  hosts: "{{ rke_control_plane_host }}"
+  gather_facts: false
+  vars_files:
+    - vars/basics.yml
+    - vars/kubernetes.yml
+    - vars/storage.yml
+    - vars/minio.yml
+    - vars/monitoring.yml
+  vars:
+    # required kubernetes>=24.2 package only in user virtualenv
+    ansible_python_interpreter: "{{ venv_python_interpreter }}"
+    kubeconfig: "{{ rke_kubeconfig }}"
+    secret_ns: "{{ monitoring_namespace }}"
+    create_ns: false
+  tasks:
+    # client certs for etcd ServiceMonitor
+    # (turns out not needed as the metrics
+    # endpoint is only available via HTTP)
+    - name: Create RKE etcd client secret
+      vars:
+        cert_desc: RKE etcd client
+        cert_file: etcd/client
+        secret_name: "{{ monitoring_secrets['etcd'] }}"
+        create_ns: true
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
+      ansible.builtin.include_tasks: tasks/k8s/secrets/tls.rke.yml
+
+    - name: Create monitoring client secret
+      vars:
+        cert_desc: monitoring client
+        cert_file: monitoring_mtls
+        secret_name: "{{ monitoring_secrets['client'] }}"
+      ansible.builtin.include_tasks: tasks/k8s/secrets/tls.pki.yml
+
+    - name: Create monitoring ingress secret
+      vars:
+        cert_desc: monitoring ingress
+        cert_file: monitoring
+        secret_name: "{{ monitoring_secrets['ingress'] }}"
+      ansible.builtin.include_tasks: tasks/k8s/secrets/tls.pki.yml
+      # sets pem_chain fact
+
+    # CA certs to be stored inline with Grafana data
+    # source configs for Prometheus and Alertmanager
+    - name: Set ca_certs fact from pem_chain
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/set_fact_module.html
+      ansible.builtin.set_fact:
+        # pem_chain fact set by tasks/k8s/secrets/tls.pki.yml
+        # above contains both intermediate and root CA certs
+        ca_certs: "{{ pem_chain[1:] | join('\n') }}"
+
+    - name: Create monitoring credentials secret
+      vars:
+        grafana: "{{ prometheus_stack_chart_values.grafana }}"
+        secret_name: "{{ monitoring_secrets['credentials'] }}"
+        secret_data: |
+          {{ {
+               grafana.admin.userKey:            'admin',
+               grafana.admin.passwordKey: grafana_admin_pass
+          } }}
+      ansible.builtin.include_tasks: tasks/k8s/secrets/generic.yml
+
+    # https://github.com/prometheus-community/helm-charts/tree/main/charts/kube-prometheus-stack
+    - name: Install Prometheus stack Helm chart
+      # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/helm_module.html
+      kubernetes.core.helm:
+        kubeconfig: "{{ kubeconfig }}"
+        chart_repo_url: https://prometheus-community.github.io/helm-charts
+        chart_ref: kube-prometheus-stack
+        chart_version: "{{ prometheus_stack_chart_version }}"
+        release_name: "{{ prometheus_stack_chart_values.nameOverride }}"
+        release_namespace: "{{ monitoring_namespace }}"
+        release_values: "{{ prometheus_stack_chart_values }}"
+        atomic: true
+      timeout: 600

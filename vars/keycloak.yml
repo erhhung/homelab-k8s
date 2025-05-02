@@ -12,6 +12,15 @@ keycloak_host_names: # aliases of "homelab"
 # https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_filters.html#products
 keycloak_fqdns: "{{ keycloak_host_names | product(search_domains) | map('join','.') }}"
 
+keycloak_secrets:
+  passwords: keycloakx-passwords
+  database: keycloakx-database-tls
+  ingress: keycloakx-ingress-tls
+
+keycloak_configmaps:
+  dbsql: keycloakx-dbsql
+  admin: keycloakx-admin
+
 keycloak_db_name: keycloak
 keycloak_db_user: keycloak
 # use {{ pgpool_db_pass }}
@@ -21,10 +30,10 @@ keycloak_db_user: keycloak
 keycloak_jdbc_params:
   ssl: "true"
   sslmode: verify-full
-  # mounted volume: /opt/keycloak/tls/db
-  sslcert: /opt/keycloak/tls/db/tls.crt
-  sslkey: /opt/keycloak/tls/db/tls.key
-  sslrootcert: /opt/keycloak/tls/db/ca.crt
+  # mounted volume: /opt/keycloak/tls/database
+  sslcert: /opt/keycloak/tls/database/tls.crt
+  sslkey: /opt/keycloak/tls/database/tls.key
+  sslrootcert: /opt/keycloak/tls/database/ca.crt
 
 # file is in "keycloakx-dbsql" ConfigMap
 keycloak_sql_gz_b64: keycloak.sql.gz.b64
@@ -70,7 +79,7 @@ keycloakx_chart_values:
     - name: KC_BOOTSTRAP_ADMIN_PASSWORD
       valueFrom:
         secretKeyRef:
-          name: keycloakx-passwords
+          name: {{ keycloak_secrets['passwords'] }}
           key: admin
 
     # https://stackoverflow.com/questions/55741524/keycloak-cant-connect-to-postgres-ssl-connection-is-required#77645265
@@ -96,27 +105,27 @@ keycloakx_chart_values:
     enabled: true
 
   extraVolumes: |
-    - name: db-tls
+    - name: database-tls
       secret:
-        # keycloakx-db-tls Secret
+        # keycloakx-database-tls Secret
         # will be created by Ansible
-        secretName: keycloakx-db-tls
+        secretName: {{ keycloak_secrets['database'] }}
     - name: ingress-tls
       secret:
         # keycloakx-ingress-tls Secret
         # will be created by Ansible
-        secretName: keycloakx-ingress-tls
+        secretName: {{ keycloak_secrets['ingress'] }}
     - name: keycloak-sql
       configMap:
-        name: keycloakx-dbsql
+        name: {{ keycloak_configmaps['dbsql'] }}
     - name: profile-sh
       configMap:
-        name: keycloakx-admin
+        name: {{ keycloak_configmaps['admin'] }}
 
   # keycloak container
   extraVolumeMounts: |
-    - name: db-tls
-      mountPath: /opt/keycloak/tls/db
+    - name: database-tls
+      mountPath: /opt/keycloak/tls/database
       readOnly: true
     - name: ingress-tls
       mountPath: /opt/keycloak/tls/ingress
@@ -187,7 +196,7 @@ keycloakx_chart_values:
         - name: PGSSLROOTCERT
           value: /tls/ca.crt
       volumeMounts:
-        - name: db-tls
+        - name: database-tls
           mountPath: /tls
           readOnly: true
         - name: keycloak-sql
@@ -196,13 +205,8 @@ keycloakx_chart_values:
 
   resources:
     requests:
-      cpu: 100m
+      cpu: 50m
       memory: 256Mi
-    # don't set limits if need to perform ad-hoc
-    # admin tasks in the container running kc.sh
-    # limits:
-    #   cpu: 750m
-    #   memory: 512Mi
 
   secrets:
     # creates "keycloakx-passwords" Secret
@@ -220,13 +224,12 @@ keycloakx_chart_values:
       # keycloakx-ingress-tls Secret
       # will be created by Ansible
       - hosts: "{{ keycloak_fqdns }}"
-        secretName: keycloakx-ingress-tls
-
+        secretName: "{{ keycloak_secrets['ingress'] }}"
     ingressClassName: "{{ rke_ingress_class }}"
     annotations:
       nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
       # https://github.com/codecentric/helm-charts/tree/master/charts/keycloakx#bad-gateway-and-proxy-buffer-size-in-nginx
-      nginx.ingress.kubernetes.io/proxy-buffer-size: "128k"
+      nginx.ingress.kubernetes.io/proxy-buffer-size: 128k
       # https://github.com/codecentric/helm-charts/tree/master/charts/keycloakx#prometheus-metrics-support
       # IMPORTANT! annotation group ServerSnippet has risk level Critical, so the
       # Nginx Ingress Controller config must be changed to accept that risk level

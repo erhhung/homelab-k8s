@@ -4,6 +4,7 @@
 # security config change would trigger
 # a rolling update of StatefulSet pods
 - name: Wait for OpenSearch to be ready
+  # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_info_module.html
   kubernetes.core.k8s_info:
     kubeconfig: "{{ kubeconfig }}"
     api_version: apps/v1
@@ -29,6 +30,8 @@
     plugin_dir: "{{ home_dir }}/plugins/opensearch-security"
     config_dir: "{{ home_dir }}/config"
     tls_dir: "{{ config_dir }}/tls/admin"
+    # "/tls/" is created by extraInitContainers and mounted
+    # by extraVolumeMounts
     command: >-
       {{ plugin_dir }}/tools/securityadmin.sh
       -cd  {{ config_dir }}/opensearch-security
