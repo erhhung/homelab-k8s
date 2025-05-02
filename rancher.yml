@@ -8,12 +8,12 @@
     - vars/basics.yml
     - vars/kubernetes.yml
     - vars/rancher.k3s.yml
-  pre_tasks:
-    - name: Show configured server options
-      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/debug_module.html
-      ansible.builtin.debug:
-        # yeah, this prints the K3s token in plain text
-        msg: "Server options: {{ k3s_opts | join(' ') }}"
+  # pre_tasks:
+  #   - name: Show configured server options
+  #     # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/debug_module.html
+  #     ansible.builtin.debug:
+  #       # yeah, this prints the K3s token in plain text
+  #       msg: "Server options: {{ k3s_opts | join(' ') }}"
   tasks:
     # https://docs.k3s.io/reference/env-variables
     - name: Install K3s service by script
@@ -103,20 +103,20 @@
       vars:
         cert_desc: Rancher
         cert_file: rancher
-        secret_name: tls-rancher-ingress
+        secret_name: "{{ rancher_secrets['ingress'] }}"
         secret_ns: "{{ rancher_namespace }}"
-      ansible.builtin.include_tasks: tasks/k8s/secrets/tls.yml
+      ansible.builtin.include_tasks: tasks/k8s/secrets/tls.pki.yml
       register: ingress_secret
       # sets pem_chain fact
 
     - name: Create Rancher CA certs secret
       vars:
-        secret_name: tls-ca
+        secret_name: "{{ rancher_secrets['ca-tls'] }}"
         secret_ns: "{{ rancher_namespace }}"
         create_ns: false
         secret_data:
-          # pem_chain fact set by tasks/k8s/secrets/tls.yml
-          # above contains both intermediate & root CA certs
+          # pem_chain fact set by tasks/k8s/secrets/tls.pki.yml
+          # above contains both intermediate and root CA certs
           cacerts.pem: "{{ pem_chain[1:] | join('\n') }}"
       ansible.builtin.include_tasks: tasks/k8s/secrets/generic.yml
 

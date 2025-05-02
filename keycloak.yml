@@ -75,57 +75,29 @@
     #     # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/md5_filter.html
     #     msg: "{{ keycloak_sql.stdout | ansible.builtin.md5 }}"
   tasks:
-    - name: Create Keycloak ingress secret
-      vars:
-        cert_desc: Keycloak ingress
-        cert_file: keycloak
-        secret_type: tls
-        secret_name: "{{ keycloakx_chart_values.ingress.tls[0].secretName }}"
-        secret_ns: "{{ keycloak_namespace }}"
-      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
-      ansible.builtin.include_tasks: tasks/k8s/secrets/tls.yml
-
-    - name: Create Keycloak DB secret
+    - name: Create Keycloak database secret
       vars:
         # Java requires key file to
         # be in PKCS#8 / DER format
         cert_desc: Keycloak DB
         cert_file: keycloak_db
         secret_type: generic # not tls because key is in binary format
-        secret_name: keycloakx-db-tls
+        secret_name: "{{ keycloak_secrets['database'] }}"
+        secret_ns: "{{ keycloak_namespace }}"
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
+      ansible.builtin.include_tasks: tasks/k8s/secrets/tls.pki.yml
+
+    - name: Create Keycloak ingress secret
+      vars:
+        cert_desc: Keycloak ingress
+        cert_file: keycloak
+        secret_type: tls
+        secret_name: "{{ keycloak_secrets['ingress'] }}"
         secret_ns: "{{ keycloak_namespace }}"
         create_ns: false
-      ansible.builtin.include_tasks: tasks/k8s/secrets/tls.yml
+      ansible.builtin.include_tasks: tasks/k8s/secrets/tls.pki.yml
 
-    - name: Create keycloakx-admin ConfigMap
-      vars:
-        files:
-          - vars/keycloak/profile.sh
-        data: |
-          {% set data = {} %}
-          {% for file in files %}
-          {%   set name = file.split('/')[-1] %}
-          {%   set _ = data.update({
-                  name: lookup('ansible.builtin.file', file, rstrip=false)
-               }) %}
-          {% endfor %}
-          {{ data }}
-      # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_module.html
-      kubernetes.core.k8s:
-        kubeconfig: "{{ kubeconfig }}"
-        definition:
-          apiVersion: v1
-          kind: ConfigMap
-          metadata:
-            name: keycloakx-admin
-            namespace: "{{ keycloak_namespace }}"
-          data: "{{ data }}"
-        validate:
-          fail_on_error: true
-        state: present
-        apply: true
-
-    - name: Create keycloakx-dbsql ConfigMap
+    - name: Create {{ keycloak_configmaps['dbsql'] }} ConfigMap
       vars:
         data: |
           {% set data = {} %}
@@ -140,7 +112,34 @@
           apiVersion: v1
           kind: ConfigMap
           metadata:
-            name: keycloakx-dbsql
+            name: "{{ keycloak_configmaps['dbsql'] }}"
+            namespace: "{{ keycloak_namespace }}"
+          data: "{{ data }}"
+        validate:
+          fail_on_error: true
+        state: present
+        apply: true
+
+    - name: Create {{ keycloak_configmaps['admin'] }} ConfigMap
+      vars:
+        files:
+          - vars/keycloak/profile.sh
+        data: |
+          {% set data = {} %}
+          {% for file in files %}
+          {%   set name = file.split('/')[-1] %}
+          {%   set _ = data.update({
+                  name: lookup('ansible.builtin.file', file, rstrip=false)
+               }) %}
+          {% endfor %}
+          {{ data }}
+      kubernetes.core.k8s:
+        kubeconfig: "{{ kubeconfig }}"
+        definition:
+          apiVersion: v1
+          kind: ConfigMap
+          metadata:
+            name: "{{ keycloak_configmaps['admin'] }}"
             namespace: "{{ keycloak_namespace }}"
           data: "{{ data }}"
         validate:
@@ -159,8 +158,9 @@
         release_name: keycloakx
         release_namespace: "{{ keycloak_namespace }}"
         release_values: "{{ keycloakx_chart_values }}"
-        wait_timeout: 10m0s
         atomic: true
+        wait: true
+        wait_timeout: 10m0s # requires wait=true
       # startup can take a while at max utilization of allocated CPU:
       # "updating configuration and installing your custom providers"
       timeout: 900

@@ -1,25 +1,53 @@
-# minio_admin_pass: {vault.yml}
-#  minio_root_pass: {vault.yml}
+#   minio_root_pass: {vault.yml}
+#  minio_admin_pass: {vault.yml}
+# minio_client_pass: {vault.yml}
+
+minio_buckets:
+  # bucket for Thanos to store metrics
+  metrics:
+    {}
+    # https://min.io/docs/minio/linux/reference/minio-mc/mc-mb.html#parameters
+    # options:
+    #   - --with-versioning
+
+minio_policies:
+  # IAM-compatible policies for users and groups
+  # only (there is no support for bucket policy)
+  # NOTE: rendered JSON doc cannot exceed 20 KiB
+  # https://min.io/docs/minio/linux/administration/identity-access-management/policy-based-access-control.html#policy-document-structure
+  thanos-metrics-rw:
+    # https://docs.aws.amazon.com/AmazonS3/latest/userguide/example-policies-s3.html
+    Statement:
+      - Effect: Allow
+        Action: s3:ListBucket
+        Resource: arn:aws:s3:::metrics
+      - Effect: Allow
+        Action: s3:*
+        Resource: arn:aws:s3:::metrics/*
+      - Effect: Deny
+        Action: s3:*
+        NotResource:
+          - arn:aws:s3:::metrics
+          - arn:aws:s3:::metrics/*
 
 minio_users: # non-root
-  - access_key: erhhung
+  # name = access_key
+  erhhung:
     secret_key: "{{ minio_admin_pass }}"
     # https://min.io/docs/minio/linux/administration/identity-access-management/policy-based-access-control.html#built-in-policies
     # policies:
     #   - readwrite
+  thanos:
+    secret_key: "{{ minio_client_pass }}"
+    policies:
+      - thanos-metrics-rw
 
 minio_groups:
-  - name: admins
+  admins:
     members: # at least one user required
       - erhhung
     policies:
       - consoleAdmin
-
-minio_buckets:
-  - name: workouts
-    # https://min.io/docs/minio/linux/reference/minio-mc/mc-mb.html#parameters
-    # options:
-    #   - --with-versioning
 
 minio_host_names: # aliases of "homelab"
   - minio # console
@@ -30,11 +58,20 @@ minio_host_names: # aliases of "homelab"
 # https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_filters.html#products
 minio_fqdns: "{{ minio_host_names | product(search_domains) | map('join','.') }}"
 
+minio_console_fqdn: "{{ minio_fqdns[0] }}"
+minio_s3api_fqdn: "{{ minio_fqdns[1] }}"
+
 minio_tenant_name: homelab
 minio_pool_name: qnap-pool
 
 minio_operator_namespace: minio-operator
 minio_tenant_namespace: minio
+
+minio_secrets:
+  root: minio-creds-root
+  operator-ca: operator-ca-tls
+  tenant-ca: minio-ca-tls
+  ingress: minio-ingress-tls
 
 # https://min.io/docs/minio/kubernetes/upstream/operations/install-deploy-manage/deploy-operator-helm.html
 # https://min.io/docs/minio/kubernetes/upstream/operations/install-deploy-manage/deploy-minio-tenant-helm.html
@@ -42,7 +79,7 @@ minio_operator_chart_version: "7.1.0"
 minio_tenant_chart_version: "7.1.0"
 
 # https://github.com/minio/operator/tree/master/helm/operator
-# https://github.com/minio/operator/blob/master/helm/operator/values.yaml
+# https://github.com/minio/operator/tree/master/helm/operator/values.yaml
 # https://min.io/docs/minio/kubernetes/upstream/reference/operator-chart-values.html
 minio_operator_chart_values:
   operator:
@@ -51,11 +88,32 @@ minio_operator_chart_values:
     env:
       - name: SUBNET_BASE_URL
         value: ""
+
     resources:
       requests:
-        cpu: 50m
-        memory: 64Mi
+        cpu: 20m
+        memory: 32Mi
         ephemeral-storage: 50Mi
+      limits:
+        cpu: 50m
+        memory: 1Gi # accommodate memory surge during tenant provisioning
+
+    # inject trusted CA certs to resolve this error in the operator pod:
+    # Failed to get cluster health: certificate signed by unknown authority
+    # https://github.com/minio/operator/tree/master/docs/operator-tls.md
+    volumes:
+      - name: operator-tls
+        projected:
+          sources:
+            - secret:
+                name: "{{ minio_secrets['operator-ca'] }}"
+                items:
+                  - key: public.crt
+                    path: CAs/ca-0.crt
+          defaultMode: 420 # "0644"
+    volumeMounts:
+      - name: operator-tls
+        mountPath: /tmp/certs
 
 # https://github.com/minio/operator/tree/master/helm/tenant
 # https://github.com/minio/operator/tree/master/helm/tenant/values.yaml
@@ -72,6 +130,7 @@ minio_tenant_chart_values:
         volumesPerServer: 1
         size: 10Gi # per volume
         storageClassName: "{{ nfs_storage_class }}"
+
         affinity: # one pod per worker node per pool
           podAntiAffinity:
             requiredDuringSchedulingIgnoredDuringExecution:
@@ -84,22 +143,23 @@ minio_tenant_chart_values:
                         - "{{ minio_pool_name }}"
 
     features:
-      # requires wildcard subdomains on all domains in certificate
+      # wildcard subdomains are required
+      # on all these SANs in certificate
       bucketDNS: true
       domains:
         minio:
-          - "{{ minio_fqdns[1] }}"
+          - "{{ minio_s3api_fqdn }}"
           - minio.{{ minio_tenant_namespace }}.svc
           - minio.{{ minio_tenant_namespace }}.svc.cluster.local
           - "{{ minio_tenant_name }}-hl.{{ minio_tenant_namespace }}.svc.cluster.local"
-        console: "{{ minio_fqdns[0] }}"
+        console: "{{ minio_console_fqdn }}"
       enableSFTP: false
 
     # create secret defining MINIO_ROOT_USER and MINIO_ROOT_PASSWORD environment variables:
     # https://min.io/docs/minio/linux/reference/minio-server/settings/root-credentials.html
     # https://min.io/docs/minio/kubernetes/upstream/administration/identity-access-management/minio-user-management.html#minio-root-user
     configSecret:
-      name: minio-creds-root
+      name: "{{ minio_secrets['root'] }}"
       accessKey: root
       secretKey: "{{ minio_root_pass }}"
 
@@ -108,9 +168,9 @@ minio_tenant_chart_values:
     # THIS DOES NOT WORK
     users: |
       {% set users = [] %}
-      {% for user in minio_users %}
+      {% for name in minio_users.keys() %}
       {%   set _ = users.append({
-             'name': 'minio-creds-'~ user.access_key
+             'name': 'minio-creds-'~ name
            }) %}
       {% endfor %}
       {{ users  }}
@@ -119,9 +179,9 @@ minio_tenant_chart_values:
     # THIS DOES NOT WORK
     buckets: |
       {% set buckets = [] %}
-      {% for bucket in minio_buckets %}
+      {% for name in minio_buckets.keys() %}
       {%   set _ = buckets.append({
-             'name': bucket.name
+             'name': name
            }) %}
       {% endfor  %}
       {{ buckets }}
@@ -129,13 +189,13 @@ minio_tenant_chart_values:
     # https://min.io/docs/minio/kubernetes/upstream/operations/network-encryption.html
     # https://min.io/docs/minio/kubernetes/upstream/reference/operator-crd.html#localcertificatereference
     certificate:
-      requestAutoCert: false
       externalCaCertSecret:
-        - name: minio-ca-tls
-          type: kubernetes.io/tls
+        - name: "{{ minio_secrets['tenant-ca'] }}"
+          type: Opaque
       externalCertSecret:
-        - name: minio-ingress-tls
+        - name: "{{ minio_secrets['ingress'] }}"
           type: kubernetes.io/tls
+      requestAutoCert: false
 
     # these are default values: if true, service types will be
     # LoadBalancer, which we don't need since we use Ingresses
@@ -151,23 +211,24 @@ minio_tenant_chart_values:
     api:
       enabled: true
       tls:
-        - secretName: minio-ingress-tls
+        - secretName: "{{ minio_secrets['ingress'] }}"
           hosts:
-            - "{{ minio_fqdns[1] }}"
-            # allow bucket DNS feature
-            - "*.{{ minio_fqdns[1] }}"
+            - "{{ minio_s3api_fqdn }}"
+            # enable bucket DNS feature
+            - "*.{{ minio_s3api_fqdn }}"
       ingressClassName: "{{ rke_ingress_class }}"
       annotations: &ingress_annotations
         nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
         nginx.ingress.kubernetes.io/ssl-passthrough: "true"
-      # Helm template will also create
-      # rule for *.{{ minio_fqdns[1] }}
-      host: "{{ minio_fqdns[1] }}"
+      # Helm template will create a
+      # rule for wildcard subdomain
+      host: "{{ minio_s3api_fqdn }}"
+
     console:
       enabled: true
       tls:
-        - secretName: minio-ingress-tls
-          hosts: "{{ [minio_fqdns[0]] }}"
+        - secretName: "{{ minio_secrets['ingress'] }}"
+          hosts: "{{ [minio_console_fqdn] }}"
       ingressClassName: "{{ rke_ingress_class }}"
       annotations: *ingress_annotations
-      host: "{{ minio_fqdns[0] }}"
+      host: "{{ minio_console_fqdn }}"

@@ -1,6 +1,10 @@
+# fluent_os_pass: {vault.yml}
+
 logging_namespace: logging
 
-# fluent_os_pass: {vault.yml}
+logging_secrets:
+  credentials: fluent-credentials
+  plugin: fluent-plugin-tls
 
 fluent_operator_chart_version: "3.3.0"
 # https://github.com/fluent/helm-charts/tree/main/charts/fluent-operator
@@ -8,12 +12,21 @@ fluent_operator_chart_version: "3.3.0"
 fluent_operator_chart_values:
   containerRuntime: "{{ container_runtime }}"
 
+  operator:
+    enable: true
+
+    resources:
+      requests:
+        cpu: 50m
+        memory: 24Mi
+
   fluentbit:
     enable: true
     crdsEnable: true
+
     # https://doc.crds.dev/github.com/fluent/fluent-operator/fluentbit.fluent.io/FluentBit/v1alpha2#spec-secrets
     secrets:
-      - fluent-plugin-tls
+      - "{{ logging_secrets['plugin'] }}"
 
     input:
       tail:
@@ -26,19 +39,19 @@ fluent_operator_chart_values:
       opensearch:
         host: "{{ opensearch_chart_values.masterService }}.{{ opensearch_namespace }}.svc.cluster.local"
         tls:
-          caFile: /fluent-bit/secrets/fluent-plugin-tls/ca.crt
-          crtFile: /fluent-bit/secrets/fluent-plugin-tls/tls.crt
-          keyFile: /fluent-bit/secrets/fluent-plugin-tls/tls.key
+          crtFile: /fluent-bit/secrets/{{ logging_secrets['plugin'] }}/tls.crt
+          keyFile: /fluent-bit/secrets/{{ logging_secrets['plugin'] }}/tls.key
+          caFile: /fluent-bit/secrets/{{ logging_secrets['plugin'] }}/ca.crt
         httpUser:
           valueFrom:
             secretKeyRef:
-              name: fluent-passwords
-              key: fluent_opensearch_username
+              name: "{{ logging_secrets['credentials'] }}"
+              key: opensearch-username
         httpPassword:
           valueFrom:
             secretKeyRef:
-              name: fluent-passwords
-              key: fluent_opensearch_password
+              name: "{{ logging_secrets['credentials'] }}"
+              key: opensearch-password
         suppressTypeName: true # _type is deprecated in OpenSearch
     filter:
       multiline:

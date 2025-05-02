@@ -6,6 +6,7 @@
   vars_files: &vars_files
     - vars/basics.yml
     - vars/kubernetes.yml
+    - vars/storage.yml
     - vars/harbor.yml
   vars:
     kubeconfig: "{{ k3s_kubeconfig }}"
@@ -32,9 +33,9 @@
       vars:
         cert_desc: Harbor
         cert_file: harbor
-        secret_name: "{{ harbor_chart_values.expose.tls.secret.secretName }}"
+        secret_name: "{{ harbor_secrets['ingress'] }}"
         secret_ns: "{{ release_ns }}"
-      ansible.builtin.include_tasks: tasks/k8s/secrets/tls.yml
+      ansible.builtin.include_tasks: tasks/k8s/secrets/tls.pki.yml
 
     # https://github.com/goharbor/harbor-helm/tree/main
     - name: Install Harbor Helm chart

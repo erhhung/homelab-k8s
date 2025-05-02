@@ -138,6 +138,12 @@
         label: "{{ item.dest }}"
       changed_when: true
 
+- name: Debug basic Ansible/Jinja syntax
+  tags: syntax
+  hosts: localhost
+  gather_facts: false
+  tasks: []
+
 - name: Debug expressions and statements
   tags: exprs
   hosts: localhost
@@ -222,6 +228,22 @@
         hash: "{{ password | ansible.builtin.password_hash('bcrypt', salt=bcrypt_salt, rounds=bcrypt_rounds) }}"
       ansible.builtin.debug:
         var: hash
+
+    - name: Debug dict2items filter
+      vars:
+        users:
+          alice:
+            age: 18
+            email: alice@example.com
+          bob:
+            age: 21
+            email: bob@example.com
+      ansible.builtin.debug:
+        var: item
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/dict2items_filter.html
+      loop: "{{ users | ansible.builtin.dict2items(key_name='user', value_name='info') }}"
+      loop_control:
+        label: "{{ item.user }}"
 
 - name: Useful collection of tasks
   tags: tasks

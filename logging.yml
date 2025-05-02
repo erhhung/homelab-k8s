@@ -19,13 +19,12 @@
     kubeconfig: "{{ rke_kubeconfig }}"
     secret_ns: "{{ logging_namespace }}"
   tasks:
-    - name: Create Fluent passwords secret
+    - name: Create Fluent credentials secret
       vars:
-        opensearch: "{{ fluent_operator_chart_values.fluentbit.output.opensearch }}"
-        secret_name: "{{ opensearch.httpPassword.valueFrom.secretKeyRef.name }}"
+        secret_name: "{{ logging_secrets['credentials'] }}"
         secret_data:
-          fluent_opensearch_username: fluent
-          fluent_opensearch_password: "{{ fluent_os_pass }}"
+          opensearch-username: fluent
+          opensearch-password: "{{ fluent_os_pass }}"
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
       ansible.builtin.include_tasks: tasks/k8s/secrets/generic.yml
 
@@ -34,9 +33,9 @@
       vars:
         cert_desc: Fluent plugin
         cert_file: fluent
-        secret_name: "{{ fluent_operator_chart_values.fluentbit.secrets[0] }}"
+        secret_name: "{{ logging_secrets['plugin'] }}"
         create_ns: false
-      ansible.builtin.include_tasks: tasks/k8s/secrets/tls.yml
+      ansible.builtin.include_tasks: tasks/k8s/secrets/tls.pki.yml
 
     # https://github.com/fluent/helm-charts/tree/main/charts/fluent-operator
     - name: Install Fluent Operator Helm chart

@@ -8,6 +8,9 @@ kibana_host_name: kibana # alias of "homelab"
 # https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_filters.html#products
 kibana_fqdn: "{{ [kibana_host_name] | product(search_domains) | map('join','.') | first }}"
 
+dashboards_secrets:
+  ingress: dashboards-ingress-tls
+
 dashboards_chart_version: "2.28.0"
 # https://github.com/opensearch-project/helm-charts/tree/main/charts/opensearch-dashboards
 # https://github.com/opensearch-project/helm-charts/tree/main/charts/opensearch-dashboards/values.yaml
@@ -15,15 +18,15 @@ dashboards_chart_values:
   opensearchHosts: https://{{ opensearch_chart_values.masterService }}.{{ opensearch_namespace }}.svc:9200
 
   # opensearchAccount:
-  #   secret: opensearch-passwords
+  #   secret: "{{ opensearch_secrets['passwords'] }}"
   extraEnvs:
     - name: OPENSEARCH_USERNAME
       value: kibana
     - name: OPENSEARCH_PASSWORD
       valueFrom:
         secretKeyRef:
-          name: opensearch-passwords
-          key: kibana_opensearch_password
+          name: "{{ opensearch_secrets['passwords'] }}"
+          key: kibana
 
   config:
     # https://github.com/opensearch-project/OpenSearch-Dashboards/tree/main/config/opensearch_dashboards.yml
@@ -45,13 +48,13 @@ dashboards_chart_values:
         ssl: *ssl_cas
 
   secretMounts:
-    - name: tls
-      secretName: dashboards-tls
+    - name: ingress-tls
+      secretName: "{{ dashboards_secrets['ingress'] }}"
       path: /tls
 
   resources:
     requests:
-      cpu: 200m
+      cpu: 100m
       memory: 128Mi
     limits:
       cpu: 500m
@@ -60,7 +63,7 @@ dashboards_chart_values:
   ingress:
     enabled: true
     tls:
-      - secretName: dashboards-tls
+      - secretName: "{{ dashboards_secrets['ingress'] }}"
         hosts: "{{ [kibana_fqdn] }}"
     ingressClassName: "{{ rke_ingress_class }}"
     annotations:
@@ -70,6 +73,7 @@ dashboards_chart_values:
       - host: "{{ kibana_fqdn }}"
         paths:
           - path: /
+            pathType: Prefix
             backend:
               servicePort: http
 

@@ -135,6 +135,129 @@ listening() {
         }' | sort -n | uniq | cols
 }
 
+# check TCP port connectivity
+# usage: port <port> [host]
+# default host is localhost
+port() {
+  [ "$1" ] || {
+    cat <<EOT
+
+Check TCP port connectivity
+Usage: port <port> [host]
+Default host is localhost
+
+EOT
+    return 0
+  }
+  local port=$1 host=${2:-localhost}
+  if [ "${port-0}" -eq "${port-1}" ] 2> /dev/null; then
+    nc -zv -w1 "$host"  "$port" 2>&1 | \
+      head -n2 | tail -n1  | colrm 1 6
+  else
+    echo >&2 "Invalid port!"
+    return 1
+  fi
+}
+
+# show details of certificate chain from
+# stdin or from PEM file or from website
+cert() {
+  [ "$1" ] || {
+    cat <<EOT
+
+Show details of certificate chain from
+stdin or from PEM file or from website
+
+Usage: cert [file | host=. [port=443]]
+All args ignored if stdin is available
+
+cert < website.pem      # standard input
+cert   website.pem      # local PEM file
+cert   website.com      # website.com:443
+cert   website.com:8443 # website.com:8443
+cert   8443             # localhost:8443
+cert   .                # localhost:443
+
+EOT
+    return 0
+  }
+
+  local stdin host port args
+  if [ -p /dev/stdin ]; then
+    stdin=$(cat)
+  else
+    host=${1:-localhost}
+    [ "$host" == . ] && host=localhost
+    port=${2:-443}
+
+    # handle host:port syntax
+    [[ "$host" == *:* ]] && {
+      port=${host#*:}
+      host=${host%%:*}
+    }
+    # handle if only port number given
+    if [ "${host-0}" -eq "${host-1}" ] 2> /dev/null; then
+      port=$host
+      host=localhost
+    fi
+    # use proxy for s_client if needed
+    [ "$http_proxy" ] && args+=(-proxy
+      $(cut -d/ -f3- <<< "$http_proxy")
+    )
+  fi
+
+  local cert="" line
+  while read -r line; do
+    # concatenate lines in each cert block
+    # until ";" delimiter from awk command
+    if [ "$line" == ';' ]; then
+      echo; echo -n "$cert" | \
+        openssl x509 -text -inform pem -noout
+      cert=""
+    else
+      cert+="$line"$'\n'
+    fi
+  done < <(
+    if [ "$stdin" ]; then
+      # certs from stdin
+      echo "$stdin"
+    elif [ -f "$host" ]; then
+      # certs from file
+      cat "$host"
+    else
+      # certs from host
+      args=(
+        s_client "${args[@]}"
+        -connect "$host:$port"
+        -showcerts
+      )
+      openssl "${args[@]}" <<< ""
+    fi 2> /dev/null | \
+      awk '
+      /-----BEGIN CERTIFICATE-----/,
+        /-----END CERTIFICATE-----/
+      ' | \
+      awk 'BEGIN {
+        cert=""
+        }
+        /-----BEGIN CERTIFICATE-----/ {
+          cert=$0
+          next
+        }
+        /-----END CERTIFICATE-----/ {
+          # output ";" as delimiter
+          # between each cert block
+          cert=cert"\n"$0"\n;"
+          print cert
+          cert=""
+          next
+        } {
+          cert=cert"\n"$0
+        }'
+  )
+  echo
+}
+
 # show system information
 # https://github.com/fastfetch-cli/fastfetch
 _fastfetch() {

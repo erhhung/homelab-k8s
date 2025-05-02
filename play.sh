@@ -36,12 +36,11 @@ ansible-galaxy install -r roles/requirements.yml
 args=("$@")
 
 [[ "${args[*]}" == *.yml* ]] || {
-  # check if last argument is "tag-"
-  if [[ "${args[-1]}" == *- ]]; then
+  # check if last arg is tag-
+  last=$(( ${#args[@]} -1 ))
 
-    start="${args[-1]%?}"
-    # remove last arg--to be replaced
-    args=("${args[@]:0:${#args[@]}-1}")
+  if [[ $last -ge 0 && "${args[last]}" == *- ]]; then
+    start="${args[last]%?}" args=("${args[@]::last}")
 
     # create sliced version of main.yml
     START=$start yq '. as $d | .[] | select(.tags == env(START))

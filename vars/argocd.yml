@@ -9,6 +9,12 @@ argocd_host_name: argocd # alias of "homelab"
 # https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_filters.html#products
 argocd_fqdn: "{{ [argocd_host_name] | product(search_domains) | map('join','.') | first }}"
 
+argocd_secrets:
+  # secret name "argocd-server-tls" is hardcoded and expected:
+  # https://argo-cd.readthedocs.io/en/stable/operator-manual/tls/#tls-certificates-used-by-argocd-server
+  # https://github.com/argoproj/argo-helm/tree/main/charts/argo-cd/templates/argocd-configs/argocd-server-tls-secret.yaml
+  server: argocd-server-tls
+
 argocd_chart_version: "7.8.12"
 # https://github.com/argoproj/argo-helm/tree/main/charts/argo-cd
 # https://github.com/argoproj/argo-helm/tree/main/charts/argo-cd/values.yaml

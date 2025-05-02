@@ -206,11 +206,61 @@
   vars:
     # required kubernetes>=24.2 package only in user virtualenv
     ansible_python_interpreter: "{{ venv_python_interpreter }}"
-
     kubeconfig: "{{ rke_kubeconfig }}"
-    secret_ns: "{{ minio_tenant_namespace }}"
-    create_ns: false
   tasks:
+    - name: Create MinIO ingress secret
+      vars:
+        cert_desc: MinIO ingress
+        cert_file: minio
+        secret_name: "{{ minio_secrets['ingress'] }}"
+        secret_ns: "{{ minio_tenant_namespace }}"
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
+      ansible.builtin.include_tasks: tasks/k8s/secrets/tls.pki.yml
+      # sets pem_chain fact
+
+    - name: Set ca_certs fact from pem_chain
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/set_fact_module.html
+      ansible.builtin.set_fact:
+        # pem_chain fact set by tasks/k8s/secrets/tls.pki.yml
+        # above contains both intermediate and root CA certs
+        ca_certs: "{{ pem_chain[1:] | join('\n') }}"
+
+    - name: Create MinIO CA certs secret
+      vars:
+        secret_name: "{{ item.name }}"
+        secret_data:
+          # must use name "public.crt"
+          public.crt: "{{ ca_certs }}"
+        secret_ns: "{{ item.namespace }}"
+        create_ns: "{{ item.namespace != minio_tenant_namespace }}"
+      ansible.builtin.include_tasks: tasks/k8s/secrets/generic.yml
+      loop:
+        - name: "{{ minio_secrets['operator-ca'] }}"
+          namespace: "{{ minio_operator_namespace }}"
+        - name: "{{ minio_secrets['tenant-ca'] }}"
+          namespace: "{{ minio_tenant_namespace }}"
+      loop_control:
+        label: "{{ item.name }}"
+
+    # NOTE: these secrets do not appear to be used
+    # by references in TenantSpec.users because no
+    # users get created--we do it explicitly using
+    # mc in the next play
+    # https://min.io/docs/minio/kubernetes/upstream/reference/operator-crd.html#tenantspec
+    - name: Create MinIO user credentials
+      vars:
+        secret_name: minio-creds-{{ item.key }}
+        secret_data:
+          CONSOLE_ACCESS_KEY: "{{ item.key }}"
+          CONSOLE_SECRET_KEY: "{{ item.value.secret_key }}"
+        secret_ns: "{{ minio_tenant_namespace }}"
+        create_ns: false
+      ansible.builtin.include_tasks: tasks/k8s/secrets/generic.yml
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/dict2items_filter.html
+      loop: "{{ minio_users | ansible.builtin.dict2items }}"
+      loop_control:
+        label: "{{ item.key }}"
+
     # https://min.io/docs/minio/kubernetes/upstream/operations/install-deploy-manage/deploy-operator-helm.html
     - name: Install MinIO Operator Helm chart
       kubernetes.core.helm:
@@ -220,47 +270,9 @@
         chart_version: "{{ minio_operator_chart_version }}"
         release_name: operator
         release_namespace: "{{ minio_operator_namespace }}"
-        create_namespace: true
         release_values: "{{ minio_operator_chart_values }}"
         atomic: true
       timeout: 300
-
-    - name: Create MinIO ingress secret
-      vars:
-        cert_desc: MinIO ingress
-        cert_file: minio
-        secret_name: "{{ minio_tenant_chart_values.ingress.api.tls[0].secretName }}"
-        create_ns: true
-      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
-      ansible.builtin.include_tasks: tasks/k8s/secrets/tls.yml
-      # sets pem_chain fact
-
-    - name: Create MinIO CA certs secret
-      vars:
-        secret_type: tls
-        secret_name: "{{ minio_tenant_chart_values.tenant.certificate.externalCaCertSecret[0].name }}"
-        secret_data:
-          # pem_chain fact set by tasks/k8s/secrets/tls.yml
-          # above contains both intermediate & root CA certs
-          tls.crt: "{{ pem_chain[1:] | join('\n') }}"
-          tls.key: "" # N/A but required by type tls
-      ansible.builtin.include_tasks: tasks/k8s/secrets/generic.yml
-
-    # NOTE: these secrets do not appear to be used
-    # by references in TenantSpec.users because no
-    # users get created--we do it explicitly using
-    # mc in the next play
-    # https://min.io/docs/minio/kubernetes/upstream/reference/operator-crd.html#tenantspec
-    - name: Create MinIO user credentials
-      vars:
-        secret_name: minio-creds-{{ item.access_key }}
-        secret_data:
-          CONSOLE_ACCESS_KEY: "{{ item.access_key }}"
-          CONSOLE_SECRET_KEY: "{{ item.secret_key }}"
-      ansible.builtin.include_tasks: tasks/k8s/secrets/generic.yml
-      loop: "{{ minio_users }}"
-      loop_control:
-        label: "{{ item.access_key }}"
 
     # https://min.io/docs/minio/kubernetes/upstream/operations/install-deploy-manage/deploy-minio-tenant.html
     # https://min.io/docs/minio/kubernetes/upstream/operations/install-deploy-manage/deploy-minio-tenant-helm.html
@@ -279,16 +291,16 @@
     - name: Wait until MinIO tenant is ready
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/uri_module.html
       ansible.builtin.uri:
-        url: https://{{ minio_fqdns[1] }}/
+        url: https://{{ minio_s3api_fqdn }}/
         status_code: [403]
       # https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_loops.html#retrying-a-task-until-a-condition-is-met
       register: tenant_check
       until: tenant_check.status == 403
-      retries: 30
-      delay: 2
+      retries: 24
+      delay: 5
   any_errors_fatal: true
 
-- name: Create MinIO users/groups/buckets
+- name: Create MinIO buckets/users/groups
   tags: buckets
   hosts: cluster
   gather_facts: false
@@ -334,9 +346,9 @@
         mkdir "$MC_CONFIG_DIR"
 
         mc config host add local \
-          https://{{ minio_fqdns[1] }} \
-             {{ root_user.accessKey }} \
-            '{{ root_user.secretKey }}'
+          https://{{ minio_s3api_fqdn }} \
+               {{ root_user.accessKey }} \
+              '{{ root_user.secretKey }}'
       args:
         executable: /bin/bash
       register: config_mc
@@ -345,7 +357,7 @@
         config_mc.rc != 0 and
         config_mc.rc != 9
 
-    - name: Create users/groups/buckets
+    - name: Create buckets/users/groups
       # mc is installed on all hosts
       # but run commands on just one
       when: inventory_hostname == rke_control_plane_host
@@ -354,23 +366,57 @@
         . ~/.bash_aliases
         set -o pipefail
 
+        # get list of existing buckets:
+        # https://min.io/docs/minio/linux/reference/minio-mc/mc-ls.html
+        buckets="$(mc ls local --json | jq -r .key)"
+        {% for name, bucket in minio_buckets.items() %}
+
+        grep -q "^{{ name }}/$" <<< "$buckets" || {
+          # https://min.io/docs/minio/linux/reference/minio-mc/mc-mb.html
+          mc mb {{ bucket.options | join(' ') if
+                   bucket.options is defined and
+                   bucket.options }} \
+            local/{{ name }}
+          rc=0
+        }
+        {% endfor %}
+
+        # get list of existing policies:
+        # https://min.io/docs/minio/linux/reference/minio-mc-admin/mc-admin-policy-list.html
+        policies="$(mc admin policy ls local --json | jq -r .policy)"
+        {% for name, policy in minio_policies.items() %}
+
+        grep -q "^{{ name }}$" <<< "$policies" || {
+          {% set doc = {
+               'Version':  '2012-10-17',
+               'Statement': policy.Statement
+             } %}
+          # https://min.io/docs/minio/linux/reference/minio-mc-admin/mc-admin-policy-create.html
+          # only takes path to JSON file
+          mc admin policy create local \
+              {{ name }} <(cat <<'EOF'
+        {{ doc | to_json }}
+        EOF
+          )
+          rc=0
+        }
+        {% endfor %}
+
         # get list of existing users:
         # https://min.io/docs/minio/linux/reference/minio-mc-admin/mc-admin-user-list.html
         users="$(mc admin user ls local --json | jq -r .accessKey)"
-        {% for user in minio_users %}
+        {% for access_key, user in minio_users.items() %}
 
-        grep -q "^{{ user.access_key }}$" <<< "$users" || {
+        grep -q "^{{ access_key }}$" <<< "$users" || {
           # https://min.io/docs/minio/linux/reference/minio-mc-admin/mc-admin-user-add.html
-          mc admin user add local   \
-              {{ user.access_key }} \
-             '{{ user.secret_key }}'
+          mc admin user add local {{ access_key }} '{{ user.secret_key }}'
           rc=0
 
           {% if user.policies is defined and user.policies %}
           # https://min.io/docs/minio/linux/reference/minio-mc-admin/mc-admin-policy-attach.html
           mc admin policy attach local       \
              {{ user.policies | join(' ') }} \
-              --user {{ user.access_key }}
+              --user {{ access_key }}
           {% endif %}
         }
         {% endfor %}
@@ -378,37 +424,21 @@
         # get list of existing groups:
         # https://min.io/docs/minio/linux/reference/minio-mc-admin/mc-admin-group.html#mc.admin.group.ls
         groups="$(mc admin group ls local --json | jq -r .groups[])"
-        {% for group in minio_groups %}
+        {% for name, group in minio_groups.items() %}
 
-        grep -q "^{{ group.name }}$" <<< "$groups" || {
+        grep -q "^{{ name }}$" <<< "$groups" || {
           # cannot create a group with no members, so
           # must create after users have been created:
           # https://min.io/docs/minio/linux/reference/minio-mc-admin/mc-admin-group.html#mc.admin.group.add
-          mc admin group add local \
-              {{ group.name }}     \
+          mc admin group add local {{ name }} \
               {{ group.members | join(' ') }}
           rc=0
 
           {% if group.policies is defined and group.policies %}
           mc admin policy attach local        \
              {{ group.policies | join(' ') }} \
-              --group {{ group.name }}
+              --group {{ name }}
           {% endif %}
-        }
-        {% endfor %}
-
-        # get list of existing buckets:
-        # https://min.io/docs/minio/linux/reference/minio-mc/mc-ls.html
-        buckets="$(mc ls local --json | jq -r .key)"
-        {% for bucket in minio_buckets %}
-
-        grep -q "^{{ bucket.name }}/$" <<< "$buckets" || {
-          # https://min.io/docs/minio/linux/reference/minio-mc/mc-mb.html
-          mc mb   {{ bucket.options | join(' ') if
-                     bucket.options is defined and
-                     bucket.options }} \
-            local/{{ bucket.name }}
-          rc=0
         }
         {% endfor %}
         exit ${rc-9}
