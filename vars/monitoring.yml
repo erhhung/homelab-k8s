@@ -1,7 +1,8 @@
 # grafana_admin_pass: {vault.yml}
 
 monitoring_namespace: monitoring
-monitoring_stack_name: prometheus-stack
+monitoring_release_name: prometheus-stack
+
 # aliases of "homelab"
 monitoring_host_names:
   prometheus:
@@ -10,8 +11,8 @@ monitoring_host_names:
   thanos:
     - thanos
   alertmanager:
-    - alertmanager
     - alerts
+    - alertmanager
   grafana:
     - grafana
     - monitoring
@@ -29,10 +30,13 @@ monitoring_fqdns: |
   {{ fqdns }}
 
 monitoring_secrets:
-  etcd: monitoring-etcd-tls
-  client: monitoring-client-tls
-  ingress: monitoring-ingress-tls
   credentials: monitoring-credentials
+  prometheus: monitoring-prometheus-tls
+  thanos: monitoring-thanos-tls
+  alertmanager: monitoring-alertmanager-tls
+  grafana: monitoring-grafana-tls
+  scraper: monitoring-scraper-tls
+  etcd: monitoring-etcd-tls
 
 prometheus_stack_chart_version: "70.8.0"
 # https://github.com/prometheus-community/helm-charts/tree/main/charts/kube-prometheus-stack
@@ -42,7 +46,7 @@ prometheus_stack_chart_values:
   # NOTE: if changing the stack/release name and re-installing the Helm release,
   # be sure to manually delete the "<stack_name>-kubelet" service in kube-system
   # namespace, or else "found duplicate series for the match group" error occurs
-  nameOverride: "{{ monitoring_stack_name }}"
+  nameOverride: "{{ monitoring_release_name }}"
 
   # https://github.com/prometheus-community/helm-charts/tree/main/charts/kube-prometheus-stack/charts/crds
   crds:
@@ -136,50 +140,51 @@ prometheus_stack_chart_values:
       web: # PrometheusWebSpec
         # WebTLSConfig (web server certificate):
         # https://github.com/prometheus-operator/prometheus-operator/tree/main/Documentation/api-reference/api.md#webtlsconfig
-        tlsConfig: &web_tls
+        tlsConfig:
           # IMPORTANT! file-based configs using certFile/keyFile/clientCAFile
           # do NOT work--they yield an invalid pod volume SecretVolumeSource
           # for "web-config-tls-secret-key-*" that has no "secretName" field
 
           cert: # SecretOrConfigMap
             secret: # SecretKeySelector
-              name: "{{ monitoring_secrets['ingress'] }}"
+              name: "{{ monitoring_secrets['prometheus'] }}"
               key: tls.crt
           # certFile: /tls/server/tls.crt
           keySecret: # SecretKeySelector
-            name: "{{ monitoring_secrets['ingress'] }}"
+            name: "{{ monitoring_secrets['prometheus'] }}"
             key: tls.key
           # keyFile: /tls/server/tls.key
           client_ca: # SecretOrConfigMap
             secret:
-              name: "{{ monitoring_secrets['ingress'] }}"
+              name: "{{ monitoring_secrets['prometheus'] }}"
               key: ca.crt
           # clientCAFile: /tls/server/ca.crt
           # https://pkg.go.dev/crypto/tls#ClientAuthType
           clientAuthType: RequestClientCert
 
       volumes:
-        # provide Thanos gRPC server cert
-        - name: tls-server
+        - name: tls-alerts
           secret:
-            secretName: "{{ monitoring_secrets['ingress'] }}"
-        # provide Thanos CA certs so it can
-        # verify MinIO's server certificate
-        - name: tls-client
+            secretName: "{{ monitoring_secrets['prometheus'] }}"
+        - name: tls-scraper
           secret:
-            secretName: "{{ monitoring_secrets['client'] }}"
-        # allow Prometheus to scrape etcd
-        - name: tls-etcd
+            secretName: "{{ monitoring_secrets['scraper'] }}"
+        - name: tls-etcd # scraper
           secret:
             secretName: "{{ monitoring_secrets['etcd'] }}"
+        # provide Thanos certs for gRPC server and
+        # for verifying MinIO's server certificate
+        - name: tls-thanos
+          secret:
+            secretName: "{{ monitoring_secrets['thanos'] }}"
 
       # mounts for all containers except "thanos-sidecar"
       volumeMounts:
-        - name: tls-server
-          mountPath: /tls/server
+        - name: tls-alerts
+          mountPath: /tls/alerts
           readOnly: true
-        - name: tls-client
-          mountPath: /tls/client
+        - name: tls-scraper
+          mountPath: /tls/scraper
           readOnly: true
         - name: tls-etcd
           mountPath: /tls/etcd
@@ -196,11 +201,8 @@ prometheus_stack_chart_values:
         # operator-generated "thanos-sidecar"
         - name: thanos-sidecar
           volumeMounts:
-            - name: tls-server
-              mountPath: /tls/server
-              readOnly: true
-            - name: tls-client
-              mountPath: /tls/client
+            - name: tls-thanos
+              mountPath: /tls/thanos
               readOnly: true
 
       # https://github.com/prometheus-operator/prometheus-operator/tree/main/Documentation/api-reference/api.md#thanosspec
@@ -208,9 +210,9 @@ prometheus_stack_chart_values:
         grpcServerTlsConfig:
           # https://github.com/prometheus-operator/prometheus-operator/tree/main/Documentation/api-reference/api.md#tlsconfig
           # only certFile, keyFile, caFile are supported
-          certFile: /tls/server/tls.crt
-          keyFile: /tls/server/tls.key
-          caFile: /tls/server/ca.crt
+          certFile: /tls/thanos/tls.crt
+          keyFile: /tls/thanos/tls.key
+          caFile: /tls/thanos/ca.crt
           insecureSkipVerify: true
 
         objectStorageConfig:
@@ -229,22 +231,22 @@ prometheus_stack_chart_values:
               http_config:
                 tls_config:
                   # mounted by patched container
-                  cert_file: /tls/client/tls.crt
-                  key_file: /tls/client/tls.key
-                  ca_file: /tls/client/ca.crt
+                  cert_file: /tls/thanos/tls.crt
+                  key_file: /tls/thanos/tls.key
+                  ca_file: /tls/thanos/ca.crt
                   # insecure_skip_verify: true
 
       # https://github.com/prometheus-operator/prometheus-operator/tree/main/Documentation/api-reference/api.md#alertmanagerendpoints
       alertingEndpoints: # AlertmanagerEndpoints[]
-        - name: "{{ monitoring_stack_name }}-alertmanager"
+        - name: "{{ monitoring_release_name }}-alertmanager"
           port: http-web
           scheme: https
           pathPrefix: /
           enableHttp2: true
           tlsConfig:
-            certFile: /tls/client/tls.crt
-            keyFile: /tls/client/tls.key
-            caFile: /tls/client/ca.crt
+            certFile: /tls/alerts/tls.crt
+            keyFile: /tls/alerts/tls.key
+            caFile: /tls/alerts/ca.crt
             # must skip certificate verification here because
             # the Prometheus notifier component fails to send
             # alerts to Alertmanager due to failure to verify
@@ -261,7 +263,7 @@ prometheus_stack_chart_values:
     ingress:
       enabled: true
       tls:
-        - secretName: "{{ monitoring_secrets['ingress'] }}"
+        - secretName: "{{ monitoring_secrets['prometheus'] }}"
           hosts: "{{ monitoring_fqdns['prometheus'] }}"
       ingressClassName: "{{ rke_ingress_class }}"
       annotations:
@@ -277,17 +279,17 @@ prometheus_stack_chart_values:
 
       # TLSConfig (mTLS client certificate):
       # https://github.com/prometheus-operator/prometheus-operator/tree/main/Documentation/api-reference/api.md#tlsconfig
-      tlsConfig: &safe_tls
+      tlsConfig: &scraper_tls
         cert: # SecretOrConfigMap
           secret:
-            name: "{{ monitoring_secrets['client'] }}"
+            name: "{{ monitoring_secrets['scraper'] }}"
             key: tls.crt
         keySecret: # SecretKeySelector
-          name: "{{ monitoring_secrets['client'] }}"
+          name: "{{ monitoring_secrets['scraper'] }}"
           key: tls.key
         ca: # SecretOrConfigMap
           secret:
-            name: "{{ monitoring_secrets['client'] }}"
+            name: "{{ monitoring_secrets['scraper'] }}"
             key: ca.crt
         insecureSkipVerify: true
 
@@ -302,7 +304,7 @@ prometheus_stack_chart_values:
     thanosIngress:
       enabled: true
       tls:
-        - secretName: "{{ monitoring_secrets['ingress'] }}"
+        - secretName: "{{ monitoring_secrets['thanos'] }}"
           hosts: "{{ monitoring_fqdns['thanos'] }}"
       ingressClassName: "{{ rke_ingress_class }}"
       annotations:
@@ -314,7 +316,7 @@ prometheus_stack_chart_values:
     thanosServiceMonitor:
       enabled: true
       scheme: https
-      tlsConfig: *safe_tls
+      tlsConfig: *scraper_tls
 
   # best to keep rules on Prometheus itself:
   # https://thanos.io/tip/components/rule.md
@@ -364,12 +366,25 @@ prometheus_stack_chart_values:
       web: # AlertmanagerWebSpec
         # WebTLSConfig (web server certificate):
         # https://github.com/prometheus-operator/prometheus-operator/tree/main/Documentation/api-reference/api.md#webtlsconfig
-        tlsConfig: *web_tls
+        tlsConfig: &alerts_tls
+          cert: # SecretOrConfigMap
+            secret: # SecretKeySelector
+              name: "{{ monitoring_secrets['alertmanager'] }}"
+              key: tls.crt
+          keySecret: # SecretKeySelector
+            name: "{{ monitoring_secrets['alertmanager'] }}"
+            key: tls.key
+          client_ca: # SecretOrConfigMap
+            secret:
+              name: "{{ monitoring_secrets['alertmanager'] }}"
+              key: ca.crt
+          # https://pkg.go.dev/crypto/tls#ClientAuthType
+          clientAuthType: RequestClientCert
 
       # https://github.com/prometheus-operator/prometheus-operator/blob/main/Documentation/api-reference/api.md#clustertlsconfig
       clusterTLS: # ClusterTLSConfig
-        server: *web_tls # WebTLSConfig
-        client: *safe_tls # SafeTLSConfig
+        server: *alerts_tls #  WebTLSConfig
+        client: *alerts_tls # SafeTLSConfig
 
       # inject additional containers, e.g. adding
       # an authentication proxy like oauth2-proxy
@@ -382,7 +397,7 @@ prometheus_stack_chart_values:
     ingress:
       enabled: true
       tls:
-        - secretName: "{{ monitoring_secrets['ingress'] }}"
+        - secretName: "{{ monitoring_secrets['alertmanager'] }}"
           hosts: "{{ monitoring_fqdns['alertmanager'] }}"
       ingressClassName: "{{ rke_ingress_class }}"
       annotations:
@@ -395,7 +410,7 @@ prometheus_stack_chart_values:
     serviceMonitor:
       selfMonitor: true
       scheme: https
-      tlsConfig: *safe_tls
+      tlsConfig: *scraper_tls
 
   # ======================================== Grafana ========================================
   #
@@ -466,7 +481,7 @@ prometheus_stack_chart_values:
       - name: Prometheus
         type: prometheus
         uid: prometheus
-        url: https://{{ monitoring_stack_name }}-prometheus.{{ monitoring_namespace }}.svc.cluster.local:9090/
+        url: https://{{ monitoring_release_name }}-prometheus.{{ monitoring_namespace }}.svc.cluster.local:9090/
         access: proxy
         jsonData:
           tlsAuthWithCACert: true
@@ -478,7 +493,7 @@ prometheus_stack_chart_values:
       - name: Alertmanager
         type: alertmanager
         uid: alertmanager
-        url: https://{{ monitoring_stack_name }}-alertmanager.{{ monitoring_namespace }}.svc.cluster.local:9093/
+        url: https://{{ monitoring_release_name }}-alertmanager.{{ monitoring_namespace }}.svc.cluster.local:9093/
         access: proxy
         jsonData:
           tlsAuthWithCACert: true
@@ -496,11 +511,17 @@ prometheus_stack_chart_values:
     ingress:
       enabled: true
       tls:
-        - secretName: "{{ monitoring_secrets['ingress'] }}"
+        - secretName: "{{ monitoring_secrets['grafana'] }}"
           hosts: "{{ monitoring_fqdns['grafana'] }}"
       ingressClassName: "{{ rke_ingress_class }}"
       annotations:
         nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+        # nginx.ingress.kubernetes.io/server-snippet: |
+        #   if ($host !~* ^({{ monitoring_host_names['grafana'] | join('|') }})\.) {
+        #     # send Misdirected Request response
+        #     # (result of connection coalescing)
+        #     return 421;
+        #   }
       hosts: "{{ monitoring_fqdns['grafana'] }}"
       path: /
       pathType: Prefix
@@ -508,7 +529,7 @@ prometheus_stack_chart_values:
     serviceMonitor:
       enabled: true
       scheme: https
-      tlsConfig: *safe_tls
+      tlsConfig: *scraper_tls
 
   # =================================== kube-state-metrics ===================================
   #
@@ -531,9 +552,9 @@ prometheus_stack_chart_values:
     volumes:
       # volume to be mounted in
       # kube-rbac-proxy sidecar
-      - name: tls-server
+      - name: tls-proxy
         secret:
-          secretName: "{{ monitoring_secrets['ingress'] }}"
+          secretName: "{{ monitoring_secrets['prometheus'] }}"
 
     # https://github.com/brancz/kube-rbac-proxy#usage
     kubeRBACProxy:
@@ -543,21 +564,21 @@ prometheus_stack_chart_values:
       enabled: false
 
       volumeMounts:
-        - name: tls-server
-          mountPath: /tls/server
+        - name: tls-proxy
+          mountPath: /tls/proxy
           readOnly: true
 
       extraArgs:
-        - --tls-cert-file=/tls/server/tls.crt
-        - --tls-private-key-file=/tls/server/tls.key
-        - --client-ca-file=/tls/server/ca.crt
+        - --tls-cert-file=/tls/proxy/tls.crt
+        - --tls-private-key-file=/tls/proxy/tls.key
+        - --client-ca-file=/tls/proxy/ca.crt
 
     prometheus:
       monitor:
         enabled: true
-        scheme: https
-        enableHttp2: true
-        tlsConfig: *safe_tls
+        # scheme: https
+        # enableHttp2: true
+        # tlsConfig: *scraper_tls
 
     collectors:
       - certificatesigningrequests
@@ -620,31 +641,31 @@ prometheus_stack_chart_values:
         memory: 32Mi
 
     extraVolumes:
-      - name: tls-server
+      - name: tls-proxy
         secret:
-          secretName: "{{ monitoring_secrets['ingress'] }}"
+          secretName: "{{ monitoring_secrets['prometheus'] }}"
 
     # https://github.com/brancz/kube-rbac-proxy#usage
     kubeRBACProxy:
       enabled: true
 
       extraVolumeMounts:
-        - name: tls-server
-          mountPath: /tls/server
+        - name: tls-proxy
+          mountPath: /tls/proxy
           readOnly: true
 
       extraArgs:
         # default args already specify --config-file, but mounted
         # ConfigMap will be overridden by ".extraManifests" below
-        - --tls-cert-file=/tls/server/tls.crt
-        - --tls-private-key-file=/tls/server/tls.key
-        - --client-ca-file=/tls/server/ca.crt
+        - --tls-cert-file=/tls/proxy/tls.crt
+        - --tls-private-key-file=/tls/proxy/tls.key
+        - --client-ca-file=/tls/proxy/ca.crt
 
     prometheus:
       monitor:
         enabled: true
         scheme: https
-        tlsConfig: *safe_tls
+        tlsConfig: *scraper_tls
 
   # ======================================== Exporters =======================================
   #
@@ -716,14 +737,13 @@ prometheus_stack_chart_values:
         # only allows the client cert holder to access the /metrics endpoint:
         # https://github.com/prometheus-community/helm-charts/tree/main/charts/prometheus-node-exporter/templates/rbac-configmap.yaml
         # https://github.com/brancz/kube-rbac-proxy/tree/master/examples/static-auth
-        name: "{{ monitoring_stack_name }}-prometheus-node-exporter-rbac-config"
+        name: "{{ monitoring_release_name }}-prometheus-node-exporter-rbac-config"
       data:
         config-file.yaml: |+
           authorization:
             static:
-              - user:
-                  # client cert CN
-                  name: monitoring
+              - user: # cert CN
+                  name: scraper
                 verb: get
                 resourceRequest: false
                 path: /metrics
