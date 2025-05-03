@@ -210,12 +210,21 @@
   tasks:
     - name: Create MinIO ingress secret
       vars:
-        cert_desc: MinIO ingress
-        cert_file: minio
-        secret_name: "{{ minio_secrets['ingress'] }}"
+        cert_desc: MinIO {{ item.desc }} ingress
+        cert_file: "{{ item.file }}"
+        secret_name: "{{ item.name }}"
         secret_ns: "{{ minio_tenant_namespace }}"
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
       ansible.builtin.include_tasks: tasks/k8s/secrets/tls.pki.yml
+      loop:
+        - name: "{{ minio_secrets['console'] }}"
+          desc: console
+          file: minio
+        - name: "{{ minio_secrets['s3api'] }}"
+          desc: S3
+          file: s3
+      loop_control:
+        label: "{{ item.desc }}"
       # sets pem_chain fact
 
     - name: Set ca_certs fact from pem_chain

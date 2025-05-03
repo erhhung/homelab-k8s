@@ -4,8 +4,7 @@
 
 minio_buckets:
   # bucket for Thanos to store metrics
-  metrics:
-    {}
+  metrics: {}
     # https://min.io/docs/minio/linux/reference/minio-mc/mc-mb.html#parameters
     # options:
     #   - --with-versioning
@@ -71,7 +70,8 @@ minio_secrets:
   root: minio-creds-root
   operator-ca: operator-ca-tls
   tenant-ca: minio-ca-tls
-  ingress: minio-ingress-tls
+  console: minio-console-tls
+  s3api: minio-s3-tls
 
 # https://min.io/docs/minio/kubernetes/upstream/operations/install-deploy-manage/deploy-operator-helm.html
 # https://min.io/docs/minio/kubernetes/upstream/operations/install-deploy-manage/deploy-minio-tenant-helm.html
@@ -193,7 +193,7 @@ minio_tenant_chart_values:
         - name: "{{ minio_secrets['tenant-ca'] }}"
           type: Opaque
       externalCertSecret:
-        - name: "{{ minio_secrets['ingress'] }}"
+        - name: "{{ minio_secrets['s3api'] }}"
           type: kubernetes.io/tls
       requestAutoCert: false
 
@@ -211,7 +211,7 @@ minio_tenant_chart_values:
     api:
       enabled: true
       tls:
-        - secretName: "{{ minio_secrets['ingress'] }}"
+        - secretName: "{{ minio_secrets['s3api'] }}"
           hosts:
             - "{{ minio_s3api_fqdn }}"
             # enable bucket DNS feature
@@ -227,7 +227,7 @@ minio_tenant_chart_values:
     console:
       enabled: true
       tls:
-        - secretName: "{{ minio_secrets['ingress'] }}"
+        - secretName: "{{ minio_secrets['console'] }}"
           hosts: "{{ [minio_console_fqdn] }}"
       ingressClassName: "{{ rke_ingress_class }}"
       annotations: *ingress_annotations

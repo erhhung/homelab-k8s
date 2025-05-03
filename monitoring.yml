@@ -18,6 +18,18 @@
     kubeconfig: "{{ rke_kubeconfig }}"
     secret_ns: "{{ monitoring_namespace }}"
     create_ns: false
+  pre_tasks:
+    # determine whether to create the node exporter
+    # RBAC config before installing the Helm chart
+    - name: Is Helm chart already installed?
+      # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/helm_info_module.html
+      kubernetes.core.helm_info:
+        kubeconfig: "{{ kubeconfig }}"
+        release_name: "{{ monitoring_release_name }}"
+        release_namespace: "{{ monitoring_namespace }}"
+        release_state:
+          - deployed
+      register: helm_info
   tasks:
     # client certs for etcd ServiceMonitor
     # (turns out not needed as the metrics
@@ -31,18 +43,33 @@
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
       ansible.builtin.include_tasks: tasks/k8s/secrets/tls.rke.yml
 
-    - name: Create monitoring client secret
-      vars:
-        cert_desc: monitoring client
-        cert_file: monitoring_mtls
-        secret_name: "{{ monitoring_secrets['client'] }}"
-      ansible.builtin.include_tasks: tasks/k8s/secrets/tls.pki.yml
-
     - name: Create monitoring ingress secret
       vars:
-        cert_desc: monitoring ingress
-        cert_file: monitoring
-        secret_name: "{{ monitoring_secrets['ingress'] }}"
+        cert_desc: "{{ item.desc }} ingress"
+        cert_file: "{{ item.file }}"
+        secret_name: "{{ item.name }}"
+      ansible.builtin.include_tasks: tasks/k8s/secrets/tls.pki.yml
+      loop:
+        - name: "{{ monitoring_secrets['prometheus'] }}"
+          desc: Prometheus
+          file: prometheus
+        - name: "{{ monitoring_secrets['thanos'] }}"
+          desc: Thanos
+          file: thanos
+        - name: "{{ monitoring_secrets['alertmanager'] }}"
+          desc: Alertmanager
+          file: alertmanager
+        - name: "{{ monitoring_secrets['grafana'] }}"
+          desc: Grafana
+          file: grafana
+      loop_control:
+        label: "{{ item.file }}"
+
+    - name: Create monitoring scraper secret
+      vars:
+        cert_desc: scraping client
+        cert_file: scraper
+        secret_name: "{{ monitoring_secrets['scraper'] }}"
       ansible.builtin.include_tasks: tasks/k8s/secrets/tls.pki.yml
       # sets pem_chain fact
 
@@ -66,6 +93,36 @@
           } }}
       ansible.builtin.include_tasks: tasks/k8s/secrets/generic.yml
 
+    # this step is necessary before the Helm release has ever been
+    # installed because the Helm-generated template will have both
+    # the original prometheus-node-exporter-rbac-config ConfigMap
+    # as well as the modified version from extraManifests section
+    # of the chart values, which causes duplicate resource error
+    # unless an existing "Helm-managed" resource can be imported
+    - name: Create node exporter RBAC config
+      vars:
+        manifest: "{{ prometheus_stack_chart_values.extraManifests[0] }}"
+      # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_module.html
+      kubernetes.core.k8s:
+        kubeconfig: "{{ kubeconfig }}"
+        definition:
+          apiVersion: v1
+          kind: ConfigMap
+          metadata:
+            name: "{{ manifest.metadata.name }}"
+            namespace: "{{ monitoring_namespace }}"
+            labels:
+              app.kubernetes.io/managed-by: Helm
+            annotations:
+              meta.helm.sh/release-name: "{{ monitoring_release_name }}"
+              meta.helm.sh/release-namespace: "{{ monitoring_namespace }}"
+          data: "{{ manifest.data }}"
+        validate:
+          fail_on_error: true
+        state: present
+        apply: true
+      when: helm_info.status is not defined
+
     # https://github.com/prometheus-community/helm-charts/tree/main/charts/kube-prometheus-stack
     - name: Install Prometheus stack Helm chart
       # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/helm_module.html
@@ -74,7 +131,7 @@
         chart_repo_url: https://prometheus-community.github.io/helm-charts
         chart_ref: kube-prometheus-stack
         chart_version: "{{ prometheus_stack_chart_version }}"
-        release_name: "{{ prometheus_stack_chart_values.nameOverride }}"
+        release_name: "{{ monitoring_release_name }}"
         release_namespace: "{{ monitoring_namespace }}"
         release_values: "{{ prometheus_stack_chart_values }}"
         atomic: true
