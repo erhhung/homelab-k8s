@@ -27,16 +27,60 @@ monitoring_fqdns: |
          service: hosts | product(search_domains) | map('join','.')
        }) %}
   {% endfor %}
-  {{ fqdns }}
+  {{ fqdns  }}
 
 monitoring_secrets:
-  credentials: monitoring-credentials
   prometheus: monitoring-prometheus-tls
   thanos: monitoring-thanos-tls
   alertmanager: monitoring-alertmanager-tls
   grafana: monitoring-grafana-tls
   scraper: monitoring-scraper-tls
   etcd: monitoring-etcd-tls
+  oauth-proxy: monitoring-oauth-proxy
+  credentials: monitoring-credentials
+
+monitoring_oidc_client_id:
+  prometheus: prometheus
+  alertmanager: alertmanager
+# monitoring_oidc_client_secret: {vault.yml}
+# sso.fourteeners.local is same host as keycloak.fourteeners.local
+monitoring_oidc_issuer_uri: https://sso.fourteeners.local/realms/homelab
+
+# https://github.com/oauth2-proxy/oauth2-proxy/releases
+monitoring_oauth2_proxy_version: "7.9.0"
+# https://oauth2-proxy.github.io/oauth2-proxy/configuration/overview/#general-provider-options
+# https://oauth2-proxy.github.io/oauth2-proxy/configuration/providers/keycloak_oidc
+monitoring_oauth2_proxy_config: |
+  {% set configs = {} %}
+  {% for client in [
+         'prometheus',
+         'alertmanager'
+       ] %}
+  {%   set config = {
+         'provider':              'keycloak-oidc',
+         'provider_display_name': 'Keycloak',
+         'skip_provider_button':   true,
+         'provider_ca_files':    ['/tls/server/ca.crt'],
+         'client_id':        monitoring_oidc_client_id[client],
+         'client_secret':    monitoring_oidc_client_secret[client],
+         'code_challenge_method': 'S256',
+         'redirect_url':    'https://'~ monitoring_fqdns[client][0] ~'/oauth2/callback',
+         'oidc_issuer_url':  monitoring_oidc_issuer_uri,
+         'cookie_secret':    oauth2_proxy_cookie_secret,
+         'cookie_domains':  '.'~ search_domains[0],
+         'cookie_samesite': 'lax',
+         'email_domains':   ['*'],
+                 'tls_cert_file': '/tls/server/tls.crt',
+                 'tls_key_file':  '/tls/server/tls.key',
+         'metrics_tls_cert_file': '/tls/server/tls.crt',
+         'metrics_tls_key_file':  '/tls/server/tls.key'
+       } %}
+  {# to_toml: filter_plugins/filters.py #}
+  {%   set _ = configs.update({
+         client ~'.toml': config | to_toml
+       }) %}
+  {% endfor  %}
+  {{ configs }}
 
 prometheus_stack_chart_version: "70.8.0"
 # https://github.com/prometheus-community/helm-charts/tree/main/charts/kube-prometheus-stack
@@ -114,7 +158,7 @@ prometheus_stack_chart_values:
             accessModes: ["ReadWriteOnce"]
             resources:
               requests:
-                storage: 3Gi
+                storage: 2Gi
 
       persistentVolumeClaimRetentionPolicy:
         whenScaled: Retain
@@ -163,7 +207,7 @@ prometheus_stack_chart_values:
           clientAuthType: RequestClientCert
 
       volumes:
-        - name: tls-alerts
+        - name: tls-server
           secret:
             secretName: "{{ monitoring_secrets['prometheus'] }}"
         - name: tls-scraper
@@ -177,11 +221,15 @@ prometheus_stack_chart_values:
         - name: tls-thanos
           secret:
             secretName: "{{ monitoring_secrets['thanos'] }}"
+        - name: oauth-proxy
+          secret:
+            secretName: "{{ monitoring_secrets['oauth-proxy'] }}"
 
-      # mounts for all containers except "thanos-sidecar"
+      # mounts for all containers except extras
+      # like "thanos-sidecar" and "oauth-proxy"
       volumeMounts:
-        - name: tls-alerts
-          mountPath: /tls/alerts
+        - name: tls-server
+          mountPath: /tls/server
           readOnly: true
         - name: tls-scraper
           mountPath: /tls/scraper
@@ -193,10 +241,6 @@ prometheus_stack_chart_values:
       # inject additional containers, e.g. adding
       # an authentication proxy like oauth2-proxy
       containers:
-        # - name: oauth2-proxy
-        # TODO: integrate oauth2-proxy using Keycloak:
-        # https://github.com/oauth2-proxy/oauth2-proxy
-
         # this performs a merge patch on the
         # operator-generated "thanos-sidecar"
         - name: thanos-sidecar
@@ -204,6 +248,37 @@ prometheus_stack_chart_values:
             - name: tls-thanos
               mountPath: /tls/thanos
               readOnly: true
+
+        # https://github.com/oauth2-proxy/oauth2-proxy
+        - name: oauth-proxy
+          image: quay.io/oauth2-proxy/oauth2-proxy:v{{ monitoring_oauth2_proxy_version }}
+
+          args:
+            # https://oauth2-proxy.github.io/oauth2-proxy/configuration/overview#server-options
+            # see .service.additionalPorts
+            - --https-address=0.0.0.0:10090
+            - --metrics-secure-address=0.0.0.0:10091
+            # requires IP SAN in server cert
+            - --upstream=https://127.0.0.1:9090
+            # see monitoring_oauth2_proxy_config
+            - --config=/etc/oauth2-proxy.cfg
+
+          volumeMounts:
+            - name: tls-server
+              mountPath: /tls/server
+              readOnly: true
+            - name: oauth-proxy
+              mountPath: /etc/oauth2-proxy.cfg
+              subPath: prometheus.toml
+              readOnly: true
+
+          ports:
+            - name: oauth-proxy
+              containerPort: 10090
+              protocol: TCP
+            - name: oauth-metrics
+              containerPort: 10091
+              protocol: TCP
 
       # https://github.com/prometheus-operator/prometheus-operator/tree/main/Documentation/api-reference/api.md#thanosspec
       thanos: # ThanosSpec
@@ -241,12 +316,12 @@ prometheus_stack_chart_values:
         - name: "{{ monitoring_release_name }}-alertmanager"
           port: http-web
           scheme: https
-          pathPrefix: /
           enableHttp2: true
+          pathPrefix: /
           tlsConfig:
-            certFile: /tls/alerts/tls.crt
-            keyFile: /tls/alerts/tls.key
-            caFile: /tls/alerts/ca.crt
+            certFile: /tls/server/tls.crt
+            keyFile: /tls/server/tls.key
+            caFile: /tls/server/ca.crt
             # must skip certificate verification here because
             # the Prometheus notifier component fails to send
             # alerts to Alertmanager due to failure to verify
@@ -257,8 +332,18 @@ prometheus_stack_chart_values:
 
     # ==END== prometheusSpec
 
-    service: # port 9090
+    service:
       enabled: true
+      port: 9090
+      targetPort: http-web
+
+      additionalPorts:
+        - name: oauth-proxy
+          port: 10090 # ingress
+          targetPort: oauth-proxy
+        - name: oauth-metrics
+          port: 10091
+          targetPort: oauth-metrics
 
     ingress:
       enabled: true
@@ -272,6 +357,7 @@ prometheus_stack_chart_values:
       hosts: "{{ monitoring_fqdns['prometheus'] }}"
       paths: ["/"]
       pathType: Prefix
+      servicePort: 10090 # oauth-proxy
 
     serviceMonitor:
       selfMonitor: true
@@ -346,10 +432,7 @@ prometheus_stack_chart_values:
       storage:
         volumeClaimTemplate:
           spec:
-            # Alertmanager has less demanding storage
-            # requirements than Prometheus, so we can
-            # use plentiful storage on NAS
-            storageClassName: "{{ nfs_storage_class }}"
+            storageClassName: "{{ default_storage_class }}"
             accessModes: ["ReadWriteOnce"]
             resources:
               requests:
@@ -361,6 +444,9 @@ prometheus_stack_chart_values:
 
       # data retention period
       retention: 168h # 7 days
+
+      externalUrl: https://{{ monitoring_fqdns['alertmanager'] | first }}
+      scheme: https
 
       # https://github.com/prometheus-operator/prometheus-operator/tree/main/Documentation/api-reference/api.md#alertmanagerwebspec
       web: # AlertmanagerWebSpec
@@ -381,18 +467,66 @@ prometheus_stack_chart_values:
           # https://pkg.go.dev/crypto/tls#ClientAuthType
           clientAuthType: RequestClientCert
 
-      # https://github.com/prometheus-operator/prometheus-operator/blob/main/Documentation/api-reference/api.md#clustertlsconfig
-      clusterTLS: # ClusterTLSConfig
-        server: *alerts_tls #  WebTLSConfig
-        client: *alerts_tls # SafeTLSConfig
+      # TLSConfig (mTLS client certificate):
+      # https://github.com/prometheus-operator/prometheus-operator/tree/main/Documentation/api-reference/api.md#tlsconfig
+      tlsConfig: *alerts_tls
+
+      volumes:
+        - name: tls-server
+          secret:
+            secretName: "{{ monitoring_secrets['alertmanager'] }}"
+        - name: oauth-proxy
+          secret:
+            secretName: "{{ monitoring_secrets['oauth-proxy'] }}"
 
       # inject additional containers, e.g. adding
       # an authentication proxy like oauth2-proxy
-      containers: []
-        # TODO: integrate oauth2-proxy using Keycloak:
+      containers:
         # https://github.com/oauth2-proxy/oauth2-proxy
+        - name: oauth-proxy
+          image: quay.io/oauth2-proxy/oauth2-proxy:v{{ monitoring_oauth2_proxy_version }}
+
+          args:
+            # https://oauth2-proxy.github.io/oauth2-proxy/configuration/overview#server-options
+            # see .service.additionalPorts
+            - --https-address=0.0.0.0:10093
+            - --metrics-secure-address=0.0.0.0:10094
+            # requires IP SAN in server cert
+            - --upstream=https://127.0.0.1:9093
+            # see monitoring_oauth2_proxy_config
+            - --config=/etc/oauth2-proxy.cfg
+
+          volumeMounts:
+            - name: tls-server
+              mountPath: /tls/server
+              readOnly: true
+            - name: oauth-proxy
+              mountPath: /etc/oauth2-proxy.cfg
+              subPath: alertmanager.toml
+              readOnly: true
+
+          ports:
+            - name: oauth-proxy
+              containerPort: 10093
+              protocol: TCP
+            - name: oauth-metrics
+              containerPort: 10094
+              protocol: TCP
 
     # ==END== alertmanagerSpec
+
+    service:
+      enabled: true
+      port: 9093
+      targetPort: http-web
+
+      additionalPorts:
+        - name: oauth-proxy
+          port: 10093 # ingress
+          targetPort: oauth-proxy
+        - name: oauth-metrics
+          port: 10094
+          targetPort: oauth-metrics
 
     ingress:
       enabled: true
@@ -406,6 +540,7 @@ prometheus_stack_chart_values:
       hosts: "{{ monitoring_fqdns['alertmanager'] }}"
       paths: ["/"]
       pathType: Prefix
+      servicePort: 10093 # oauth-proxy
 
     serviceMonitor:
       selfMonitor: true
@@ -505,8 +640,6 @@ prometheus_stack_chart_values:
     # inject additional containers, e.g. adding
     # an authentication proxy like oauth2-proxy
     extraContainers: ""
-      # TODO: integrate oauth2-proxy using Keycloak:
-      # https://github.com/oauth2-proxy/oauth2-proxy
 
     ingress:
       enabled: true
@@ -540,7 +673,6 @@ prometheus_stack_chart_values:
   # https://github.com/prometheus-community/helm-charts/tree/main/charts/kube-state-metrics
   # https://github.com/prometheus-community/helm-charts/tree/main/charts/kube-state-metrics/values.yaml
   kube-state-metrics: # subchart values
-
     resources:
       requests:
         cpu: 10m
@@ -631,7 +763,6 @@ prometheus_stack_chart_values:
   # https://github.com/prometheus-community/helm-charts/tree/main/charts/prometheus-node-exporter
   # https://github.com/prometheus-community/helm-charts/tree/main/charts/prometheus-node-exporter/values.yaml
   prometheus-node-exporter: # subchart values
-
     resources:
       requests:
         cpu: 10m

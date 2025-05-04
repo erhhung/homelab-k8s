@@ -293,7 +293,8 @@
           # https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_loops.html#retrying-a-task-until-a-condition-is-met
           register: coredns_info
           until: >-
-            coredns_info.resources[0] is defined and
+            coredns_info.resources[0].status               is defined and
+            coredns_info.resources[0].status.readyReplicas is defined and
             coredns_info.resources[0].status.readyReplicas ==
             coredns_info.resources[0].status.replicas
           retries: 30
@@ -343,7 +344,8 @@
             namespace: "{{ rancher_namespace }}"
           register: agent_info
           until: >-
-            agent_info.resources[0] is defined and
+            agent_info.resources[0].status               is defined and
+            agent_info.resources[0].status.readyReplicas is defined and
             agent_info.resources[0].status.readyReplicas ==
             agent_info.resources[0].status.replicas
           retries: 30
