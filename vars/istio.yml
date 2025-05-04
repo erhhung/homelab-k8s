@@ -1,9 +1,10 @@
 # https://github.com/istio/istio/releases/latest
-istio_version: "1.25.1"
+istio_version: "1.25.2"
 istio_bin_dir: /opt/istio/bin
 
 # https://istio.io/latest/docs/ambient/install/istioctl/#install-or-upgrade-the-kubernetes-gateway-api-crds
-k8s_gateway_api_version: "1.2.1"
+# https://github.com/kubernetes-sigs/gateway-api/releases
+k8s_gateway_api_version: "1.3.0"
 k8s_gateway_api_crds_url: >-
   https://github.com/kubernetes-sigs/gateway-api/releases/download/v{{
     k8s_gateway_api_version }}/standard-install.yaml
@@ -25,8 +26,7 @@ kiali_secrets:
 
 # https://kiali.io/docs/installation/installation-guide/install-with-helm/#install-with-operator
 kiali_operator_namespace: kiali-operator
-kiali_operator_chart_version: "2.7.1"
-kiali_supported_image_version: "v2.4"
+kiali_operator_chart_version: "2.9.0"
 
 kiali_oidc_client_id: kiali
 # kiali_oidc_client_secret: {vault.yml}
@@ -35,8 +35,6 @@ kiali_oidc_issuer_uri: https://sso.fourteeners.local/realms/homelab
 
 # https://kiali.io/docs/configuration/kialis.kiali.io/
 kiali_cr_spec:
-  version: "{{ kiali_supported_image_version }}"
-
   # support SSO login using OIDC integration with Keycloak, but
   # disable namespace access control because that would require
   # the cluster to have already been connected with OIDC, which
@@ -46,7 +44,6 @@ kiali_cr_spec:
     strategy: openid
     openid:
       disable_rbac: true
-      insecure_skip_verify_tls: true
       client_id: "{{ kiali_oidc_client_id }}"
       issuer_uri: "{{ kiali_oidc_issuer_uri }}"
       scopes:
@@ -84,8 +81,12 @@ kiali_cr_spec:
       override_yaml:
         metadata:
           annotations:
+            # https://kubernetes.github.io/ingress-nginx/user-guide/nginx-configuration/annotations/
             nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
-            nginx.ingress.kubernetes.io/secure-backends: "true"
+            # cannot use ssl-passthrough with server-snippet
+            # because ssl-passthrough works at OSI layer 4,
+            # and it will invalidate all other annotations
+            nginx.ingress.kubernetes.io/backend-protocol: HTTPS
             # redirect root domain to dashboard at /kiali
             nginx.ingress.kubernetes.io/server-snippet: |
               location = / {

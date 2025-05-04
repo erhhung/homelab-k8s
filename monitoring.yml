@@ -82,6 +82,13 @@
         # above contains both intermediate and root CA certs
         ca_certs: "{{ pem_chain[1:] | join('\n') }}"
 
+    # secret containing oauth2-proxy config files
+    - name: Create monitoring oauth-proxy secret
+      vars:
+        secret_name: "{{ monitoring_secrets['oauth-proxy'] }}"
+        secret_data: "{{ monitoring_oauth2_proxy_config }}"
+      ansible.builtin.include_tasks: tasks/k8s/secrets/generic.yml
+
     - name: Create monitoring credentials secret
       vars:
         grafana: "{{ prometheus_stack_chart_values.grafana }}"

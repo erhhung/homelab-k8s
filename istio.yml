@@ -149,6 +149,14 @@
         create_namespace: true
         atomic: true
 
+    - name: Create Kiali ingress secret
+      vars:
+        cert_desc: Kiali
+        cert_file: kiali
+        secret_name: "{{ kiali_secrets['ingress'] }}"
+      ansible.builtin.include_tasks: tasks/k8s/secrets/tls.pki.yml
+      # sets pem_chain fact
+
     # https://kiali.io/docs/configuration/authentication/openid/#set-up-with-no-namespace-access-control-support
     - name: Create Kiali OpenID secret
       vars:
@@ -157,12 +165,24 @@
           oidc-secret: "{{ kiali_oidc_client_secret }}"
       ansible.builtin.include_tasks: tasks/k8s/secrets/generic.yml
 
-    - name: Create Kiali ingress secret
-      vars:
-        cert_desc: Kiali
-        cert_file: kiali
-        secret_name: "{{ kiali_secrets['ingress'] }}"
-      ansible.builtin.include_tasks: tasks/k8s/secrets/tls.pki.yml
+    # https://kiali.io/docs/configuration/authentication/openid/#using-an-openid-provider-with-a-self-signed-certificate
+    - name: Create kiali-cabundle ConfigMap
+      kubernetes.core.k8s:
+        kubeconfig: "{{ kubeconfig }}"
+        definition:
+          apiVersion: v1
+          kind: ConfigMap
+          metadata:
+            name: kiali-cabundle # expected
+            namespace: "{{ kiali_namespace }}"
+          data:
+            # pem_chain fact set by tasks/k8s/secrets/tls.pki.yml
+            # above contains both intermediate and root CA certs
+            openid-server-ca.crt: "{{ pem_chain[1:] | join('\n') }}"
+        validate:
+          fail_on_error: true
+        state: present
+        apply: true
 
     # Kiali Operator shall deploy Kiali
     - name: Create Kiali custom resource
@@ -189,7 +209,8 @@
       # https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_loops.html#retrying-a-task-until-a-condition-is-met
       register: kiali_info
       until: >-
-        kiali_info.resources[0] is defined and
+        kiali_info.resources[0].status               is defined and
+        kiali_info.resources[0].status.readyReplicas is defined and
         kiali_info.resources[0].status.readyReplicas ==
         kiali_info.resources[0].status.replicas
       retries: 30

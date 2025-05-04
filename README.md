@@ -36,12 +36,13 @@ private CA server at pki.fourteeners.local.
 |   https://minio.fourteeners.local | MinIO console
 |      https://s3.fourteeners.local | MinIO S3 API
 | https://grafana.fourteeners.local | Grafana dashboards
-| https://metrics.fourteeners.local | Prometheus web UI
+| https://metrics.fourteeners.local | Prometheus web UI _(Keycloak SSO)_
+|  https://alerts.fourteeners.local | Alertmanager web UI _(Keycloak SSO)_
 | opensearch.fourteeners.local:9200 | OpenSearch _(HTTPS only)_
 |  https://kibana.fourteeners.local | OpenSearch Dashboards
 |   postgres.fourteeners.local:5432 | PostgreSQL via Pgpool _(mTLS only)_
 |     https://sso.fourteeners.local | Keycloak IAM console
-|   https://kiali.fourteeners.local | Kiali dashboard
+|   https://kiali.fourteeners.local | Kiali dashboard _(Keycloak SSO)_
 |  https://argocd.fourteeners.local | Argo CD console
 
 ## Installation Sources
@@ -55,7 +56,9 @@ private CA server at pki.fourteeners.local.
     * Instal Fluent Bit using [`fluent-operator`](https://github.com/fluent/fluent-operator) Helm chart and `FluentBit` CR
 - [X] [Prometheus Monitoring Stack](https://github.com/prometheus-operator/kube-prometheus) — Prometheus, Grafana, and rules using the Prometheus Operator
     * Install into the main RKE cluster using [`kube-prometheus-stack`](https://github.com/prometheus-community/helm-charts/tree/main/charts/kube-prometheus-stack/README.md) Helm chart
-    * [ ] Add authentication to Prometheus, Thanos, and Alertmanager UIs using [`oauth2-proxy`](https://github.com/oauth2-proxy/oauth2-proxy) sidecar
+    * [X] Add authentication to Prometheus and Alertmanager UIs using [`oauth2-proxy`](https://github.com/oauth2-proxy/oauth2-proxy) sidecar
+- [ ] [Valkey Key/Value Store](https://valkey.io/) — Redis-compatible key/value store
+    * Install into the main RKE cluster using [`valkey`](https://github.com/bitnami/charts/tree/main/bitnami/valkey) Helm chart in cluster mode
 - [X] [PostgreSQL Database](https://www.postgresql.org/docs/current/) — SQL database used by Keycloak and other applications
     * Install using Bitnami's [`postgresql-ha`](https://github.com/bitnami/charts/tree/main/bitnami/postgresql-ha) Helm chart
 - [X] [Keycloak IAM & OIDC Provider](https://www.keycloak.org/) — identity and access management and OpenID Connect provider

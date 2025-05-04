@@ -102,7 +102,8 @@
       # tasks have been refactored into a separate file
       ansible.builtin.include_tasks: tasks/opensearch/security.yml
       when: >-
-        opensearch_info.resources[0] is defined and
+        opensearch_info.resources[0].status               is defined and
+        opensearch_info.resources[0].status.readyReplicas is defined and
         opensearch_info.resources[0].status.readyReplicas ==
                          opensearch_chart_values.replicas
   any_errors_fatal: true
