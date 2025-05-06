@@ -142,7 +142,19 @@
   tags: syntax
   hosts: localhost
   gather_facts: false
-  tasks: []
+  tasks:
+    - name: Create IP address range
+      vars:
+        rke_lb_vip: 192.168.0.221
+        valkey_cluster_nodes: 6
+        valkey_lb_ips: |
+          {% set ips = [] %}
+          {% for i in range(valkey_cluster_nodes) %}
+          {%   set _ = ips.append(rke_lb_vip | ansible.utils.ipmath(i+1)) %}
+          {% endfor %}
+          {{ ips }}
+      ansible.builtin.debug:
+        var: valkey_lb_ips
 
 - name: Debug expressions and statements
   tags: exprs

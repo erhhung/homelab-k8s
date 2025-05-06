@@ -39,6 +39,10 @@
   ansible.builtin.import_playbook: logging.yml
   tags: logging
 
+- name: Include Valkey cache cluster playbook
+  ansible.builtin.import_playbook: valkey.yml
+  tags: valkey
+
 - name: Include Prometheus monitoring playbook
   ansible.builtin.import_playbook: monitoring.yml
   tags: monitoring

@@ -1,0 +1,50 @@
+# https://valkey.io/topics/cluster-tutorial/
+# https://blog.enapi.com/valkey-clusters-in-kubernetes-a-comprehensive-guide-94994d0a8ebb
+# https://techdocs.broadcom.com/us/en/vmware-tanzu/application-catalog/tanzu-application-catalog/services/tac-doc/apps-apps-valkey-cluster-index.html
+---
+- name: Install Valkey on RKE cluster
+  hosts: "{{ rke_control_plane_host }}"
+  gather_facts: false
+  vars_files:
+    - vars/basics.yml
+    - vars/kubernetes.yml
+    - vars/storage.yml
+    - vars/valkey.yml
+  vars:
+    kubeconfig: "{{ rke_kubeconfig }}"
+    secret_ns: "{{ valkey_namespace }}"
+  tasks:
+    - name: Create Valkey node secret
+      vars:
+        cert_desc: Valkey
+        cert_file: valkey
+        secret_name: "{{ valkey_secrets['node-tls'] }}"
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
+      ansible.builtin.include_tasks: tasks/k8s/secrets/tls.pki.yml
+
+    - name: Create Valkey password secret
+      vars:
+        key: "{{ valkey_chart_values.existingSecretPasswordKey }}"
+        secret_name: "{{ valkey_secrets['password'] }}"
+        secret_data: "{{ { key: valkey_pass } }}"
+        create_ns: false
+      ansible.builtin.include_tasks: tasks/k8s/secrets/generic.yml
+
+    # https://github.com/bitnami/charts/tree/main/bitnami/valkey-cluster
+    - name: Install Valkey cluster Helm chart
+      vars:
+        # required kubernetes>=24.2 package only in user virtualenv
+        ansible_python_interpreter: "{{ venv_python_interpreter }}"
+      # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/helm_module.html
+      kubernetes.core.helm:
+        kubeconfig: "{{ kubeconfig }}"
+        chart_repo_url: https://charts.bitnami.com/bitnami
+        chart_ref: valkey-cluster
+        chart_version: "{{ valkey_chart_version }}"
+        release_name: "{{ valkey_release_name }}"
+        release_namespace: "{{ valkey_namespace }}"
+        release_values: "{{ valkey_chart_values }}"
+        atomic: true
+        wait: true
+      timeout: 600
+  any_errors_fatal: true

@@ -50,6 +50,7 @@ monitoring_oidc_issuer_uri: https://sso.fourteeners.local/realms/homelab
 monitoring_oauth2_proxy_version: "7.9.0"
 # https://oauth2-proxy.github.io/oauth2-proxy/configuration/overview/#general-provider-options
 # https://oauth2-proxy.github.io/oauth2-proxy/configuration/providers/keycloak_oidc
+# (references "redis_cluster_urls" var from vars/valkey.yml)
 monitoring_oauth2_proxy_config: |
   {% set configs = {} %}
   {% for client in [
@@ -73,7 +74,12 @@ monitoring_oauth2_proxy_config: |
                  'tls_cert_file': '/tls/server/tls.crt',
                  'tls_key_file':  '/tls/server/tls.key',
          'metrics_tls_cert_file': '/tls/server/tls.crt',
-         'metrics_tls_key_file':  '/tls/server/tls.key'
+         'metrics_tls_key_file':  '/tls/server/tls.key',
+         'session_store_type':            'redis',
+         'redis_use_cluster':              true,
+         'redis_insecure_skip_tls_verify': true,
+         'redis_cluster_connection_urls':  redis_cluster_urls,
+         'redis_password':                 valkey_pass
        } %}
   {# to_toml: filter_plugins/filters.py #}
   {%   set _ = configs.update({
@@ -158,14 +164,14 @@ prometheus_stack_chart_values:
             accessModes: ["ReadWriteOnce"]
             resources:
               requests:
-                storage: 2Gi
+                storage: 3Gi
 
       persistentVolumeClaimRetentionPolicy:
         whenScaled: Retain
         whenDeleted: Delete
 
       # data retention period
-      retention: 14d # 2 weeks
+      retention: 3d # 1/2 week
 
       tsdb:
         # allow out-of-order samples because
@@ -708,6 +714,8 @@ prometheus_stack_chart_values:
     prometheus:
       monitor:
         enabled: true
+        # values below apply to same settings
+        # under .http and .metrics endpoints
         # scheme: https
         # enableHttp2: true
         # tlsConfig: *scraper_tls
@@ -766,10 +774,10 @@ prometheus_stack_chart_values:
     resources:
       requests:
         cpu: 10m
-        memory: 8Mi
+        memory: 16Mi
       limits:
-        cpu: 20m
-        memory: 32Mi
+        cpu: 25m
+        memory: 64Mi
 
     extraVolumes:
       - name: tls-proxy
@@ -797,6 +805,8 @@ prometheus_stack_chart_values:
         enabled: true
         scheme: https
         tlsConfig: *scraper_tls
+        scrapeTimeout: 30s
+        interval: 2m
 
   # ======================================== Exporters =======================================
   #
