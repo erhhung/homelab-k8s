@@ -20,7 +20,7 @@
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
       ansible.builtin.include_tasks: tasks/k8s/secrets/tls.pki.yml
 
-    # https://github.com/codecentric/helm-charts/tree/master/charts/keycloakx
+    # https://github.com/bitnami/charts/tree/main/bitnami/postgresql-ha
     - name: Install PostgreSQL HA Helm chart
       vars:
         # required kubernetes>=24.2 package only in user virtualenv
@@ -31,7 +31,7 @@
         chart_repo_url: https://charts.bitnami.com/bitnami
         chart_ref: postgresql-ha
         chart_version: "{{ postgresql_chart_version }}"
-        release_name: "{{ postgresql_chart_values.nameOverride }}"
+        release_name: "{{ postgresql_release_name }}"
         release_namespace: "{{ postgresql_namespace }}"
         release_values: "{{ postgresql_chart_values }}"
         atomic: true

@@ -1,0 +1,159 @@
+# CREATE CERTS USING CERT.SH SCRIPT
+# (default expiration is 90  days)
+# (the max expiration is 365 days)
+
+cd $HOME
+
+./cert.sh --exp=365 --out=admin \
+  erhhung erhhung@fourteeners.local
+
+./cert.sh \
+  pki.fourteeners.local \
+   ca.fourteeners.local
+
+./cert.sh \
+  firewall.fourteeners.local \
+   pfsense.fourteeners.local \
+    router.fourteeners.local
+
+./cert.sh --kty=RSA \
+  pacific.fourteeners.local \
+     qnap.fourteeners.local \
+      nas.fourteeners.local
+
+./cert.sh \
+  homeassistant.fourteeners.local \
+             ha.fourteeners.local \
+           home.fourteeners.local \
+         yellow.fourteeners.local
+
+./cert.sh --kty=RSA \
+   xo.fourteeners.local \
+  xoa.fourteeners.local
+
+./cert.sh --kty=RSA --p12 \
+  duplicati.fourteeners.local
+
+./cert.sh --exp=365 \
+  rancher.fourteeners.local
+
+# rke2-ingress-nginx-controller default-ssl-certificate
+./cert.sh --exp=365 --out=nginx \
+      homelab.fourteeners.local homelab 192.168.0.221 \
+         k8s1.fourteeners.local k8s1    192.168.0.171 \
+         k8s2.fourteeners.local k8s2    192.168.0.172 \
+         k8s3.fourteeners.local k8s3    192.168.0.173 \
+  \*.vcluster.fourteeners.local \
+   kubernetes \
+   kubernetes.default \
+   kubernetes.default.svc \
+   kubernetes.default.svc.cluster.local \
+                          cluster.local 10.43.0.1 \
+                          localhost     127.0.0.1
+
+./cert.sh --exp=365 \
+  harbor.fourteeners.local
+
+# MinIO console
+./cert.sh --exp=365 \
+  minio.fourteeners.local
+
+./cert.sh --exp=365 \
+                  s3.fourteeners.local \
+               \*.s3.fourteeners.local \
+ \*.homelab-hl.minio.svc.cluster.local \
+            \*.minio.svc.cluster.local \
+            \*.minio.svc
+
+./cert.sh --kty=RSA --exp=365 \
+          --pk8="-v1 PBE-SHA1-3DES" \
+          --out=opensearch \
+  node.opensearch.svc.cluster.local \
+       opensearch.fourteeners.local \
+               es.fourteeners.local \
+    \*.opensearch.svc.cluster.local \
+    \*.opensearch.svc
+
+./cert.sh --kty=RSA --exp=365 \
+          --pk8="-v1 PBE-SHA1-3DES" \
+          --out=opensearch_admin \
+  erhhung erhhung@gmail.com
+
+./cert.sh --exp=365 \
+  kibana.fourteeners.local
+
+# OpenSearch client
+./cert.sh --kty=RSA --exp=365 \
+          --pk8="-v1 PBE-SHA1-3DES" \
+  fluent fluent@fourteeners.local
+
+./cert.sh --exp=365 \
+     prometheus \
+     prometheus.fourteeners.local \
+        metrics.fourteeners.local \
+  \*.monitoring.svc.cluster.local \
+  \*.monitoring.svc \
+  127.0.0.1
+
+# also MinIO client
+./cert.sh --exp=365 \
+         thanos \
+         thanos.fourteeners.local \
+  \*.monitoring.svc.cluster.local \
+  \*.monitoring.svc
+
+./cert.sh --exp=365 \
+   alertmanager \
+   alertmanager.fourteeners.local \
+         alerts.fourteeners.local \
+  \*.monitoring.svc.cluster.local \
+  \*.monitoring.svc \
+  127.0.0.1
+
+./cert.sh --exp=365 \
+        grafana.fourteeners.local \
+     monitoring.fourteeners.local \
+  \*.monitoring.svc.cluster.local \
+  \*.monitoring.svc
+
+./cert.sh --exp=365 \
+  scraper scraper@fourteeners.local
+
+./cert.sh --exp=365 \
+        valkey.fourteeners.local \
+         redis.fourteeners.local \
+  valkey{1..6}.fourteeners.local \
+   redis{1..6}.fourteeners.local \
+     \*.valkey.svc.cluster.local \
+     \*.valkey.svc \
+     192.168.0.22{2..7}
+
+./cert.sh --exp=365 \
+     postgresql.fourteeners.local \
+       postgres.fourteeners.local \
+             pg.fourteeners.local \
+  \*.postgresql.svc.cluster.local \
+  \*.postgresql.svc \
+  192.168.0.222
+
+./cert.sh --exp=365 \
+  erhhung erhhung@gmail.com
+
+./cert.sh --exp=365 \
+          --pk8="-outform DER" \
+          --out=keycloak_db \
+  keycloak keycloak@fourteeners.local
+
+./cert.sh --exp=365 \
+     keycloak.fourteeners.local \
+          iam.fourteeners.local \
+          sso.fourteeners.local \
+  \*.keycloak.svc.cluster.local \
+  \*.keycloak.svc
+
+./cert.sh --exp=365 \
+  kiali.fourteeners.local \
+  istio.fourteeners.local
+
+./cert.sh --exp=365 \
+  argocd.fourteeners.local

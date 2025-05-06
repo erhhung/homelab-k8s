@@ -2,9 +2,24 @@ system_time_zone: America/Los_Angeles
 system_locale: en_US.UTF-8
 system_language: en_US.UTF-8
 
-sysctl: # adjust Linux kernel parameters
+# adjust Linux kernel parameters:
+# https://www.enginyring.com/en/blog/a-guide-to-tuning-kernel-parameters-with-sysctl-in-linux
+# run "sysctl -a" to see current values
+sysctl:
   - key: vm.max_map_count
     value: 262144
+  - key: net.core.somaxconn
+    value: 16384
+
+# adjust system resource limits:
+# https://www.man7.org/linux/man-pages/man5/limits.conf.5.html
+# https://docs.ansible.com/ansible/latest/collections/community/general/pam_limits_module.html
+# run "ulimit -a" to see current values
+pam_limits:
+  - domain: "*"
+    item: nofile
+    type: "-"
+    value: 65536
 
 host_pif: enX0 # XCP-ng VM physical interface
 subnet_mask: /24

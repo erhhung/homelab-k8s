@@ -11,6 +11,7 @@
     - vars/kubernetes.yml
     - vars/storage.yml
     - vars/minio.yml
+    - vars/valkey.yml
     - vars/monitoring.yml
   vars:
     # required kubernetes>=24.2 package only in user virtualenv
@@ -143,3 +144,4 @@
         release_values: "{{ prometheus_stack_chart_values }}"
         atomic: true
       timeout: 600
+  any_errors_fatal: true

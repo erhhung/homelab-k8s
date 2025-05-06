@@ -67,6 +67,19 @@
       loop_control:
         label: "{{ item.key }}"
         index_var: i
+
+    - name: Adjust system resource limits
+      # https://docs.ansible.com/ansible/latest/collections/community/general/pam_limits_module.html
+      community.general.pam_limits:
+        domain: "{{ item.domain }}"
+        limit_item: "{{ item.item }}"
+        limit_type: "{{ item.type }}"
+        value: "{{ item.value }}"
+        # increase limits only
+        use_max: true
+      loop: "{{ pam_limits }}"
+      loop_control:
+        label: "{{ item.item }}"
   any_errors_fatal: true
 
 - name: Configure network settings
@@ -152,6 +165,7 @@
         host_fqdns: "{{ host_names | product(search_domains) | map('join', '.')  | list }}"
         host_pairs: "{{ host_fqdns | map('regex_replace', '^([^.]+)', '\\1 \\1') | list }}"
         host_entry: "{{ ([host_ip] + (host_pairs | join(' ')) | split | unique) | join(' ') }}"
+
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/lineinfile_module.html
       ansible.builtin.lineinfile:
         dest: /etc/hosts

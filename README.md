@@ -38,6 +38,7 @@ private CA server at pki.fourteeners.local.
 | https://grafana.fourteeners.local | Grafana dashboards
 | https://metrics.fourteeners.local | Prometheus web UI _(Keycloak SSO)_
 |  https://alerts.fourteeners.local | Alertmanager web UI _(Keycloak SSO)_
+|     valkey.fourteeners.local:6379 <br/> **_or_** valkey*1*.fourteeners.local:6379 <br/> _to_ valkey*6*.fourteeners.local:6379 | Valkey cluster _(mTLS only)_
 | opensearch.fourteeners.local:9200 | OpenSearch _(HTTPS only)_
 |  https://kibana.fourteeners.local | OpenSearch Dashboards
 |   postgres.fourteeners.local:5432 | PostgreSQL via Pgpool _(mTLS only)_
@@ -49,6 +50,8 @@ private CA server at pki.fourteeners.local.
 
 - [X] [NFS Dynamic Provisioners](https://computingforgeeks.com/configure-nfs-as-kubernetes-persistent-volume-storage/) — create PVs on NFS shares
     * Install on K3s and RKE clusters using [`nfs-subdir-external-provisioner`](https://github.com/kubernetes-sigs/nfs-subdir-external-provisioner/) Helm chart
+- [X] [MinIO Object Storage](https://github.com/minio/minio) — S3-compatible object storage with console
+    * Install into the main RKE cluster using [MinIO Operator](https://min.io/docs/minio/kubernetes/upstream/operations/installation.html)
 - [X] [Harbor Container Registry](https://goharbor.io/) — private container registry
     * Install into the same K3s cluster as Rancher Server using [`harbor/harbor`](https://github.com/goharbor/harbor-helm/) Helm chart
 - [X] [OpenSearch Logging Stack](https://opensearch.org/docs/latest/) — aggregate and filter logs using OpenSearch and Fluent Bit
@@ -57,8 +60,8 @@ private CA server at pki.fourteeners.local.
 - [X] [Prometheus Monitoring Stack](https://github.com/prometheus-operator/kube-prometheus) — Prometheus, Grafana, and rules using the Prometheus Operator
     * Install into the main RKE cluster using [`kube-prometheus-stack`](https://github.com/prometheus-community/helm-charts/tree/main/charts/kube-prometheus-stack/README.md) Helm chart
     * [X] Add authentication to Prometheus and Alertmanager UIs using [`oauth2-proxy`](https://github.com/oauth2-proxy/oauth2-proxy) sidecar
-- [ ] [Valkey Key/Value Store](https://valkey.io/) — Redis-compatible key/value store
-    * Install into the main RKE cluster using [`valkey`](https://github.com/bitnami/charts/tree/main/bitnami/valkey) Helm chart in cluster mode
+- [X] [Valkey Key/Value Store](https://valkey.io/) — Redis-compatible key/value store
+    * Install into the main RKE cluster using [`valkey-cluster`](https://github.com/bitnami/charts/tree/main/bitnami/valkey-cluster) Helm chart
 - [X] [PostgreSQL Database](https://www.postgresql.org/docs/current/) — SQL database used by Keycloak and other applications
     * Install using Bitnami's [`postgresql-ha`](https://github.com/bitnami/charts/tree/main/bitnami/postgresql-ha) Helm chart
 - [X] [Keycloak IAM & OIDC Provider](https://www.keycloak.org/) — identity and access management and OpenID Connect provider
@@ -75,8 +78,6 @@ private CA server at pki.fourteeners.local.
 - [ ] [OpenTelemetry Collector](https://opentelemetry.io/docs/collector/) with [Jaeger UI](https://www.jaegertracing.io/) -- telemetry collector agent and distributed tracing backend
     * Install into the main RKE cluster using [OpenTelemetry Collector](https://opentelemetry.io/docs/platforms/kubernetes/helm/collector/) Helm chart
     * Install Jaeger using [Jaeger](https://github.com/jaegertracing/helm-charts/tree/main/charts/jaeger) Helm chart
-- [X] [MinIO Object Storage](https://github.com/minio/minio) — object storage server and console
-    * Install into the main RKE cluster using [MinIO Operator](https://min.io/docs/minio/kubernetes/upstream/operations/installation.html)
 - [ ] [Velero Backup & Restore](https://velero.io/docs/latest/basic-install) — back up and restore persistent volumes
     * Install into the main RKE cluster using [Velero](https://github.com/vmware-tanzu/helm-charts/tree/main/charts/velero) Helm chart
 - [ ] [Backstage Developer Portal](https://backstage.io/) — software catalog and developer portal
@@ -111,6 +112,7 @@ Some variables stored in Ansible Vault _(there are many more)_:
 | `minio_client_pass`        | `argocd_admin_pass`
 | `dashboards_os_pass`       |
 | `fluent_os_pass`           |
+| `valkey_pass`              |
 | `postgresql_pass`          |
 | `keycloak_db_pass`         |
 | `keycloak_smtp_pass`       |
@@ -216,38 +218,50 @@ export ANSIBLE_CONFIG=./ansible.cfg
     ansible-playbook logging.yml
     ```
 
-11. Set up **Prometheus** & **Grafana** in _**HA**_ mode
+11. Set up **Valkey** key-value store in _**HA**_ mode
+
+    11.1. Deploys 6 nodes total: 3 primaries and 3 replicas
+
+    ```bash
+    ansible-playbook valkey.yml
+    ```
+
+12. Set up **Prometheus** & **Grafana** in _**HA**_ mode
+
+    12.1. Exposes Prometheus & Alertmanager UIs via `oauth2-proxy` integration with Keycloak
+
     ```bash
     ansible-playbook monitoring.yml
     ```
 
-12. Set up **PostgreSQL** database in _**HA**_ mode
+13. Set up **PostgreSQL** database in _**HA**_ mode
 
-    12.1. Run initialization SQL script to create roles and databases for downstream applications
+    13.1. Run initialization SQL script to create roles and databases for downstream applications  
+    13.2. Create users in both PostgreSQL and **Pgpool**
 
     ```bash
     ansible-playbook postgresql.yml
     ```
 
-13. Set up **Keycloak** IAM & OIDC provider
+14. Set up **Keycloak** IAM & OIDC provider
 
-    13.1. Bootstrap PostgreSQL database with realm `homelab`, user `erhhung`, and OIDC clients
+    14.1. Bootstrap PostgreSQL database with realm `homelab`, user `erhhung`, and OIDC clients
 
     ```bash
     ansible-playbook keycloak.yml
     ```
 
-14. Set up **Istio** service mesh in _**ambient**_ mode
+15. Set up **Istio** service mesh in _**ambient**_ mode
     ```bash
     ansible-playbook istio.yml
     ```
 
-15. Set up **Argo CD** GitOps delivery tool
+16. Set up **Argo CD** GitOps delivery tool
     ```bash
     ansible-playbook argocd.yml
     ```
 
-16. Create **virtual clusters** in RKE running **K0s**
+17. Create **virtual clusters** in RKE running **K0s**
     ```bash
     ansible-playbook vclusters.yml
     ```

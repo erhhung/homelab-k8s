@@ -55,7 +55,7 @@
         curl -s {{ script_url }} | bash | \
           sed -r 's/\x1B\[([0-9]{1,3}(;[0-9]{1,2})?)?[mGK]//g'
         EOF
-      timeout: 120
+      timeout: 180
       register: env_check
       # run once in each cluster
       when: >-
