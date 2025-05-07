@@ -114,7 +114,8 @@ cd $HOME
         grafana.fourteeners.local \
      monitoring.fourteeners.local \
   \*.monitoring.svc.cluster.local \
-  \*.monitoring.svc
+  \*.monitoring.svc \
+  localhost
 
 ./cert.sh --exp=365 \
   scraper scraper@fourteeners.local
