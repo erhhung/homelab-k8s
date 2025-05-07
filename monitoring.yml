@@ -54,7 +54,7 @@
         - name: "{{ monitoring_secrets['prometheus'] }}"
           desc: Prometheus
           file: prometheus
-        - name: "{{ monitoring_secrets['thanos'] }}"
+        - name: "{{ monitoring_secrets['thanos-tls'] }}"
           desc: Thanos
           file: thanos
         - name: "{{ monitoring_secrets['alertmanager'] }}"
@@ -82,6 +82,13 @@
         # pem_chain fact set by tasks/k8s/secrets/tls.pki.yml
         # above contains both intermediate and root CA certs
         ca_certs: "{{ pem_chain[1:] | join('\n') }}"
+
+    # secret containing http-config.yaml, etc.
+    - name: Create Thanos sidecar config secret
+      vars:
+        secret_name: "{{ monitoring_secrets['thanos-config'] }}"
+        secret_data: "{{ thanos_config_secret_data }}"
+      ansible.builtin.include_tasks: tasks/k8s/secrets/generic.yml
 
     # secret containing oauth2-proxy config files
     - name: Create monitoring oauth-proxy secret
