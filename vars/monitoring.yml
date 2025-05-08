@@ -63,7 +63,7 @@ monitoring_oauth2_proxy_version: "7.9.0"
 # (references "redis_cluster_urls" var from vars/valkey.yml)
 monitoring_oauth2_proxy_config: |
   {% set configs = {} %}
-  {% for client in [
+  {% for app in [
          'prometheus',
          'alertmanager'
        ] %}
@@ -72,10 +72,10 @@ monitoring_oauth2_proxy_config: |
          'provider_display_name': 'Keycloak',
          'skip_provider_button':   true,
          'provider_ca_files':    ['/tls/server/ca.crt'],
-         'client_id':        monitoring_oidc_client_id[client],
-         'client_secret':    monitoring_oidc_client_secret[client],
+         'client_id':        monitoring_oidc_client_id[app],
+         'client_secret':    monitoring_oidc_client_secret[app],
          'code_challenge_method': 'S256',
-         'redirect_url':    'https://'~ monitoring_fqdns[client][0] ~'/oauth2/callback',
+         'redirect_url':    'https://'~ monitoring_fqdns[app][0] ~'/oauth2/callback',
          'oidc_issuer_url':  monitoring_oidc_issuer_uri,
          'cookie_secret':    oauth2_proxy_cookie_secret,
          'cookie_domains':  '.'~ search_domains[0],
@@ -91,12 +91,26 @@ monitoring_oauth2_proxy_config: |
          'redis_cluster_connection_urls':  redis_cluster_urls,
          'redis_password':                 valkey_pass
        } %}
-  {# to_toml: filter_plugins/filters.py #}
+  {#   to_toml: filter_plugins/filters.py #}
   {%   set _ = configs.update({
-         client ~'.toml': config | to_toml
+         app ~'.toml': config | to_toml
        }) %}
   {% endfor  %}
   {{ configs }}
+
+metric_scraper_tls_config:
+  cert: # SecretOrConfigMap
+    secret:
+      name: "{{ monitoring_secrets['scraper'] }}"
+      key: tls.crt
+  keySecret: # SecretKeySelector
+    name: "{{ monitoring_secrets['scraper'] }}"
+    key: tls.key
+  ca: # SecretOrConfigMap
+    secret:
+      name: "{{ monitoring_secrets['scraper'] }}"
+      key: ca.crt
+  insecureSkipVerify: true
 
 prometheus_stack_chart_version: "70.8.0"
 # https://github.com/prometheus-community/helm-charts/tree/main/charts/kube-prometheus-stack
@@ -394,19 +408,7 @@ prometheus_stack_chart_values:
 
       # TLSConfig (mTLS client certificate):
       # https://github.com/prometheus-operator/prometheus-operator/tree/main/Documentation/api-reference/api.md#tlsconfig
-      tlsConfig: &scraper_tls
-        cert: # SecretOrConfigMap
-          secret:
-            name: "{{ monitoring_secrets['scraper'] }}"
-            key: tls.crt
-        keySecret: # SecretKeySelector
-          name: "{{ monitoring_secrets['scraper'] }}"
-          key: tls.key
-        ca: # SecretOrConfigMap
-          secret:
-            name: "{{ monitoring_secrets['scraper'] }}"
-            key: ca.crt
-        insecureSkipVerify: true
+      tlsConfig: "{{ metric_scraper_tls_config }}"
 
     thanosService: # for Thanos service discovery
       enabled: true
@@ -431,7 +433,41 @@ prometheus_stack_chart_values:
     thanosServiceMonitor:
       enabled: true
       scheme: https
-      tlsConfig: *scraper_tls
+      tlsConfig: "{{ metric_scraper_tls_config }}"
+
+    # for oauth-proxy sidecars
+    additionalServiceMonitors: |
+      {% set smons = [] %}
+      {% for app in [
+             'prometheus',
+             'alertmanager'
+           ] %}
+      {%   set svc = monitoring_release_name ~'-'~ app %}
+      {%   set _   = smons.append({
+             'name':  svc ~'-oauth-proxy',
+             'additionalLabels': {
+               'app': svc
+             },
+             'selector': {
+               'matchLabels': {
+                 'app':           svc,
+                 'release':       monitoring_release_name,
+                 'self-monitor': 'true'
+               }
+             },
+             'namespaceSelector': {
+               'matchNames': [monitoring_namespace]
+             },
+             'endpoints': [{
+               'port':       'oauth-metrics',
+               'path':       '/metrics',
+               'scheme':     'https',
+               'tlsConfig':   metric_scraper_tls_config,
+               'enableHttp2': true
+             }]
+           }) %}
+      {% endfor %}
+      {{ smons  }}
 
   # best to keep rules on Prometheus itself:
   # https://thanos.io/tip/components/rule.md
@@ -574,7 +610,7 @@ prometheus_stack_chart_values:
     serviceMonitor:
       selfMonitor: true
       scheme: https
-      tlsConfig: *scraper_tls
+      tlsConfig: "{{ metric_scraper_tls_config }}"
 
   # ======================================== Grafana ========================================
   #
@@ -735,7 +771,7 @@ prometheus_stack_chart_values:
         app: "{{ monitoring_release_name }}-grafana"
         release: "{{ monitoring_release_name }}"
       scheme: https
-      tlsConfig: *scraper_tls
+      tlsConfig: "{{ metric_scraper_tls_config }}"
 
   # =================================== kube-state-metrics ===================================
   #
@@ -781,11 +817,12 @@ prometheus_stack_chart_values:
     prometheus:
       monitor:
         enabled: true
+        # disable HTTPS due to kubeRBACProxy.
         # values below apply to same settings
         # under .http and .metrics endpoints
         # scheme: https
+        # tlsConfig: "{{ metric_scraper_tls_config }}"
         # enableHttp2: true
-        # tlsConfig: *scraper_tls
 
     collectors:
       - certificatesigningrequests
@@ -843,7 +880,7 @@ prometheus_stack_chart_values:
         cpu: 10m
         memory: 16Mi
       limits:
-        cpu: 25m
+        cpu: 50m
         memory: 64Mi
 
     extraVolumes:
@@ -871,9 +908,8 @@ prometheus_stack_chart_values:
       monitor:
         enabled: true
         scheme: https
-        tlsConfig: *scraper_tls
+        tlsConfig: "{{ metric_scraper_tls_config }}"
         scrapeTimeout: 30s
-        interval: 2m
 
   # ======================================== Exporters =======================================
   #
