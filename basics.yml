@@ -194,7 +194,7 @@
       # must replace it or else no networking will be configured on reboot!
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/template_module.html
       ansible.builtin.template:
-        src: templates/netplan.yaml.j2
+        src: "{{ template_dir }}/linux/netplan.yaml.j2"
         dest: /etc/netplan/50-ansible-init.yaml
         mode: "0600"
       when: >-

@@ -31,6 +31,17 @@
         release_state:
           - deployed
       register: helm_info
+
+    # add CORS headers to Grafana responses
+    - name: Set grafana_ingress_snippet fact
+      vars:
+        location_regex: ^/api
+        backend_url: https://{{ monitoring_release_name }}-grafana.{{ monitoring_namespace }}.svc.cluster.local
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/set_fact_module.html
+      ansible.builtin.set_fact:
+        # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/template_lookup.html
+        grafana_ingress_snippet: |-
+          {{ lookup('ansible.builtin.template', template_dir ~ '/cors.nginx.j2') }}
   tasks:
     # client certs for etcd ServiceMonitor
     # (turns out not needed as the metrics
@@ -77,7 +88,6 @@
     # CA certs to be stored inline with Grafana data
     # source configs for Prometheus and Alertmanager
     - name: Set ca_certs fact from pem_chain
-      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/set_fact_module.html
       ansible.builtin.set_fact:
         # pem_chain fact set by tasks/k8s/secrets/tls.pki.yml
         # above contains both intermediate and root CA certs

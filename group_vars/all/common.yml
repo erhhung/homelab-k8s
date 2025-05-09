@@ -10,6 +10,9 @@ ansible_python_interpreter: "{{ default_python_interpreter }}"
 ansible_user_virtualenv: /home/{{ ansible_user }}/.venv
 venv_python_interpreter: "{{ ansible_user_virtualenv }}/bin/python3"
 
+# "playbook_dir" is an Ansible built-in var
+template_dir: "{{ playbook_dir }}/templates"
+
 # bcrypt settings used for ansible.builtin.password_hash filter:
 # use fixed 22-char salt and rounds for idempotent configuration
 # (requires Python packages "passlib" and "bcrypt==4.0.1" on the

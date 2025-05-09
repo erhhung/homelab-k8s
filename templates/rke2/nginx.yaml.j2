@@ -15,6 +15,16 @@ spec:
     controller:
       # https://kubernetes.github.io/ingress-nginx/user-guide/nginx-configuration/configmap
       config:
+        # https://kubernetes.github.io/ingress-nginx/user-guide/nginx-configuration/configmap/#http-snippet
+        http-snippet: |
+          # set custom variable $request_origin = $http_origin
+          # if Origin header provided, or else $scheme://$host
+          # https://nginx.org/en/docs/http/ngx_http_map_module.html
+          map $http_origin $request_origin {
+            default "$scheme://$host";
+            "~*" $http_origin;
+          }
+
         # allow annotation group ServerSnippet (risk: Critical) in
         # my homelab environment, but likely bad security practice
         # https://kubernetes.github.io/ingress-nginx/user-guide/nginx-configuration/configmap/#annotations-risk-level

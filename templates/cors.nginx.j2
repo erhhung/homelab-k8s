@@ -1,0 +1,38 @@
+location ~* {{ location_regex | default('^/') }} {
+  # https://nginx.org/en/docs/http/ngx_http_headers_module.html
+  # https://nginx.org/en/docs/varindex.html
+
+  if ($request_method = 'OPTIONS') {
+    # NOTE: empty headers will not be sent, so if the client
+    # doesn't send an Access-Control-Request-* header and no
+    # corresponding 'allow_*' template var is provided, that
+    # Access-Control-Allow-* response header will not be sent
+
+    add_header 'Access-Control-Allow-Origin'      "{{ allow_origin  | default('$request_origin')                      }}" always;
+    add_header 'Access-Control-Allow-Methods'     "{{ allow_methods | default('$http_access_control_request_method')  }}" always;
+    add_header 'Access-Control-Allow-Headers'     "{{ allow_headers | default('$http_access_control_request_headers') }}" always;
+    add_header 'Access-Control-Allow-Credentials' 'true' always;
+    add_header 'Access-Control-Max-Age'       '86400' always; # 1 day
+    return 204; # No Content
+  }
+
+  # $request_origin is custom variable defined by controller.config.http-snippet
+  # option of nginx-ingress-controller Helm chart (templates/rke2/nginx.yaml.j2)
+  # NOTE: these headers also appear in the if statement block above, but they
+  # can't be set before the if statement and still take affect if the request
+  # terminates in the block by the return statement, so they are duplicated
+  add_header 'Access-Control-Allow-Origin'      "{{ allow_origin | default('$request_origin') }}" always;
+  add_header 'Access-Control-Allow-Credentials' 'true' always;
+
+  # IMPORTANT! once a location block matches, all ingress routing
+  # rules will be ignored, even if the block runs through without
+  # a return statement: explicit proxy routing must be performed!
+  # https://nginx.org/en/docs/http/ngx_http_proxy_module.html#proxy_pass
+  proxy_pass {{ backend_url }};
+
+  # https://nginx.org/en/docs/http/ngx_http_proxy_module.html#proxy_set_header
+  proxy_set_header 'Host'              "$host";
+  proxy_set_header 'X-Real-IP'         "$remote_addr";
+  proxy_set_header 'X-Forwarded-For'   "$proxy_add_x_forwarded_for";
+  proxy_set_header 'X-Forwarded-Proto' "$scheme";
+}

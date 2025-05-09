@@ -37,6 +37,7 @@
         state: patched
 
     # https://istio.io/latest/docs/ambient/usage/waypoint/#deploy-a-waypoint-proxy
+    # https://ambientmesh.io/docs/setup/configure-waypoints/
     - name: >-
         {{ 'Deploy' if enabled | default(true) else 'Delete' }}
         Waypoint proxy via Gateway API
@@ -44,6 +45,7 @@
         kubeconfig: "{{ kubeconfig }}"
         namespace: "{{ apps_ns }}"
         definition:
+          # https://kubernetes.io/docs/concepts/services-networking/gateway/#api-kind-gateway
           apiVersion: gateway.networking.k8s.io/v1
           kind: Gateway
           metadata:
@@ -56,6 +58,11 @@
               - name: mesh
                 port: 15008
                 protocol: HBONE
+              # expose istio-proxy's
+              # http-envoy-prom port
+              - name: http-monitoring
+                port: 15090
+                protocol: HTTP
         state: "{{ 'present' if enabled | default(true) else 'absent' }}"
 
     # https://istio.io/latest/docs/ambient/usage/waypoint/#useawaypoint

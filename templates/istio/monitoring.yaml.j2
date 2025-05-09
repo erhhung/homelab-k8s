@@ -1,0 +1,147 @@
+---
+# https://istio.io/latest/docs/ops/best-practices/observability/
+#
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: istio-metrics-aggregation
+  labels:
+    # required by Prometheus ruleSelector!
+    release: {{ monitoring_release_name }}
+spec:
+  groups:
+  - name: istio.metricsAggregation-rules
+    interval: 5s
+    rules:
+    - record: workload:istio_requests_total
+      expr: sum without(instance, kubernetes_namespace, kubernetes_pod_name) (istio_requests_total)
+
+    - record: workload:istio_request_duration_milliseconds_count
+      expr: sum without(instance, kubernetes_namespace, kubernetes_pod_name) (istio_request_duration_milliseconds_count)
+    - record: workload:istio_request_duration_milliseconds_sum
+      expr: sum without(instance, kubernetes_namespace, kubernetes_pod_name) (istio_request_duration_milliseconds_sum)
+    - record: workload:istio_request_duration_milliseconds_bucket
+      expr: sum without(instance, kubernetes_namespace, kubernetes_pod_name) (istio_request_duration_milliseconds_bucket)
+
+    - record: workload:istio_request_bytes_count
+      expr: sum without(instance, kubernetes_namespace, kubernetes_pod_name) (istio_request_bytes_count)
+    - record: workload:istio_request_bytes_sum
+      expr: sum without(instance, kubernetes_namespace, kubernetes_pod_name) (istio_request_bytes_sum)
+    - record: workload:istio_request_bytes_bucket
+      expr: sum without(instance, kubernetes_namespace, kubernetes_pod_name) (istio_request_bytes_bucket)
+
+    - record: workload:istio_response_bytes_count
+      expr: sum without(instance, kubernetes_namespace, kubernetes_pod_name) (istio_response_bytes_count)
+    - record: workload:istio_response_bytes_sum
+      expr: sum without(instance, kubernetes_namespace, kubernetes_pod_name) (istio_response_bytes_sum)
+    - record: workload:istio_response_bytes_bucket
+      expr: sum without(instance, kubernetes_namespace, kubernetes_pod_name) (istio_response_bytes_bucket)
+
+    - record: workload:istio_tcp_sent_bytes_total
+      expr: sum without(instance, kubernetes_namespace, kubernetes_pod_name) (istio_tcp_sent_bytes_total)
+    - record: workload:istio_tcp_received_bytes_total
+      expr: sum without(instance, kubernetes_namespace, kubernetes_pod_name) (istio_tcp_received_bytes_total)
+    - record: workload:istio_tcp_connections_opened_total
+      expr: sum without(instance, kubernetes_namespace, kubernetes_pod_name) (istio_tcp_connections_opened_total)
+    - record: workload:istio_tcp_connections_closed_total
+      expr: sum without(instance, kubernetes_namespace, kubernetes_pod_name) (istio_tcp_connections_closed_total)
+---
+# https://tetrate.io/blog/how-to-configure-prometheus-operator-scrape-metrics-from-istio-1-6/
+#
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: istio-controlplane
+  labels:
+    # required by serviceMonitorSelector!
+    release: {{ monitoring_release_name }}
+spec:
+  jobLabel: istiod
+  namespaceSelector:
+    matchNames:
+      - {{ istio_namespace }}
+  selector:
+    matchLabels:
+      app: istiod
+      istio: pilot
+  endpoints:
+    - port: http-monitoring
+      interval: 20s
+---
+# create a headless service for ztunnel DaemonSet pods
+# in order to deploy a ServiceMonitor to scrape metrics
+#
+apiVersion: v1
+kind: Service
+metadata:
+  name: ztunnel
+  labels:
+    app: ztunnel
+    app.kubernetes.io/name: ztunnel
+    app.kubernetes.io/part-of: istio
+spec:
+  type: ClusterIP
+  clusterIP: None
+  selector:
+    app: ztunnel
+  ports:
+    - port: 15020
+      protocol: TCP
+      name: http-monitoring
+      targetPort: 15020
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: istio-ztunnel
+  labels:
+    # required by serviceMonitorSelector!
+    release: {{ monitoring_release_name }}
+spec:
+  jobLabel: ztunnel
+  namespaceSelector:
+    matchNames:
+      - {{ istio_namespace }}
+  selector:
+    matchLabels:
+      app: ztunnel
+  endpoints:
+    - port: http-monitoring
+      path: /stats/prometheus
+      interval: 20s
+      relabelings:
+        # https://training.promlabs.com/training/relabeling/introduction-to-relabeling/hidden-labels-and-metadata
+        # https://prometheus.io/docs/prometheus/latest/configuration/configuration/#kubernetes_sd_config
+        - sourceLabels: ["__meta_kubernetes_pod_node_name"]
+          targetLabel: node
+        - sourceLabels: ["__meta_kubernetes_pod_name"]
+          targetLabel: pod
+        - sourceLabels: ["__meta_kubernetes_namespace"]
+          targetLabel: namespace
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: istio-waypoint
+  labels:
+    # required by serviceMonitorSelector!
+    release: {{ monitoring_release_name }}
+spec:
+  jobLabel: waypoint
+  namespaceSelector:
+    any: true
+  selector:
+    matchLabels:
+      istio.io/waypoint-for: service
+  endpoints:
+    # this metrics endpoint is explicitly exposed
+    # thru the Gateway API (tasks/istio/mesh.yml)
+    - port: http-monitoring
+      path: /stats/prometheus
+      interval: 20s
+      relabelings:
+        - sourceLabels: ["__meta_kubernetes_service_name"]
+          targetLabel: service
+        - sourceLabels: ["__meta_kubernetes_namespace"]
+          targetLabel: namespace
+---

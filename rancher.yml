@@ -205,7 +205,7 @@
           echo "_CHANGED_ admin password set."
         fi
 
-        # when .rancher_api (via templates/rancher.sh.j2)
+        # when .rancher_api (templates/rancher/api.sh.j2)
         # was sourced above, it would have exported both
         # cluster and project ID env vars if registered
         cluster="{{ rke_cluster_name }}"
