@@ -72,6 +72,7 @@
       changed_when: false
 
     - name: Merge kubeconfig into local
+      run_once: true
       vars:
         kubeconfig: "{{ rke_kubeconfig }}"
         context: "{{ rke_cluster_name }}"
@@ -238,13 +239,13 @@
       become: true
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/template_module.html
       ansible.builtin.template:
-        src: "{{ item.src }}"
+        src: "{{ template_dir }}/{{ item.src }}"
         dest: "{{ rke_manifests_dir }}/{{ item.dest }}"
         mode: "0664"
       loop:
-        - src: templates/coredns.yaml.j2
+        - src: rke2/coredns.yaml.j2
           dest: rke2-coredns-config.yaml
-        - src: templates/nginx.yaml.j2
+        - src: rke2/nginx.yaml.j2
           dest: rke2-ingress-nginx-config.yaml
       loop_control:
         label: "{{ item.dest }}"
@@ -257,6 +258,7 @@
       ansible.builtin.service:
         name: rke2-server
         state: restarted
+        sleep: 10
       # noqa no-handler
       when: >-
         kube_proxy_cr is defined and

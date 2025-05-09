@@ -67,7 +67,7 @@
   vars:
     # https://harbor.fourteeners.local/devcenter-api-2.0
     api_base: https://{{ harbor_fqdn }}/api/v2.0
-    api_auth: admin:"{{ harbor_admin_pass }}"
+    api_auth: admin:'{{ harbor_admin_pass }}'
   pre_tasks:
     - name: Get library project config
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/uri_module.html

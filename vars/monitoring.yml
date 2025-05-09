@@ -644,6 +644,13 @@ prometheus_stack_chart_values:
         protocol: https
         cert_file: /tls/server/tls.crt
         cert_key: /tls/server/tls.key
+      # https://grafana.com/docs/grafana/latest/setup-grafana/configure-grafana/#security
+      security:
+        admin_email: "{{ user_erhhung.email }}"
+        # there doesn't appear to be CORS settings available,
+        # so CORS headers are added by ingress server snippet
+        strict_transport_security: true
+        allow_embedding: true
 
     readinessProbe:
       httpGet:
@@ -749,14 +756,20 @@ prometheus_stack_chart_values:
       ingressClassName: "{{ rke_ingress_class }}"
       annotations:
         nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
-        nginx.ingress.kubernetes.io/ssl-passthrough: "true"
-
-        # nginx.ingress.kubernetes.io/server-snippet: |
-        #   if ($host !~* ^({{ monitoring_host_names['grafana'] | join('|') }})\.) {
-        #     # send Misdirected Request response
-        #     # (result of connection coalescing)
-        #     return 421;
-        #   }
+        # cannot use ssl-passthrough with server-snippet
+        # because ssl-passthrough works at OSI layer 4,
+        # and it will invalidate all other annotations
+        nginx.ingress.kubernetes.io/backend-protocol: HTTPS
+        # add CORS headers on /api to allow sites like
+        # https://editor-next.swagger.io/ invoke APIs
+        nginx.ingress.kubernetes.io/server-snippet: |
+          {{ grafana_ingress_snippet }}
+        #
+        # if ($host !~* ^({{ monitoring_host_names['grafana'] | join('|') }})\.) {
+        #   # send Misdirected Request response
+        #   # (result of connection coalescing)
+        #   return 421;
+        # }
       hosts: "{{ monitoring_fqdns['grafana'] }}"
       path: /
       pathType: Prefix

@@ -43,7 +43,7 @@ private CA server at pki.fourteeners.local.
 |  https://kibana.fourteeners.local | OpenSearch Dashboards
 |   postgres.fourteeners.local:5432 | PostgreSQL via Pgpool _(mTLS only)_
 |     https://sso.fourteeners.local | Keycloak IAM console
-|   https://kiali.fourteeners.local | Kiali dashboard _(Keycloak SSO)_
+|   https://kiali.fourteeners.local | Kiali console _(Keycloak SSO)_
 |  https://argocd.fourteeners.local | Argo CD console
 
 ## Installation Sources
@@ -65,7 +65,7 @@ private CA server at pki.fourteeners.local.
 - [X] [PostgreSQL Database](https://www.postgresql.org/docs/current/) — SQL database used by Keycloak and other applications
     * Install using Bitnami's [`postgresql-ha`](https://github.com/bitnami/charts/tree/main/bitnami/postgresql-ha) Helm chart
 - [X] [Keycloak IAM & OIDC Provider](https://www.keycloak.org/) — identity and access management and OpenID Connect provider
-- [X] [Istio Service Mesh](https://istio.io/latest/about/service-mesh/) with [Kiali UI](https://kiali.io/) — secure, observe, trace, and route traffic between cluster workloads
+- [X] [Istio Service Mesh](https://istio.io/latest/about/service-mesh/) with [Kiali Console](https://kiali.io/) — secure, observe, trace, and route traffic between workloads
     * Install into the main RKE cluster using [`istioctl`](https://istio.io/latest/docs/ambient/install/istioctl/)
     * Install Kiali using [`kiali-operator`](https://kiali.io/docs/installation/installation-guide/install-with-helm/#install-with-operator/) Helm chart and `Kiali` CR
 - [X] [Argo CD Declarative GitOps](https://argo-cd.readthedocs.io/) — manage deployment of other applications in the main RKE cluster
@@ -90,7 +90,7 @@ private CA server at pki.fourteeners.local.
 The Ansible Vault password is stored in macOS Keychain under item "`Home-K8s`" for account "`ansible-vault`".
 
 ```bash
-export ANSIBLE_CONFIG=./ansible.cfg
+export ANSIBLE_CONFIG="./ansible.cfg"
 VAULTFILE="group_vars/all/vault.yml"
 
 ansible-vault create $VAULTFILE
@@ -130,7 +130,7 @@ however, all privileged operations using `sudo` will require the password stored
 Set the config variable first for the `ansible-playbook` commands below:
 
 ```bash
-export ANSIBLE_CONFIG=./ansible.cfg
+export ANSIBLE_CONFIG="./ansible.cfg"
 ```
 
 1. Install required packages

@@ -3,10 +3,10 @@
 ---
 # https://www.vcluster.com/install
 - name: Create vCluster "{{ vcluster.name }}"
+  become: false
   vars:
     # required kubernetes>=24.2 package only in user virtualenv
     ansible_python_interpreter: "{{ venv_python_interpreter }}"
-  become: false
   block:
     # https://www.vcluster.com/docs/vcluster/introduction/architecture
     - name: Create vCluster storage
@@ -78,8 +78,7 @@
         - name: Install vCluster Helm chart
           vars:
             # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/template_lookup.html
-            values: "{{ lookup('ansible.builtin.template',
-              playbook_dir ~ '/templates/vcluster.yaml.j2') }}"
+            values: "{{ lookup('ansible.builtin.template', template_dir ~ '/vcluster.yaml.j2') }}"
           # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/helm_module.html
           kubernetes.core.helm:
             kubeconfig: "{{ rke_kubeconfig }}"

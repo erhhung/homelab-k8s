@@ -56,7 +56,9 @@
 
     - name: Generate hosts entries
       vars:
-        search_domains: ["fourteeners.local", "erhhungyuan.com"]
+        search_domains:
+          - fourteeners.local
+          - erhhungyuan.com
         rke_cluster_name: homelab
         rke_ha_mode: true
         k8s_hosts: |
@@ -256,6 +258,28 @@
       loop: "{{ users | ansible.builtin.dict2items(key_name='user', value_name='info') }}"
       loop_control:
         label: "{{ item.user }}"
+
+    - name: Debug dict_kv filter
+      vars:
+        dashboards:
+          - title: Istio Mesh Dashboard
+            gnetId: 7639
+          - title: Istio Ztunnel Dashboard
+            gnetId: 21306
+          - title: Istio Service Dashboard
+            gnetId: 7636
+          - title: Istio Workload Dashboard
+            gnetId: 7630
+          - title: Istio Performance Dashboard
+            gnetId: 11829
+          - title: Istio Control Plane Dashboard
+            gnetId: 7645
+          - title: Istio Wasm Extension Dashboard
+            gnetId: 13277
+        # https://docs.ansible.com/ansible/latest/collections/community/general/dict_kv_filter.html
+        names: "{{ dashboards | map(attribute='title') | map('community.general.dict_kv', 'name') }}"
+      ansible.builtin.debug:
+        var: names
 
 - name: Useful collection of tasks
   tags: tasks

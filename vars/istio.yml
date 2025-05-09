@@ -1,5 +1,5 @@
 # https://github.com/istio/istio/releases/latest
-istio_version: "1.25.2"
+istio_version: "1.26.0"
 istio_bin_dir: /opt/istio/bin
 
 # https://istio.io/latest/docs/ambient/install/istioctl/#install-or-upgrade-the-kubernetes-gateway-api-crds
@@ -58,6 +58,7 @@ kiali_cr_spec:
     cert_file: /tls/ingress/tls.crt
     private_key_file: /tls/ingress/tls.key
 
+  # https://kiali.io/docs/configuration/kialis.kiali.io/#.spec.deployment
   deployment:
     secret_name: "{{ kiali_secrets['openid'] }}"
 
@@ -118,4 +119,86 @@ kiali_cr_spec:
                    }
                  }) %}
             {% endfor %}
-            {{ rules }}
+            {{ rules  }}
+
+  # https://kiali.io/docs/configuration/kialis.kiali.io/#.spec.server
+  server:
+    port: 20001
+    web_port: 443
+    web_schema: https
+    web_root: /kiali
+    web_fqdn: "{{ kiali_fqdns[0] }}"
+    # don't require auth for
+    # the /api endpoint only
+    require_auth: false
+    observability:
+      metrics:
+        enabled: true
+        port: 9090
+      tracing:
+        enabled: false
+
+  external_services:
+    # https://kiali.io/docs/configuration/kialis.kiali.io/#.spec.external_services.prometheus
+    prometheus:
+      is_core: true
+      thanos_proxy:
+        enabled: false
+      url: https://{{ monitoring_release_name }}-prometheus.{{ monitoring_namespace }}.svc.cluster.local:9090
+      auth:
+        # CA cert to verify TLS connection to Prometheus from Kiali pod
+        # /tls/ingress is already mounted by .deployment.custom_secrets
+        ca_file: /tls/ingress/ca.crt
+        type: none # or basic|bearer
+
+    # https://kiali.io/docs/configuration/kialis.kiali.io/#.spec.external_services.grafana
+    grafana:
+      enabled: true
+      is_core: false
+      external_url: https://{{ monitoring_fqdns['grafana'][0] }}
+      internal_url: https://{{ monitoring_release_name }}-grafana.{{ monitoring_namespace }}.svc.cluster.local
+      auth:
+        # CA cert to verify TLS connection to Grafana from Kiali pod
+        # /tls/ingress already mounted by .deployment.custom_secrets
+        ca_file: /tls/ingress/ca.crt
+        type: basic
+        username: admin
+        password: "{{ grafana_admin_pass }}"
+      # https://docs.ansible.com/ansible/latest/collections/community/general/dict_kv_filter.html
+      dashboards: |
+        {{ istio_grafana_dashboards | map(attribute='title') | map('community.general.dict_kv', 'name') }}
+
+    # https://kiali.io/docs/configuration/kialis.kiali.io/#.spec.external_services.custom_dashboards
+    custom_dashboards:
+      enabled: true
+      is_core: false
+      discovery_enabled: auto
+      discovery_auto_threshold: 6
+      # use Istio's Prometheus
+      # prometheus: ~
+
+    # https://kiali.io/docs/configuration/kialis.kiali.io/#.spec.external_services.tracing
+    tracing:
+      enabled: false
+      is_core: false
+      provider: jaeger
+      external_url: ""
+      internal_url: ""
+
+# https://istio.io/latest/docs/ops/integrations/grafana/#option-2-import-from-grafanacom-into-an-existing-deployment
+# https://grafana.com/grafana/dashboards/?search=Istio&dataSource=prometheus
+istio_grafana_dashboards:
+  - title: Istio Mesh Dashboard
+    gnetId: 7639
+  - title: Istio Ztunnel Dashboard
+    gnetId: 21306
+  - title: Istio Service Dashboard
+    gnetId: 7636
+  - title: Istio Workload Dashboard
+    gnetId: 7630
+  - title: Istio Performance Dashboard
+    gnetId: 11829
+  - title: Istio Control Plane Dashboard
+    gnetId: 7645
+  - title: Istio Wasm Extension Dashboard
+    gnetId: 13277

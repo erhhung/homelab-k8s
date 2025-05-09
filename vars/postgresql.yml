@@ -66,8 +66,7 @@ postgresql_chart_values:
     # https://github.com/bitnami/charts/tree/main/bitnami/postgresql-ha#initialize-a-fresh-instance
     initdbScripts:
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/template_lookup.html
-      initpgdbs.sql: "{{ lookup('ansible.builtin.template',
-        playbook_dir ~ '/templates/initpgdbs.sql.j2') }}"
+      init.sql: "{{ lookup('ansible.builtin.template', template_dir ~ '/postgresql/init.sql.j2') }}"
 
   pgpool:
     # duplicate global settings or

@@ -1,7 +1,8 @@
 # https://istio.io/latest/about/faq/#install-method-selection
+# https://istio.io/latest/docs/overview/dataplane-modes/
 # https://istio.io/latest/docs/ambient/install/istioctl/
 ---
-- name: Install istioctl for RKE cluster
+- name: Install istioctl on RKE cluster
   tags: istioctl
   hosts: "{{ rke_control_plane_group }}"
   gather_facts: false
@@ -9,6 +10,7 @@
   vars_files: &vars_files
     - vars/basics.yml
     - vars/kubernetes.yml
+    - vars/monitoring.yml
     - vars/istio.yml
   tasks:
     # https://istio.io/latest/docs/setup/additional-setup/download-istio-release/
@@ -25,7 +27,7 @@
           TARGET_ARCH=$(uname -m) sh - || exit
 
         # point /opt/istio to installed version
-        ln -sf istio-{{ istio_version }} istio
+        ln -sTf istio-{{ istio_version }} istio
       args:
         executable: /bin/bash
       register: install_istioctl
@@ -56,6 +58,7 @@
 - name: Install K8s Gateway API CRDs
   tags: gateway
   hosts: "{{ rke_control_plane_host }}"
+  gather_facts: false
   vars_files: *vars_files
   vars:
     # required kubernetes>=24.2 package only in user virtualenv
@@ -87,8 +90,8 @@
     - name: Prepare custom IstioOperator
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/template_module.html
       ansible.builtin.template:
-        src: templates/istio.yaml.j2
-        dest: .istio/custom.yaml
+        src: "{{ template_dir }}/istio/operator.yaml.j2"
+        dest: .istio/operator.yaml
         mode: "0644"
       register: istio_cr
 
@@ -111,8 +114,8 @@
 
         # progress output and success message are all sent to stderr
         istioctl install \
+          -f .istio/operator.yaml \
           --set profile=ambient \
-          -f .istio/custom.yaml \
           --skip-confirmation
         EOF
       register: install_istio
@@ -121,10 +124,11 @@
         install_istio.stderr is not search('installed successfully') and
         install_istio.rc != 0 and
         install_istio.rc != 9
-      timeout: 300
+      # wait for plenty of DaemonSet pods to redeploy
+      timeout: "{{ 300 * groups['cluster'] | length }}"
   any_errors_fatal: true
 
-- name: Install Kiali dashboard
+- name: Install Kiali web console
   tags: kiali
   hosts: "{{ rke_control_plane_host }}"
   gather_facts: false
@@ -215,4 +219,85 @@
         kiali_info.resources[0].status.replicas
       retries: 30
       delay: 10
+  any_errors_fatal: true
+
+- name: Enable Prometheus monitoring
+  tags: monitoring
+  hosts: "{{ rke_control_plane_host }}"
+  gather_facts: false
+  vars_files: *vars_files
+  vars:
+    grafana: "{{ kiali_cr_spec.external_services.grafana }}"
+    api_base: "{{ grafana.external_url }}/api"
+  pre_tasks:
+    - name: Find existing dashboards
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/uri_module.html
+      ansible.builtin.uri:
+        url: "{{ api_base }}/search?query=Istio"
+        url_username: "{{ grafana.auth.username }}"
+        url_password: "{{ grafana.auth.password }}"
+        force_basic_auth: true
+        return_content: true
+      register: dashboards
+  tasks:
+    - name: Apply manifests for Istio
+      vars:
+        # required kubernetes>=24.2 package only in user virtualenv
+        ansible_python_interpreter: "{{ venv_python_interpreter }}"
+      kubernetes.core.k8s:
+        kubeconfig: "{{ rke_kubeconfig }}"
+        namespace: "{{ istio_namespace }}"
+        # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/template_lookup.html
+        definition: "{{ lookup('ansible.builtin.template', template_dir ~ '/istio/monitoring.yaml.j2') }}"
+        state: present
+        apply: true
+        wait: true
+
+    # https://istio.io/latest/docs/ops/integrations/grafana/#option-2-import-from-grafanacom-into-an-existing-deployment
+    # TODO: detect Istio version change
+    # and re-import matching dashboards
+    - name: Import Grafana dashboard
+      vars:
+        existing: "{{ dashboards.json | map(attribute='title') }}"
+        api_auth: "{{ grafana.auth.username }}:'{{ grafana.auth.password }}'"
+      ansible.builtin.shell: |
+        set -eo pipefail
+
+        revs_url="https://grafana.com/api/dashboards/{{ item.gnetId }}/revisions"
+        rev=$(curl -sfL "$revs_url" | \
+          jq -r '[.items[] |
+            select(.description | contains("{{ istio_version }}"))
+              | .revision] | max')
+        desc="revision $rev of {{ item.title }} ({{ item.gnetId }})"
+
+        echo "Downloading $desc..."
+        json="$(curl -sfL "$revs_url/$rev/download" | \
+          jq '.tags += ["istio"]')" # add "istio" tag
+
+        echo "Importing $desc..."
+        DATASOURCE="Prometheus"
+
+        curl -X POST -sku {{ api_auth }} \
+          -H 'Content-Type: application/json' \
+          --data-binary '{
+            "dashboard": '"$json"',
+            "overwrite": true,
+            "inputs": [{
+              "name":     "DS_PROMETHEUS",
+              "type":     "datasource",
+              "pluginId": "prometheus",
+              "value":    "'$DATASOURCE'"
+            }]
+          }' {{ api_base }}/dashboards/import
+      args:
+        executable: /bin/bash
+      loop: "{{ istio_grafana_dashboards }}"
+      loop_control:
+        label: "{{ item.title }}"
+      when: item.title not in existing
+      register: import_dashboard
+      changed_when: import_dashboard.rc == 0
+      failed_when: >-
+        import_dashboard.rc != 0 and
+        import_dashboard.rc != 9
   any_errors_fatal: true
