@@ -9,7 +9,7 @@
     kubeconfig: "{{ kubeconfig }}"
     api_version: apps/v1
     kind: StatefulSet
-    name: "{{ opensearch_chart_values.masterService }}"
+    name: "{{ opensearch_master_service }}"
     namespace: "{{ opensearch_namespace }}"
   # https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_loops.html#retrying-a-task-until-a-condition-is-met
   register: opensearch_info
@@ -44,6 +44,6 @@
   kubernetes.core.k8s_exec:
     kubeconfig: "{{ kubeconfig }}"
     namespace: "{{ opensearch_namespace }}"
-    pod: "{{ opensearch_chart_values.masterService }}-0"
+    pod: "{{ opensearch_master_service }}-0"
     container: opensearch
     command: "{{ command }}"

@@ -37,7 +37,7 @@ fluent_operator_chart_values:
       # https://github.com/fluent/helm-charts/tree/main/charts/fluent-operator/templates/fluentbit-output-opensearch.yaml
       # https://doc.crds.dev/github.com/fluent/fluent-operator/fluentbit.fluent.io/ClusterOutput/v1alpha2#spec-opensearch
       opensearch:
-        host: "{{ opensearch_chart_values.masterService }}.{{ opensearch_namespace }}.svc.cluster.local"
+        host: "{{ opensearch_master_service }}.{{ opensearch_namespace }}.svc.cluster.local"
         tls:
           crtFile: /fluent-bit/secrets/{{ logging_secrets['plugin'] }}/tls.crt
           keyFile: /fluent-bit/secrets/{{ logging_secrets['plugin'] }}/tls.key
@@ -59,7 +59,20 @@ fluent_operator_chart_values:
         emitterMemBufLimit: 10 # MB
 
     serviceMonitor:
-      enable: false # enable only if Prometheus Operator is installed
+      enable: "{{ prometheus_crds_installed }}"
+      # no scraping will happen because this chart
+      # doesn't currently provide a way to add the
+      # labels required for serviceMonitorSelector:
+      # https://github.com/fluent/helm-charts/pull/606
+      labels:
+        release: "{{ monitoring_release_name }}"
+      path: /api/v2/metrics/prometheus
+
+      # https://training.promlabs.com/training/relabeling/introduction-to-relabeling/hidden-labels-and-metadata
+      relabelings:
+        # https://prometheus.io/docs/prometheus/latest/configuration/configuration/#kubernetes_sd_config
+        - sourceLabels: ["__meta_kubernetes_pod_node_name"]
+          targetLabel: node
 
 # replace ClusterFilter.spec.filters[2].modify.rules in Helm template:
 # https://github.com/fluent/helm-charts/tree/main/charts/fluent-operator/templates/fluentbit-clusterfilter-kubernetes.yaml
@@ -81,3 +94,11 @@ saved_log_search:
     - kubernetes.pod_name
     - kubernetes.container_name
     - log
+
+# https://grafana.com/grafana/dashboards/?search=Fluent&dataSource=prometheus
+logging_grafana_dashboards:
+  - title: Fluent Bit
+    gnetId: 18855
+    tags:
+      - fluent-bit
+      - logging

@@ -1,8 +1,18 @@
 # opensearch_admin_pass: {vault.yml}
 #        kibana_os_pass: {vault.yml}
 
+# passwords will be hashed and stored
+# in opensearch_passwords_hashed fact
+opensearch_passwords:
+  admin: "{{ opensearch_admin_pass }}"
+  erhhung: "{{ opensearch_admin_pass }}"
+  kibana: "{{ kibana_os_pass }}"
+  fluent: "{{ fluent_os_pass }}"
+  metrics: "{{ fluent_os_pass }}"
+
 opensearch_namespace: opensearch
 opensearch_cluster_name: opensearch
+opensearch_master_service: "{{ opensearch_cluster_name }}-master"
 opensearch_host_names: # aliases of "homelab"
   - opensearch
   - es
@@ -79,41 +89,45 @@ opensearch_security_config:
     _meta:
       type: internalusers
       config_version: 2
+
     admin:
       description: Cluster administrator
-      hash: {{ opensearch_admin_pass |
-        ansible.builtin.password_hash('bcrypt',
-        salt=bcrypt_salt, rounds=bcrypt_rounds) }}
+      hash: {{ opensearch_passwords_hashed['admin'] }}
       reserved: true
       backend_roles:
         - admin
+
     erhhung: # YAML anchor does not work!
       description: Cluster administrator
-      hash: {{ opensearch_admin_pass |
-        ansible.builtin.password_hash('bcrypt',
-        salt=bcrypt_salt, rounds=bcrypt_rounds) }}
+      hash: {{ opensearch_passwords_hashed['erhhung'] }}
       reserved: false
       backend_roles:
         - admin
+
     kibana:
       description: Dashboards system user
-      hash: {{ kibana_os_pass |
-        ansible.builtin.password_hash('bcrypt',
-        salt=bcrypt_salt, rounds=bcrypt_rounds) }}
+      hash: {{ opensearch_passwords_hashed['kibana'] }}
       reserved: true
       backend_roles: []
+
     fluent:
       description: Fluent Bit/d log writer
-      hash: {{ fluent_os_pass |
-        ansible.builtin.password_hash('bcrypt',
-        salt=bcrypt_salt, rounds=bcrypt_rounds) }}
+      hash: {{ opensearch_passwords_hashed['fluent'] }}
       reserved: true
       backend_roles: []
+
+    metrics:
+      description: Prometheus metrics scraper
+      hash: {{ opensearch_passwords_hashed['metrics'] }}
+      reserved: true
+      backend_roles: []
+
   # https://opensearch.org/docs/latest/security/configuration/yaml/#rolesyml
   roles.yml: |
     _meta:
       type: roles
       config_version: 2
+
     kibana_system:
       # https://docs.opensearch.org/docs/latest/security/access-control/default-action-groups/#cluster-level
       cluster_permissions:
@@ -137,6 +151,7 @@ opensearch_security_config:
           allowed_actions:
             - kibana_all_write
             - opensearch_dashboards_all_write
+
     fluent_writer:
       cluster_permissions:
         - cluster_composite_ops
@@ -146,12 +161,28 @@ opensearch_security_config:
           allowed_actions:
             - create_index
             - crud
+
+    metric_scraper:
+      # https://github.com/Aiven-Open/prometheus-exporter-plugin-for-opensearch/issues/60
+      cluster_permissions:
+        - cluster:monitor/prometheus/metrics
+        - cluster:monitor/health
+        - cluster:monitor/state
+        - cluster:monitor/nodes/info
+        - cluster:monitor/nodes/stats
+      index_permissions:
+        - index_patterns:
+            - "*"
+          allowed_actions:
+            - indices:monitor/stats
+
   # https://opensearch.org/docs/latest/security/configuration/yaml/#roles_mappingyml
   # https://opensearch.org/docs/latest/security/access-control/users-roles/#predefined-roles
   roles_mapping.yml: |
     _meta:
       type: rolesmapping
       config_version: 2
+
     all_access: # predefined
       reserved: true
       hidden: false
@@ -162,22 +193,30 @@ opensearch_security_config:
         - admin
         - erhhung
       and_backend_roles: []
+
     kibana_system:
       users:
         - kibana
     fluent_writer:
       users:
         - fluent
+    metric_scraper:
+      users:
+        - metrics
 
+opensearch_version: "2.19.1"
+# IMPORTANT! keep opensearch_version and opensearch_chart_version
+# in sync: helm show chart opensearch/opensearch --version 2.xx.x
+# opensearch_version will be used to select proper plugin version
 opensearch_chart_version: "2.32.0"
+
 # https://github.com/opensearch-project/helm-charts/tree/main/charts/opensearch
 # https://github.com/opensearch-project/helm-charts/tree/main/charts/opensearch/values.yaml
 opensearch_chart_values:
   replicas: 3
 
   clusterName: "{{ opensearch_cluster_name }}"
-  # NOTE: this value is referenced in vars/logging.yml
-  masterService: "{{ opensearch_cluster_name }}-master"
+  masterService: "{{ opensearch_master_service }}"
   opensearchJavaOpts: -Xms256M -Xmx256M
 
   extraEnvs:
@@ -281,6 +320,15 @@ opensearch_chart_values:
   # avoid CPU surge in weak cluster
   podManagementPolicy: OrderedReady
 
+  service:
+    labels:
+      # add labels to the regular service to differentiate it from the headless service
+      # so that the ServiceMonitor selector can target just one service instead of both;
+      # however, the chart currently offers no way to add extra ServiceMonitor selector
+      # labels: https://github.com/opensearch-project/helm-charts/issues/673
+      prometheus.io/scrape: "true"
+    labelsHeadless: {}
+
   ingress: # port 9200
     enabled: true
     tls:
@@ -297,9 +345,39 @@ opensearch_chart_values:
     # https://docs.opensearch.org/docs/latest/install-and-configure/plugins/#available-plugins
     # additional: https://github.com/opensearch-project/OpenSearch/tree/main/plugins
     # https://docs.opensearch.org/docs/latest/install-and-configure/plugins/
-    installList: []
+    installList:
+      # https://github.com/Aiven-Open/prometheus-exporter-plugin-for-opensearch
+      # since the "official" GitHub repo hasn't released new plugin versions
+      # to match newer OpenSearch versions, including the version we install,
+      # I've recompiled the 2.17.1.0 source code as 2.19.1.0 and released it
+      # in my forked repo
+      - https://github.com/erhhung/prometheus-exporter-plugin-for-opensearch/releases/download/{{
+        opensearch_version }}.0/prometheus-exporter-{{ opensearch_version }}.0.zip
       # - telemetry-otel
       # - repository-s3
 
+  # this will only create the ServiceMonitor resource,
+  # but metrics won't be available for scraping unless
+  # the prometheus-exporter plugin has been installed!
   serviceMonitor:
-    enabled: false # enable only if Prometheus Operator is installed
+    enabled: "{{ prometheus_crds_installed }}"
+    labels:
+      release: "{{ monitoring_release_name }}"
+    path: /_prometheus/metrics
+    scheme: https
+    # monitoring-scraper-tls Secret must be recreated in the
+    # OpenSearch namespace where this ServiceMonitor resides
+    tlsConfig: "{{ metric_scraper_tls_config }}"
+    basicAuth:
+      enabled: true
+      # credentials secret is expected to
+      # have "username" & "password" keys
+      existingSecret: opensearch-creds-metrics
+
+# https://grafana.com/grafana/dashboards/?search=OpenSearch&dataSource=prometheus
+opensearch_grafana_dashboards:
+  - title: OpenSearch
+    gnetId: 23029
+    tags:
+      - opensearch
+      - logging

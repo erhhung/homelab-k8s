@@ -11,6 +11,7 @@
     - vars/kubernetes.yml
     - vars/storage.yml
     - vars/opensearch.yml
+    - vars/monitoring.yml
     - vars/logging.yml
     - vars/kibana.yml
   vars:
@@ -18,6 +19,11 @@
     ansible_python_interpreter: "{{ venv_python_interpreter }}"
     kubeconfig: "{{ rke_kubeconfig }}"
     secret_ns: "{{ logging_namespace }}"
+  pre_tasks:
+    - name: Are Prometheus CRDs installed?
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
+      ansible.builtin.include_tasks: tasks/monitoring/promcrds.yml
+      when: prometheus_crds_installed is not defined
   tasks:
     - name: Create Fluent credentials secret
       vars:
@@ -25,7 +31,6 @@
         secret_data:
           opensearch-username: fluent
           opensearch-password: "{{ fluent_os_pass }}"
-      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
       ansible.builtin.include_tasks: tasks/k8s/secrets/generic.yml
 
     # https://docs.fluentbit.io/manual/administration/transport-security
@@ -82,10 +87,26 @@
               {{ rules }}
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/difference_filter.html
       when: remove_log_fields | ansible.builtin.difference(rules)
+
+    # https://github.com/fluent/helm-charts/issues/605
+    - name: Add required ServiceMonitor labels
+      # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_module.html
+      kubernetes.core.k8s:
+        kubeconfig: "{{ kubeconfig }}"
+        api_version: monitoring.coreos.com/v1
+        kind: ServiceMonitor
+        name: fluent-bit
+        namespace: "{{ logging_namespace }}"
+        definition:
+          metadata:
+            labels:
+              release: "{{ monitoring_release_name }}"
+        state: patched
+      when: prometheus_crds_installed
   any_errors_fatal: true
 
-- name: Configure Dashboards for logs
-  tags: kibana
+- name: Configure logging dashboards
+  tags: dashboards
   hosts: "{{ rke_control_plane_host }}"
   gather_facts: false
   vars_files: *vars_files
@@ -113,4 +134,9 @@
         settings:
           defaultRoute: /app/data-explorer/discover/#/view/{{ saved_search_id }}
       ansible.builtin.include_tasks: tasks/kibana/settings.yml
+
+    - name: Import Grafana dashboards
+      vars:
+        dashboards: "{{ logging_grafana_dashboards }}"
+      ansible.builtin.include_tasks: tasks/monitoring/dashboards.yml
   any_errors_fatal: true

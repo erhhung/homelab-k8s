@@ -124,6 +124,9 @@ kiali_cr_spec:
   # https://kiali.io/docs/configuration/kialis.kiali.io/#.spec.server
   server:
     port: 20001
+    # web_* settings don't configure anything--
+    # they're used to generate URLs for browser
+    # when the server is behind a proxy/ingress
     web_port: 443
     web_schema: https
     web_root: /kiali
@@ -185,7 +188,6 @@ kiali_cr_spec:
       external_url: ""
       internal_url: ""
 
-# https://istio.io/latest/docs/ops/integrations/grafana/#option-2-import-from-grafanacom-into-an-existing-deployment
 # https://grafana.com/grafana/dashboards/?search=Istio&dataSource=prometheus
 istio_grafana_dashboards:
   - title: Istio Mesh Dashboard

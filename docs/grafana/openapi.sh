@@ -10,7 +10,7 @@
 #      and click the Authorize button for basic auth
 
 GRAFANA_OPENAPI_URL="https://raw.githubusercontent.com/grafana/grafana/refs/heads/main/public/openapi3.json"
- GRAFANA_SERVER_URL="https://grafana.fourteeners.local"
+ GRAFANA_SERVER_URL="https://grafana.fourteeners.local/api"
 
 curl -sfL "$GRAFANA_OPENAPI_URL" |   \
   jq --arg url "$GRAFANA_SERVER_URL" \

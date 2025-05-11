@@ -110,6 +110,10 @@ metric_scraper_tls_config:
     secret:
       name: "{{ monitoring_secrets['scraper'] }}"
       key: ca.crt
+  # NOTE: Prometheus scraper cannot verify server
+  # certs because it connects to targets using IP
+  # addresses (from what I've read) and the certs
+  # will not contain IP SANs to cover all pod IPs
   insecureSkipVerify: true
 
 prometheus_stack_chart_version: "70.8.0"

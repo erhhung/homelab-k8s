@@ -226,19 +226,6 @@
   hosts: "{{ rke_control_plane_host }}"
   gather_facts: false
   vars_files: *vars_files
-  vars:
-    grafana: "{{ kiali_cr_spec.external_services.grafana }}"
-    api_base: "{{ grafana.external_url }}/api"
-  pre_tasks:
-    - name: Find existing dashboards
-      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/uri_module.html
-      ansible.builtin.uri:
-        url: "{{ api_base }}/search?query=Istio"
-        url_username: "{{ grafana.auth.username }}"
-        url_password: "{{ grafana.auth.password }}"
-        force_basic_auth: true
-        return_content: true
-      register: dashboards
   tasks:
     - name: Apply manifests for Istio
       vars:
@@ -253,51 +240,13 @@
         apply: true
         wait: true
 
-    # https://istio.io/latest/docs/ops/integrations/grafana/#option-2-import-from-grafanacom-into-an-existing-deployment
-    # TODO: detect Istio version change
-    # and re-import matching dashboards
-    - name: Import Grafana dashboard
+    - name: Import Grafana dashboards
       vars:
-        existing: "{{ dashboards.json | map(attribute='title') }}"
-        api_auth: "{{ grafana.auth.username }}:'{{ grafana.auth.password }}'"
-      ansible.builtin.shell: |
-        set -eo pipefail
-
-        revs_url="https://grafana.com/api/dashboards/{{ item.gnetId }}/revisions"
-        rev=$(curl -sfL "$revs_url" | \
-          jq -r '[.items[] |
-            select(.description | contains("{{ istio_version }}"))
-              | .revision] | max')
-        desc="revision $rev of {{ item.title }} ({{ item.gnetId }})"
-
-        echo "Downloading $desc..."
-        json="$(curl -sfL "$revs_url/$rev/download" | \
-          jq '.tags += ["istio"]')" # add "istio" tag
-
-        echo "Importing $desc..."
-        DATASOURCE="Prometheus"
-
-        curl -X POST -sku {{ api_auth }} \
-          -H 'Content-Type: application/json' \
-          --data-binary '{
-            "dashboard": '"$json"',
-            "overwrite": true,
-            "inputs": [{
-              "name":     "DS_PROMETHEUS",
-              "type":     "datasource",
-              "pluginId": "prometheus",
-              "value":    "'$DATASOURCE'"
-            }]
-          }' {{ api_base }}/dashboards/import
-      args:
-        executable: /bin/bash
-      loop: "{{ istio_grafana_dashboards }}"
-      loop_control:
-        label: "{{ item.title }}"
-      when: item.title not in existing
-      register: import_dashboard
-      changed_when: import_dashboard.rc == 0
-      failed_when: >-
-        import_dashboard.rc != 0 and
-        import_dashboard.rc != 9
+        options: # apply common options
+          filter: "{{ istio_version }}"
+          tags:
+            - istio
+            - mesh
+        dashboards: "{{ istio_grafana_dashboards | map('combine', options) }}"
+      ansible.builtin.include_tasks: tasks/monitoring/dashboards.yml
   any_errors_fatal: true

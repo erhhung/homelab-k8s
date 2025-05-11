@@ -235,13 +235,22 @@
   tasks:
     - name: Debug password_hash filter
       vars:
-        password: "{{ fluent_os_pass }}"
+        credentials:
+          user11: password1
+          user12: password1
+          user21: password2
+          user22: password2
         # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/password_hash_filter.html
         # (requires Python packages "passlib" and "bcrypt==4.0.1" on Ansible controller)
         # bcrypt_salt is group var (must be exactly 22 characters) defined in common.yml
-        hash: "{{ password | ansible.builtin.password_hash('bcrypt', salt=bcrypt_salt, rounds=bcrypt_rounds) }}"
+        username_hash: "{{ item[0] | ansible.builtin.password_hash('bcrypt', salt=bcrypt_salt, rounds=bcrypt_rounds) }}"
+        custom_salt: "{{ username_hash[-1 * bcrypt_salt | length :]}}"
+        password_hash: "{{ item[1] | ansible.builtin.password_hash('bcrypt', salt=custom_salt, rounds=bcrypt_rounds) }}"
       ansible.builtin.debug:
-        var: hash
+        var: password_hash
+      loop: "{{ credentials.items() }}"
+      loop_control:
+        label: "{{ item[0] }}"
 
     - name: Debug dict2items filter
       vars:
@@ -280,6 +289,29 @@
         names: "{{ dashboards | map(attribute='title') | map('community.general.dict_kv', 'name') }}"
       ansible.builtin.debug:
         var: names
+
+    - name: Is truthy expression
+      vars:
+        expressions:
+          - desc: empty string
+            expr: ""
+          - desc: 1-item list
+            expr: ["foo"]
+          - desc: empty list
+            expr: []
+          - desc: 1-key dict
+            expr: {foo: bar}
+          - desc: empty dict
+            expr: {}
+          - desc: number one
+            expr: 1
+          - desc: number zero
+            expr: 0
+      ansible.builtin.debug:
+        msg: "{{ item.desc }}: {{ item.expr is truthy }}"
+      loop: "{{ expressions }}"
+      loop_control:
+        label: "{{ item.desc }}"
 
 - name: Useful collection of tasks
   tags: tasks

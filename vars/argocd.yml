@@ -89,29 +89,42 @@ argocd_chart_values:
 
   controller:
     revisionHistoryLimit: 2
+
+    readinessProbe: &probe
+      initialDelaySeconds: 30
+      timeoutSeconds: 5
+
     metrics: &metrics
       enabled: true
       serviceMonitor:
         enabled: false # enable only if Prometheus Operator is installed
+
   applicationSet:
     # enabling the allowAnyNamespace feature requires
     # allowed.scm.providers setting in configs.params
     allowAnyNamespace: true
     metrics:
       <<: *metrics
+
   redis:
     metrics:
       <<: *metrics
+
   dex:
     # don't need IdP integration in
     # homelab environment currently
     enabled: false
+
   server:
+    readinessProbe: *probe
+    livenessProbe: *probe
+
     # "argocd-server-tls" Secret
     # will be created by Ansible
     # https://argo-cd.readthedocs.io/en/stable/operator-manual/tls/#tls-certificates-used-by-argocd-server
     certificateSecret:
       enabled: false
+
     ingress:
       enabled: true
       tls: true
@@ -119,13 +132,18 @@ argocd_chart_values:
       annotations:
         nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
         nginx.ingress.kubernetes.io/ssl-passthrough: "true"
+
     metrics:
       <<: *metrics
+
   repoServer:
     metrics:
       <<: *metrics
+
   commitServer:
     enabled: true
+    readinessProbe: *probe
+
   notifications:
     metrics:
       <<: *metrics

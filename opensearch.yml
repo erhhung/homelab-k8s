@@ -10,22 +10,34 @@
     - vars/basics.yml
     - vars/kubernetes.yml
     - vars/storage.yml
+    - vars/monitoring.yml
     - vars/opensearch.yml
     - vars/kibana.yml
   vars:
     # required kubernetes>=24.2 package only in user virtualenv
     ansible_python_interpreter: "{{ venv_python_interpreter }}"
-    values: "{{ opensearch_chart_values }}"
     kubeconfig: "{{ rke_kubeconfig }}"
+    secret_ns: "{{ opensearch_namespace }}"
     create_ns: false
   pre_tasks:
+    - name: Hash OpenSearch user passwords
+      vars:
+        passwords: "{{ opensearch_passwords }}"
+        fact_name: opensearch_passwords_hashed
+      ansible.builtin.include_tasks: tasks/hashpwds.yml
+
+    - name: Are Prometheus CRDs installed?
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
+      ansible.builtin.include_tasks: tasks/monitoring/promcrds.yml
+      when: prometheus_crds_installed is not defined
+
     - name: Is OpenSearch already running?
       # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_info_module.html
       kubernetes.core.k8s_info:
         kubeconfig: "{{ kubeconfig }}"
         api_version: apps/v1
         kind: StatefulSet
-        name: "{{ values.masterService }}"
+        name: "{{ opensearch_master_service }}"
         namespace: "{{ opensearch_namespace }}"
       register: opensearch_info
   tasks:
@@ -37,9 +49,7 @@
         cert_desc: OpenSearch node
         cert_file: opensearch
         secret_name: "{{ opensearch_secrets['node-tls'] }}"
-        secret_ns: "{{ opensearch_namespace }}"
         create_ns: true
-      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
       ansible.builtin.include_tasks: tasks/k8s/secrets/tls.pki.yml
 
     - name: Create OpenSearch admin secret
@@ -49,34 +59,40 @@
         cert_desc: OpenSearch admin
         cert_file: opensearch_admin
         secret_name: "{{ opensearch_secrets['admin-tls'] }}"
-        secret_ns: "{{ opensearch_namespace }}"
       ansible.builtin.include_tasks: tasks/k8s/secrets/tls.pki.yml
 
     - name: Create OpenSearch passwords secret
       vars:
         secret_name: "{{ opensearch_secrets['passwords'] }}"
-        secret_ns: "{{ opensearch_namespace }}"
         secret_data:
           admin: "{{ opensearch_admin_pass }}"
           kibana: "{{ kibana_os_pass }}"
       ansible.builtin.include_tasks: tasks/k8s/secrets/generic.yml
 
+    - name: Create OpenSearch credentials secret
+      vars:
+        users:
+          - metrics
+        secret_name: opensearch-creds-{{ item }}
+        secret_data:
+          username: "{{ item }}"
+          password: "{{ opensearch_passwords[item] }}"
+      ansible.builtin.include_tasks: tasks/k8s/secrets/generic.yml
+      loop: "{{ users }}"
+
     - name: Create OpenSearch security secret
       vars:
         secret_name: "{{ opensearch_secrets['security'] }}"
-        secret_ns: "{{ opensearch_namespace }}"
         secret_data: "{{ opensearch_security_config }}"
+        if_changed: Apply updated security config
       ansible.builtin.include_tasks: tasks/k8s/secrets/generic.yml
-      register: security_secret
 
-    - name: Notify if security secret changed
-      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/debug_module.html
-      ansible.builtin.debug:
-        msg: Handler will be triggered
-      when: security_secret is changed
-      # noqa: no-handler because "notify"
-      # cannot be used with include_tasks
-      notify: Apply updated security config
+    - name: Create monitoring scraper secret
+      vars:
+        cert_desc: scraping client
+        cert_file: scraper
+        secret_name: "{{ monitoring_secrets['scraper'] }}"
+      ansible.builtin.include_tasks: tasks/k8s/secrets/tls.pki.yml
 
     # https://github.com/opensearch-project/helm-charts/tree/main/charts/opensearch
     - name: Install OpenSearch Helm chart
@@ -96,6 +112,23 @@
       # and provision storage and start each StatefulSet
       # pod sequentially due to the OrderedReady policy
       timeout: 1800
+
+    # https://github.com/opensearch-project/helm-charts/issues/673
+    - name: Patch ServiceMonitor selector
+      # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_module.html
+      kubernetes.core.k8s:
+        kubeconfig: "{{ kubeconfig }}"
+        api_version: monitoring.coreos.com/v1
+        kind: ServiceMonitor
+        name: "{{ opensearch_master_service }}-service-monitor"
+        namespace: "{{ opensearch_namespace }}"
+        definition:
+          spec:
+            selector:
+              matchLabels:
+                prometheus.io/scrape: "true"
+        state: patched
+      when: prometheus_crds_installed
   handlers:
     - name: Apply updated security config
       # a handler cannot have block of subtasks, so the
@@ -155,4 +188,9 @@
       vars:
         settings: "{{ kibana_settings }}"
       ansible.builtin.include_tasks: tasks/kibana/settings.yml
+
+    - name: Import Grafana dashboards
+      vars:
+        dashboards: "{{ opensearch_grafana_dashboards }}"
+      ansible.builtin.include_tasks: tasks/monitoring/dashboards.yml
   any_errors_fatal: true

@@ -1,0 +1,29 @@
+# check if Prometheus Operator CRDs are installed
+# so that ServiceMonitor resources can be created
+#
+# sets the following facts:
+#   prometheus_crds_installed: true/false
+---
+- name: Are Prometheus CRDs installed?
+  become: false
+  vars:
+    # if one CRD is installed, others should also be
+    check_crd: servicemonitors.monitoring.coreos.com
+  block:
+    - name: Check crd/{{ check_crd }}
+      vars:
+        # required kubernetes>=24.2 package only in user virtualenv
+        ansible_python_interpreter: "{{ venv_python_interpreter }}"
+      # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_info_module.html
+      kubernetes.core.k8s_info:
+        kubeconfig: "{{ rke_kubeconfig }}"
+        api_version: apiextensions.k8s.io/v1
+        kind: CustomResourceDefinition
+        name: "{{ check_crd }}"
+      register: crd_info
+
+    - name: Set prometheus_crds_installed fact
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/set_fact_module.html
+      ansible.builtin.set_fact:
+        prometheus_crds_installed: "{{ crd_info.resources is truthy }}"
+  any_errors_fatal: true
