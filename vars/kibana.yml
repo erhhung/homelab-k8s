@@ -15,7 +15,7 @@ dashboards_chart_version: "2.28.0"
 # https://github.com/opensearch-project/helm-charts/tree/main/charts/opensearch-dashboards
 # https://github.com/opensearch-project/helm-charts/tree/main/charts/opensearch-dashboards/values.yaml
 dashboards_chart_values:
-  opensearchHosts: https://{{ opensearch_chart_values.masterService }}.{{ opensearch_namespace }}.svc:9200
+  opensearchHosts: https://{{ opensearch_master_service }}.{{ opensearch_namespace }}.svc:9200
 
   # opensearchAccount:
   #   secret: "{{ opensearch_secrets['passwords'] }}"
@@ -80,7 +80,8 @@ dashboards_chart_values:
   plugins:
     enabled: true
     # https://docs.opensearch.org/docs/latest/install-and-configure/install-dashboards/plugins/#available-plugins
-    installList: []
+    installList:
+      []
       # - dashboards-observability
 
   serviceMonitor:

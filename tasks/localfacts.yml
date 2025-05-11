@@ -1,17 +1,25 @@
-- name: Get local timezone offset
+# gathers facts about the Ansible controller host
+#
+# sets the following facts:
+#   local_python_interpreter `which python3` output
+#   local_tz_offset          {in_hours, in_seconds}
+---
+- name: Gather controller facts
   delegate_to: localhost
-  # prevent sudo prompt
   become: false
-  # local custom module
-  local_timezone_offset:
-  # .in_hours and .in_seconds
-  register: tz_offset
+  block:
+    - name: Get timezone offset
+      # .ansible/modules/local_timezone_offset.py
+      # returns .in_hours (float) and .in_seconds
+      local_timezone_offset: {}
+      register: tz_offset
 
-- name: Set controller facts
-  # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/set_fact_module.html
-  ansible.builtin.set_fact:
-    # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/pipe_lookup.html
-    local_python_interpreter: "{{ lookup('ansible.builtin.pipe', 'which python3') }}"
-    local_tz_offset:
-      in_hours: "{{ tz_offset.in_hours | float }}"
-      in_seconds: "{{ tz_offset.in_seconds | int }}"
+    - name: Set controller facts
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/set_fact_module.html
+      ansible.builtin.set_fact:
+        # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/pipe_lookup.html
+        local_python_interpreter: "{{ lookup('ansible.builtin.pipe', 'which python3') }}"
+        local_tz_offset:
+          in_hours: "{{ tz_offset.in_hours | float }}"
+          in_seconds: "{{ tz_offset.in_seconds | int }}"
+  any_errors_fatal: true

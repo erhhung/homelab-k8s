@@ -1,0 +1,26 @@
+# generate bcrypt password hashes
+#
+# pass the following vars:
+#   passwords <required> dict of usernames to passwords
+#   fact_name <required> fact to store hashed passwords
+# sets the following facts:
+#   {fact_name} dict of usernames to *HASHED* passwords
+---
+- name: Generate bcrypt password hashes
+  # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/password_hash_filter.html
+  # password_hash filter is run twice per password because many users share the same
+  # password, and since we require idempotent generation, we explicitly provide salt
+  # value instead of letting the filter pick a random one. Thus, the 22-char salt is
+  # generated from the username using fixed global salt, then the password is hashed
+  # using that user-specific salt
+  # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/set_fact_module.html
+  ansible.builtin.set_fact:
+    "{{ fact_name }}": |
+      {% set hashed = {} %}
+      {% for user, pass in passwords.items() %}
+      {%   set user_hash = user | ansible.builtin.password_hash('bcrypt', salt=bcrypt_salt, rounds=bcrypt_rounds) %}
+      {%   set custom_salt = user_hash[-1 * bcrypt_salt | length :] %}
+      {%   set pass_hash = pass | ansible.builtin.password_hash('bcrypt', salt=custom_salt, rounds=bcrypt_rounds) %}
+      {%   set _ = hashed.update({ user: pass_hash }) %}
+      {% endfor %}
+      {{ hashed }}

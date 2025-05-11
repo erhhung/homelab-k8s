@@ -105,8 +105,8 @@
         cert_file: rancher
         secret_name: "{{ rancher_secrets['ingress'] }}"
         secret_ns: "{{ rancher_namespace }}"
+        if_changed: Redeploy RKE Rancher agents
       ansible.builtin.include_tasks: tasks/k8s/secrets/tls.pki.yml
-      register: ingress_secret
       # sets pem_chain fact
 
     - name: Create Rancher CA certs secret
@@ -134,6 +134,7 @@
       timeout: 600
 
     - name: Set Rancher Server settings
+      # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_module.html
       kubernetes.core.k8s:
         kubeconfig: "{{ kubeconfig }}"
         api_version: management.cattle.io/v3
@@ -315,7 +316,7 @@
         msg: |-
           rke_cluster: "{{ rke_cluster }}"
           rke_reg_url: {{ '"'~ rke_reg_url ~'"' if is_defined else '<undefined>' }}
-
+  handlers:
     # force redeploy cattle-cluster-agent in RKE cluster if Rancher TLS secrets
     # have changed so that CATTLE_CA_CHECKSUM environment variable gets updated
     # https://ranchermanager.docs.rancher.com/getting-started/installation-and-upgrade/resources/update-rancher-certificate#4-reconfigure-rancher-agents-to-trust-the-private-ca
@@ -331,7 +332,5 @@
             annotations:
               io.cattle.agent.force.deploy: "true"
         state: patched
-      when: >-
-        ingress_secret is changed and
-           rke_cluster is match('c-')
+      when: rke_cluster is match('c-')
   any_errors_fatal: true

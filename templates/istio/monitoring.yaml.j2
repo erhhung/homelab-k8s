@@ -109,8 +109,9 @@ spec:
     - port: http-monitoring
       path: /stats/prometheus
       interval: 20s
+
+      # https://training.promlabs.com/training/relabeling/introduction-to-relabeling/hidden-labels-and-metadata
       relabelings:
-        # https://training.promlabs.com/training/relabeling/introduction-to-relabeling/hidden-labels-and-metadata
         # https://prometheus.io/docs/prometheus/latest/configuration/configuration/#kubernetes_sd_config
         - sourceLabels: ["__meta_kubernetes_pod_node_name"]
           targetLabel: node
@@ -139,9 +140,30 @@ spec:
     - port: http-monitoring
       path: /stats/prometheus
       interval: 20s
+
       relabelings:
         - sourceLabels: ["__meta_kubernetes_service_name"]
           targetLabel: service
         - sourceLabels: ["__meta_kubernetes_namespace"]
           targetLabel: namespace
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: kiali
+  labels:
+    # required by serviceMonitorSelector!
+    release: {{ monitoring_release_name }}
+spec:
+  jobLabel: kiali
+  namespaceSelector:
+    matchNames:
+      - {{ istio_namespace }}
+  selector:
+    matchLabels:
+      app: kiali
+  endpoints:
+    - port: http-metrics
+      path: /metrics
+      interval: 30s
 ---

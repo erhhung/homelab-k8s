@@ -1,0 +1,85 @@
+# import one or more Grafana dashboards from
+# https://grafana.com/grafana/dashboards/ by
+# their IDs (gnetId)
+#
+# pass the following vars:
+#   dashboards  <required> dashboard list
+#     - title:  <required> official title
+#       gnetId: <required> dashboard ID
+#       filter: [optional] contain desc
+#       tags:   [optional] list of tags
+#
+# TODO: detect revision change due to change in
+# description filter and reimport the dashboard
+---
+- name: Import Grafana dashboards
+  delegate_to: localhost
+  become: false
+  vars:
+    admin_user: admin
+    admin_pass: "{{ grafana_admin_pass }}"
+    api_base: https://{{ monitoring_fqdns['grafana'][0] }}/api
+  block:
+    - name: Find existing dashboards
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/uri_module.html
+      ansible.builtin.uri:
+        url: "{{ api_base }}/search?type=dash-db&limit=5000"
+        url_username: "{{ admin_user }}"
+        url_password: "{{ admin_pass }}"
+        force_basic_auth: true
+        return_content: true
+      register: existing_dashboards
+
+    # https://istio.io/latest/docs/ops/integrations/grafana/#option-2-import-from-grafanacom-into-an-existing-deployment
+    - name: Import Grafana dashboard
+      vars:
+        api_auth: "{{ admin_user }}:'{{ admin_pass }}'"
+        existing: "{{ existing_dashboards.json | map(attribute='title') }}"
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/shell_module.html
+      ansible.builtin.shell: |
+        set -eo pipefail
+
+        revs_url="https://grafana.com/api/dashboards/{{ item.gnetId }}/revisions"
+
+        # find latest revision that matches filter
+        filter='{{ item.filter | default('') }}'
+        [ "$filter" ] && \
+            filter="| select(.description | contains(\"$filter\"))"
+
+        rev=$(curl -sfL "$revs_url" | \
+          jq -r  "[.items[] $filter | .revision] | max")
+        desc="revision $rev of {{ item.title }} ({{ item.gnetId }})"
+
+        echo "Downloading $desc..."
+        json="$(curl -sfL "$revs_url/$rev/download")"
+        tags='{{ item.tags | default([]) | to_json }}'
+        [ "$tags" == "[]" ] || \
+            json="$(jq ".tags += $tags" <<< "$json")"
+
+        echo "Importing $desc..."
+        DATASOURCE="Prometheus"
+
+        curl -X POST -sku {{ api_auth }} \
+          -H 'Content-Type: application/json' \
+          --data-binary '{
+            "dashboard": '"$json"',
+            "overwrite": true,
+            "inputs": [{
+              "name":     "DS_PROMETHEUS",
+              "type":     "datasource",
+              "pluginId": "prometheus",
+              "value":    "'$DATASOURCE'"
+            }]
+          }' {{ api_base }}/dashboards/import
+      args:
+        executable: /bin/bash
+      loop: "{{ dashboards }}"
+      loop_control:
+        label: "{{ item.title }}"
+      when: item.title not in existing
+      register: import_dashboard
+      changed_when: import_dashboard.rc == 0
+      failed_when: >-
+        import_dashboard.rc != 0 and
+        import_dashboard.rc != 9
+  any_errors_fatal: true
