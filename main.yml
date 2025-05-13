@@ -15,6 +15,9 @@
   ansible.builtin.import_playbook: rancher.yml
   tags: rancher
 
+# if initial cluster installation failed, restart from
+# rancher.yml playbook to obtain registration manifest
+# URL, else Rancher cluster agents will never be ready
 - name: Include Rancher RKE cluster playbook
   ansible.builtin.import_playbook: cluster.yml
   tags: cluster
@@ -27,6 +30,7 @@
   ansible.builtin.import_playbook: manifests.yml
   tags: manifests
 
+# Harbor depends on NFS storage provisioner
 - name: Include Harbor OCI registry playbook
   ansible.builtin.import_playbook: harbor.yml
   tags: harbor
@@ -35,26 +39,30 @@
   ansible.builtin.import_playbook: opensearch.yml
   tags: opensearch
 
+# Fluent Bit depends on OpenSearch
 - name: Include Fluent Bit logging playbook
   ansible.builtin.import_playbook: logging.yml
   tags: logging
-
-- name: Include Valkey cache cluster playbook
-  ansible.builtin.import_playbook: valkey.yml
-  tags: valkey
-
-- name: Include Prometheus monitoring playbook
-  ansible.builtin.import_playbook: monitoring.yml
-  tags: monitoring
 
 - name: Include PostgreSQL database playbook
   ansible.builtin.import_playbook: postgresql.yml
   tags: postgresql
 
+# Keycloak depends on PostgreSQL
 - name: Include Keycloak IAM & OIDC playbook
   ansible.builtin.import_playbook: keycloak.yml
   tags: keycloak
 
+- name: Include Valkey cache cluster playbook
+  ansible.builtin.import_playbook: valkey.yml
+  tags: valkey
+
+# Prometheus depends on Keycloak and Valkey
+- name: Include Prometheus monitoring playbook
+  ansible.builtin.import_playbook: monitoring.yml
+  tags: monitoring
+
+# Kiali depends on Prometheus and Keycloak
 - name: Include Istio service mesh playbook
   ansible.builtin.import_playbook: istio.yml
   tags: istio

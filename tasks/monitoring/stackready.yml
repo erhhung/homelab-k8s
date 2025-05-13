@@ -1,0 +1,49 @@
+# check if Prometheus Operator CRDs are installed
+# so that ServiceMonitor resources can be created
+# and whether Grafana API server is online
+#
+# sets the following facts:
+#   prometheus_crds_installed: true/false
+#   grafana_api_server_online: true/false
+#   monitoring_stack_ready:    true/false
+---
+- name: Is the monitoring stack ready?
+  become: false
+  vars:
+    # if one CRD is installed, others should also be
+    check_crd: servicemonitors.monitoring.coreos.com
+    api_base: https://{{ monitoring_fqdns['grafana'][0] }}/api
+  block:
+    - name: Check crd/{{ check_crd }}
+      vars:
+        # required kubernetes>=24.2 package only in user virtualenv
+        ansible_python_interpreter: "{{ venv_python_interpreter }}"
+      # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_info_module.html
+      kubernetes.core.k8s_info:
+        kubeconfig: "{{ rke_kubeconfig }}"
+        api_version: apiextensions.k8s.io/v1
+        kind: CustomResourceDefinition
+        name: "{{ check_crd }}"
+      register: crd_info
+
+    - name: Check if Grafana API server is reachable
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/uri_module.html
+      ansible.builtin.uri:
+        url: "{{ api_base }}"
+        # if Grafana hasn't been installed, status code
+        # would be -1 for CERTIFICATE_VERIFY_FAILED due
+        # to Nginx returning the default cert; otherwise,
+        # it would be 401 due to missing API credentials
+        status_code: -1, 401
+      register: grafana_api
+
+    - name: Set output facts about stack readiness
+      vars:
+        crds_installed: "{{ crd_info.resources is truthy }}"
+        grafana_online: "{{ grafana_api.status == 401    }}"
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/set_fact_module.html
+      ansible.builtin.set_fact:
+        prometheus_crds_installed: "{{ crds_installed }}"
+        grafana_api_server_online: "{{ grafana_online }}"
+        monitoring_stack_ready: "{{ crds_installed and grafana_online }}"
+  any_errors_fatal: true

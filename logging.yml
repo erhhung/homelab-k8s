@@ -20,10 +20,10 @@
     kubeconfig: "{{ rke_kubeconfig }}"
     secret_ns: "{{ logging_namespace }}"
   pre_tasks:
-    - name: Are Prometheus CRDs installed?
+    - name: Is the monitoring stack ready?
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
-      ansible.builtin.include_tasks: tasks/monitoring/promcrds.yml
-      when: prometheus_crds_installed is not defined
+      ansible.builtin.include_tasks: tasks/monitoring/stackready.yml
+      when: monitoring_stack_ready is not defined
   tasks:
     - name: Create Fluent credentials secret
       vars:
@@ -84,11 +84,12 @@
                      'remove': field
                    }) %}
               {% endfor %}
-              {{ rules }}
+              {{ rules  }}
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/difference_filter.html
       when: remove_log_fields | ansible.builtin.difference(rules)
 
     # https://github.com/fluent/helm-charts/issues/605
+    # https://github.com/fluent/helm-charts/pull/607
     - name: Add required ServiceMonitor labels
       # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_module.html
       kubernetes.core.k8s:
@@ -102,7 +103,7 @@
             labels:
               release: "{{ monitoring_release_name }}"
         state: patched
-      when: prometheus_crds_installed
+      when: prometheus_crds_installed | default(false)
   any_errors_fatal: true
 
 - name: Configure logging dashboards
@@ -132,11 +133,12 @@
     - name: Set Dashboards landing page
       vars:
         settings:
-          defaultRoute: /app/data-explorer/discover/#/view/{{ saved_search_id }}
+          defaultRoute: "/app/data-explorer/discover/#/view/{{ saved_search_id }}"
       ansible.builtin.include_tasks: tasks/kibana/settings.yml
 
     - name: Import Grafana dashboards
       vars:
         dashboards: "{{ logging_grafana_dashboards }}"
       ansible.builtin.include_tasks: tasks/monitoring/dashboards.yml
+      when: grafana_api_server_online | default(false)
   any_errors_fatal: true

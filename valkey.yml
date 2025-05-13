@@ -9,17 +9,22 @@
     - vars/basics.yml
     - vars/kubernetes.yml
     - vars/storage.yml
+    - vars/monitoring.yml
     - vars/valkey.yml
   vars:
     kubeconfig: "{{ rke_kubeconfig }}"
     secret_ns: "{{ valkey_namespace }}"
+  pre_tasks:
+    - name: Is the monitoring stack ready?
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
+      ansible.builtin.include_tasks: tasks/monitoring/stackready.yml
+      when: monitoring_stack_ready is not defined
   tasks:
     - name: Create Valkey node secret
       vars:
         cert_desc: Valkey
         cert_file: valkey
         secret_name: "{{ valkey_secrets['node-tls'] }}"
-      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
       ansible.builtin.include_tasks: tasks/k8s/secrets/tls.pki.yml
 
     - name: Create Valkey password secret
@@ -47,4 +52,10 @@
         atomic: true
         wait: true
       timeout: 600
+
+    - name: Import Grafana dashboards
+      vars:
+        dashboards: "{{ valkey_grafana_dashboards }}"
+      ansible.builtin.include_tasks: tasks/monitoring/dashboards.yml
+      when: grafana_api_server_online | default(false)
   any_errors_fatal: true

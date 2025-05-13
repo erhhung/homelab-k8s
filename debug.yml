@@ -85,7 +85,7 @@
 
 - name: Show certificates on CA server
   tags: certs
-  hosts: pki
+  hosts: _pki
   gather_facts: false
   tasks:
     - name: Fetch cert file

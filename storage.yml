@@ -7,6 +7,7 @@
   vars_files: &vars_files1
     - vars/basics.yml
     - vars/kubernetes.yml
+    - vars/monitoring.yml
     - vars/storage.yml
   pre_tasks:
     - name: Is iscsi_tcp module loaded?
@@ -126,13 +127,18 @@
   hosts: "{{ rke_control_plane_host }}"
   gather_facts: false
   vars_files: *vars_files1
-  vars:
-    # required kubernetes>=24.2 package only in user virtualenv
-    ansible_python_interpreter: "{{ venv_python_interpreter }}"
+  pre_tasks: &pre_tasks
+    - name: Is the monitoring stack ready?
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
+      ansible.builtin.include_tasks: tasks/monitoring/stackready.yml
+      when: monitoring_stack_ready is not defined
   tasks:
     # https://longhorn.io/docs/1.8.1/deploy/install/install-with-helm/
     # https://github.com/longhorn/charts/tree/v1.8.x/charts/longhorn
     - name: Install Longhorn Helm chart
+      vars:
+        # required kubernetes>=24.2 package only in user virtualenv
+        ansible_python_interpreter: "{{ venv_python_interpreter }}"
       # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/helm_module.html
       kubernetes.core.helm:
         kubeconfig: "{{ rke_kubeconfig }}"
@@ -168,10 +174,10 @@
         mount_options: "{{ nfs_mount_opts | split(',') }}"
         storage_class: |
           {# https://docs.ansible.com/ansible/latest/collections/ansible/builtin/combine_filter.html #}
-          {% set storage_class = item.storageClass | ansible.builtin.combine({
+          {% set sc = item.storageClass | ansible.builtin.combine({
                'name': item.storageClass.name | default('nfs-'~ item.name)
-          }) %}
-          {{ storage_class }}
+             }) %}
+          {{ sc }}
       kubernetes.core.helm:
         kubeconfig: "{{ vars[cluster ~'_kubeconfig'] }}"
         chart_repo_url: https://kubernetes-sigs.github.io/nfs-subdir-external-provisioner
@@ -201,12 +207,14 @@
   vars_files: &vars_files2
     - vars/basics.yml
     - vars/kubernetes.yml
+    - vars/monitoring.yml
     - vars/storage.yml
     - vars/minio.yml
   vars:
     # required kubernetes>=24.2 package only in user virtualenv
     ansible_python_interpreter: "{{ venv_python_interpreter }}"
     kubeconfig: "{{ rke_kubeconfig }}"
+  pre_tasks: *pre_tasks
   tasks:
     - name: Create MinIO ingress secret
       vars:
@@ -214,7 +222,6 @@
         cert_file: "{{ item.file }}"
         secret_name: "{{ item.name }}"
         secret_ns: "{{ minio_tenant_namespace }}"
-      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
       ansible.builtin.include_tasks: tasks/k8s/secrets/tls.pki.yml
       loop:
         - name: "{{ minio_secrets['console'] }}"
@@ -294,8 +301,99 @@
         release_name: tenant
         release_namespace: "{{ minio_tenant_namespace }}"
         release_values: "{{ minio_tenant_chart_values }}"
-        atomic: true
-      timeout: 300
+        # not waiting for tenant pods to be ready because
+        # we want to patch the scrape config secret ASAP
+
+    # MinIO Operator creates minio-prom-additional-scrape-config secret
+    # in Prometheus namespace; however, it hardcodes tls_config.ca_file
+    # to the Kubernetes service account CA cert, which isn't the custom
+    # CA that MinIO uses, so need to patch the secret with the correct
+    # cert. BUT, unfortunately, that doesn't work because the operator
+    # promptly detects a conflict and overwrites it with the original:
+    # https://github.com/minio/operator/issues/940
+    - name: Fix Prometheus scrape config
+      when: prometheus_crds_installed  | default(false)
+      vars:
+        secret_name: minio-prom-additional-scrape-config
+        secret_ns: "{{ monitoring_namespace }}"
+        create_ns: false
+      block:
+        - name: Get bad scrape config secret
+          # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_info_module.html
+          kubernetes.core.k8s_info:
+            kubeconfig: "{{ kubeconfig }}"
+            api_version: v1
+            kind: Secret
+            name: "{{ secret_name }}"
+            namespace: "{{ secret_ns }}"
+          register: scrape_config
+          until: scrape_config.resources is truthy
+          retries: 30
+          delay: 1
+
+        # try directly patching the Prometheus secret containing scrape
+        # configs gathered from service monitors and additional configs
+        # (although, sadly, this change will also get reverted promptly
+        # by the operator)
+        - name: Fix Prometheus scrape configs
+          vars:
+            paths:
+              - /minio/v2/metrics/cluster
+              - /minio/v2/metrics/bucket
+            job: |
+              {{ scrape_config.resources[0].data['prometheus-additional.yaml'] |
+                  b64decode | from_yaml | first }}
+            jobs: |
+              {% set jobs  = [] %}
+              {% for path in paths %}
+              {#   https://docs.ansible.com/ansible/latest/collections/ansible/builtin/regex_replace_filter.html #}
+              {%   set _ = jobs.append(job | ansible.builtin.combine({
+                     'job_name':     job.job_name | ansible.builtin.regex_replace('-\\d$', '-'~ loop.index0),
+                     'metrics_path': path,
+                     'tls_config':   {
+                       'ca_file':    '/tls/scraper/ca.crt'
+                     }
+                   }))  %}
+              {% endfor %}
+              {{ jobs   }}
+          ansible.builtin.shell: |
+            # run Bash and source /etc/profile.d
+            # scripts so that kubectl is in PATH
+            exec /bin/bash -l <<'EOF'
+            set -o pipefail
+
+            # get the secret resource and save as YAML file
+            secret_name="prometheus-{{ monitoring_release_name }}-prometheus"
+            kubectl get -n {{ secret_ns }} secret $secret_name -o yaml > /tmp/$secret_name.yaml
+
+            # decode and uncompress prometheus.yaml.gz file
+            yq '.data."prometheus.yaml.gz"' /tmp/$secret_name.yaml | \
+              base64 -d | gunzip | yq -PM > /tmp/prometheus.yaml~
+
+            # replace MinIO scrape configs with fixed ones
+            cat <<'EOT' | yq -PM '.scrape_configs |= map(select(.job_name | test("minio-job") | not))
+                                  + load("/dev/stdin")' /tmp/prometheus.yaml~ > /tmp/prometheus.yaml
+            {{ jobs | ansible.builtin.to_nice_yaml(indent=2, sort_keys=false) | trim }}
+            EOT
+
+            # do nothing if secret has already been fixed
+            diff -q /tmp/prometheus.yaml~ /tmp/prometheus.yaml > /dev/null && exit 9 # no change
+
+            # compress and encode the fixed scrape configs
+            gzip -9ncq /tmp/prometheus.yaml | base64 -w0 | \
+              yq -PMi '.data."prometheus.yaml.gz" = load("/dev/stdin")' \
+                       /tmp/$secret_name.yaml
+
+            # reapply the patched secret resource manifest
+            kubectl delete -f /tmp/$secret_name.yaml
+            kubectl create -f /tmp/$secret_name.yaml
+            EOF
+          register: fix_configs
+          when: scrape_config.resources is truthy
+          changed_when: fix_configs.rc == 0
+          failed_when: >-
+            fix_configs.rc != 0 and
+            fix_configs.rc != 9
 
     - name: Wait until MinIO tenant is ready
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/uri_module.html
@@ -305,7 +403,7 @@
       # https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_loops.html#retrying-a-task-until-a-condition-is-met
       register: tenant_check
       until: tenant_check.status == 403
-      retries: 24
+      retries: 60
       delay: 5
   any_errors_fatal: true
 
@@ -458,4 +556,23 @@
       failed_when: >-
         mc_create.rc != 0 and
         mc_create.rc != 9
+  any_errors_fatal: true
+
+- name: Configure storage dashboards
+  tags: dashboards
+  hosts: "{{ rke_control_plane_host }}"
+  gather_facts: false
+  vars_files: *vars_files2
+  tasks:
+    - name: Import Grafana dashboards
+      vars:
+        minio_opts:
+          tags:
+            - minio
+            - storage
+        dashboards: |
+          {{ storage_grafana_dashboards +
+               minio_grafana_dashboards | map('combine', minio_opts) }}
+      ansible.builtin.include_tasks: tasks/monitoring/dashboards.yml
+      when: grafana_api_server_online | default(false)
   any_errors_fatal: true

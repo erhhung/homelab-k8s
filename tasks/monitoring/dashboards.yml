@@ -7,6 +7,7 @@
 #     - title:  <required> official title
 #       gnetId: <required> dashboard ID
 #       filter: [optional] contain desc
+#       dsVar:  [optional] default=DS_PROMETHEUS
 #       tags:   [optional] list of tags
 #
 # TODO: detect revision change due to change in
@@ -65,7 +66,7 @@
             "dashboard": '"$json"',
             "overwrite": true,
             "inputs": [{
-              "name":     "DS_PROMETHEUS",
+              "name":     "{{ item.dsVar | default('DS_PROMETHEUS') }}",
               "type":     "datasource",
               "pluginId": "prometheus",
               "value":    "'$DATASOURCE'"
@@ -81,5 +82,6 @@
       changed_when: import_dashboard.rc == 0
       failed_when: >-
         import_dashboard.rc != 0 and
-        import_dashboard.rc != 9
+        import_dashboard.rc != 9 or
+        import_dashboard.stdout is search('failed')
   any_errors_fatal: true

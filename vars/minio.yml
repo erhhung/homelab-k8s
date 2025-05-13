@@ -88,6 +88,10 @@ minio_operator_chart_values:
     env:
       - name: SUBNET_BASE_URL
         value: ""
+      - name: PROMETHEUS_NAMESPACE
+        value: "{{ monitoring_namespace }}"
+      - name: PROMETHEUS_NAME # kind: Prometheus
+        value: "{{ monitoring_release_name }}-prometheus"
 
     resources:
       requests:
@@ -206,6 +210,23 @@ minio_tenant_chart_values:
 
     metrics:
       enabled: true
+      protocol: https
+      port: 9000
+      # path: /minio/v2/metrics/cluster
+
+    # MinIO Operator won't create a Prometheus ServiceMonitor;
+    # instead, when prometheusOperator is true, it will create
+    # minio-prom-additional-scrape-config secret in Prometheus
+    # namespace and add to Prometheus.additionalScrapeConfigs
+    # (requires adding environment variables PROMETHEUS_NAME
+    # and PROMETHEUS_NAMESPACE to the operator chart values):
+    # https://github.com/minio/operator/tree/master/UPGRADE.md#v439---v440
+    # HOWEVER, the scrape config secret the operator creates
+    # contains hardcoded tls_config.ca_file from the service
+    # account, which won't work against the target:
+    # https://github.com/minio/operator/issues/940
+    # https://github.com/minio/operator/tree/master/pkg/resources/configmaps/prometheus.go#L99
+    prometheusOperator: true
 
   ingress:
     api:
@@ -217,7 +238,7 @@ minio_tenant_chart_values:
             # enable bucket DNS feature
             - "*.{{ minio_s3api_fqdn }}"
       ingressClassName: "{{ rke_ingress_class }}"
-      annotations: &ingress_annotations
+      annotations:
         nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
         nginx.ingress.kubernetes.io/ssl-passthrough: "true"
       # Helm template will create a
@@ -230,5 +251,25 @@ minio_tenant_chart_values:
         - secretName: "{{ minio_secrets['console'] }}"
           hosts: "{{ [minio_console_fqdn] }}"
       ingressClassName: "{{ rke_ingress_class }}"
-      annotations: *ingress_annotations
+      annotations:
+        nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+        # don't use ssl-passthrough for the console because
+        # a single minio container serves requests for both
+        # the console and S3 API, but use the same TLS cert
+        # (configured above to use minio-s3-tls secret), so
+        # using passthrough will send the wrong certificate
+        # to the brwoser
+        nginx.ingress.kubernetes.io/backend-protocol: HTTPS
       host: "{{ minio_console_fqdn }}"
+
+# https://grafana.com/grafana/dashboards/?search=MinIO&dataSource=prometheus
+minio_grafana_dashboards:
+  # https://grafana.com/grafana/dashboards/13502-minio-dashboard/
+  - title: MinIO Dashboard
+    gnetId: 13502
+  # https://grafana.com/grafana/dashboards/15305-minio-replication-dashboard/
+  - title: MinIO Replication Dashboard
+    gnetId: 15305
+  # https://grafana.com/grafana/dashboards/19237-minio-bucket-dashboard/
+  - title: MinIO Bucket Dashboard
+    gnetId: 19237

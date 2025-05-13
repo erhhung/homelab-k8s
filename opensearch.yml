@@ -26,10 +26,10 @@
         fact_name: opensearch_passwords_hashed
       ansible.builtin.include_tasks: tasks/hashpwds.yml
 
-    - name: Are Prometheus CRDs installed?
+    - name: Is the monitoring stack ready?
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
-      ansible.builtin.include_tasks: tasks/monitoring/promcrds.yml
-      when: prometheus_crds_installed is not defined
+      ansible.builtin.include_tasks: tasks/monitoring/stackready.yml
+      when: monitoring_stack_ready is not defined
 
     - name: Is OpenSearch already running?
       # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_info_module.html
@@ -114,6 +114,7 @@
       timeout: 1800
 
     # https://github.com/opensearch-project/helm-charts/issues/673
+    # https://github.com/opensearch-project/helm-charts/pull/674
     - name: Patch ServiceMonitor selector
       # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_module.html
       kubernetes.core.k8s:
@@ -128,7 +129,7 @@
               matchLabels:
                 prometheus.io/scrape: "true"
         state: patched
-      when: prometheus_crds_installed
+      when: prometheus_crds_installed | default(false)
   handlers:
     - name: Apply updated security config
       # a handler cannot have block of subtasks, so the
@@ -153,7 +154,7 @@
         cert_desc: Dashboards ingress
         cert_file: kibana
         kubeconfig: "{{ rke_kubeconfig }}"
-        secret_name: "{{ dashboards_secrets['ingress'] }}"
+        secret_name: "{{ kibana_secrets['ingress'] }}"
         secret_ns: "{{ kibana_namespace }}"
         create_ns: false
       ansible.builtin.include_tasks: tasks/k8s/secrets/tls.pki.yml
@@ -182,7 +183,7 @@
       register: site_check
       until: site_check.status == 200
       retries: 30
-      delay: 1
+      delay: 3
 
     - name: Customize Dashboards settings
       vars:
@@ -193,4 +194,5 @@
       vars:
         dashboards: "{{ opensearch_grafana_dashboards }}"
       ansible.builtin.include_tasks: tasks/monitoring/dashboards.yml
+      when: grafana_api_server_online | default(false)
   any_errors_fatal: true
