@@ -190,17 +190,24 @@ kiali_cr_spec:
 
 # https://grafana.com/grafana/dashboards/?search=Istio&dataSource=prometheus
 istio_grafana_dashboards:
+  # https://grafana.com/grafana/dashboards/7639-istio-mesh-dashboard/
   - title: Istio Mesh Dashboard
     gnetId: 7639
+  # https://grafana.com/grafana/dashboards/21306-istio-ztunnel-dashboard/
   - title: Istio Ztunnel Dashboard
     gnetId: 21306
+  # https://grafana.com/grafana/dashboards/7636-istio-service-dashboard/
   - title: Istio Service Dashboard
     gnetId: 7636
+  # https://grafana.com/grafana/dashboards/7630-istio-workload-dashboard/
   - title: Istio Workload Dashboard
     gnetId: 7630
+  # https://grafana.com/grafana/dashboards/11829-istio-performance-dashboard/
   - title: Istio Performance Dashboard
     gnetId: 11829
+  # https://grafana.com/grafana/dashboards/7645-istio-control-plane-dashboard/
   - title: Istio Control Plane Dashboard
     gnetId: 7645
+  # https://grafana.com/grafana/dashboards/13277-istio-wasm-extension-dashboard/
   - title: Istio Wasm Extension Dashboard
     gnetId: 13277

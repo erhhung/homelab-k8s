@@ -14,22 +14,39 @@ longhorn_chart_version: "1.8.1"
 # https://github.com/longhorn/charts/tree/v1.8.x/charts/longhorn/values.yaml
 # https://longhorn.io/docs/1.8.1/references/settings/
 longhorn_chart_values:
-  service:
-    ui:
-      type: Rancher-Proxy
+  longhornUI:
+    replicas: 1
+
   persistence:
     defaultFsType: xfs
+    # total copies of data
     defaultClassReplicaCount: 2
+    # what happens when PVC is released
+    reclaimPolicy: Delete
+    # allow live migration of Longhorn
+    # volumes from one node to another
+    migratable: true
+
   defaultSettings:
     defaultDataPath: "{{ data_lv.mount }}"
     defaultReplicaCount: 2
-  longhornUI:
-    replicas: 1
+
+  service:
+    ui:
+      type: Rancher-Proxy
+
+  ingress:
+    # access Longhorn UI via Rancher Server
+    # console instead (see service.ui.type)
+    enabled: false
+
   metrics:
+    # scrapes longhorn-backend service (longhorn-manager
+    # DaemonSet) on port 9500 (non-TLS) on path /metrics
     serviceMonitor:
-      # creates a ServiceMonitor resource that Prometheus Operator uses to
-      # automatically discover and scrape metrics from Longhorn components
-      enabled: false # enable only if Prometheus Operator is installed
+      enabled: "{{ prometheus_crds_installed }}"
+      additionalLabels:
+        release: "{{ monitoring_release_name }}"
 
 # https://computingforgeeks.com/configure-nfs-as-kubernetes-persistent-volume-storage/
 nfs_mount_opts: rw,nosuid,nodev,noexec,hard,timeo=600,retrans=3,rsize=32768,wsize=32768
@@ -59,3 +76,12 @@ nfs_provisioners:
       volumeBindingMode: WaitForFirstConsumer
       reclaimPolicy: Delete
       onDelete: delete
+
+# https://grafana.com/grafana/dashboards/?search=Longhorn&dataSource=prometheus
+storage_grafana_dashboards:
+  # https://grafana.com/grafana/dashboards/22705-longhorn-dashboard/
+  - title: Longhorn Dashboard
+    gnetId: 22705
+    tags:
+      - longhorn
+      - storage

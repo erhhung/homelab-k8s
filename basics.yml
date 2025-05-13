@@ -236,8 +236,8 @@
   hosts: k8s_all
   pre_tasks:
     - name: Fetch CA certs from PKI
+      delegate_to: "{{ pki_host }}"
       run_once: true
-      delegate_to: pki
       # catting is easier than ansible.builtin.slurp
       ansible.builtin.command: cat certs/chain.pem
       register: cat_chain

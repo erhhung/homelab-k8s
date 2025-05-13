@@ -363,6 +363,9 @@ opensearch_chart_values:
     enabled: "{{ prometheus_crds_installed }}"
     labels:
       release: "{{ monitoring_release_name }}"
+    # https://github.com/opensearch-project/helm-charts/pull/674
+    selectorLabels:
+      prometheus.io/scrape: "true"
     path: /_prometheus/metrics
     scheme: https
     # monitoring-scraper-tls Secret must be recreated in the
@@ -376,6 +379,7 @@ opensearch_chart_values:
 
 # https://grafana.com/grafana/dashboards/?search=OpenSearch&dataSource=prometheus
 opensearch_grafana_dashboards:
+  # https://grafana.com/grafana/dashboards/23029-opensearch/
   - title: OpenSearch
     gnetId: 23029
     tags:

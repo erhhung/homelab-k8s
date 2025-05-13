@@ -111,5 +111,21 @@ valkey_chart_values:
   metrics:
     # https://github.com/bitnami/charts/tree/main/bitnami/valkey-cluster#metrics
     enabled: true
+
+    # https://github.com/oliver006/redis_exporter#command-line-flags
+    extraArgs:
+      is-cluster: "true"
+      # no need to verify localhost
+      skip-tls-verification: "true"
+
     serviceMonitor:
-      enabled: false # enable only if Prometheus Operator is installed
+      enabled: "{{ prometheus_crds_installed }}"
+      labels:
+        release: "{{ monitoring_release_name }}"
+
+# https://grafana.com/grafana/dashboards/?search=Valkey&dataSource=prometheus
+valkey_grafana_dashboards:
+  # https://grafana.com/grafana/dashboards/763-redis-dashboard-for-prometheus-redis-exporter-1-x/
+  - title: Redis Dashboard for Prometheus Redis Exporter 1.x
+    gnetId: 763
+    dsVar: DS_PROM

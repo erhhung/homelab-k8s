@@ -8,7 +8,7 @@ kibana_host_name: kibana # alias of "homelab"
 # https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_filters.html#products
 kibana_fqdn: "{{ [kibana_host_name] | product(search_domains) | map('join','.') | first }}"
 
-dashboards_secrets:
+kibana_secrets:
   ingress: dashboards-ingress-tls
 
 dashboards_chart_version: "2.28.0"
@@ -36,6 +36,8 @@ dashboards_chart_values:
         name: dashboards
         host: "{{ .Values.serverHost }}"
       {% endraw %}
+        # NOTE: ssl is under server level, not at
+        # top level as values.yaml seem to suggest
         ssl:
           enabled: true
           certificate: /tls/tls.crt
@@ -49,7 +51,7 @@ dashboards_chart_values:
 
   secretMounts:
     - name: ingress-tls
-      secretName: "{{ dashboards_secrets['ingress'] }}"
+      secretName: "{{ kibana_secrets['ingress'] }}"
       path: /tls
 
   resources:
@@ -63,7 +65,7 @@ dashboards_chart_values:
   ingress:
     enabled: true
     tls:
-      - secretName: "{{ dashboards_secrets['ingress'] }}"
+      - secretName: "{{ kibana_secrets['ingress'] }}"
         hosts: "{{ [kibana_fqdn] }}"
     ingressClassName: "{{ rke_ingress_class }}"
     annotations:
@@ -80,12 +82,19 @@ dashboards_chart_values:
   plugins:
     enabled: true
     # https://docs.opensearch.org/docs/latest/install-and-configure/install-dashboards/plugins/#available-plugins
-    installList:
-      []
+    installList: []
       # - dashboards-observability
 
   serviceMonitor:
-    enabled: false # enable only if Prometheus Operator is installed
+    # OpenSearch Dashboards doesn't appear to emit metrics
+    # (unless there's a plugin that hasn't been obvious to
+    # find)!  Even though a ServiceMonitor is created, and
+    # Prometheus will try to scrape metrics port 9601, the
+    # pod doesn't actually expose nor even listen on 9601!
+    enabled: "{{ prometheus_crds_installed and false }}"
+    labels:
+      release: "{{ monitoring_release_name }}"
+    path: /_prometheus/metrics
 
 # apply custom settings available on
 # old: Dashboards Management => Advanced settings or
