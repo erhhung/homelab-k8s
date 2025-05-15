@@ -6,8 +6,7 @@ minio_buckets:
   # bucket for Thanos to store metrics
   metrics: {}
     # https://min.io/docs/minio/linux/reference/minio-mc/mc-mb.html#parameters
-    # options:
-    #   - --with-versioning
+    # options: ["--with-versioning"]
 
 minio_policies:
   # IAM-compatible policies for users and groups
@@ -34,19 +33,19 @@ minio_users: # non-root
   erhhung:
     secret_key: "{{ minio_admin_pass }}"
     # https://min.io/docs/minio/linux/administration/identity-access-management/policy-based-access-control.html#built-in-policies
-    # policies:
-    #   - readwrite
+    # policies: ["readwrite"]
+  metrics:
+    secret_key: "{{ minio_client_pass }}"
+    policies: ["diagnostics"]
   thanos:
     secret_key: "{{ minio_client_pass }}"
-    policies:
-      - thanos-metrics-rw
+    policies: ["thanos-metrics-rw"]
 
 minio_groups:
   admins:
+    policies: ["consoleAdmin"]
     members: # at least one user required
       - erhhung
-    policies:
-      - consoleAdmin
 
 minio_host_names: # aliases of "homelab"
   - minio # console
@@ -226,7 +225,7 @@ minio_tenant_chart_values:
     # account, which won't work against the target:
     # https://github.com/minio/operator/issues/940
     # https://github.com/minio/operator/tree/master/pkg/resources/configmaps/prometheus.go#L99
-    prometheusOperator: true
+    prometheusOperator: "{{ monitoring_stack_ready and false }}"
 
   ingress:
     api:
