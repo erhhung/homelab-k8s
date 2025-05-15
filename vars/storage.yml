@@ -10,6 +10,8 @@ default_storage_class: longhorn
 local_storage_class: local-storage
 nfs_storage_class: nfs-qnap
 
+longhorn_namespace: longhorn-system
+
 longhorn_chart_version: "1.8.1"
 # https://github.com/longhorn/charts/tree/v1.8.x/charts/longhorn/values.yaml
 # https://longhorn.io/docs/1.8.1/references/settings/

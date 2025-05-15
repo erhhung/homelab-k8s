@@ -187,7 +187,7 @@ export ANSIBLE_CONFIG="./ansible.cfg"
     6.4. Install MinIO tenant using NFS PVs
 
     ```bash
-    ansible-playbook storage.yml
+    ansible-playbook storage.yml minio.yml
     ```
 
 7. Create resources from manifest files

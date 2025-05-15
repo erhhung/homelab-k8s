@@ -26,6 +26,10 @@
   ansible.builtin.import_playbook: storage.yml
   tags: storage
 
+- name: Include MinIO object storage playbook
+  ansible.builtin.import_playbook: minio.yml
+  tags: minio
+
 - name: Include resource manifests playbook
   ansible.builtin.import_playbook: manifests.yml
   tags: manifests

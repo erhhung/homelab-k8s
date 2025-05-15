@@ -4,11 +4,13 @@
 # files are specified.  If the last argument is a tag in
 # main.yml (playbook without .yml extension), plus a '-'
 # suffix (e.g. "storage-"), runs all remaining playbooks
-# starting with that playbook.
+# starting with that playbook; otherwise, runs only the
+# playbooks specified by tags (e.g. "minio monitoring")
 
 # shellcheck disable=SC2164 # Use cd ... || exit if cd fails
 # shellcheck disable=SC2207 # Prefer mapfile to split output
 # shellcheck disable=SC2016 # Expr won't expand in '' quotes
+# shellcheck disable=SC2046 # Quote to avoid word splitting
 # shellcheck disable=SC2128 # Expanding array without index
 
 cd "$(dirname "$0")"
@@ -25,7 +27,7 @@ _reqcmds() {
   done
 }
 
-_reqcmds yq || exit $?
+_reqcmds yq jo || exit $?
 
 export ANSIBLE_CONFIG=./ansible.cfg
 export ANSIBLE_FORCE_COLOR=true
@@ -33,7 +35,15 @@ export ANSIBLE_FORCE_COLOR=true
 echo -e "\nInstalling roles from requirements...\n"
 ansible-galaxy install -r roles/requirements.yml
 
+prettify() {
+  # first sed adds newline between tasks
+  # second removes trailing blank lines
+  sed -E 's/^([[:space:]]+tags:.+)$/\1\n/' | \
+  sed -e :a -e '/./,$!d;/^\n*$/{$d;N;};/\n$/ba'
+}
+
 args=("$@")
+trap "rm -f temp.yml" EXIT
 
 [[ "${args[*]}" == *.yml* ]] || {
   # check if last arg is tag-
@@ -43,12 +53,26 @@ args=("$@")
     start="${args[last]%?}" args=("${args[@]::last}")
 
     # create sliced version of main.yml
-    START=$start yq '. as $d | .[] | select(.tags == env(START))
-             | path[0] as $i |  $d | .[$i:]' main.yml > temp.yml
-    trap "rm -f temp.yml" EXIT
+    START=$start yq '. as $d | .[] | select(.tags == env(START)) |
+               path[0] as $i |  $d | .[$i:]' main.yml | prettify > temp.yml
     args+=("temp.yml")
   else
-    args+=("main.yml")
+    picks="$(jo -a -- "${args[@]}")"
+
+    # create picked version of main.yml
+    yq -PM 'load("/dev/stdin") as $picks  | map(
+             select(.tags as $t | $picks  | contains([$t]))
+                 )' main.yml <<< "$picks" | prettify > temp.yml
+
+    # remove all args that were picked
+    args=($(yq -r 'map(.tags) as $picks  | load("/dev/stdin")[] |
+                select(. as $a | $picks  | contains([$a]) | not)' \
+                   temp.yml <<< "$picks"))
+
+    # play main.yml if nothing picked
+    [ $(yq length temp.yml) -gt 0 ] && \
+      args+=("temp.yml") || \
+      args+=("main.yml")
   fi
 }
 ansible-playbook "${args[@]}" 2>&1 | tee ansible.log

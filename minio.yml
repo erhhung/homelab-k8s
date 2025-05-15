@@ -1,0 +1,478 @@
+# https://operator.min.io/
+# https://resources.min.io/
+---
+- name: Install MinIO storage for QNAP
+  tags: minio
+  hosts: "{{ rke_control_plane_host }}"
+  gather_facts: false
+  vars_files: &vars_files
+    - vars/basics.yml
+    - vars/kubernetes.yml
+    - vars/monitoring.yml
+    - vars/storage.yml
+    - vars/minio.yml
+  vars:
+    # required kubernetes>=24.2 package only in user virtualenv
+    ansible_python_interpreter: "{{ venv_python_interpreter }}"
+    kubeconfig: "{{ rke_kubeconfig }}"
+  pre_tasks:
+    - name: Is the monitoring stack ready?
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
+      ansible.builtin.include_tasks: tasks/monitoring/stackready.yml
+      when: monitoring_stack_ready is not defined
+  tasks:
+    - name: Create MinIO ingress secret
+      vars:
+        cert_desc: MinIO {{ item.desc }} ingress
+        cert_file: "{{ item.file }}"
+        secret_name: "{{ item.name }}"
+        secret_ns: "{{ minio_tenant_namespace }}"
+      ansible.builtin.include_tasks: tasks/k8s/secrets/tls.pki.yml
+      loop:
+        - name: "{{ minio_secrets['console'] }}"
+          desc: console
+          file: minio
+        - name: "{{ minio_secrets['s3api'] }}"
+          desc: S3
+          file: s3
+      loop_control:
+        label: "{{ item.desc }}"
+      # sets pem_chain fact
+
+    - name: Set ca_certs fact from pem_chain
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/set_fact_module.html
+      ansible.builtin.set_fact:
+        # pem_chain fact set by tasks/k8s/secrets/tls.pki.yml
+        # above contains both intermediate and root CA certs
+        ca_certs: "{{ pem_chain[1:] | join('\n') }}"
+
+    - name: Create MinIO CA certs secret
+      vars:
+        secret_name: "{{ item.name }}"
+        secret_data:
+          # must use name "public.crt"
+          public.crt: "{{ ca_certs }}"
+        secret_ns: "{{ item.namespace }}"
+        create_ns: "{{ item.namespace != minio_tenant_namespace }}"
+      ansible.builtin.include_tasks: tasks/k8s/secrets/generic.yml
+      loop:
+        - name: "{{ minio_secrets['operator-ca'] }}"
+          namespace: "{{ minio_operator_namespace }}"
+        - name: "{{ minio_secrets['tenant-ca'] }}"
+          namespace: "{{ minio_tenant_namespace }}"
+      loop_control:
+        label: "{{ item.name }}"
+
+    # NOTE: these secrets do not appear to be used
+    # by references in TenantSpec.users because no
+    # users get created--we do it explicitly using
+    # mc in the next play
+    # https://min.io/docs/minio/kubernetes/upstream/reference/operator-crd.html#tenantspec
+    - name: Create MinIO user credentials
+      vars:
+        secret_name: minio-creds-{{ item.key }}
+        secret_data:
+          CONSOLE_ACCESS_KEY: "{{ item.key }}"
+          CONSOLE_SECRET_KEY: "{{ item.value.secret_key }}"
+        secret_ns: "{{ minio_tenant_namespace }}"
+        create_ns: false
+      ansible.builtin.include_tasks: tasks/k8s/secrets/generic.yml
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/dict2items_filter.html
+      loop: "{{ minio_users | ansible.builtin.dict2items }}"
+      loop_control:
+        label: "{{ item.key }}"
+
+    # https://min.io/docs/minio/kubernetes/upstream/operations/install-deploy-manage/deploy-operator-helm.html
+    - name: Install MinIO Operator Helm chart
+      # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/helm_module.html
+      kubernetes.core.helm:
+        kubeconfig: "{{ kubeconfig }}"
+        chart_repo_url: https://operator.min.io
+        chart_ref: operator
+        chart_version: "{{ minio_operator_chart_version }}"
+        release_name: operator
+        release_namespace: "{{ minio_operator_namespace }}"
+        release_values: "{{ minio_operator_chart_values }}"
+        atomic: true
+      timeout: 300
+
+    # https://min.io/docs/minio/kubernetes/upstream/operations/install-deploy-manage/deploy-minio-tenant.html
+    # https://min.io/docs/minio/kubernetes/upstream/operations/install-deploy-manage/deploy-minio-tenant-helm.html
+    - name: Install MinIO Tenant Helm chart
+      kubernetes.core.helm:
+        kubeconfig: "{{ kubeconfig }}"
+        chart_repo_url: https://operator.min.io
+        chart_ref: tenant
+        chart_version: "{{ minio_tenant_chart_version }}"
+        release_name: tenant
+        release_namespace: "{{ minio_tenant_namespace }}"
+        release_values: "{{ minio_tenant_chart_values }}"
+        atomic: true
+      timeout: 300
+
+    - name: Wait until MinIO tenant is ready
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/uri_module.html
+      ansible.builtin.uri:
+        url: https://{{ minio_s3api_fqdn }}/
+        status_code: [403]
+      # https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_loops.html#retrying-a-task-until-a-condition-is-met
+      register: tenant_check
+      until: tenant_check.status == 403
+      retries: 60
+      delay: 5
+  any_errors_fatal: true
+
+# https://min.io/docs/minio/linux/reference/minio-mc-admin.html#installation
+- name: Install MinIO client
+  tags: client
+  hosts: cluster
+  gather_facts: false
+  vars_files: *vars_files
+  tasks:
+    - name: Install mc CLI tool
+      become: true
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/shell_module.html
+      ansible.builtin.shell: |
+        cd /usr/local/bin
+        set -o pipefail
+
+        ARCH=$(uname -m | sed -e 's/aarch64/arm64/' \
+                              -e  's/x86_64/amd64/')
+        BIN="https://dl.min.io/client/mc/release/linux-$ARCH/mc"
+        v=$(curl -fsSL "$BIN.minisig" | grep RELEASE)
+        VER=$(v="${v##*.}"; echo "${v%T*}")
+
+        # check if latest version already installed
+        command -v mc &> /dev/null && {
+          v=$(mc --version | grep RELEASE)
+          ver=$(v="${v#*.}"; echo "${v%%T*}")
+          [ "$ver" == "$VER" ] && exit 9 # no change
+        }
+        curl -fsSLO $BIN
+        chmod +x mc
+      args:
+        executable: /bin/bash
+      register: install_mc
+      changed_when: install_mc.rc == 0
+      failed_when: >-
+        install_mc.rc != 0 and
+        install_mc.rc != 9
+
+    - name: Configure mc CLI tool
+      vars:
+        # Ansible facts are host-specific, so propagate the result from rke_control_plane_host
+        monitoring_stack_ready: "{{ hostvars[rke_control_plane_host]['monitoring_stack_ready'] }}"
+        root_user: "{{ minio_tenant_chart_values.tenant.configSecret }}"
+      ansible.builtin.shell: |
+        # set MC_CONFIG_DIR
+        . ~/.bash_aliases
+
+        mkdir -p "$MC_CONFIG_DIR"
+
+        # check if alias "metrics" exists as it can`t be
+        # created until user of the same name is created
+        # https://min.io/docs/minio/linux/reference/minio-mc/mc-alias-list.html
+        mc alias list --json | jq -r '.alias' | \
+           grep -q metrics && exit 9 # no change
+
+        # https://min.io/docs/minio/linux/reference/minio-mc/mc-alias-set.html
+        mc alias set local \
+          https://{{ minio_s3api_fqdn }} \
+               {{ root_user.accessKey }} \
+              '{{ root_user.secretKey }}'
+
+        # https://min.io/docs/minio/linux/reference/minio-mc-admin/mc-admin-user-list.html
+        mc admin user list local --json | jq -r .accessKey | \
+           grep -q metrics || exit 0 # skip if no metrics user
+
+        mc alias set metrics \
+           https://{{ minio_s3api_fqdn }} metrics \
+          '{{ minio_users['metrics'].secret_key }}'
+      args:
+        executable: /bin/bash
+      register: config_mc
+      changed_when: config_mc.rc == 0
+      failed_when: >-
+        config_mc.rc != 0 and
+        config_mc.rc != 9
+  any_errors_fatal: true
+
+# https://min.io/docs/minio/linux/operations/monitoring/collect-minio-metrics-using-prometheus.html
+- name: Create MinIO scrape configs
+  tags: metrics
+  hosts: "{{ rke_control_plane_host }}"
+  gather_facts: false
+  vars_files: *vars_files
+  vars:
+    # required kubernetes>=24.2 package only in user virtualenv
+    ansible_python_interpreter: "{{ venv_python_interpreter }}"
+    is_operator_managed: "{{ minio_tenant_chart_values.tenant.prometheusOperator }}"
+    metric_types:
+      - cluster
+      - node
+      - bucket
+    target: metrics.{{ minio_tenant_namespace }}.svc.cluster.local
+    name_prefix: minio-{{ minio_tenant_name }}-
+    path_prefix: /minio/v2/metrics/
+    ca_file: /tls/scraper/ca.crt
+  tasks:
+    # MinIO Operator creates minio-prom-additional-scrape-config secret
+    # in Prometheus namespace; however, it hardcodes tls_config.ca_file
+    # to the Kubernetes service account CA cert, which isn't the custom
+    # CA that MinIO uses, so need to patch the secret with the correct
+    # cert. BUT, unfortunately, that doesn't work because the operator
+    # promptly detects a conflict and overwrites it with the original:
+    # https://github.com/minio/operator/issues/940
+    - name: Fix Prometheus scrape configs
+      when: >-
+        is_operator_managed and
+        monitoring_stack_ready
+      block:
+        - name: Get bad scrape configs secret
+          # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_info_module.html
+          kubernetes.core.k8s_info:
+            kubeconfig: "{{ rke_kubeconfig }}"
+            api_version: v1
+            kind: Secret
+            name: minio-prom-additional-scrape-config
+            namespace: "{{ monitoring_namespace }}"
+          register: scrape_configs
+          until: scrape_configs.resources is truthy
+          retries: 30
+          delay: 1
+
+        # try directly patching the Prometheus secret containing scrape
+        # configs gathered from service monitors and additional configs
+        # (although, sadly, this change will also get reverted promptly
+        # by the operator)
+        - name: Fix Prometheus scrape configs
+          vars:
+            job: |
+              {{ scrape_configs.resources[0].data['prometheus-additional.yaml'] |
+                  b64decode | from_yaml | first }}
+            jobs: |
+              {% set jobs = [] %}
+              {% for type in metric_types %}
+              {%   set _ = jobs.append(job | ansible.builtin.combine({
+                     'job_name':     name_prefix ~ type ~'-job',
+                     'metrics_path': path_prefix ~ type,
+                     'tls_config':   {
+                       'ca_file':    ca_file
+                     }
+                   }))  %}
+              {% endfor %}
+              {{ jobs   }}
+          ansible.builtin.shell: |
+            # run Bash and source /etc/profile.d
+            # scripts so that kubectl is in PATH
+            exec /bin/bash -l <<'EOT'
+            set -o pipefail
+
+            # get the secret resource and save as YAML file
+            secret="prometheus-{{ monitoring_release_name }}-prometheus"
+            kubectl get -n {{ monitoring_namespace }} secret $secret -o yaml > /tmp/$secret.yaml
+
+            # decode and uncompress prometheus.yaml.gz file
+            yq '.data."prometheus.yaml.gz"' /tmp/$secret.yaml | \
+              base64 -d | gunzip | yq -PM > /tmp/prometheus.yaml~
+
+            # replace MinIO scrape configs with fixed ones
+            cat <<'EOF' | yq -PM '.scrape_configs |= map(select(.job_name | test("minio-") | not))
+                                + load("/dev/stdin")' /tmp/prometheus.yaml~ > /tmp/prometheus.yaml
+            {{ jobs | ansible.builtin.to_nice_yaml(indent=2, sort_keys=false) | trim }}
+            EOF
+
+            # do nothing if secret has already been fixed
+            diff -q /tmp/prometheus.yaml~ /tmp/prometheus.yaml > /dev/null && exit 9 # no change
+
+            # compress and encode the fixed scrape configs
+            gzip -9ncq   /tmp/prometheus.yaml | base64 -w0 | \
+              yq -PMi '.data."prometheus.yaml.gz" = load("/dev/stdin")' /tmp/$secret.yaml
+
+            # reapply the patched secret resource manifest
+            kubectl delete -f /tmp/$secret.yaml
+            kubectl create -f /tmp/$secret.yaml
+            EOT
+          register: fix_configs
+          when: scrape_configs.resources is truthy
+          changed_when: fix_configs.rc == 0
+          failed_when: >-
+            fix_configs.rc != 0 and
+            fix_configs.rc != 9
+
+    # set minio_scrape_configs fact used by monitoring.yml playbook
+    - name: Add Prometheus scrape configs
+      when: >-
+        not is_operator_managed and
+        monitoring_stack_ready
+      block:
+        - name: Add Prometheus scrape configs
+          ansible.builtin.shell: |
+            # run Bash and source /etc/profile.d
+            # scripts so that kubectl is in PATH
+            exec /bin/bash -l <<'EOF'
+            # set MC_CONFIG_DIR
+            . ~/.bash_aliases
+            set -o pipefail
+
+            secret="prometheus-{{ monitoring_release_name }}-prometheus"
+            configs=$(kubectl get -n {{ monitoring_namespace }} secret  $secret  \
+              -o jsonpath='{ .data.prometheus\.yaml\.gz }' | base64 -d | gunzip | \
+              yq '.scrape_configs | map(
+                 select(.job_name | test("{{ name_prefix }}"))
+              )')
+
+            if [ "$configs" != '[]' ]; then
+              # don`t recreate scrape configs because
+              # they will have different token values
+              yq -PM <<< "$configs"
+              exit $?  # no change
+            fi
+
+            # can`t generate scrape configs without
+            # proper credentials already configured
+            mc alias list --json | jq -r '.alias' | \
+              grep -q metrics || {
+                echo '[]'; exit
+              }
+            for type in {{ metric_types | join(' ') }}; do
+              # https://min.io/docs/minio/linux/reference/minio-mc-admin/mc-admin-prometheus-generate.html
+              mc admin prometheus generate metrics $type | \
+                 type=$type yq '.scrape_configs[0] as $j | [{
+
+                 "job_name":     "{{ name_prefix }}\(env(type))-job",
+                 "bearer_token": $j.bearer_token,
+                 "metrics_path": $j.metrics_path,
+                 "scheme":       "https",
+                 "tls_config": {
+                   "ca_file": "{{ ca_file }}"
+                 },
+                 "static_configs": [{
+                   "targets": ["{{ target }}"]
+                 }]
+               }]'
+            done | yq -PM
+            EOF
+          register: add_configs
+          changed_when: false
+
+        - name: Set minio_scrape_configs fact
+          ansible.builtin.set_fact:
+            minio_scrape_configs: "{{ add_configs.stdout | from_yaml }}"
+          when: add_configs.rc == 0
+  any_errors_fatal: true
+
+- name: Create MinIO buckets/users/groups
+  tags: buckets
+  hosts: "{{ rke_control_plane_host }}"
+  gather_facts: false
+  vars_files: *vars_files
+  tasks:
+    - name: Create buckets/users/groups
+      ansible.builtin.shell: |
+        # set MC_CONFIG_DIR
+        . ~/.bash_aliases
+        set -o pipefail
+
+        # get list of existing buckets:
+        # https://min.io/docs/minio/linux/reference/minio-mc/mc-ls.html
+        buckets="$(mc ls local --json | jq -r .key)"
+        {% for name, bucket in minio_buckets.items() %}
+
+        grep -q "^{{ name }}/$" <<< "$buckets" || {
+          # https://min.io/docs/minio/linux/reference/minio-mc/mc-mb.html
+          mc mb {{ bucket.options | join(' ') if
+                   bucket.options is defined and
+                   bucket.options }} \
+            local/{{ name }}
+          rc=0
+        }
+        {% endfor %}
+
+        # get list of existing policies:
+        # https://min.io/docs/minio/linux/reference/minio-mc-admin/mc-admin-policy-list.html
+        policies="$(mc admin policy list local --json | jq -r .policy)"
+        {% for name, policy in minio_policies.items() %}
+
+        grep -q "^{{ name }}$" <<< "$policies" || {
+          {% set doc = {
+               'Version':  '2012-10-17',
+               'Statement': policy.Statement
+             } %}
+          # https://min.io/docs/minio/linux/reference/minio-mc-admin/mc-admin-policy-create.html
+          # only takes path to JSON file
+          mc admin policy create local \
+              {{ name }} <(cat <<'EOF'
+        {{ doc | to_json }}
+        EOF
+          )
+          rc=0
+        }
+        {% endfor %}
+
+        # get list of existing users:
+        # https://min.io/docs/minio/linux/reference/minio-mc-admin/mc-admin-user-list.html
+        users="$(mc admin user list local --json | jq -r .accessKey)"
+        {% for access_key, user in minio_users.items() %}
+
+        grep -q "^{{ access_key }}$" <<< "$users" || {
+          # https://min.io/docs/minio/linux/reference/minio-mc-admin/mc-admin-user-add.html
+          mc admin user add local {{ access_key }} '{{ user.secret_key }}'
+          rc=0
+
+          {% if user.policies is defined and user.policies %}
+          # https://min.io/docs/minio/linux/reference/minio-mc-admin/mc-admin-policy-attach.html
+          mc admin policy attach local       \
+             {{ user.policies | join(' ') }} \
+              --user {{ access_key }}
+          {% endif %}
+        }
+        {% endfor %}
+
+        # get list of existing groups:
+        # https://min.io/docs/minio/linux/reference/minio-mc-admin/mc-admin-group.html#mc.admin.group.ls
+        groups="$(mc admin group list local --json | jq -r .groups[])"
+        {% for name, group in minio_groups.items() %}
+
+        grep -q "^{{ name }}$" <<< "$groups" || {
+          # cannot create a group with no members, so
+          # must create after users have been created:
+          # https://min.io/docs/minio/linux/reference/minio-mc-admin/mc-admin-group.html#mc.admin.group.add
+          mc admin group add local {{ name }} \
+              {{ group.members | join(' ') }}
+          rc=0
+
+          {% if group.policies is defined and group.policies %}
+          mc admin policy attach local        \
+             {{ group.policies | join(' ') }} \
+              --group {{ name }}
+          {% endif %}
+        }
+        {% endfor %}
+        exit ${rc-9}
+      args:
+        executable: /bin/bash
+      register: mc_create
+      changed_when: mc_create.rc == 0
+      failed_when: >-
+        mc_create.rc != 0 and
+        mc_create.rc != 9
+  any_errors_fatal: true
+
+- name: Configure MinIO dashboards
+  tags: dashboards
+  hosts: "{{ rke_control_plane_host }}"
+  gather_facts: false
+  vars_files: *vars_files
+  tasks:
+    - name: Import Grafana dashboards
+      vars:
+        options:
+          tags:
+            - minio
+            - storage
+        dashboards: |
+          {{ minio_grafana_dashboards | map('combine', options) }}
+      ansible.builtin.include_tasks: tasks/monitoring/dashboards.yml
+      when: grafana_api_server_online | default(false)
+  any_errors_fatal: true

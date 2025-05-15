@@ -158,6 +158,21 @@
       ansible.builtin.debug:
         var: valkey_lb_ips
 
+    - name: Flatten nested lists
+      vars:
+        add_list:
+          - id: 1
+            names: ["foo", "bar"]
+          - id: 2
+            names: ["bar", "baz"]
+        the_list: |
+          {% set items = [] %}
+          {% set _ = items.append(add_list) %}
+          {# https://docs.ansible.com/ansible/latest/collections/ansible/builtin/flatten_filter.html #}
+          {{ items | ansible.builtin.flatten }}
+      ansible.builtin.debug:
+        var: the_list
+
 - name: Debug expressions and statements
   tags: exprs
   hosts: localhost
