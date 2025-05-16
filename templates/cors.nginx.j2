@@ -11,8 +11,8 @@ location ~* {{ location_regex | default('^/') }} {
     add_header 'Access-Control-Allow-Origin'      "{{ allow_origin  | default('$request_origin')                      }}" always;
     add_header 'Access-Control-Allow-Methods'     "{{ allow_methods | default('$http_access_control_request_method')  }}" always;
     add_header 'Access-Control-Allow-Headers'     "{{ allow_headers | default('$http_access_control_request_headers') }}" always;
-    add_header 'Access-Control-Allow-Credentials' 'true' always;
-    add_header 'Access-Control-Max-Age'       '86400' always; # 1 day
+    add_header 'Access-Control-Allow-Credentials' 'true'  always;
+    add_header 'Access-Control-Max-Age'           '86400' always; # 1 day
     return 204; # No Content
   }
 

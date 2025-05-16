@@ -387,7 +387,7 @@ prometheus_stack_chart_values:
       additionalScrapeConfigs: "{{             additional_scrape_configs | ansible.builtin.flatten }}"
       additionalAlertManagerConfigs: "{{ additional_alertmanager_configs | ansible.builtin.flatten }}"
 
-    # ==END== prometheusSpec
+    # ===END=== prometheusSpec
 
     service:
       enabled: true
@@ -592,7 +592,7 @@ prometheus_stack_chart_values:
               containerPort: 10094
               protocol: TCP
 
-    # ==END== alertmanagerSpec
+    # ===END=== alertmanagerSpec
 
     service:
       enabled: true
@@ -938,6 +938,12 @@ prometheus_stack_chart_values:
         tlsConfig: "{{ metric_scraper_tls_config }}"
         scrapeTimeout: 30s
 
+        # https://training.promlabs.com/training/relabeling/introduction-to-relabeling/hidden-labels-and-metadata
+        relabelings:
+          # https://prometheus.io/docs/prometheus/latest/configuration/configuration/#kubernetes_sd_config
+          - sourceLabels: ["__meta_kubernetes_pod_node_name"]
+            targetLabel: node
+
   # ======================================== Exporters =======================================
   #
   kubelet:
@@ -1022,6 +1028,24 @@ prometheus_stack_chart_values:
   # additional_prometheus_rules is defined at bottom of this file
   additionalPrometheusRulesMap: "{{ additional_prometheus_rules }}"
 
+# ===END=== prometheus_stack_chart_values
+
+# PUT https://grafana.fourteeners.local/api
+grafana_admin_settings:
+  # /user
+  profile:
+    login: admin
+    name: "{{ user_erhhung.fullname }}"
+    email: "{{ user_erhhung.email }}"
+  # /user/preferences
+  preferences:
+    theme: dark
+    language: en-US
+    timezone: browser
+    weekStart: monday
+  # /user/helpflags/{n}
+  help_flags: [1]
+
 # ========================================== Additions ======================================
 # ===== additional configurations supported by kube-prometheus-stack chart values, such =====
 # ===== as scrape and Alertmanager configurations, for components not part of the stack =====
@@ -1077,6 +1101,7 @@ prometheus_stack_chart_values:
 #         action: labeldrop
 #
 additional_scrape_configs:
+  # IMPORTANT: must run minio.yml playbook first
   - "{{ minio_scrape_configs | default([]) }}"
 
 # additional_alertmanager_configs allows supplying additional Alertmanager job configurations.

@@ -132,6 +132,8 @@
 
     - name: Set Dashboards landing page
       vars:
+        username: admin
+        password: "{{ opensearch_admin_pass }}"
         settings:
           defaultRoute: "/app/data-explorer/discover/#/view/{{ saved_search_id }}"
       ansible.builtin.include_tasks: tasks/kibana/settings.yml
@@ -139,6 +141,6 @@
     - name: Import Grafana dashboards
       vars:
         dashboards: "{{ logging_grafana_dashboards }}"
-      ansible.builtin.include_tasks: tasks/monitoring/dashboards.yml
+      ansible.builtin.include_tasks: tasks/grafana/dashboards.yml
       when: grafana_api_server_online | default(false)
   any_errors_fatal: true

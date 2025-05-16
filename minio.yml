@@ -166,6 +166,7 @@
       ansible.builtin.shell: |
         # set MC_CONFIG_DIR
         . ~/.bash_aliases
+        set -o pipefail
 
         mkdir -p "$MC_CONFIG_DIR"
 
@@ -473,6 +474,6 @@
             - storage
         dashboards: |
           {{ minio_grafana_dashboards | map('combine', options) }}
-      ansible.builtin.include_tasks: tasks/monitoring/dashboards.yml
+      ansible.builtin.include_tasks: tasks/grafana/dashboards.yml
       when: grafana_api_server_online | default(false)
   any_errors_fatal: true

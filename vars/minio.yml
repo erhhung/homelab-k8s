@@ -257,7 +257,7 @@ minio_tenant_chart_values:
         # the console and S3 API, but use the same TLS cert
         # (configured above to use minio-s3-tls secret), so
         # using passthrough will send the wrong certificate
-        # to the brwoser
+        # to the browser!
         nginx.ingress.kubernetes.io/backend-protocol: HTTPS
       host: "{{ minio_console_fqdn }}"
 

@@ -1,0 +1,94 @@
+# set Grafana user profile and preferences
+#
+# pass the following vars:
+#   username <required> string
+#   password <required> string
+#   settings <required> dictionary:
+#     profile     [optional] dictionary
+#     preferences [optional] dictionary
+#     help_flags  [optional] list of IDs
+---
+- name: Apply Grafana user settings
+  delegate_to: localhost
+  become: false
+  vars:
+    api_base: https://{{ monitoring_fqdns['grafana'] | first }}/api/user
+    api_urls:
+      profile: "{{ api_base }}"
+      preferences: "{{ api_base }}/preferences"
+      # not looping on help_flags
+    uri_params: &uri_params
+      url_username: "{{ username }}"
+      url_password: "{{ password }}"
+      force_basic_auth: true
+  block:
+    - name: Get existing user settings
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/uri_module.html
+      ansible.builtin.uri:
+        url: "{{ item.url }}"
+        <<: *uri_params
+        # ignore if Grafana
+        # not installed yet
+        status_code: [200, -1]
+        return_content: true
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/dict2items_filter.html
+      loop: &loop |
+        {{ api_urls | ansible.builtin.dict2items(value_name='url') }}
+      loop_control: &control
+        label: "{{ item.key }}"
+      when: settings[item.key] is defined
+      register: user_settings
+
+    - name: Need to apply user settings?
+      vars:
+        existing: "{{ user_settings.results[i].json }}"
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/set_fact_module.html
+      ansible.builtin.set_fact:
+        "apply_{{ item }}": |
+          {# use namespace() to create a scoped object #}
+          {# https://jinja.palletsprojects.com/en/stable/templates/#assignments #}
+          {% set ns = namespace(needs=false)          %}
+          {% for key, value in settings[item].items() %}
+          {%   if not ns.needs and (key not in existing or existing[key] != value) %}
+          {%      set ns.needs = true %}
+          {%   endif  %}
+          {% endfor   %}
+          {{ ns.needs }}
+      loop: "{{ api_urls.keys() }}"
+      loop_control:
+        index_var: i
+      when: >-
+        user_settings.results[i] is defined and
+        user_settings.results[i].status == 200
+
+    - name: Apply custom user settings
+      vars:
+        # IMPORTANT: facts are not stored in ansible_facts
+        # on localhost--they're simply top-level variables
+        needs_apply: "{{ lookup('vars', 'apply_'~ item.key) }}"
+      ansible.builtin.uri:
+        url: "{{ item.url }}"
+        <<: *uri_params
+        method: PUT
+        body_format: json
+        body: "{{ settings[item.key] }}"
+      loop: *loop
+      loop_control: *control
+      register: apply_settings
+      when: needs_apply is truthy
+      changed_when: apply_settings.status == 200
+
+    # Grafana has no API to get existing
+    # values of help flags, so always set
+    # them but suppress change indication
+    - name: Set custom user help flags
+      vars:
+        flags: "{{ settings['help_flags'] | default([]) }}"
+      ansible.builtin.uri:
+        url: "{{ api_base }}/helpflags/{{ item }}"
+        <<: *uri_params
+        method: PUT
+        # no body needed
+      loop: "{{ flags }}"
+      changed_when: false
+  any_errors_fatal: true

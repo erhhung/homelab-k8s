@@ -3,7 +3,7 @@
 # https://runbooks.prometheus-operator.dev/runbooks
 ---
 - name: Install Prometheus monitoring stack
-  tags: stack
+  tags: install
   hosts: "{{ rke_control_plane_host }}"
   gather_facts: false
   vars_files:
@@ -161,4 +161,20 @@
         release_values: "{{ prometheus_stack_chart_values }}"
         atomic: true
       timeout: 600
+  any_errors_fatal: true
+
+- name: Configure monitoring applications
+  tags: config
+  hosts: localhost
+  gather_facts: false
+  vars_files:
+    - vars/basics.yml
+    - vars/monitoring.yml
+  tasks:
+    - name: Customize Grafana user settings
+      vars:
+        username: admin
+        password: "{{ grafana_admin_pass }}"
+        settings: "{{ grafana_admin_settings }}"
+      ansible.builtin.include_tasks: tasks/grafana/settings.yml
   any_errors_fatal: true
