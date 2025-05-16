@@ -248,6 +248,6 @@
             - istio
             - mesh
         dashboards: "{{ istio_grafana_dashboards | map('combine', options) }}"
-      ansible.builtin.include_tasks: tasks/monitoring/dashboards.yml
+      ansible.builtin.include_tasks: tasks/grafana/dashboards.yml
       when: grafana_api_server_online | default(true)
   any_errors_fatal: true

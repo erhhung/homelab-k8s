@@ -1,31 +1,31 @@
-# set OpenSearch Dashboards settings
+# set OpenSearch Dashboards user settings
 #
 # pass the following vars:
+#   username <required> string
+#   password <required> string
 #   settings <required> dictionary
-# requires vars from:
-#   vars/opensearch.yml
-#   vars/kibana.yml
 ---
-- name: Apply Dashboards settings
+- name: Apply Dashboards user settings
+  delegate_to: localhost
   become: false
   vars:
     uri_params: &uri_params
       url: https://{{ kibana_fqdn }}/api/opensearch-dashboards/settings
-      url_username: admin
-      url_password: "{{ opensearch_admin_pass }}"
+      url_username: "{{ username }}"
+      url_password: "{{ password }}"
       force_basic_auth: true
   block:
-    - name: Get existing settings
+    - name: Get existing user settings
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/uri_module.html
       ansible.builtin.uri:
         <<: *uri_params
         # ignore if Dashboards
         # is not installed yet
-        status_code: [200, 404]
+        status_code: [200, -1]
         return_content: true
       register: osd_settings
 
-    - name: Need to apply settings?
+    - name: Need to apply user settings?
       vars:
         existing: "{{ osd_settings.json.settings }}"
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/set_fact_module.html
@@ -42,7 +42,7 @@
           {{ ns.needs }}
       when: osd_settings.status == 200
 
-    - name: Apply custom settings
+    - name: Apply custom user settings
       ansible.builtin.uri:
         <<: *uri_params
         method: POST
@@ -52,8 +52,6 @@
         body:
           changes: "{{ settings }}"
       register: apply_settings
-      when: >-
-        needs_apply is not defined or
-        needs_apply
+      when: needs_apply is truthy
       changed_when: apply_settings.status == 200
   any_errors_fatal: true

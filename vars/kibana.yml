@@ -100,7 +100,7 @@ dashboards_chart_values:
 # old: Dashboards Management => Advanced settings or
 # new: Settings and setup => Application settings page:
 # POST https://kibana.fourteeners.local/api/opensearch-dashboards/settings
-kibana_settings:
+kibana_admin_settings:
   "theme:darkMode": true
   "home:useNewHomePage": true
   "savedObjects:perPage": 50

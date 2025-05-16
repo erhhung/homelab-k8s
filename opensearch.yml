@@ -187,12 +187,14 @@
 
     - name: Customize Dashboards settings
       vars:
-        settings: "{{ kibana_settings }}"
+        username: admin
+        password: "{{ opensearch_admin_pass }}"
+        settings: "{{ kibana_admin_settings }}"
       ansible.builtin.include_tasks: tasks/kibana/settings.yml
 
     - name: Import Grafana dashboards
       vars:
         dashboards: "{{ opensearch_grafana_dashboards }}"
-      ansible.builtin.include_tasks: tasks/monitoring/dashboards.yml
+      ansible.builtin.include_tasks: tasks/grafana/dashboards.yml
       when: grafana_api_server_online | default(false)
   any_errors_fatal: true
