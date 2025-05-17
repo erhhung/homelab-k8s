@@ -118,6 +118,29 @@ minio_operator_chart_values:
       - name: operator-tls
         mountPath: /tmp/certs
 
+# MinIO Operator won't create a Prometheus ServiceMonitor;
+# instead, when minio_prometheus_operator is true, it will
+# create minio-prom-additional-scrape-config secret in the
+# Prometheus namespace and add to additionalScrapeConfigs
+# of Prometheus CR (requires adding environment variables
+# PROMETHEUS_NAME and PROMETHEUS_NAMESPACE to the operator
+# chart values):
+# https://github.com/minio/operator/tree/master/UPGRADE.md#v439---v440
+# HOWEVER, the scrape config secret the operator creates
+# contains hardcoded tls_config.ca_file from the service
+# account, which doesn't work against our target:
+# https://github.com/minio/operator/issues/940
+# https://github.com/minio/operator/tree/master/pkg/resources/configmaps/prometheus.go#L99
+# so we can't enable this feature yet; we instead add
+# custom scrape configs to additional_scrape_configs:
+minio_prometheus_operator: false
+
+# /minio/v2/metrics/{type}
+minio_collect_metrics_for:
+  - cluster
+  - node
+  - bucket
+
 # https://github.com/minio/operator/tree/master/helm/tenant
 # https://github.com/minio/operator/tree/master/helm/tenant/values.yaml
 # https://min.io/docs/minio/kubernetes/upstream/reference/tenant-chart-values.html
@@ -211,21 +234,10 @@ minio_tenant_chart_values:
       enabled: true
       protocol: https
       port: 9000
-      # path: /minio/v2/metrics/cluster
 
-    # MinIO Operator won't create a Prometheus ServiceMonitor;
-    # instead, when prometheusOperator is true, it will create
-    # minio-prom-additional-scrape-config secret in Prometheus
-    # namespace and add to Prometheus.additionalScrapeConfigs
-    # (requires adding environment variables PROMETHEUS_NAME
-    # and PROMETHEUS_NAMESPACE to the operator chart values):
-    # https://github.com/minio/operator/tree/master/UPGRADE.md#v439---v440
-    # HOWEVER, the scrape config secret the operator creates
-    # contains hardcoded tls_config.ca_file from the service
-    # account, which won't work against the target:
-    # https://github.com/minio/operator/issues/940
-    # https://github.com/minio/operator/tree/master/pkg/resources/configmaps/prometheus.go#L99
-    prometheusOperator: "{{ monitoring_stack_ready and false }}"
+    prometheusOperator: |
+      {{ monitoring_stack_ready and
+         minio_prometheus_operator }}
 
   ingress:
     api:

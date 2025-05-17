@@ -1,0 +1,73 @@
+# set minio_scrape_configs fact
+---
+- name: Define MinIO scrape configs
+  when: not minio_prometheus_operator
+  block:
+    - name: Define MinIO scrape configs
+      vars:
+        target: metrics.{{ minio_tenant_namespace }}.svc.cluster.local
+        types: "{{ minio_collect_metrics_for | join(' ') }}"
+        name_prefix: minio-{{ minio_tenant_name }}-
+        path_prefix: /minio/v2/metrics/
+        ca_file: /tls/scraper/ca.crt
+
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/shell_module.html
+      ansible.builtin.shell: |
+        # run Bash and source /etc/profile.d
+        # scripts so that kubectl is in PATH
+        exec /bin/bash -l <<'EOF'
+        # set MC_CONFIG_DIR
+        . ~/.bash_aliases
+        set -o pipefail
+
+        secret_name="prometheus-{{ monitoring_release_name }}-prometheus"
+        # secret won`t be found if monitoring stack hasn`t been installed
+        secret=$(kubectl get -n {{ monitoring_namespace }} secret $secret_name \
+          -o jsonpath='{ .data.prometheus\.yaml\.gz }')
+
+        if [ "$secret" ]; then
+          configs=$(base64 -d <<< "$secret" | gunzip | \
+            yq '.scrape_configs | map(
+               select(.job_name | test("{{ name_prefix }}"))
+            )')
+
+          if [ "$configs" != '[]' ]; then
+            # don`t recreate scrape configs because
+            # they will have different token values
+            yq -PM <<< "$configs"
+            exit $?  # no change
+          fi
+        fi
+
+        # can`t generate scrape configs without
+        # proper credentials already configured
+        mc alias list --json | jq -r '.alias' | \
+          grep -q metrics || {
+            echo '[]'; exit
+          }
+        for type in {{ types }}; do
+          # https://min.io/docs/minio/linux/reference/minio-mc-admin/mc-admin-prometheus-generate.html
+          mc admin prometheus generate  metrics $type | \
+              type=$type yq '.scrape_configs[0] as $j | [{
+
+              "job_name":     "{{ name_prefix }}\(env(type))-job",
+              "bearer_token": $j.bearer_token,
+              "metrics_path": $j.metrics_path,
+              "scheme":       "https",
+              "tls_config": {
+                "ca_file": "{{ ca_file }}"
+              },
+              "static_configs": [{
+                "targets": ["{{ target }}"]
+              }]
+            }]'
+        done | yq -PM
+        EOF
+      register: add_configs
+      changed_when: false
+
+    - name: Set minio_scrape_configs fact
+      ansible.builtin.set_fact:
+        minio_scrape_configs: "{{ add_configs.stdout | from_yaml }}"
+      when: add_configs.rc == 0
+  any_errors_fatal: true
