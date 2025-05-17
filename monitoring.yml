@@ -148,6 +148,18 @@
         apply: true
       when: helm_info.status is not defined
 
+    - name: Load custom scrape configurations
+      vars:
+        # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/fileglob_lookup.html
+        configs: "{{ lookup('ansible.builtin.fileglob',
+          'tasks/monitoring/configs/*.yml', wantlist=True) }}"
+      # each tasks file should set fact referenced by
+      # additional_scrape_configs in the chart values
+      ansible.builtin.include_tasks: "{{ item }}"
+      loop: "{{ configs }}"
+      loop_control:
+        label: "{{ item | basename }}"
+
     # https://github.com/prometheus-community/helm-charts/tree/main/charts/kube-prometheus-stack
     - name: Install Prometheus stack Helm chart
       # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/helm_module.html

@@ -204,18 +204,6 @@
   hosts: "{{ rke_control_plane_host }}"
   gather_facts: false
   vars_files: *vars_files
-  vars:
-    # required kubernetes>=24.2 package only in user virtualenv
-    ansible_python_interpreter: "{{ venv_python_interpreter }}"
-    is_operator_managed: "{{ minio_tenant_chart_values.tenant.prometheusOperator }}"
-    metric_types:
-      - cluster
-      - node
-      - bucket
-    target: metrics.{{ minio_tenant_namespace }}.svc.cluster.local
-    name_prefix: minio-{{ minio_tenant_name }}-
-    path_prefix: /minio/v2/metrics/
-    ca_file: /tls/scraper/ca.crt
   tasks:
     # MinIO Operator creates minio-prom-additional-scrape-config secret
     # in Prometheus namespace; however, it hardcodes tls_config.ca_file
@@ -226,10 +214,13 @@
     # https://github.com/minio/operator/issues/940
     - name: Fix Prometheus scrape configs
       when: >-
-        is_operator_managed and
-        monitoring_stack_ready
+        monitoring_stack_ready and
+        minio_prometheus_operator
       block:
         - name: Get bad scrape configs secret
+          vars:
+            # required kubernetes>=24.2 package only in user virtualenv
+            ansible_python_interpreter: "{{ venv_python_interpreter }}"
           # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_info_module.html
           kubernetes.core.k8s_info:
             kubeconfig: "{{ rke_kubeconfig }}"
@@ -248,12 +239,15 @@
         # by the operator)
         - name: Fix Prometheus scrape configs
           vars:
+            name_prefix: minio-{{ minio_tenant_name }}-
+            path_prefix: /minio/v2/metrics/
+            ca_file: /tls/scraper/ca.crt
             job: |
               {{ scrape_configs.resources[0].data['prometheus-additional.yaml'] |
                   b64decode | from_yaml | first }}
             jobs: |
               {% set jobs = [] %}
-              {% for type in metric_types %}
+              {% for type in minio_collect_metrics_for %}
               {%   set _ = jobs.append(job | ansible.builtin.combine({
                      'job_name':     name_prefix ~ type ~'-job',
                      'metrics_path': path_prefix ~ type,
@@ -300,67 +294,6 @@
           failed_when: >-
             fix_configs.rc != 0 and
             fix_configs.rc != 9
-
-    # set minio_scrape_configs fact used by monitoring.yml playbook
-    - name: Add Prometheus scrape configs
-      when: >-
-        not is_operator_managed and
-        monitoring_stack_ready
-      block:
-        - name: Add Prometheus scrape configs
-          ansible.builtin.shell: |
-            # run Bash and source /etc/profile.d
-            # scripts so that kubectl is in PATH
-            exec /bin/bash -l <<'EOF'
-            # set MC_CONFIG_DIR
-            . ~/.bash_aliases
-            set -o pipefail
-
-            secret="prometheus-{{ monitoring_release_name }}-prometheus"
-            configs=$(kubectl get -n {{ monitoring_namespace }} secret  $secret  \
-              -o jsonpath='{ .data.prometheus\.yaml\.gz }' | base64 -d | gunzip | \
-              yq '.scrape_configs | map(
-                 select(.job_name | test("{{ name_prefix }}"))
-              )')
-
-            if [ "$configs" != '[]' ]; then
-              # don`t recreate scrape configs because
-              # they will have different token values
-              yq -PM <<< "$configs"
-              exit $?  # no change
-            fi
-
-            # can`t generate scrape configs without
-            # proper credentials already configured
-            mc alias list --json | jq -r '.alias' | \
-              grep -q metrics || {
-                echo '[]'; exit
-              }
-            for type in {{ metric_types | join(' ') }}; do
-              # https://min.io/docs/minio/linux/reference/minio-mc-admin/mc-admin-prometheus-generate.html
-              mc admin prometheus generate metrics $type | \
-                 type=$type yq '.scrape_configs[0] as $j | [{
-
-                 "job_name":     "{{ name_prefix }}\(env(type))-job",
-                 "bearer_token": $j.bearer_token,
-                 "metrics_path": $j.metrics_path,
-                 "scheme":       "https",
-                 "tls_config": {
-                   "ca_file": "{{ ca_file }}"
-                 },
-                 "static_configs": [{
-                   "targets": ["{{ target }}"]
-                 }]
-               }]'
-            done | yq -PM
-            EOF
-          register: add_configs
-          changed_when: false
-
-        - name: Set minio_scrape_configs fact
-          ansible.builtin.set_fact:
-            minio_scrape_configs: "{{ add_configs.stdout | from_yaml }}"
-          when: add_configs.rc == 0
   any_errors_fatal: true
 
 - name: Create MinIO buckets/users/groups

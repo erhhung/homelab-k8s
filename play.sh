@@ -56,8 +56,9 @@ trap "rm -f temp.yml" EXIT
     START=$start yq '. as $d | .[] | select(.tags == env(START)) |
                path[0] as $i |  $d | .[$i:]' main.yml | prettify > temp.yml
     args+=("temp.yml")
-  else
-    picks="$(jo -a -- "${args[@]}")"
+
+  elif [ "${args[*]}" ]; then
+    picks="$(jo -a -- "${args[@]}" <<< "")"
 
     # create picked version of main.yml
     yq -PM 'load("/dev/stdin") as $picks  | map(
@@ -73,6 +74,9 @@ trap "rm -f temp.yml" EXIT
     [ $(yq length temp.yml) -gt 0 ] && \
       args+=("temp.yml") || \
       args+=("main.yml")
+  else
+    # run all playbooks
+    args+=("main.yml")
   fi
 }
 ansible-playbook "${args[@]}" 2>&1 | tee ansible.log
