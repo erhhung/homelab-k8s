@@ -9,6 +9,7 @@
     - vars/kubernetes.yml
     - vars/storage.yml
     - vars/postgresql.yml
+    - vars/monitoring.yml
     - vars/keycloak.yml
   vars:
     # required kubernetes>=24.2 package only in user virtualenv
@@ -74,6 +75,11 @@
     #   ansible.builtin.debug:
     #     # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/md5_filter.html
     #     msg: "{{ keycloak_sql.stdout | ansible.builtin.md5 }}"
+
+    - name: Is the monitoring stack ready?
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
+      ansible.builtin.include_tasks: tasks/monitoring/stackready.yml
+      when: monitoring_stack_ready is not defined
   tasks:
     - name: Create Keycloak database secret
       vars:
@@ -164,4 +170,10 @@
       # startup can take a while at max utilization of allocated CPU:
       # "updating configuration and installing your custom providers"
       timeout: 900
+
+    - name: Import Grafana dashboards
+      vars:
+        dashboards: "{{ keycloak_grafana_dashboards }}"
+      ansible.builtin.include_tasks: tasks/grafana/dashboards.yml
+      when: grafana_api_server_online | default(false)
   any_errors_fatal: true

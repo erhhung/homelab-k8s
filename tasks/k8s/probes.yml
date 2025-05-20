@@ -1,0 +1,92 @@
+# configure container probes
+#
+# pass the following vars:
+#   kubeconfig  <required> path to kubeconfig
+#   api_version [optional] default based on resource kind
+#   res_kind    <required> resource type (Pod, Deployment,
+#                          StatefulSet, DaemonSet)
+#   res_name    <required> resource  name
+#   res_ns      <required> resource  namespace
+#   container   [optional] container name
+#                          (unless Pod has only one)
+#   max_wait    [optional] default=10 (seconds)
+#   probes      <required> dictionary of probes
+#     readinessProbe [optional]
+#     livenessProbe  [optional]
+#     startupProbe   [optional]
+---
+- name: Configure container probes
+  become: false
+  vars:
+    # required kubernetes>=24.2 package only in user virtualenv
+    ansible_python_interpreter: "{{ venv_python_interpreter }}"
+  block:
+    - name: Get {{ res_kind }}/{{ res_name }}
+      vars:
+        api_default: "{{ 'v1' if res_kind == 'Pod' else 'apps/v1' }}"
+      # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_info_module.html
+      kubernetes.core.k8s_info:
+        kubeconfig: "{{ kubeconfig }}"
+        api_version: "{{ api_version | default(api_default) }}"
+        kind: "{{ res_kind }}"
+        name: "{{ res_name }}"
+        namespace: "{{ res_ns }}"
+      register: res_info
+      retries: 10
+      delay: "{{ max_wait | default(10) / 10 }}"
+      until: res_info.resources[0] is defined
+
+    - name: Find all containers in pod
+      vars:
+        spec: "{{ res_info.resources[0].spec }}"
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/set_fact_module.html
+      ansible.builtin.set_fact:
+        resource: "{{ res_info.resources[0] }}"
+        containers: "{{ spec.containers if res_kind == 'Pod' else
+          spec.template.spec.containers }}"
+
+    - name: Identify container by name
+      ansible.builtin.set_fact:
+        container_index: |
+          {% for i in range(containers | length)  %}
+          {%   if containers[i].name == container %}
+          {{     i  -}}
+          {%   endif %}
+          {% endfor  %}
+      when: container is defined
+
+    - name: Ensure container identified
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/assert_module.html
+      ansible.builtin.assert:
+        that: |
+          {% if container is defined %}
+          {{    container_index is defined and
+                container_index | int >= 0 -}}
+          {% else %}
+          {{    containers | length == 1 -}}
+          {% endif %}
+        fail_msg: No container named "{{ container }}"!
+        quiet: true
+
+    - name: Update probes in container
+      vars:
+        definition: |
+          {% set  i = container_index | default(0) | int %}
+          {% set container = resource.spec.containers[i] if res_kind == 'Pod' else
+               resource.spec.template.spec.containers[i] %}
+          {% for probe, config in probes.items() %}
+          {%   if probe in container %}
+          {#     https://docs.ansible.com/ansible/latest/collections/ansible/builtin/combine_filter.html #}
+          {%     set merged = container[probe] | ansible.builtin.combine(config, recursive=true) %}
+          {%     set _ = container.update({probe: merged}) %}
+          {%   else %}
+          {%     set _ = container.update({probe: config}) %}
+          {%   endif  %}
+          {% endfor   %}
+          {{ resource }}
+      # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_module.html
+      kubernetes.core.k8s:
+        kubeconfig: "{{ kubeconfig }}"
+        definition: "{{ definition }}"
+        state: patched
+  any_errors_fatal: true

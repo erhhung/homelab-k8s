@@ -14,6 +14,7 @@ argocd_secrets:
   # https://argo-cd.readthedocs.io/en/stable/operator-manual/tls/#tls-certificates-used-by-argocd-server
   # https://github.com/argoproj/argo-helm/tree/main/charts/argo-cd/templates/argocd-configs/argocd-server-tls-secret.yaml
   server: argocd-server-tls
+  valkey: argocd-valkey
 
 argocd_chart_version: "7.8.12"
 # https://github.com/argoproj/argo-helm/tree/main/charts/argo-cd
@@ -91,6 +92,8 @@ argocd_chart_values:
     revisionHistoryLimit: 2
 
     readinessProbe: &probe
+      # default 1s timeout for readiness and liveness
+      # probes are too optimistic for our environment
       initialDelaySeconds: 30
       timeoutSeconds: 5
 
@@ -107,8 +110,14 @@ argocd_chart_values:
       <<: *metrics
 
   redis:
-    metrics:
-      <<: *metrics
+    # use our Valkey cluster instead
+    enabled: false
+
+  externalRedis:
+    host: "{{ valkey_service_host }}"
+    port: 6379
+    # secret must contain "redis-password" key
+    existingSecret: "{{ argocd_secrets['valkey'] }}"
 
   dex:
     # don't need IdP integration in
@@ -137,6 +146,9 @@ argocd_chart_values:
       <<: *metrics
 
   repoServer:
+    readinessProbe: *probe
+    livenessProbe: *probe
+
     metrics:
       <<: *metrics
 

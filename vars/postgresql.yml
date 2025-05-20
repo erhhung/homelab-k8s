@@ -5,6 +5,7 @@
 # a cert at pki.fourteeners.local using CN=<db_user>
 postgresql_users:
   - erhhung
+  - scraper
   - "{{ keycloak_db_user }}"
 
 postgresql_namespace: postgresql
@@ -23,6 +24,7 @@ pgpool_cluster_host: postgresql-pgpool.{{ postgresql_namespace }}.svc.cluster.lo
 
 postgresql_secrets:
   node-tls: postgresql-tls
+  scraper-tls: pgpool-scraper-tls
 
 postgresql_chart_version: "15.3.8"
 # https://github.com/bitnami/charts/tree/main/bitnami/postgresql-ha
@@ -98,6 +100,52 @@ postgresql_chart_values:
         {% endfor -%}
         {{ pwds | join(';') }}
 
+    sidecars:
+      # https://github.com/pgpool/pgpool2_exporter
+      # currently disabled because pgpool-exporter
+      # cannot connect to Pgpool endpoint via mTLS:
+      # https://github.com/pgpool/pgpool2_exporter/issues/43
+
+      # - name: pgpool-exporter
+      #   image: docker.io/pgpool/pgpool2_exporter
+      #   imagePullPolicy: IfNotPresent
+      #   env:
+      #     - name: POSTGRES_USERNAME
+      #       value: scraper
+      #     - name: POSTGRES_PASSWORD
+      #       valueFrom:
+      #         secretKeyRef:
+      #           name: postgresql-postgresql
+      #           key: password
+      #     - name: POSTGRES_DATABASE
+      #       value: postgres
+      #     - name: PGPOOL_SERVICE
+      #       value: localhost
+      #     - name: PGPOOL_SERVICE_PORT
+      #       value: "5432"
+      #     - name: SSLMODE
+      #       value: verify-full
+      #   ports:
+      #     # exposed by service in extraDeploy
+      #     - name: metrics
+      #       containerPort: 9719
+      #       protocol: TCP
+      #   securityContext:
+      #     runAsUser: 1001
+      #     runAsGroup: 1001
+      #     capabilities:
+      #       drop: ["ALL"]
+      #   volumeMounts:
+      #     - name: scraper-tls
+      #       mountPath: /tls/scraper
+
+    extraVolumes:
+      - name: scraper-tls
+        secret:
+          # pgpool-scraper-tls Secret
+          # will be created by Ansible
+          secretName: "{{ postgresql_secrets['scraper-tls'] }}"
+
   service:
     # since PostgreSQL does not talk HTTP, we do not create
     # an Ingress; instead, we create a LoadBalancer service:
@@ -108,7 +156,80 @@ postgresql_chart_values:
     loadBalancerIP: "{{ rke_lb_vip | ansible.utils.ipmath(1) }}" # port 5432
 
   metrics:
+    # adds postgres-exporter sidecar container:
     # https://github.com/bitnami/charts/tree/main/bitnami/postgresql-ha#prometheus-metrics
+    # https://github.com/prometheus-community/postgres_exporter
     enabled: true
+
+    # scrape dedicated postgresql-metrics
+    # service on HTTP "metrics" port 9187
     serviceMonitor:
-      enabled: false # enable only if Prometheus Operator is installed
+      enabled: "{{ prometheus_crds_installed }}"
+      labels: &monitor_labels
+        release: "{{ monitoring_release_name }}"
+      selector: *monitor_labels
+
+  # NOTE: Helm will render these manifests as templates,
+  # but the only templating currently used are processed
+  # first by Ansible
+  extraDeploy:
+    # the following resources are currently disabled
+    # because pgpool-exporter sidecar cannot connect
+    # to Pgpool endpoint via mTLS:
+    # https://github.com/pgpool/pgpool2_exporter/issues/43
+    - |-
+      {% if prometheus_crds_installed and false %}
+      # create a service to expose metrics endpoint from
+      # pgpool-exporter sidecar of postgresql-pgpool pod
+      #
+      apiVersion: v1
+      kind: Service
+      metadata:
+        name: {{ postgresql_release_name }}-pgpool-metrics
+        labels:
+          app.kubernetes.io/name: postgresql
+          app.kubernetes.io/component: pgpool
+          app.kubernetes.io/instance: {{ postgresql_release_name }}
+          release: {{ monitoring_release_name }}
+      spec:
+        type: ClusterIP
+        selector:
+          app.kubernetes.io/name: postgresql
+          app.kubernetes.io/component: pgpool
+          app.kubernetes.io/instance: {{ postgresql_release_name }}
+        ports:
+          - name: metrics
+            port: 9719
+            protocol: TCP
+            targetPort: metrics
+      ---
+      apiVersion: monitoring.coreos.com/v1
+      kind: ServiceMonitor
+      metadata:
+        name: {{ postgresql_release_name }}-pgpool
+        labels:
+          app.kubernetes.io/name: postgresql
+          app.kubernetes.io/component: pgpool
+          app.kubernetes.io/instance: {{ postgresql_release_name }}
+          # required by serviceMonitorSelector!
+          release: {{ monitoring_release_name }}
+      spec:
+        namespaceSelector:
+          matchNames:
+            - {{ postgresql_namespace }}
+        selector:
+          matchLabels:
+            app.kubernetes.io/name: postgresql
+            app.kubernetes.io/component: pgpool
+            release: {{ monitoring_release_name }}
+        endpoints:
+          - port: metrics
+            path: /metrics
+            interval: 30s
+      {% endif %}
+
+# https://grafana.com/grafana/dashboards/?search=PostgreSQL&dataSource=prometheus
+postgresql_grafana_dashboards:
+  # https://grafana.com/grafana/dashboards/9628-postgresql-database/
+  - title: PostgreSQL Database
+    gnetId: 9628

@@ -1,5 +1,10 @@
 -- https://www.postgresql.org/docs/current/sql-createrole.html
 CREATE ROLE erhhung WITH LOGIN SUPERUSER;
-{% for role in postgresql_users | select('!=','erhhung') %}
+CREATE ROLE scraper WITH LOGIN;
+-- https://www.postgresql.org/docs/current/sql-grant.html
+GRANT ALL PRIVILEGES ON DATABASE postgres TO scraper;
+
+{% for role in postgresql_users |
+     ansible.builtin.difference(['erhhung', 'scraper']) %}
 CREATE ROLE {{ role }} WITH LOGIN CREATEDB;
 {% endfor %}

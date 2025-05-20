@@ -110,7 +110,7 @@
         atomic: true
       timeout: 300
 
-    - name: Wait until MinIO tenant is ready
+    - name: Wait until MinIO tenant ready
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/uri_module.html
       ansible.builtin.uri:
         url: https://{{ minio_s3api_fqdn }}/
@@ -120,6 +120,21 @@
       until: tenant_check.status == 403
       retries: 60
       delay: 5
+
+    - name: Patch tenant sidecar probes
+      vars:
+        res_kind: StatefulSet
+        res_name: "{{ minio_tenant_name }}-{{ minio_pool_name }}"
+        res_ns: "{{ minio_tenant_namespace }}"
+        container: sidecar
+        probes:
+          # https://github.com/minio/operator/tree/master/pkg/resources/statefulsets/minio-statefulset.go#L739-L754
+          readinessProbe:
+            initialDelaySeconds: 30 # default=5
+            periodSeconds: 10 # default=1
+            timeoutSeconds: 5 # default=1
+            failureThreshold: 3 # default=1
+      ansible.builtin.include_tasks: tasks/k8s/probes.yml
   any_errors_fatal: true
 
 # https://min.io/docs/minio/linux/reference/minio-mc-admin.html#installation
