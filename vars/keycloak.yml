@@ -101,6 +101,7 @@ keycloakx_chart_values:
     database: "{{ keycloak_db_name }}"
     username: "{{ keycloak_db_user }}"
     password: "{{ pgpool_db_pass }}"
+
   dbchecker:
     enabled: true
 
@@ -217,6 +218,8 @@ keycloakx_chart_values:
   http:
     # default: /auth
     relativePath: /
+    internalPort: http-internal
+    internalScheme: HTTPS
 
   ingress:
     enabled: true
@@ -226,6 +229,7 @@ keycloakx_chart_values:
       - hosts: "{{ keycloak_fqdns }}"
         secretName: "{{ keycloak_secrets['ingress'] }}"
     ingressClassName: "{{ rke_ingress_class }}"
+
     annotations:
       nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
       # https://github.com/codecentric/helm-charts/tree/master/charts/keycloakx#bad-gateway-and-proxy-buffer-size-in-nginx
@@ -256,40 +260,38 @@ keycloakx_chart_values:
   proxy:
     mode: xforwarded
 
-  # when HTTPS is enabled, internal management traffic
-  # (health checks) on port "http-internal" must be in
-  # HTTPS; however, the default probes still use HTTP,
-  # so change their httpGet schemes to HTTPS
   startupProbe: |
     httpGet:
     {%- raw %}
-      path: {{ tpl .Values.http.relativePath $ | trimSuffix "/" }}/health
-      port: http-internal
-      scheme: HTTPS
+      path: {{ .Values.http.relativePath | trimSuffix "/" }}/health
+      port: {{ .Values.http.internalPort }}
+      scheme: {{ .Values.http.internalScheme }}
     {% endraw -%}
     initialDelaySeconds: 60
-    periodSeconds: 5
-    timeoutSeconds: 1
+    periodSeconds: 10
+    timeoutSeconds: 5
     successThreshold: 1
     failureThreshold: 60
+
   readinessProbe: |
     httpGet:
     {%- raw %}
-      path: {{ tpl .Values.http.relativePath $ | trimSuffix "/" }}/health/ready
-      port: http-internal
-      scheme: HTTPS
+      path: {{ .Values.http.relativePath | trimSuffix "/" }}/health/ready
+      port: {{ .Values.http.internalPort }}
+      scheme: {{ .Values.http.internalScheme }}
     {% endraw -%}
     initialDelaySeconds: 30
     periodSeconds: 10
-    timeoutSeconds: 1
+    timeoutSeconds: 5
     successThreshold: 1
     failureThreshold: 3
+
   livenessProbe: |
     httpGet:
     {%- raw %}
-      path: {{ tpl .Values.http.relativePath $ | trimSuffix "/" }}/health/live
-      port: http-internal
-      scheme: HTTPS
+      path: {{ .Values.http.relativePath | trimSuffix "/" }}/health/live
+      port: {{ .Values.http.internalPort }}
+      scheme: {{ .Values.http.internalScheme }}
     {% endraw -%}
     periodSeconds: 10
     timeoutSeconds: 5
@@ -298,5 +300,17 @@ keycloakx_chart_values:
 
   metrics:
     enabled: true
+
   serviceMonitor:
-    enabled: false # enable only if Prometheus Operator is installed
+    enabled: "{{ prometheus_crds_installed }}"
+    labels:
+      release: "{{ monitoring_release_name }}"
+    interval: 60s # not heavily used service
+
+# https://grafana.com/grafana/dashboards/?search=Keycloak&dataSource=prometheus
+keycloak_grafana_dashboards:
+  # https://grafana.com/grafana/dashboards/19659-keycloak-metrics-dashboard/
+  - title: Keycloak Metrics Dashboard
+    gnetId: 19659
+    tags:
+      - keycloak

@@ -6,18 +6,31 @@
     - vars/basics.yml
     - vars/kubernetes.yml
     - vars/storage.yml
-    - vars/postgresql.yml
     - vars/keycloak.yml
+    - vars/monitoring.yml
+    - vars/postgresql.yml
   vars:
     kubeconfig: "{{ rke_kubeconfig }}"
+    secret_ns: "{{ postgresql_namespace }}"
+  pre_tasks:
+    - name: Is the monitoring stack ready?
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
+      ansible.builtin.include_tasks: tasks/monitoring/stackready.yml
+      when: monitoring_stack_ready is not defined
   tasks:
     - name: Create PostgreSQL node secret
       vars:
         cert_desc: PostgreSQL
         cert_file: postgresql
         secret_name: "{{ postgresql_secrets['node-tls'] }}"
-        secret_ns: "{{ postgresql_namespace }}"
-      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
+      ansible.builtin.include_tasks: tasks/k8s/secrets/tls.pki.yml
+
+    - name: Create Pgpool scraper secret
+      vars:
+        cert_desc: Pgpool scraper
+        cert_file: scraper
+        secret_name: "{{ postgresql_secrets['scraper-tls'] }}"
+        create_ns: false
       ansible.builtin.include_tasks: tasks/k8s/secrets/tls.pki.yml
 
     # https://github.com/bitnami/charts/tree/main/bitnami/postgresql-ha
@@ -38,4 +51,10 @@
         wait: true
         wait_timeout: 10m0s # requires wait=true
       timeout: 1800
+
+    - name: Import Grafana dashboards
+      vars:
+        dashboards: "{{ postgresql_grafana_dashboards }}"
+      ansible.builtin.include_tasks: tasks/grafana/dashboards.yml
+      when: grafana_api_server_online | default(false)
   any_errors_fatal: true

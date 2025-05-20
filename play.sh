@@ -66,9 +66,10 @@ trap "rm -f temp.yml" EXIT
                  )' main.yml <<< "$picks" | prettify > temp.yml
 
     # remove all args that were picked
-    args=($(yq -r 'map(.tags) as $picks  | load("/dev/stdin")[] |
-                select(. as $a | $picks  | contains([$a]) | not)' \
-                   temp.yml <<< "$picks"))
+    eval "args=($(
+      yq -r 'map(.tags) as $picks | load("/dev/stdin")[]  |
+          select(. as $a | $picks | contains([$a]) | not) |
+          tojson' temp.yml <<< "$picks"))"
 
     # play main.yml if nothing picked
     [ $(yq length temp.yml) -gt 0 ] && \

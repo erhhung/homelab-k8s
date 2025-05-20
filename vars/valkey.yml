@@ -40,6 +40,7 @@ valkey_node_fqdns: |
 # node endpoints: ["{FQDN}:6379"]
 valkey_node_eps: "{{ valkey_node_fqdns | product(['6379']) | map('join',':') }}"
 # ["valkeys://{node-endpoint}"]
+valkey_service_host: "{{ valkey_release_name }}.{{ valkey_namespace }}.svc.cluster.local"
 valkey_cluster_urls: "{{ ['valkeys://'] | product(valkey_node_eps) | map('join') }}"
 # ["rediss://{node-endpoint}"]
 redis_cluster_urls: "{{ ['rediss://'] | product(valkey_node_eps) | map('join') }}"

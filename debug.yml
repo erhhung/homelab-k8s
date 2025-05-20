@@ -178,6 +178,15 @@
   hosts: localhost
   gather_facts: false
   tasks:
+    - name: Select items not in list
+      vars:
+        all_list: ["foo", "bar", "baz", "qux"]
+        bad_list: ["bar", "qux"]
+        # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/difference_filter.html
+        the_list: "{{ all_list | ansible.builtin.difference(bad_list) }}"
+      ansible.builtin.debug:
+        var: the_list
+
     - name: Debug filtering functions
       vars:
         vc_pods:
