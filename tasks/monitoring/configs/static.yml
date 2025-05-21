@@ -1,0 +1,26 @@
+# sets static_scrape_configs fact by
+# loading all templated .yaml* files
+# under templates/monitoring/configs
+---
+- name: Load static scrape configs
+  block:
+    - name: Clear static_scrape_configs
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/set_fact_module.html
+      ansible.builtin.set_fact:
+        static_scrape_configs: []
+
+    - name: Add to static_scrape_configs
+      vars:
+        # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/fileglob_lookup.html
+        _configs: "{{ lookup('ansible.builtin.fileglob',
+          playbook_dir ~ '/templates/monitoring/configs/*.yaml*', wantlist=True) }}"
+      ansible.builtin.set_fact:
+        # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/template_lookup.html
+        static_scrape_configs: "{{ static_scrape_configs +
+          lookup('ansible.builtin.template', _item) | from_yaml }}"
+      loop: "{{ _configs }}"
+      loop_control:
+        loop_var: _item
+        # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/basename_filter.html
+        label: "{{ _item | ansible.builtin.basename }}"
+  any_errors_fatal: true

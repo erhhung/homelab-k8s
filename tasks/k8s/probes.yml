@@ -20,6 +20,8 @@
   vars:
     # required kubernetes>=24.2 package only in user virtualenv
     ansible_python_interpreter: "{{ venv_python_interpreter }}"
+    max_retries: 3
+    retry_delay: 1
   block:
     - name: Get {{ res_kind }}/{{ res_name }}
       vars:
@@ -89,4 +91,25 @@
         kubeconfig: "{{ kubeconfig }}"
         definition: "{{ definition }}"
         state: patched
-  any_errors_fatal: true
+  rescue:
+    # implement a retry logic because patching could fail due
+    # to conflict error "the object has been modified; please
+    # apply your changes to the latest version and try again"
+    - name: Increment retry_count
+      ansible.builtin.set_fact:
+        retry_count: "{{ retry_count | default(0) + 1 }}"
+
+    - name: Delay before retrying
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/pause_module.html
+      ansible.builtin.pause:
+        seconds: "{{ retry_delay }}"
+      when: retry_count < max_retries
+
+    - name: Retry configuring probes
+      ansible.builtin.include_tasks: tasks/k8s/probes.yml # recursion
+      when: retry_count < max_retries
+
+    - name: Set retry_count to zero
+      ansible.builtin.set_fact:
+        retry_count: 0
+  any_errors_fatal: false

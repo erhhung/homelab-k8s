@@ -11,7 +11,7 @@ kibana_fqdn: "{{ [kibana_host_name] | product(search_domains) | map('join','.') 
 kibana_secrets:
   ingress: dashboards-ingress-tls
 
-dashboards_chart_version: "2.28.0"
+dashboards_chart_version: "2.30.0"
 # https://github.com/opensearch-project/helm-charts/tree/main/charts/opensearch-dashboards
 # https://github.com/opensearch-project/helm-charts/tree/main/charts/opensearch-dashboards/values.yaml
 dashboards_chart_values:

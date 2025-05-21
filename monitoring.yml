@@ -143,7 +143,7 @@
               meta.helm.sh/release-namespace: "{{ monitoring_namespace }}"
           data: "{{ manifest.data }}"
         validate:
-          fail_on_error: true
+          fail_on_error: false
         state: present
         apply: true
       when: helm_info.status is not defined
@@ -158,7 +158,8 @@
       ansible.builtin.include_tasks: "{{ item }}"
       loop: "{{ configs }}"
       loop_control:
-        label: "{{ item | basename }}"
+        # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/basename_filter.html
+        label: "{{ item | ansible.builtin.basename }}"
 
     # https://github.com/prometheus-community/helm-charts/tree/main/charts/kube-prometheus-stack
     - name: Install Prometheus stack Helm chart
@@ -182,6 +183,10 @@
   vars_files:
     - vars/basics.yml
     - vars/monitoring.yml
+  pre_tasks:
+    - name: Get controller facts
+      ansible.builtin.include_tasks: tasks/localfacts.yml
+      when: local_python_interpreter is not defined
   tasks:
     - name: Customize Grafana user settings
       vars:

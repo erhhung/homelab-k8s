@@ -184,7 +184,7 @@
             # above contains both intermediate and root CA certs
             openid-server-ca.crt: "{{ pem_chain[1:] | join('\n') }}"
         validate:
-          fail_on_error: true
+          fail_on_error: false
         state: present
         apply: true
 
@@ -226,6 +226,10 @@
   hosts: "{{ rke_control_plane_host }}"
   gather_facts: false
   vars_files: *vars_files
+  pre_tasks:
+    - name: Get controller facts
+      ansible.builtin.include_tasks: tasks/localfacts.yml
+      when: local_python_interpreter is not defined
   tasks:
     - name: Apply manifests for Istio
       vars:

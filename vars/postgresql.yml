@@ -26,7 +26,7 @@ postgresql_secrets:
   node-tls: postgresql-tls
   scraper-tls: pgpool-scraper-tls
 
-postgresql_chart_version: "15.3.8"
+postgresql_chart_version: "16.0.5"
 # https://github.com/bitnami/charts/tree/main/bitnami/postgresql-ha
 # https://github.com/bitnami/charts/tree/main/bitnami/postgresql-ha/values.yaml
 postgresql_chart_values:
@@ -49,6 +49,7 @@ postgresql_chart_values:
     # duplicate global settings or
     # else helm diff upgrade fails
     <<: *global_postgresql
+    pgHbaTrustAll: true
 
     # https://github.com/bitnami/charts/tree/main/bitnami/postgresql-ha#securing-traffic-using-tls
     tls: &node_tls

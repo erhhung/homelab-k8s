@@ -26,7 +26,7 @@ kiali_secrets:
 
 # https://kiali.io/docs/installation/installation-guide/install-with-helm/#install-with-operator
 kiali_operator_namespace: kiali-operator
-kiali_operator_chart_version: "2.9.0"
+kiali_operator_chart_version: "2.10.0"
 
 kiali_oidc_client_id: kiali
 # kiali_oidc_client_secret: {vault.yml}
