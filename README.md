@@ -1,19 +1,15 @@
-# Erhhung's Home Kubernetes Cluster Configuration
+# Erhhung's Home Kubernetes Cluster
 
-This project provisions and configures Erhhung's high-availability Kubernetes cluster `homelab` using Rancher.
+This Ansible-based project provisions Erhhung's high-availability Kubernetes cluster `homelab` using Rancher, and installs services to monitor IoT appliances and deploy other personal projects.
 
 The top-level Ansible playbook `main.yml` run by `play.sh` will provision 5 VM hosts (`rancher` and `k8s1`..`k8s4`)
-in the XCP-ng "Home" pool, all running Ubuntu Server 24.04 Minimal without customizations besides basic networking
-and authorized SSH key for user `erhhung`.
+in the existing XCP-ng "Home" pool, all running Ubuntu Server 24.04 Minimal without customizations besides basic networking
+and authorized SSH key for the user `erhhung`.
 
-A single-node K3s Kubernetes cluster will be installed on host `rancher` along with Rancher Server on that cluster.
-A 4-node RKE2 Kubernetes cluster with a high-availability control plane on a virtual IP will be installed on hosts
-`k8s1`..`k8s4`. The Longhorn distributed block storage engine will also be installed on the RKE2 cluster to manage
-a pool of LVM logical volumes created on each cluster node. Finally, one or more virtual clusters running K0s will
-be created for testing and learning purposes.
+A single-node K3s Kubernetes cluster will be installed on host `rancher` alongside with Rancher Server on that cluster, and a 4-node RKE2 Kubernetes cluster with a high-availability control plane using virtual IPs will be installed on hosts
+`k8s1`..`k8s4`. Longhorn and NFS storage provisioners will be installed in each cluster to manage a pool of LVM logical volumes on each node, and to expand the overall storage capacity on the QNAP NAS.
 
-The Rancher Server UI at https://rancher.fourteeners.local will be provisioned with TLS certificates from Erhhung's
-private CA server at `pki.fourteeners.local` or its faster mirror at `cosmos.fourteeners.local`.
+All cluster services will be provisioned with TLS certificates from Erhhung's private CA server at `pki.fourteeners.local` or its faster mirror at `cosmos.fourteeners.local`.
 
 ## Cluster Topology
 
@@ -48,42 +44,51 @@ private CA server at `pki.fourteeners.local` or its faster mirror at `cosmos.fou
 
 ## Installation Sources
 
-- [X] [NFS Dynamic Provisioners](https://computingforgeeks.com/configure-nfs-as-kubernetes-persistent-volume-storage/) — create PVs on NFS shares
-    * Install on K3s and RKE clusters using [`nfs-subdir-external-provisioner`](https://github.com/kubernetes-sigs/nfs-subdir-external-provisioner/) Helm chart
+- [X] [K3s Kubernetes Cluster](https://k3s.io/) — lightweight Kubernetes distro for resource-constrained environments
+    * Install on the `rancher` host using the official [install script](https://docs.k3s.io/quick-start#install-script)
+- [X] [Rancher Cluster Manager](https://ranchermanager.docs.rancher.com/) — provision (or import), manage, and monitor Kubernetes clusters
+    * Install on K3s cluster using the [`rancher`](https://ranchermanager.docs.rancher.com/getting-started/installation-and-upgrade/install-upgrade-on-a-kubernetes-cluster#install-the-rancher-helm-chart) Helm chart
+- [X] [RKE2 Kubernetes Cluster](https://rke2.io/) — Rancher's Kubernetes distribution with focus on security and compliance
+    * Install on hosts `k8s1`-`k8s4` using the [RKE2 Ansible Role](https://github.com/lablabs/ansible-role-rke2) with HA mode enabled
+- [X] [NFS Dynamic Provisioners](https://computingforgeeks.com/configure-nfs-as-kubernetes-persistent-volume-storage/) — create persistent volumes on NFS shares
+    * Install on K3s and RKE clusters using the [`nfs-subdir-external-provisioner`](https://github.com/kubernetes-sigs/nfs-subdir-external-provisioner/) Helm chart
 - [X] [MinIO Object Storage](https://github.com/minio/minio) — S3-compatible object storage with console
-    * Install into the main RKE cluster using [MinIO Operator](https://min.io/docs/minio/kubernetes/upstream/operations/installation.html)
-- [X] [Harbor Container Registry](https://goharbor.io/) — private container registry
-    * Install into the same K3s cluster as Rancher Server using [`harbor/harbor`](https://github.com/goharbor/harbor-helm/) Helm chart
+    * Install on main RKE cluster using the [MinIO Operator](https://min.io/docs/minio/kubernetes/upstream/operations/install-deploy-manage/deploy-operator-helm.html) and [MinIO Tenant](https://min.io/docs/minio/kubernetes/upstream/operations/install-deploy-manage/deploy-minio-tenant-helm.html) Helm charts
+- [X] [Harbor Container Registry](https://goharbor.io/) — private OCI container and [Helm chart](https://goharbor.io/docs/main/working-with-projects/working-with-oci/working-with-helm-oci-charts/) registry
+    * Install on K3s cluster using the [`harbor`](https://github.com/goharbor/harbor-helm/) Helm chart
 - [X] [OpenSearch Logging Stack](https://opensearch.org/docs/latest/) — aggregate and filter logs using OpenSearch and Fluent Bit
-    * Install into the main RKE cluster using [`opensearch`](https://opensearch.org/docs/latest/install-and-configure/install-opensearch/helm/) and [`opensearch-dashboards`](https://opensearch.org/docs/latest/install-and-configure/install-dashboards/helm/) Helm charts
-    * Instal Fluent Bit using [`fluent-operator`](https://github.com/fluent/fluent-operator) Helm chart and `FluentBit` CR
+    * Install on main RKE cluster using the [`opensearch`](https://opensearch.org/docs/latest/install-and-configure/install-opensearch/helm/) and [`opensearch-dashboards`](https://opensearch.org/docs/latest/install-and-configure/install-dashboards/helm/) Helm charts
+    * Instal Fluent Bit using the [`fluent-operator`](https://github.com/fluent/fluent-operator) Helm chart and `FluentBit` CR
 - [X] [PostgreSQL Database](https://www.postgresql.org/docs/current/) — SQL database used by Keycloak and other applications
-    * Install using Bitnami's [`postgresql-ha`](https://github.com/bitnami/charts/tree/main/bitnami/postgresql-ha) Helm chart
+    * Install on main RKE cluster using Bitnami's [`postgresql-ha`](https://github.com/bitnami/charts/tree/main/bitnami/postgresql-ha) Helm chart
 - [X] [Keycloak IAM & OIDC Provider](https://www.keycloak.org/) — identity and access management and OpenID Connect provider
+    * Install on main RKE cluster using the [`keycloakx`](https://github.com/codecentric/helm-charts/tree/master/charts/keycloakx) Helm chart
 - [X] [Valkey Key/Value Store](https://valkey.io/) — Redis-compatible key/value store
-    * Install into the main RKE cluster using [`valkey-cluster`](https://github.com/bitnami/charts/tree/main/bitnami/valkey-cluster) Helm chart
-- [X] [Prometheus Monitoring Stack](https://github.com/prometheus-operator/kube-prometheus) — Prometheus, Grafana, and rules using the Prometheus Operator
-    * Install into the main RKE cluster using [`kube-prometheus-stack`](https://github.com/prometheus-community/helm-charts/tree/main/charts/kube-prometheus-stack/README.md) Helm chart
+    * Install on main RKE cluster using the [`valkey-cluster`](https://github.com/bitnami/charts/tree/main/bitnami/valkey-cluster) Helm chart
+- [X] [Prometheus Monitoring Stack](https://github.com/prometheus-operator/kube-prometheus) — Prometheus (via Operator), Thanos sidecar, and Grafana
+    * Install on main RKE cluster using the [`kube-prometheus-stack`](https://github.com/prometheus-community/helm-charts/tree/main/charts/kube-prometheus-stack/) Helm chart
     * [X] Add authentication to Prometheus and Alertmanager UIs using [`oauth2-proxy`](https://github.com/oauth2-proxy/oauth2-proxy) sidecar
+    * [ ] Install other [Thanos components](https://thanos.io/tip/thanos/quick-tutorial.md/#querierquery) using Bitnami's [`thanos`](https://github.com/bitnami/charts/tree/main/bitnami/thanos/) Helm chart for global querying
+    * [ ] Enable the [OTLP receiver](https://prometheus.io/docs/guides/opentelemetry/) endpoint for metrics _(when needed)_
 - [X] [Istio Service Mesh](https://istio.io/latest/about/service-mesh/) with [Kiali Console](https://kiali.io/) — secure, observe, trace, and route traffic between workloads
-    * Install into the main RKE cluster using [`istioctl`](https://istio.io/latest/docs/ambient/install/istioctl/)
-    * Install Kiali using [`kiali-operator`](https://kiali.io/docs/installation/installation-guide/install-with-helm/#install-with-operator/) Helm chart and `Kiali` CR
+    * Install on main RKE cluster using the [`istioctl`](https://istio.io/latest/docs/ambient/install/istioctl/) CLI
+    * Install Kiali using the [`kiali-operator`](https://kiali.io/docs/installation/installation-guide/install-with-helm/#install-with-operator/) Helm chart and `Kiali` CR
 - [X] [Argo CD Declarative GitOps](https://argo-cd.readthedocs.io/) — manage deployment of other applications in the main RKE cluster
-    * Install into the main RKE cluster using [`argo-cd`](https://github.com/argoproj/argo-helm/tree/main/charts/argo-cd) Helm chart
+    * Install on main RKE cluster using the [`argo-cd`](https://github.com/argoproj/argo-helm/tree/main/charts/argo-cd) Helm chart
 - [ ] [Kubernetes Metacontroller](https://metacontroller.github.io/metacontroller/) — enable easy creation of custom controllers
-    * Install into the main RKE cluster using [`metacontroller`](https://metacontroller.github.io/metacontroller/guide/helm-install.html) Helm chart
+    * Install on main RKE cluster using the [`metacontroller`](https://metacontroller.github.io/metacontroller/guide/helm-install.html) Helm chart
 - [ ] [Ollama Server](https://github.com/ollama/ollama) with [Ollama CLI](https://github.com/masgari/ollama-cli) — run LLMs on Kubernetes cluster instead of locally
-    * Install onto `k8s1`/`k8s2` with **GPU passthrough** using [`ollama`](https://github.com/cowboysysop/charts/tree/master/charts/ollama) Helm chart
+    * Install onto `k8s1`/`k8s2` with **GPU passthrough** using the [`ollama`](https://github.com/cowboysysop/charts/tree/master/charts/ollama) Helm chart
 - [ ] [Flowise Agentic Workflows](https://flowiseai.com/) — build AI agents using visual workflows
-    * Install into the main RKE cluster using [`flowise`](https://github.com/cowboysysop/charts/tree/master/charts/flowise) Helm chart
+    * Install on main RKE cluster using the [`flowise`](https://github.com/cowboysysop/charts/tree/master/charts/flowise) Helm chart
 - [ ] [Certificate Manager](https://cert-manager.io/) — X.509 certificate management for Kubernetes
-    * Install into the main RKE cluster using [`cert-manager`](https://cert-manager.io/docs/installation/helm/) Helm chart
+    * Install on main RKE cluster using the [`cert-manager`](https://cert-manager.io/docs/installation/helm/) Helm chart
     * [ ] Integrate with private CA `pki.fourteeners.local` using [ACME `ClusterIssuer`](https://cert-manager.io/docs/configuration/acme/)
 - [ ] [OpenTelemetry Collector](https://opentelemetry.io/docs/collector/) with [Jaeger UI](https://www.jaegertracing.io/) -- telemetry collector agent and distributed tracing backend
-    * Install into the main RKE cluster using [OpenTelemetry Collector](https://opentelemetry.io/docs/platforms/kubernetes/helm/collector/) Helm chart
-    * Install Jaeger using [Jaeger](https://github.com/jaegertracing/helm-charts/tree/main/charts/jaeger) Helm chart
+    * Install on main RKE cluster using the [OpenTelemetry Collector](https://opentelemetry.io/docs/platforms/kubernetes/helm/collector/) Helm chart
+    * Install Jaeger using the [Jaeger](https://github.com/jaegertracing/helm-charts/tree/main/charts/jaeger) Helm chart
 - [ ] [Velero Backup & Restore](https://velero.io/docs/latest/basic-install) — back up and restore persistent volumes
-    * Install into the main RKE cluster using [Velero](https://github.com/vmware-tanzu/helm-charts/tree/main/charts/velero) Helm chart
+    * Install on main RKE cluster using the [Velero](https://github.com/vmware-tanzu/helm-charts/tree/main/charts/velero) Helm chart
 - [ ] [Backstage Developer Portal](https://backstage.io/) — software catalog and developer portal
 - [ ] [Meshery](https://github.com/meshery/meshery) — visual and collaborative GitOps platform
 - [ ] [NATS](https://docs.nats.io/) — high performance message queues (Kafka alternative) with [JetStream](https://docs.nats.io/nats-concepts/jetstream) for persistence
@@ -176,7 +181,7 @@ export ANSIBLE_CONFIG="./ansible.cfg"
 
     Install **RKE2** with a single control plane node and 3 worker nodes, all permitting workloads,  
     or RKE2 in HA mode with 3 control plane nodes and 1 worker node, all permitting workloads  
-    _(in HA mode, the cluster will be accessible thru a **virtual IP** address courtesy of `kube-vip`)._
+    _(in HA mode, the cluster will be accessible thru a **virtual IP** address courtesy of `kube-vip`)_
 
     ```bash
     ansible-playbook cluster.yml
@@ -197,7 +202,7 @@ export ANSIBLE_CONFIG="./ansible.cfg"
 7. Create resources from manifest files
 
     **IMPORTANT**: Resource manifests must specify the namespaces they wished to be installed  
-    into because the playbook simply applies each one without targeting a specific namespace.
+    into because the playbook simply applies each one without targeting a specific namespace
 
     ```bash
     ansible-playbook manifests.yml
@@ -233,7 +238,7 @@ export ANSIBLE_CONFIG="./ansible.cfg"
 
 12. Set up **Keycloak** IAM & OIDC provider
 
-    12.1. Bootstrap PostgreSQL database with realm `homelab`, user `erhhung`, and OIDC clients
+    12.1. Bootstrap **PostgreSQL** database with realm `homelab`, user `erhhung`, and OIDC clients
 
     ```bash
     ansible-playbook keycloak.yml
@@ -241,7 +246,7 @@ export ANSIBLE_CONFIG="./ansible.cfg"
 
 13. Set up **Valkey** key-value store in _**HA**_ mode
 
-    13.1. Deploys 6 nodes total: 3 primaries and 3 replicas
+    13.1. Deploy 6 nodes in total: 3 primaries and 3 replicas
 
     ```bash
     ansible-playbook valkey.yml
@@ -249,7 +254,8 @@ export ANSIBLE_CONFIG="./ansible.cfg"
 
 14. Set up **Prometheus** & **Grafana** in _**HA**_ mode
 
-    14.1. Exposes Prometheus & Alertmanager UIs via `oauth2-proxy` integration with Keycloak
+    14.1. Connect Thanos sidecars to **MinIO** to store scraped metrics in the `metrics` bucket  
+    14.2. Expose Prometheus & Alertmanager UIs via `oauth2-proxy` integration with **Keycloak**
 
     ```bash
     ansible-playbook monitoring.yml
@@ -260,7 +266,10 @@ export ANSIBLE_CONFIG="./ansible.cfg"
     ansible-playbook istio.yml
     ```
 
-16. Set up **Argo CD** GitOps delivery tool
+16. Set up **Argo CD** GitOps delivery tool in _**HA**_ mode
+
+    16.1. Configure Argo CD components to use the **Valkey** cluster for their caching needs
+
     ```bash
     ansible-playbook argocd.yml
     ```
