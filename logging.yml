@@ -113,6 +113,10 @@
   vars_files: *vars_files
   vars:
     log_search: "{{ saved_log_search }}"
+  pre_tasks:
+    - name: Get controller facts
+      ansible.builtin.include_tasks: tasks/localfacts.yml
+      when: local_python_interpreter is not defined
   tasks:
     - name: Create index pattern for logs
       vars:

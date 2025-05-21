@@ -19,11 +19,14 @@
         kubeconfig: "{{ rke_kubeconfig }}"
         # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/file_lookup.html
         definition: "{{ lookup('ansible.builtin.file', item) }}"
+        validate:
+          fail_on_error: false
         state: present
         apply: true
         wait: true
       loop: "{{ manifests }}"
       loop_control:
-        label: "{{ item | basename }}"
+        # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/basename_filter.html
+        label: "{{ item | ansible.builtin.basename }}"
       timeout: 60
   any_errors_fatal: true

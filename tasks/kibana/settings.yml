@@ -9,6 +9,7 @@
   delegate_to: localhost
   become: false
   vars:
+    ansible_python_interpreter: "{{ local_python_interpreter }}"
     uri_params: &uri_params
       url: https://{{ kibana_fqdn }}/api/opensearch-dashboards/settings
       url_username: "{{ username }}"

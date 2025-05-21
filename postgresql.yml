@@ -13,8 +13,12 @@
     kubeconfig: "{{ rke_kubeconfig }}"
     secret_ns: "{{ postgresql_namespace }}"
   pre_tasks:
-    - name: Is the monitoring stack ready?
+    - name: Get controller facts
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
+      ansible.builtin.include_tasks: tasks/localfacts.yml
+      when: local_python_interpreter is not defined
+
+    - name: Is the monitoring stack ready?
       ansible.builtin.include_tasks: tasks/monitoring/stackready.yml
       when: monitoring_stack_ready is not defined
   tasks:

@@ -65,7 +65,7 @@
                               - "{{ vcluster.node }}"
                 persistentVolumeReclaimPolicy: Retain
             validate:
-              fail_on_error: true
+              fail_on_error: false
             state: present
             apply: true
             wait: true

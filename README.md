@@ -72,6 +72,10 @@ private CA server at `pki.fourteeners.local` or its faster mirror at `cosmos.fou
     * Install into the main RKE cluster using [`argo-cd`](https://github.com/argoproj/argo-helm/tree/main/charts/argo-cd) Helm chart
 - [ ] [Kubernetes Metacontroller](https://metacontroller.github.io/metacontroller/) — enable easy creation of custom controllers
     * Install into the main RKE cluster using [`metacontroller`](https://metacontroller.github.io/metacontroller/guide/helm-install.html) Helm chart
+- [ ] [Ollama Server](https://github.com/ollama/ollama) with [Ollama CLI](https://github.com/masgari/ollama-cli) — run LLMs on Kubernetes cluster instead of locally
+    * Install onto `k8s1`/`k8s2` with **GPU passthrough** using [`ollama`](https://github.com/cowboysysop/charts/tree/master/charts/ollama) Helm chart
+- [ ] [Flowise Agentic Workflows](https://flowiseai.com/) — build AI agents using visual workflows
+    * Install into the main RKE cluster using [`flowise`](https://github.com/cowboysysop/charts/tree/master/charts/flowise) Helm chart
 - [ ] [Certificate Manager](https://cert-manager.io/) — X.509 certificate management for Kubernetes
     * Install into the main RKE cluster using [`cert-manager`](https://cert-manager.io/docs/installation/helm/) Helm chart
     * [ ] Integrate with private CA `pki.fourteeners.local` using [ACME `ClusterIssuer`](https://cert-manager.io/docs/configuration/acme/)

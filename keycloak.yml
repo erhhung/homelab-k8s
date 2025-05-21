@@ -16,6 +16,15 @@
     ansible_python_interpreter: "{{ venv_python_interpreter }}"
     kubeconfig: "{{ rke_kubeconfig }}"
   pre_tasks:
+    - name: Get controller facts
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
+      ansible.builtin.include_tasks: tasks/localfacts.yml
+      when: local_python_interpreter is not defined
+
+    - name: Is the monitoring stack ready?
+      ansible.builtin.include_tasks: tasks/monitoring/stackready.yml
+      when: monitoring_stack_ready is not defined
+
     - name: Get PostgreSQL image used
       # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_info_module.html
       kubernetes.core.k8s_info:
@@ -75,11 +84,6 @@
     #   ansible.builtin.debug:
     #     # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/md5_filter.html
     #     msg: "{{ keycloak_sql.stdout | ansible.builtin.md5 }}"
-
-    - name: Is the monitoring stack ready?
-      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
-      ansible.builtin.include_tasks: tasks/monitoring/stackready.yml
-      when: monitoring_stack_ready is not defined
   tasks:
     - name: Create Keycloak database secret
       vars:
@@ -122,7 +126,7 @@
             namespace: "{{ keycloak_namespace }}"
           data: "{{ data }}"
         validate:
-          fail_on_error: true
+          fail_on_error: false
         state: present
         apply: true
 
@@ -149,7 +153,7 @@
             namespace: "{{ keycloak_namespace }}"
           data: "{{ data }}"
         validate:
-          fail_on_error: true
+          fail_on_error: false
         state: present
         apply: true
 

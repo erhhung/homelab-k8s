@@ -12,6 +12,7 @@
   delegate_to: localhost
   become: false
   vars:
+    ansible_python_interpreter: "{{ local_python_interpreter }}"
     api_base: https://{{ monitoring_fqdns['grafana'] | first }}/api/user
     api_urls:
       profile: "{{ api_base }}"

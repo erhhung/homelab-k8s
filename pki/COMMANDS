@@ -23,7 +23,7 @@ cd $HOME
 
 ./cert.sh \
   homeassistant.fourteeners.local \
-             ha.fourteeners.local \
+           hass.fourteeners.local \
            home.fourteeners.local \
          yellow.fourteeners.local
 

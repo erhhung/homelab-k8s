@@ -8,12 +8,12 @@
   become: false
   block:
     - name: Get pods deployed in namespace
+      # requires Pip package "kubernetes"
+      delegate_to: localhost
       vars: &local_kubectl_vars
         ansible_python_interpreter: "{{ local_python_interpreter }}"
         # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/env_lookup.html
         user_kubeconfig: "{{ lookup('ansible.builtin.env', 'HOME') }}/.kube/config"
-      # requires Pip package "kubernetes"
-      delegate_to: localhost
       # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_info_module.html
       kubernetes.core.k8s_info:
         kubeconfig: "{{ user_kubeconfig }}"

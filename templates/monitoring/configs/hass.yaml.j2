@@ -1,0 +1,13 @@
+# scrape config for Home Assistant
+---
+- job_name: home-assistant
+  bearer_token: {{ hass_access_token }}
+  metrics_path: /api/prometheus
+  scheme: https
+  tls_config:
+    ca_file: /tls/scraper/ca.crt
+  static_configs:
+    - targets:
+        - hass.fourteeners.local:8123
+  scrape_interval: 60s
+  scrape_timeout: 10s
