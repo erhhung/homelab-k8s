@@ -1,37 +1,41 @@
+#!/usr/bin/env bash
+
 # CREATE CERTS USING CERT.SH SCRIPT
 # (default expiration is 90  days)
 # (the max expiration is 365 days)
 
-cd $HOME
+# shellcheck disable=SC2164 # Use cd ...|| exit if cd fails
+
+cd "$HOME"
 
 ./cert.sh --exp=365 --out=admin \
   erhhung erhhung@fourteeners.local
 
-./cert.sh \
+./cert.sh --exp=365 \
   pki.fourteeners.local \
    ca.fourteeners.local
 
-./cert.sh \
+./cert.sh --exp=365 \
   firewall.fourteeners.local \
    pfsense.fourteeners.local \
     router.fourteeners.local
 
-./cert.sh --kty=RSA \
+./cert.sh --kty=RSA --exp=365 \
   pacific.fourteeners.local \
      qnap.fourteeners.local \
       nas.fourteeners.local
 
-./cert.sh \
+./cert.sh --exp=365 \
   homeassistant.fourteeners.local \
            hass.fourteeners.local \
            home.fourteeners.local \
          yellow.fourteeners.local
 
-./cert.sh --kty=RSA \
+./cert.sh --kty=RSA --exp=365 \
    xo.fourteeners.local \
   xoa.fourteeners.local
 
-./cert.sh --kty=RSA --p12 \
+./cert.sh --kty=RSA --p12 --exp=365 \
   duplicati.fourteeners.local
 
 ./cert.sh --exp=365 \
@@ -95,13 +99,6 @@ cd $HOME
   \*.monitoring.svc \
   127.0.0.1
 
-# also MinIO client
-./cert.sh --exp=365 \
-         thanos \
-         thanos.fourteeners.local \
-  \*.monitoring.svc.cluster.local \
-  \*.monitoring.svc
-
 ./cert.sh --exp=365 \
    alertmanager \
    alertmanager.fourteeners.local \
@@ -119,6 +116,54 @@ cd $HOME
 
 ./cert.sh --exp=365 \
   scraper scraper@fourteeners.local
+
+./cert.sh --exp=365 \
+          --out=thanos_query \
+          thanos \
+          thanos.fourteeners.local \
+    query.thanos.fourteeners.local \
+  querier.thanos.fourteeners.local \
+   \*.monitoring.svc.cluster.local \
+   \*.monitoring.svc
+
+./cert.sh --exp=365 \
+          --out=thanos_rule \
+         thanos \
+    rule.thanos.fourteeners.local \
+   ruler.thanos.fourteeners.local \
+  \*.monitoring.svc.cluster.local \
+  \*.monitoring.svc
+
+./cert.sh --exp=365 \
+          --out=thanos_store \
+               thanos \
+         store.thanos.fourteeners.local \
+  storegateway.thanos.fourteeners.local \
+        \*.monitoring.svc.cluster.local \
+        \*.monitoring.svc
+
+./cert.sh --exp=365 \
+          --out=thanos_bucket \
+            thanos \
+     bucket.thanos.fourteeners.local \
+  bucketweb.thanos.fourteeners.local \
+     \*.monitoring.svc.cluster.local \
+     \*.monitoring.svc
+
+./cert.sh --exp=365 \
+          --out=thanos_compact \
+            thanos \
+    compact.thanos.fourteeners.local \
+  compactor.thanos.fourteeners.local \
+     \*.monitoring.svc.cluster.local \
+     \*.monitoring.svc
+
+./cert.sh --exp=365 \
+          --out=thanos_sidecar \
+          thanos \
+  sidecar.thanos.fourteeners.local \
+   \*.monitoring.svc.cluster.local \
+   \*.monitoring.svc
 
 ./cert.sh --exp=365 \
         valkey.fourteeners.local \
@@ -140,6 +185,7 @@ cd $HOME
 ./cert.sh --exp=365 \
   erhhung erhhung@gmail.com
 
+# .key file is binary
 ./cert.sh --exp=365 \
           --pk8="-outform DER" \
           --out=keycloak_db \
@@ -157,4 +203,9 @@ cd $HOME
   istio.fourteeners.local
 
 ./cert.sh --exp=365 \
-  argocd.fourteeners.local
+     argocd \
+     argocd.fourteeners.local \
+  \*.argocd.svc.cluster.local \
+  \*.argocd.svc
+
+rsync certs cosmos:.

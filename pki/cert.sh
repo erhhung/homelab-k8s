@@ -9,6 +9,10 @@
 # named using the host name part of the common name
 # unless overridden using `--out` option.
 
+# shellcheck disable=SC2164 # Use cd ...|| exit if cd fails
+# shellcheck disable=SC2155 # Declare and assign separately
+# shellcheck disable=SC2206 # Quote to avoid word splitting
+
 cd ~
 
 [ "$1" ] || {
@@ -122,7 +126,7 @@ if [ "$pkcs12" ]; then
     -inkey    "$out_bare.key"
     -certfile "$chain_pem"
     -CAfile   "$chain_pem"
-     $p12
+     $p12 # do NOT quote!
   )
   openssl pkcs12 "${args[@]}"
   chmod 0644 "$out_bare.p12"
@@ -137,7 +141,7 @@ elif [ "$pkcs8" ]; then
     -outform PEM
     -in "$out_bare.key"
     -nocrypt
-     $pk8
+     $pk8 # do NOT quote!
   )
   openssl pkcs8 "${args[@]}" | \
       sponge "$out_bare.key"

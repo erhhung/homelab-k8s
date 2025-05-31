@@ -33,7 +33,7 @@ postgresql_chart_values:
   nameOverride: "{{ postgresql_release_name }}"
 
   global:
-    defaultStorageClass: "{{ default_storage_class }}"
+    defaultStorageClass: "{{ storage_classes['default'] }}"
     postgresql: &global_postgresql
       password: "{{ postgresql_pass }}" # user "postgres"
       repmgrPassword: "{{ postgresql_pass }}" # user "repmgr"
@@ -41,7 +41,7 @@ postgresql_chart_values:
       adminPassword: "{{ postgresql_pass }}" # user "admin"
 
   persistence:
-    storageClass: "{{ default_storage_class }}"
+    storageClass: "{{ storage_classes['default'] }}"
     size: 2Gi
     mountPath: /postgresql
 

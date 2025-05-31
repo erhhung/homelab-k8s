@@ -6,14 +6,19 @@ data_lv:
   size: 95%FREE # size of logical volume
   mount: /data # path to mount volume
 
-default_storage_class: longhorn
-local_storage_class: local-storage
-nfs_storage_class: nfs-qnap
+storage_classes:
+  default: longhorn # 2 replicas
+  single: longhorn-single # 1 replica
+  static: longhorn-static
+  local: local-storage
+  nfs: nfs-qnap
 
+# cannot use any other namespace!
 longhorn_namespace: longhorn-system
 
 longhorn_chart_version: "1.8.1"
-# https://github.com/longhorn/charts/tree/v1.8.x/charts/longhorn/values.yaml
+# https://github.com/longhorn/charts/tree/master/charts/longhorn
+# https://github.com/longhorn/charts/tree/master/charts/longhorn/values.yaml
 # https://longhorn.io/docs/1.8.1/references/settings/
 longhorn_chart_values:
   longhornUI:
@@ -62,7 +67,7 @@ nfs_provisioners:
     server: qnap.fourteeners.local
     path: /k8s_data/k3s
     storageClass:
-      name: "{{ nfs_storage_class }}"
+      name: "{{ storage_classes['nfs'] }}"
       accessModes: ReadWriteOnce
       volumeBindingMode: Immediate
       reclaimPolicy: Delete
@@ -73,7 +78,7 @@ nfs_provisioners:
     server: qnap.fourteeners.local
     path: /k8s_data/rke
     storageClass:
-      name: "{{ nfs_storage_class }}"
+      name: "{{ storage_classes['nfs'] }}"
       accessModes: ReadWriteOnce
       volumeBindingMode: WaitForFirstConsumer
       reclaimPolicy: Delete

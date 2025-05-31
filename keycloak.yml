@@ -15,6 +15,8 @@
     # required kubernetes>=24.2 package only in user virtualenv
     ansible_python_interpreter: "{{ venv_python_interpreter }}"
     kubeconfig: "{{ rke_kubeconfig }}"
+    secret_ns: "{{ keycloak_namespace }}"
+    create_ns: false
   pre_tasks:
     - name: Get controller facts
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
@@ -93,8 +95,7 @@
         cert_file: keycloak_db
         secret_type: generic # not tls because key is in binary format
         secret_name: "{{ keycloak_secrets['database'] }}"
-        secret_ns: "{{ keycloak_namespace }}"
-      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
+        create_ns: true
       ansible.builtin.include_tasks: tasks/k8s/secrets/tls.pki.yml
 
     - name: Create Keycloak ingress secret
@@ -103,8 +104,13 @@
         cert_file: keycloak
         secret_type: tls
         secret_name: "{{ keycloak_secrets['ingress'] }}"
-        secret_ns: "{{ keycloak_namespace }}"
-        create_ns: false
+      ansible.builtin.include_tasks: tasks/k8s/secrets/tls.pki.yml
+
+    - name: Create monitoring scraper secret
+      vars:
+        cert_desc: scraping client
+        cert_file: scraper
+        secret_name: "{{ monitoring_secrets['scraper'] }}"
       ansible.builtin.include_tasks: tasks/k8s/secrets/tls.pki.yml
 
     - name: Create {{ keycloak_configmaps['dbsql'] }} ConfigMap
@@ -174,6 +180,21 @@
       # startup can take a while at max utilization of allocated CPU:
       # "updating configuration and installing your custom providers"
       timeout: 900
+
+    # Helm chart does not currently allow
+    # providing .serviceMonitor.tlsConfig
+    - name: Patch Keycloak ServiceMonitor
+      # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_json_patch_module.html
+      kubernetes.core.k8s_json_patch:
+        kubeconfig: "{{ kubeconfig }}"
+        api_version: monitoring.coreos.com/v1
+        kind: ServiceMonitor
+        name: keycloakx-keycloakx
+        namespace: "{{ keycloak_namespace }}"
+        patch:
+          - op: add
+            path: /spec/endpoints/0/tlsConfig
+            value: "{{ metric_scraper_tls_config }}"
 
     - name: Import Grafana dashboards
       vars:

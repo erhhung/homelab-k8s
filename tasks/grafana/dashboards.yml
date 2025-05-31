@@ -19,7 +19,7 @@
   vars:
     ansible_python_interpreter: "{{ local_python_interpreter }}"
     api_base: https://{{ monitoring_fqdns['grafana'][0] }}/api
-    admin_user: admin
+    admin_user: "{{ grafana_admin_user }}"
     admin_pass: "{{ grafana_admin_pass }}"
   block:
     - name: Find existing dashboards

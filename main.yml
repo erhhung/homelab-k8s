@@ -66,6 +66,11 @@
   ansible.builtin.import_playbook: monitoring.yml
   tags: monitoring
 
+# Thanos depends on Prometheus and Valkey
+- name: Include Thanos components playbook
+  ansible.builtin.import_playbook: thanos.yml
+  tags: thanos
+
 # Kiali depends on Prometheus and Keycloak
 - name: Include Istio service mesh playbook
   ansible.builtin.import_playbook: istio.yml

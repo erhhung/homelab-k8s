@@ -236,10 +236,10 @@ opensearch_chart_values:
           {# https://docs.ansible.com/ansible/latest/collections/ansible/builtin/to_nice_yaml_filter.html -#}
           {# https://tedboy.github.io/jinja2/templ14.html#indent -#}
           {{ opensearch_security_plugin | ansible.builtin.to_nice_yaml(indent=2, sort_keys=false) |
-                                          indent(4) }}
+                                                                       indent(4) }}
 
   persistence:
-    storageClass: "{{ default_storage_class }}"
+    storageClass: "{{ storage_classes['default'] }}"
     size: 5Gi # allocate enough for logging
 
   extraVolumes:

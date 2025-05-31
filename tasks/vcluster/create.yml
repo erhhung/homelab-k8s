@@ -47,7 +47,7 @@
                   role: "{{ item.role }}"
                   node: "{{ vcluster.node }}"
               spec:
-                storageClassName: "{{ local_storage_class }}"
+                storageClassName: "{{ storage_classes['local'] }}"
                 capacity:
                   storage: "{{ item.size }}"
                 local:

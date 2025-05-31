@@ -24,10 +24,10 @@
       vars:
         passwords: "{{ opensearch_passwords }}"
         fact_name: opensearch_passwords_hashed
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
       ansible.builtin.include_tasks: tasks/hashpwds.yml
 
     - name: Is the monitoring stack ready?
-      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
       ansible.builtin.include_tasks: tasks/monitoring/stackready.yml
       when: monitoring_stack_ready is not defined
 

@@ -28,7 +28,7 @@ valkey_lb_ips: |
   {% endfor %}
   {{ ips    }}
 
-# ["valkey-cluster-0-svc.valkey.svc.cluster.local"]
+# ["valkey-cluster-0-svc.valkey.svc.cluster.local", ...]
 valkey_node_fqdns: |
   {% set fqdns = [] %}
   {% for i in range(valkey_node_count) %}
@@ -39,11 +39,13 @@ valkey_node_fqdns: |
 
 # node endpoints: ["{FQDN}:6379"]
 valkey_node_eps: "{{ valkey_node_fqdns | product(['6379']) | map('join',':') }}"
-# ["valkeys://{node-endpoint}"]
-valkey_service_host: "{{ valkey_release_name }}.{{ valkey_namespace }}.svc.cluster.local"
-valkey_cluster_urls: "{{ ['valkeys://'] | product(valkey_node_eps) | map('join') }}"
-# ["rediss://{node-endpoint}"]
+# ["rediss://{node-endpoint}", ...]
 redis_cluster_urls: "{{ ['rediss://'] | product(valkey_node_eps) | map('join') }}"
+# ["valkeys://{node-endpoint}", ...]
+valkey_cluster_urls: "{{ ['valkeys://'] | product(valkey_node_eps) | map('join') }}"
+
+valkey_service_host: "{{ valkey_release_name }}.{{ valkey_namespace }}.svc.cluster.local"
+valkey_service_port: 6379
 
 valkey_secrets:
   node-tls: valkey-tls
@@ -68,10 +70,11 @@ valkey_chart_values:
 
   persistence:
     enabled: true
-    storageClass: "{{ default_storage_class }}"
-    accessModes: ["ReadWriteOnce"]
+    # no need for replicas at storage level when
+    # the cluster itself stores data in replicas
+    storageClass: "{{ storage_classes['single'] }}"
     # min XFS volume size is 300Mi
-    size: 320Mi
+    size: 384Mi
 
   persistentVolumeClaimRetentionPolicy:
     enabled: true
@@ -84,7 +87,8 @@ valkey_chart_values:
 
     # use a preset instead of explicitly configuring resources:
     # none, nano, micro, small, medium, large, xlarge, 2xlarge
-    resourcesPreset: nano
+    # https://github.com/bitnami/charts/tree/main/bitnami/common/templates/_resources.tpl
+    resourcesPreset: micro
     # resources: ~
 
     # required for cluster joins
@@ -103,8 +107,8 @@ valkey_chart_values:
     externalAccess:
       enabled: true
       service:
-        port: 6379
         type: LoadBalancer
+        port: "{{ valkey_service_port }}"
         # create one service per node and
         # expose on IPs 192.168.0.222-227
         loadBalancerIP: "{{ valkey_lb_ips }}"

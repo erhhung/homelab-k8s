@@ -7,10 +7,16 @@
     - vars/basics.yml
     - vars/kubernetes.yml
     - vars/valkey.yml
+    - vars/monitoring.yml
     - vars/argocd.yml
   vars:
     kubeconfig: "{{ rke_kubeconfig }}"
     secret_ns: "{{ argocd_namespace }}"
+  pre_tasks:
+    - name: Is the monitoring stack ready?
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
+      ansible.builtin.include_tasks: tasks/monitoring/stackready.yml
+      when: monitoring_stack_ready is not defined
   tasks:
     # https://argo-cd.readthedocs.io/en/stable/operator-manual/tls/#tls-certificates-used-by-argocd-server
     - name: Create Argo CD ingress secret
@@ -18,7 +24,6 @@
         cert_desc: Argo CD
         cert_file: argocd
         secret_name: "{{ argocd_secrets['server'] }}"
-      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
       ansible.builtin.include_tasks: tasks/k8s/secrets/tls.pki.yml
 
     - name: Create Valkey password secret
@@ -44,7 +49,7 @@
         release_namespace: "{{ argocd_namespace }}"
         release_values: "{{ argocd_chart_values }}"
         atomic: true
-      timeout: 600
+      timeout: 300
 
     - name: >-
         {{ 'Enable' if enabled else 'Disable' }}

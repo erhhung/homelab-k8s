@@ -143,6 +143,9 @@
   hosts: "{{ rke_control_plane_host }}"
   gather_facts: false
   vars_files: *vars_files
+  vars:
+    # required kubernetes>=24.2 package only in user virtualenv
+    ansible_python_interpreter: "{{ venv_python_interpreter }}"
   pre_tasks:
     - name: Is the monitoring stack ready?
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
@@ -152,9 +155,6 @@
     # https://longhorn.io/docs/1.8.1/deploy/install/install-with-helm/
     # https://github.com/longhorn/charts/tree/v1.8.x/charts/longhorn
     - name: Install Longhorn Helm chart
-      vars:
-        # required kubernetes>=24.2 package only in user virtualenv
-        ansible_python_interpreter: "{{ venv_python_interpreter }}"
       # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/helm_module.html
       kubernetes.core.helm:
         kubeconfig: "{{ rke_kubeconfig }}"
@@ -162,12 +162,45 @@
         chart_ref: longhorn
         chart_version: "{{ longhorn_chart_version }}"
         release_name: longhorn
-        # cannot use any other namespace!
-        release_namespace: longhorn-system
+        release_namespace: "{{ longhorn_namespace }}"
         create_namespace: true
         release_values: "{{ longhorn_chart_values }}"
         atomic: true
       timeout: 300
+
+    - name: Get default "longhorn" storage class
+      kubernetes.core.k8s_info:
+        kubeconfig: "{{ rke_kubeconfig }}"
+        api_version: storage.k8s.io/v1
+        kind: StorageClass
+        name: "{{ storage_classes['default'] }}"
+      register: longhorn_sc
+
+    # other than a single replica, use same
+    # settings as the default storage class
+    - name: Add "longhorn-single" storage class
+      vars:
+        definition: |
+          {# other than name, ignore all metadata
+             added by  Kubernetes and Longhorn #}
+          {% set sc = longhorn_sc.resources[0] %}
+          {% set _  = sc.update({
+               'metadata': {
+                 'name': storage_classes['single']
+               }
+             }) %}
+          {% set _ = sc.parameters.update({
+               'numberOfReplicas': '1'
+             }) %}
+          {{ sc }}
+      # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_module.html
+      kubernetes.core.k8s:
+        kubeconfig: "{{ rke_kubeconfig }}"
+        definition: "{{ definition }}"
+        validate:
+          fail_on_error: false
+        state: present
+        apply: true
   any_errors_fatal: true
 
 # https://computingforgeeks.com/configure-nfs-as-kubernetes-persistent-volume-storage/
