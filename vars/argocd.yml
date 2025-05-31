@@ -12,25 +12,35 @@ argocd_fqdn: "{{ [argocd_host_name] | product(search_domains) | map('join','.') 
 argocd_secrets:
   # secret name "argocd-server-tls" is hardcoded and expected:
   # https://argo-cd.readthedocs.io/en/stable/operator-manual/tls/#tls-certificates-used-by-argocd-server
-  # https://github.com/argoproj/argo-helm/tree/main/charts/argo-cd/templates/argocd-configs/argocd-server-tls-secret.yaml
   server: argocd-server-tls
   valkey: argocd-valkey
 
-argocd_chart_version: "8.0.6"
+# common command-line options not provided in chart values under .externalRedis
+# (used by argocd-server, argocd-application-controller and argocd-repo-server):
+# https://argo-cd.readthedocs.io/en/stable/operator-manual/server-commands/argocd-server/
+argocd_redis_options:
+  - --redis-use-tls
+  # /tls/valkey is mounted into relevant pods
+  - --redis-ca-certificate=/tls/valkey/ca.crt
+  - --redis-client-certificate=/tls/valkey/tls.crt
+  - --redis-client-key=/tls/valkey/tls.key
+
+argocd_chart_version: "8.0.12"
 # https://github.com/argoproj/argo-helm/tree/main/charts/argo-cd
 # https://github.com/argoproj/argo-helm/tree/main/charts/argo-cd/values.yaml
 argocd_chart_values:
   crds:
     keep: false # delete on uninstall
+
   global:
-    domain: "{{ argocd_fqdn }}"
     revisionHistoryLimit: 2
+    domain: "{{ argocd_fqdn }}"
     networkPolicy:
-      create: true
+      create: false
 
   configs:
-    # "argocd-cm" ConfigMap
-    # https://github.com/argoproj/argo-cd/tree/master/docs/operator-manual/argocd-cm.yaml
+    # "argocd-cm" ConfigMap:
+    # https://argo-cd.readthedocs.io/en/stable/operator-manual/argocd-cm-yaml/
     # all values under .configs.cm are written into ConfigMap
     cm:
       # allow users to exec into app pods from the Argo CD UI:
@@ -45,9 +55,11 @@ argocd_chart_values:
       # add another local user with "apiKey" capability for
       # using the Argo CD CLI
       accounts.erhhung: apiKey
-    # "argocd-secret" Secret
-    # https://github.com/argoproj/argo-cd/tree/master/docs/operator-manual/argocd-secret.yaml
+
+    # "argocd-secret" Secret:
+    # https://argo-cd.readthedocs.io/en/stable/operator-manual/argocd-secret-yaml/
     secret:
+      createSecret: true
       githubSecret: "{{ github_access_token }}"
       # bcrypt hash of plain-text password:
       # htpasswd -nbBC 11 "" $ARGOCD_PASS | \
@@ -56,12 +68,23 @@ argocd_chart_values:
         {{ argocd_admin_pass | ansible.builtin.password_hash('bcrypt',
                                salt=bcrypt_salt, rounds=bcrypt_rounds) }}
       argocdServerAdminPasswordMtime: &argocd_pass_mtime |-
-        2025-03-20T00:00:00Z
+        2025-05-26T00:00:00Z
       extra:
+        # key for signing JWT tokens
+        server.secretkey: "{{ argocd_signing_key }}"
         # set password of additional
         # users created in argocd-cm
         accounts.erhhung.password: *argocd_pass
         accounts.erhhung.passwordMtime: *argocd_pass_mtime
+
+    # "argocd-tls-certs-cm" ConfigMap:
+    # https://argo-cd.readthedocs.io/en/stable/operator-manual/argocd-tls-certs-cm-yaml/
+    tls:
+      # certs of Git repositories
+      # (required, even if empty)
+      create: true
+      certificates: {}
+
     # "argocd-gpg-keys-cm" ConfigMap
     gpg:
       keys:
@@ -71,10 +94,24 @@ argocd_chart_values:
         # gpg --export --output erhhung.asc --armor B9C45C9F62942408
         # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/file_lookup.html
         B9C45C9F62942408: "{{ lookup('ansible.builtin.file', 'vars/argocd/erhhung.asc', rstrip=false) }}"
-    # "argocd-cmd-params-cm" ConfigMap
-    # https://github.com/argoproj/argo-cd/tree/master/docs/operator-manual/argocd-cmd-params-cm.yaml
+
+    # "argocd-cmd-params-cm" ConfigMap:
+    # https://argo-cd.readthedocs.io/en/stable/operator-manual/argocd-cmd-params-cm-yaml/
     params:
-      controller.ignore.normalizer.jq.timeout: "2s"
+      server.log.format: json
+      server.log.level: warn
+      controller.log.format: json
+      controller.log.level: warn
+      reposerver.log.format: json
+      reposerver.log.level: warn
+      commitserver.log.format: json
+      commitserver.log.level: info
+      applicationsetcontroller.log.format: json
+      applicationsetcontroller.log.level: info
+      notificationscontroller.log.format: json
+      notificationscontroller.log.level: info
+
+      controller.ignore.normalizer.jq.timeout: 2s
       reposerver.parallelism.limit: 2
       application.namespaces: "*"
       applicationsetcontroller.namespaces: "*"
@@ -88,51 +125,50 @@ argocd_chart_values:
       # https://argo-cd.readthedocs.io/en/stable/operator-manual/applicationset/Progressive-Syncs/#enabling-progressive-syncs
       applicationsetcontroller.enable.progressive.syncs: true
 
-  controller:
-    revisionHistoryLimit: 2
+  redis:
+    # use our Valkey cluster instead
+    enabled: false
+
+  externalRedis:
+    port: "{{ valkey_service_port }}"
+    host: "{{ valkey_service_host |
+      regex_replace('(?=\\.'~ valkey_namespace ~')', '-0-svc') }}"
+    # secret must contain "redis-password" key
+    existingSecret: "{{ argocd_secrets['valkey'] }}"
+
+  server:
+    # https://github.com/argoproj/argo-helm/tree/main/charts/argo-cd#ha-mode-without-autoscaling
+    replicas: 2
+
+    # extra args plus Redis options:
+    # https://argo-cd.readthedocs.io/en/stable/operator-manual/server-commands/argocd-server/
+    extraArgs: |
+      {{ [
+         ] + argocd_redis_options }}
+
+    # "argocd-server-tls" Secret
+    # will be created by Ansible
+    # https://argo-cd.readthedocs.io/en/stable/operator-manual/tls/#tls-certificates-used-by-argocd-server
+    # https://github.com/argoproj/argo-helm/tree/main/charts/argo-cd/templates/argocd-configs/argocd-server-tls-secret.yaml
+    certificateSecret:
+      enabled: false
+
+    volumes: &volumes
+      - name: tls-valkey
+        secret:
+          secretName: "{{ argocd_secrets['server'] }}"
+
+    volumeMounts: &mounts
+      - name: tls-valkey
+        mountPath: /tls/valkey
+        readOnly: true
 
     readinessProbe: &probe
       # default 1s timeout for readiness and liveness
       # probes are too optimistic for our environment
       initialDelaySeconds: 30
       timeoutSeconds: 5
-
-    metrics: &metrics
-      enabled: true
-      serviceMonitor:
-        enabled: false # enable only if Prometheus Operator is installed
-
-  applicationSet:
-    # enabling the allowAnyNamespace feature requires
-    # allowed.scm.providers setting in configs.params
-    allowAnyNamespace: true
-    metrics:
-      <<: *metrics
-
-  redis:
-    # use our Valkey cluster instead
-    enabled: false
-
-  externalRedis:
-    host: "{{ valkey_service_host }}"
-    port: 6379
-    # secret must contain "redis-password" key
-    existingSecret: "{{ argocd_secrets['valkey'] }}"
-
-  dex:
-    # don't need IdP integration in
-    # homelab environment currently
-    enabled: false
-
-  server:
-    readinessProbe: *probe
     livenessProbe: *probe
-
-    # "argocd-server-tls" Secret
-    # will be created by Ansible
-    # https://argo-cd.readthedocs.io/en/stable/operator-manual/tls/#tls-certificates-used-by-argocd-server
-    certificateSecret:
-      enabled: false
 
     ingress:
       enabled: true
@@ -142,23 +178,72 @@ argocd_chart_values:
         nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
         nginx.ingress.kubernetes.io/ssl-passthrough: "true"
 
-    metrics:
-      <<: *metrics
+    # this metrics config is shared by all components
+    metrics: &metrics
+      enabled: true
+
+      serviceMonitor:
+        enabled: "{{ prometheus_crds_installed }}"
+        additionalLabels:
+          release: "{{ monitoring_release_name }}"
+        # all dedicated *-metrics services
+        # expose non-TLS port http-metrics
+        scheme: http
+
+  controller:
+    replicas: 1
+    revisionHistoryLimit: 2
+
+    # extra args plus Redis options:
+    # https://argo-cd.readthedocs.io/en/stable/operator-manual/server-commands/argocd-application-controller/
+    extraArgs: |
+      {{ [
+         ] + argocd_redis_options }}
+
+    volumes: *volumes
+    volumeMounts: *mounts
+    readinessProbe: *probe
+    metrics: *metrics
+
+  applicationSet:
+    replicas: 2
+
+    # enabling the allowAnyNamespace feature requires
+    # allowed.scm.providers setting in configs.params
+    allowAnyNamespace: true
+    metrics: *metrics
 
   repoServer:
+    replicas: 2
+
+    # extra args plus Redis options:
+    # https://argo-cd.readthedocs.io/en/stable/operator-manual/server-commands/argocd-repo-server/
+    extraArgs: |
+      {{ [
+         ] + argocd_redis_options }}
+
+    volumes: *volumes
+    volumeMounts: *mounts
     readinessProbe: *probe
     livenessProbe: *probe
-
-    metrics:
-      <<: *metrics
+    metrics: *metrics
 
   commitServer:
     enabled: true
     readinessProbe: *probe
 
-  notifications:
     metrics:
-      <<: *metrics
+      enabled: true
+      # chart has no support for creating
+      # ServiceMonitor for commit server?
+
+  notifications:
+    metrics: *metrics
+
+  dex:
+    # don't need IdP integration in
+    # homelab environment currently
+    enabled: false
 
 # Istio service mesh?
 argocd_use_mesh: true

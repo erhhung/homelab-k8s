@@ -2,7 +2,7 @@
 apiVersion: storage.k8s.io/v1
 kind: StorageClass
 metadata:
-  # must match local_storage_class
+  # must match storage_classes['local']
   # defined in vars/storage.yml
   name: local-storage
   annotations:

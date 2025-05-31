@@ -39,10 +39,10 @@ harbor_chart_values:
       # use NFS path on QNAP for high storage
       # components; use local-path for others
       registry:
-        storageClass: "{{ nfs_storage_class }}"
+        storageClass: "{{ storage_classes['nfs'] }}"
         size: 20Gi
       trivy:
-        storageClass: "{{ nfs_storage_class }}"
+        storageClass: "{{ storage_classes['nfs'] }}"
         size: 5Gi
 
   core:

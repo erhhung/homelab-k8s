@@ -63,8 +63,8 @@
               - name: http-monitoring
                 port: 15090
                 protocol: HTTP
-        validate:
-          fail_on_error: false
+        # validate:
+        #   fail_on_error: false
         state: "{{ 'present' if enabled | default(true) else 'absent' }}"
 
     # https://istio.io/latest/docs/ambient/usage/waypoint/#useawaypoint

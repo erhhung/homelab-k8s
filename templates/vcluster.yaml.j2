@@ -40,7 +40,7 @@ controlPlane:
   #             - metadata:
   #                 name: etcd
   #               spec:
-  #                 storageClassName: {{ local_storage_class }}
+  #                 storageClassName: {{ storage_classes['local'] }}
   #                 accessModes:
   #                   - ReadWriteOnce
   #                 resources:
@@ -61,7 +61,7 @@ controlPlane:
         - metadata:
             name: data
           spec:
-            storageClassName: {{ local_storage_class }}
+            storageClassName: {{ storage_classes['local'] }}
             accessModes:
               - ReadWriteOnce
             resources:

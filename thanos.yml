@@ -1,0 +1,78 @@
+# https://thanos.io/tip/thanos/quick-tutorial.md
+---
+- name: Install Thanos component suite
+  tags: install
+  hosts: "{{ rke_control_plane_host }}"
+  gather_facts: false
+  vars_files:
+    - vars/basics.yml
+    - vars/kubernetes.yml
+    - vars/storage.yml
+    - vars/minio.yml
+    - vars/valkey.yml
+    - vars/monitoring.yml
+    - vars/thanos.yml
+  vars:
+    # required kubernetes>=24.2 package only in user virtualenv
+    ansible_python_interpreter: "{{ venv_python_interpreter }}"
+    kubeconfig: "{{ rke_kubeconfig }}"
+    secret_ns: "{{ monitoring_namespace }}"
+    create_ns: false
+  tasks:
+    - name: Create Thanos ingress secret
+      vars:
+        cert_desc: Thanos {{ item.desc }} ingress
+        cert_file: thanos_{{ item.file }}
+        secret_name: "{{ thanos_secrets[item.name] }}"
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
+      ansible.builtin.include_tasks: tasks/k8s/secrets/tls.pki.yml
+      loop:
+        - name: query
+          desc: Query
+          file: query
+        - name: rule
+          desc: Ruler
+          file: rule
+        - name: store
+          desc: Store Gateway
+          file: store
+        - name: bucket
+          desc: Bucket Web
+          file: bucket
+        - name: compact
+          desc: Compactor
+          file: compact
+      loop_control:
+        label: thanos_{{ item.file }}
+
+    # ConfigMap for Thanos Query Frontend
+    - name: Create Thanos tripper ConfigMap
+      # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_module.html
+      kubernetes.core.k8s:
+        kubeconfig: "{{ kubeconfig }}"
+        definition:
+          apiVersion: v1
+          kind: ConfigMap
+          metadata:
+            name: thanos-query-frontend-tripper
+            namespace: "{{ monitoring_namespace }}"
+          data: "{{ thanos_tripper_config }}"
+        validate:
+          fail_on_error: false
+        state: present
+        apply: true
+
+    # https://github.com/bitnami/charts/tree/main/bitnami/thanos
+    - name: Install Thanos Helm chart
+      # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/helm_module.html
+      kubernetes.core.helm:
+        kubeconfig: "{{ kubeconfig }}"
+        chart_repo_url: https://charts.bitnami.com/bitnami
+        chart_ref: thanos
+        chart_version: "{{ thanos_chart_version }}"
+        release_name: thanos
+        release_namespace: "{{ monitoring_namespace }}"
+        release_values: "{{ thanos_chart_values }}"
+        atomic: true
+      timeout: 300
+  any_errors_fatal: true

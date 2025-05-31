@@ -48,11 +48,24 @@
         rke_cluster_name: homelab
         rke_fqdns: >
           {{ ([rke_cluster_name] + groups['control_plane']) |
-          product(search_domains) | map('join','.') | list }}
+               product(search_domains) | map('join','.') }}
       ansible.builtin.debug:
         msg: |-
           rke_fqdns[0]:  {{ rke_fqdns[0]  }}
           rke_fqdns[1:]: {{ rke_fqdns[1:] }}
+
+    - name: Generate subdomain FQDNs
+      vars:
+        search_domains: ["fourteeners.local"]
+        subdomain: thanos
+        thanos_hosts:
+          - query
+          - rule
+          - store
+        thanos_pqdns: "{{ thanos_hosts | map('regex_replace', '$', '.'~ subdomain) }}"
+        thanos_fqdns: "{{ thanos_pqdns | product(search_domains) | map('join', '.') }}"
+      ansible.builtin.debug:
+        var: thanos_fqdns
 
     - name: Generate hosts entries
       vars:

@@ -155,7 +155,7 @@ minio_tenant_chart_values:
         servers: "{{ groups['cluster'] | length }}"
         volumesPerServer: 1
         size: 10Gi # per volume
-        storageClassName: "{{ nfs_storage_class }}"
+        storageClassName: "{{ storage_classes['nfs'] }}"
 
         affinity: # one pod per worker node per pool
           podAntiAffinity:

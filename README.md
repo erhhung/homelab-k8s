@@ -1,9 +1,9 @@
 # Erhhung's Home Kubernetes Cluster
 
-This Ansible-based project provisions Erhhung's high-availability Kubernetes cluster `homelab` using Rancher, and installs services to monitor IoT appliances and deploy other personal projects.
+This Ansible-based project provisions Erhhung's high-availability Kubernetes cluster `homelab` using Rancher, and installs services to monitor IoT appliances and to deploy other personal projects.
 
 The top-level Ansible playbook `main.yml` run by `play.sh` will provision 5 VM hosts (`rancher` and `k8s1`..`k8s4`)
-in the existing XCP-ng "Home" pool, all running Ubuntu Server 24.04 Minimal without customizations besides basic networking
+in the existing XCP-ng `Home` pool, all running Ubuntu Server 24.04 Minimal without customizations besides basic networking
 and authorized SSH key for the user `erhhung`.
 
 A single-node K3s Kubernetes cluster will be installed on host `rancher` alongside with Rancher Server on that cluster, and a 4-node RKE2 Kubernetes cluster with a high-availability control plane using virtual IPs will be installed on hosts
@@ -35,10 +35,12 @@ All cluster services will be provisioned with TLS certificates from Erhhung's pr
 |  https://kibana.fourteeners.local | OpenSearch Dashboards
 |   postgres.fourteeners.local:5432 | PostgreSQL via Pgpool _(mTLS only)_
 |     https://sso.fourteeners.local | Keycloak IAM console
-|     valkey.fourteeners.local:6379 <br/> **_or_** valkey*1*.fourteeners.local:6379 <br/> _to_ valkey*6*.fourteeners.local:6379 | Valkey cluster _(mTLS only)_
+|     valkey.fourteeners.local:6379 <br/> valkey<i>{1..6}</i>.fourteeners.local:6379 | Valkey cluster _(mTLS only)_
 | https://grafana.fourteeners.local | Grafana dashboards
-| https://metrics.fourteeners.local | Prometheus web UI _(Keycloak SSO)_
-|  https://alerts.fourteeners.local | Alertmanager web UI _(Keycloak SSO)_
+| https://metrics.fourteeners.local | Prometheus UI _(Keycloak SSO)_
+|  https://alerts.fourteeners.local | Alertmanager UI _(Keycloak SSO)_
+|  https://thanos.fourteeners.local | Thanos Query UI
+| https://rule.thanos.fourteeners.local <br/> https://store.thanos.fourteeners.local <br/> https://bucket.thanos.fourteeners.local <br/> https://compact.thanos.fourteeners.local | Thanos component status UIs
 |   https://kiali.fourteeners.local | Kiali console _(Keycloak SSO)_
 |  https://argocd.fourteeners.local | Argo CD console
 
@@ -68,7 +70,7 @@ All cluster services will be provisioned with TLS certificates from Erhhung's pr
 - [X] [Prometheus Monitoring Stack](https://github.com/prometheus-operator/kube-prometheus) — Prometheus (via Operator), Thanos sidecar, and Grafana
     * Install on main RKE cluster using the [`kube-prometheus-stack`](https://github.com/prometheus-community/helm-charts/tree/main/charts/kube-prometheus-stack/) Helm chart
     * [X] Add authentication to Prometheus and Alertmanager UIs using [`oauth2-proxy`](https://github.com/oauth2-proxy/oauth2-proxy) sidecar
-    * [ ] Install other [Thanos components](https://thanos.io/tip/thanos/quick-tutorial.md/#querierquery) using Bitnami's [`thanos`](https://github.com/bitnami/charts/tree/main/bitnami/thanos/) Helm chart for global querying
+    * [X] Install other [Thanos components](https://thanos.io/tip/thanos/quick-tutorial.md/#querierquery) using Bitnami's [`thanos`](https://github.com/bitnami/charts/tree/main/bitnami/thanos/) Helm chart for global querying
     * [ ] Enable the [OTLP receiver](https://prometheus.io/docs/guides/opentelemetry/) endpoint for metrics _(when needed)_
 - [X] [Istio Service Mesh](https://istio.io/latest/about/service-mesh/) with [Kiali Console](https://kiali.io/) — secure, observe, trace, and route traffic between workloads
     * Install on main RKE cluster using the [`istioctl`](https://istio.io/latest/docs/ambient/install/istioctl/) CLI
@@ -109,23 +111,29 @@ ansible-vault view   $VAULTFILE
 
 Some variables stored in Ansible Vault _(there are many more)_:
 
-|   Infrastructure Secrets   |    User Passwords
-|:--------------------------:|:-------------------:
-| `ansible_become_pass`      | `rancher_admin_pass`
-| `github_access_token`      | `harbor_admin_pass`
-| `age_secret_key`           | `minio_root_pass`
-| `k3s_token`                | `minio_admin_pass`
-| `rke2_token`               | `opensearch_admin_pass`
-| `harbor_secret`            | `grafana_admin_pass`
-| `harbor_ca_key`            | `keycloak_admin_pass`
-| `minio_client_pass`        | `argocd_admin_pass`
-| `dashboards_os_pass`       |
-| `fluent_os_pass`           |
-| `valkey_pass`              |
-| `postgresql_pass`          |
-| `keycloak_db_pass`         |
-| `keycloak_smtp_pass`       |
-| `kiali_oidc_client_secret` |
+|      Infrastructure Secrets       |    User Passwords
+|:---------------------------------:|:-------------------:
+| `ansible_become_pass`             | `rancher_admin_pass`
+| `github_access_token`             | `harbor_admin_pass`
+| `age_secret_key`                  | `minio_root_pass`
+| `icloud_smtp.*`                   | `minio_admin_pass`
+| `k3s_token`                       | `opensearch_admin_pass`
+| `rke2_token`                      | `keycloak_admin_pass`
+| `harbor_secret`                   | `thanos_admin_pass`
+| `harbor_ca_key`                   | `grafana_admin_pass`
+| `minio_client_pass`               | `argocd_admin_pass`
+| `dashboards_os_pass`              |
+| `fluent_os_pass`                  |
+| `valkey_pass`                     |
+| `postgresql_pass`                 |
+| `keycloak_db_pass`                |
+| `keycloak_smtp_pass`              |
+| `monitoring_pass`                 |
+| `monitoring_oidc_client_secret.*` |
+| `alertmanager_smtp_pass`          |
+| `oauth2_proxy_cookie_secret`      |
+| `kiali_oidc_client_secret`        |
+| `argocd_signing_key`              |
 
 ## Connections
 
@@ -155,9 +163,10 @@ export ANSIBLE_CONFIG="./ansible.cfg"
 2. Configure system settings
 
     2.1. **Host** — host name, time zone, and locale  
-    2.2. **Network** — DNS servers and search domains  
-    2.3. **Login** — customize login MOTD messages  
-    2.4. **Certs** — add CA certificates to trust store
+    2.2. **Kernel** — `sysctl` params and `pam_limits`  
+    2.3. **Network** — DNS servers and search domains  
+    2.4. **Login** — customize login MOTD messages  
+    2.5. **Certs** — add CA certificates to trust store
 
     ```bash
     ansible-playbook basics.yml
@@ -165,7 +174,7 @@ export ANSIBLE_CONFIG="./ansible.cfg"
 
 3. Set up admin user's home directory
 
-    3.1. **Dot files**: `.bash_aliases`, `.emacs`  
+    3.1. **Dot files**: `.bash_aliases`, etc.  
     3.2. **Config files**: `htop`, `fastfetch`
 
     ```bash
@@ -252,13 +261,14 @@ export ANSIBLE_CONFIG="./ansible.cfg"
     ansible-playbook valkey.yml
     ```
 
-14. Set up **Prometheus** & **Grafana** in _**HA**_ mode
+14. Set up **Prometheus**, **Thanos**, and **Grafana** in _**HA**_ mode
 
-    14.1. Connect Thanos sidecars to **MinIO** to store scraped metrics in the `metrics` bucket  
-    14.2. Expose Prometheus & Alertmanager UIs via `oauth2-proxy` integration with **Keycloak**
+    14.1. Expose Prometheus & Alertmanager UIs via `oauth2-proxy` integration with **Keycloak**  
+    14.2. Connect Thanos sidecars to **MinIO** to store scraped metrics in the `metrics` bucket  
+    14.3. Deploy and integrate other Thanos components with Prometheus and Alertmanager
 
     ```bash
-    ansible-playbook monitoring.yml
+    ansible-playbook monitoring.yml thanos.yml
     ```
 
 15. Set up **Istio** service mesh in _**ambient**_ mode

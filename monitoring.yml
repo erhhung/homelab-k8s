@@ -20,6 +20,13 @@
     secret_ns: "{{ monitoring_namespace }}"
     create_ns: false
   pre_tasks:
+    - name: Hash monitoring user passwords
+      vars:
+        passwords: "{{ monitoring_passwords }}"
+        fact_name: monitoring_passwords_hashed
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
+      ansible.builtin.include_tasks: tasks/hashpwds.yml
+
     # determine whether to create the node exporter
     # RBAC config before installing the Helm chart
     - name: Is Helm chart already installed?
@@ -52,26 +59,25 @@
         cert_file: etcd/client
         secret_name: "{{ monitoring_secrets['etcd'] }}"
         create_ns: true
-      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
       ansible.builtin.include_tasks: tasks/k8s/secrets/tls.rke.yml
 
     - name: Create monitoring ingress secret
       vars:
         cert_desc: "{{ item.desc }} ingress"
         cert_file: "{{ item.file }}"
-        secret_name: "{{ item.name }}"
+        secret_name: "{{ monitoring_secrets[item.name] }}"
       ansible.builtin.include_tasks: tasks/k8s/secrets/tls.pki.yml
       loop:
-        - name: "{{ monitoring_secrets['prometheus'] }}"
+        - name: prometheus
           desc: Prometheus
           file: prometheus
-        - name: "{{ monitoring_secrets['thanos-tls'] }}"
-          desc: Thanos
-          file: thanos
-        - name: "{{ monitoring_secrets['alertmanager'] }}"
+        - name: thanos-tls
+          desc: Thanos sidecar
+          file: thanos_sidecar
+        - name: alertmanager
           desc: Alertmanager
           file: alertmanager
-        - name: "{{ monitoring_secrets['grafana'] }}"
+        - name: grafana
           desc: Grafana
           file: grafana
       loop_control:
@@ -93,8 +99,7 @@
         # above contains both intermediate and root CA certs
         ca_certs: "{{ pem_chain[1:] | join('\n') }}"
 
-    # secret containing http-config.yaml, etc.
-    - name: Create Thanos sidecar config secret
+    - name: Create Thanos HTTP config secret
       vars:
         secret_name: "{{ monitoring_secrets['thanos-config'] }}"
         secret_data: "{{ thanos_config_secret_data }}"
@@ -109,12 +114,16 @@
 
     - name: Create monitoring credentials secret
       vars:
+        passwords: "{{ monitoring_passwords }}"
+        thanos: "{{ thanos_metrics_auth }}"
         grafana: "{{ prometheus_stack_chart_values.grafana }}"
         secret_name: "{{ monitoring_secrets['credentials'] }}"
         secret_data: |
           {{ {
-               grafana.admin.userKey:            'admin',
-               grafana.admin.passwordKey: grafana_admin_pass
+             thanos.username.key:                 'metrics',
+             thanos.password.key:       passwords['metrics'],
+             grafana.admin.userKey:     grafana_admin_user,
+             grafana.admin.passwordKey: grafana_admin_pass,
           } }}
       ansible.builtin.include_tasks: tasks/k8s/secrets/generic.yml
 
@@ -174,6 +183,21 @@
         release_values: "{{ prometheus_stack_chart_values }}"
         atomic: true
       timeout: 600
+
+    # Helm chart doesn't currently allow specifying
+    # basicAuth in .prometheus.thanosServiceMonitor
+    - name: Patch Thanos sidecar ServiceMonitor
+      # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_json_patch_module.html
+      kubernetes.core.k8s_json_patch:
+        kubeconfig: "{{ kubeconfig }}"
+        api_version: monitoring.coreos.com/v1
+        kind: ServiceMonitor
+        name: "{{ monitoring_release_name }}-thanos-sidecar"
+        namespace: "{{ monitoring_namespace }}"
+        patch:
+          - op: add
+            path: /spec/endpoints/0/basicAuth
+            value: "{{ thanos_metrics_auth }}"
   any_errors_fatal: true
 
 - name: Configure monitoring applications
@@ -190,7 +214,7 @@
   tasks:
     - name: Customize Grafana user settings
       vars:
-        username: admin
+        username: "{{ grafana_admin_user }}"
         password: "{{ grafana_admin_pass }}"
         settings: "{{ grafana_admin_settings }}"
       ansible.builtin.include_tasks: tasks/grafana/settings.yml

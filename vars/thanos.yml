@@ -1,0 +1,620 @@
+# aliases of "homelab" and subdomains
+# of thanos.fourteeners.local (itself
+# routes to Query)
+thanos_host_names:
+  query:
+    - query
+    - querier
+  rule:
+    - rule
+    - ruler
+  store:
+    - store
+    - storegateway
+  bucket:
+    - bucket
+    - bucketweb
+  compact:
+    - compact
+    - compactor
+
+# remember to add all domain names to pfSense DNS as
+# aliases of homelab.fourteeners.local: 192.168.0.221
+# https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_filters.html#products
+thanos_fqdns: |
+  {% set fqdns = {} %}
+  {% for service, hosts in thanos_host_names.items() %}
+  {#   create partially qualified domains by appending .thanos  #}
+  {%   set pqdns = hosts | map('regex_replace', '$', '.thanos') %}
+  {%   set _ = fqdns.update({
+         service: pqdns | product(search_domains) | map('join','.')
+       }) %}
+  {% endfor %}
+  {{ fqdns  }}
+
+thanos_secrets:
+  query: thanos-query-tls
+  rule: thanos-rule-tls
+  store: thanos-store-tls
+  bucket: thanos-bucket-tls
+  compact: thanos-compact-tls
+  sidecar: "{{ monitoring_secrets['thanos-tls'] }}"
+  http-config: "{{ monitoring_secrets['thanos-config'] }}"
+  object-store: "{{ monitoring_release_name }}-prometheus"
+
+# common readinessProbe & livenessProbe config
+# that includes httpGet header for basic auth
+thanos_probe:
+  httpGet:
+    path: /- # will be overridden
+    port: http
+    scheme: HTTPS
+    httpHeaders:
+      - name: Authorization
+        value: Basic {{ ('probe:'~ monitoring_passwords['probe']) | b64encode }}
+  initialDelaySeconds: 30
+  timeoutSeconds: 5
+  periodSeconds: 10
+  successThreshold: 1
+  failureThreshold: 6
+
+# ConfigMap is mounted in Query Frontend
+# container at /conf/tripper/config.yml:
+# https://thanos.io/tip/components/query-frontend.md/#recommended-downstream-tripper-configuration
+thanos_tripper_config:
+  config.yml: |-
+    idle_conn_timeout:       10m
+    max_idle_conns_per_host: 100
+    max_idle_conns:          100 # max_idle_conns_per_host * .query.replicaCount
+    # https://github.com/thanos-io/thanos/tree/main/pkg/queryfrontend/config.go#L186
+    tls_config:
+      # same cert as http-config.yml
+      cert_file: /tls/thanos/tls.crt
+      key_file:  /tls/thanos/tls.key
+      ca_file:   /tls/thanos/ca.crt
+
+thanos_chart_version: "16.0.7"
+# https://github.com/bitnami/charts/tree/main/bitnami/thanos
+# https://github.com/bitnami/charts/tree/main/bitnami/thanos/values.yaml
+thanos_chart_values:
+  # https://thanos.io/tip/operating/https.md
+  # this secret was created for the Thanos sidecar and
+  # contains "http-config.yml" that this chart expects
+  existingHttpConfigSecret: "{{ thanos_secrets['http-config'] }}"
+
+  # https://thanos.io/tip/thanos/storage.md/#s3
+  # re-use MinIO config for Thanos sidecar from secret defined
+  # in vars/monitoring.yml under prometheus_stack_chart_values.
+  # prometheus.prometheusSpec.thanos.objectStorageConfig.secret
+  existingObjstoreSecret: "{{ thanos_secrets['object-store'] }}"
+  existingObjstoreSecretItems:
+    # named by kube-prometheus-stack
+    - key: object-storage-configs.yaml
+      # name expected by bitnami/thanos
+      path: objstore.yml
+
+  # these aren't actual chart values
+  readinessProbe: &readiness_probe |
+    {# https://docs.ansible.com/ansible/latest/collections/ansible/builtin/combine_filter.html #}
+    {{ thanos_probe | ansible.builtin.combine({'httpGet':{'path':'/-/ready'  },}, recursive=true) }}
+  livenessProbe: &liveness_probe |
+    {{ thanos_probe | ansible.builtin.combine({'httpGet':{'path':'/-/healthy'},}, recursive=true) }}
+
+  # ======================================= Query =======================================
+  #
+  # https://thanos.io/tip/components/query.md
+  # https://github.com/bitnami/charts/tree/main/bitnami/thanos/#thanos-query-parameters
+  query:
+    enabled: true
+    replicaCount: 1
+    revisionHistoryLimit: 2
+
+    # https://github.com/bitnami/charts/tree/main/bitnami/thanos/#resource-requests-and-limits
+    # use a preset instead of explicitly configuring resources:
+    # none, nano, micro, small, medium, large, xlarge, 2xlarge
+    # https://github.com/bitnami/charts/tree/main/bitnami/common/templates/_resources.tpl
+    resourcesPreset: micro
+    # resources: ~
+
+    dnsDiscovery:
+      enabled: true
+      sidecarsService: "{{ monitoring_release_name }}-thanos-discovery"
+      sidecarsNamespace: "{{ monitoring_namespace }}"
+
+    # https://github.com/bitnami/charts/tree/main/bitnami/thanos/#securing-traffic-using-tls
+    grpc:
+      server:
+        tls:
+          enabled: true
+          existingSecret:
+            name: "{{ thanos_secrets['query'] }}"
+            keyMapping: # mounted under /certs/server
+              tls-cert: tls.crt
+              tls-key: tls.key
+              ca-cert: ca.crt
+          clientAuthEnabled: true
+      client:
+        tls:
+          enabled: true
+          existingSecret:
+            name: "{{ thanos_secrets['query'] }}"
+            keyMapping: # mounted under /certs/client
+              tls-cert: tls.crt
+              tls-key: tls.key
+              ca-cert: ca.crt
+          # no cert will be generated since existingSecret
+          # is set; however, this flag is required so that
+          # --grpc-client-tls-skip-verify will be included
+          # in the args, or else requests to Store Gateway
+          # will fail certificate verification "because it
+          # doesn't contain any IP SANs"
+          autoGenerated: true
+
+    extraVolumes:
+      - name: tls-thanos
+        secret:
+          secretName: "{{ thanos_secrets['query'] }}"
+
+    # referenced by http-config.yml
+    # used by all Thanos components
+    extraVolumeMounts: &tls_thanos
+      - name: tls-thanos
+        mountPath: /tls/thanos
+        readOnly: true
+
+    # override default probes in
+    # order to supply basic auth
+    customReadinessProbe: *readiness_probe
+    customLivenessProbe: *liveness_probe
+
+    ingress:
+      enabled: true
+      grpc: # in-cluster access only
+        enabled: false
+      ingressClassName: "{{ rke_ingress_class }}"
+      annotations:
+        nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+        nginx.ingress.kubernetes.io/ssl-passthrough: "true"
+      # both .hostname and .tls are for single
+      # FQDN, but since we have multiple FQDNs,
+      # configure in .extraHosts and .extraTls
+      hostname: ""
+      extraHosts: |
+        {% set hosts = [] %}
+        {% set fqdns = monitoring_fqdns['thanos'][1:]
+                         + thanos_fqdns['query'] %}
+        {% for fqdn in fqdns %}
+        {%   set _ = hosts.append({
+               'name':     fqdn,
+               'path':     '/',
+               'pathType': 'Prefix'
+             }) %}
+        {% endfor %}
+        {{ hosts  }}
+      extraTls:
+        - secretName: "{{ thanos_secrets['query'] }}"
+          hosts: "{{ monitoring_fqdns['thanos'][1:]
+            + thanos_fqdns['query'] }}"
+
+  # =================================== Query Frontend ==================================
+  #
+  # https://thanos.io/tip/components/query-frontend.md
+  # https://github.com/bitnami/charts/tree/main/bitnami/thanos/#thanos-query-frontend-parameters
+  queryFrontend:
+    enabled: true
+    replicaCount: 1
+    revisionHistoryLimit: 2
+
+    # override default args because the chart depends on
+    # .https.enabled for --query-frontend.downstream-url,
+    # but setting .https.enabled creates other .Values.*
+    # dependencies and unwanted volumeMounts:
+    # https://github.com/bitnami/charts/tree/main/bitnami/thanos/templates/query-frontend/deployment.yaml
+    # https://thanos.io/tip/components/query-frontend.md/#flags
+    args: |
+      {%- raw %}
+      - query-frontend
+      - --log.level={{ .Values.queryFrontend.logLevel }}
+      - --log.format={{ .Values.queryFrontend.logFormat }}
+      - --http.config=/conf/http/http-config.yml
+      - --http-address=0.0.0.0:{{ .Values.queryFrontend.containerPorts.http }}
+      # cache config is defined by chart values .queryFrontend.config
+      - --query-range.response-cache-config-file=/conf/cache/config.yml
+      - --query-frontend.forward-header=Authorization
+      # tripper config is defined by Ansible var thanos_tripper_config
+      - --query-frontend.downstream-tripper-config-file=/conf/tripper/config.yml
+      - --query-frontend.downstream-url=https://{{ include "thanos.query.fullname" . }}.{{
+                                  .Release.Namespace }}.svc.{{ .Values.clusterDomain }}:{{
+                                  .Values.query.service.ports.http }}
+      {% endraw -%}
+
+    config: |
+      type: IN-MEMORY
+      config:
+        max_size: 64MB
+
+    resourcesPreset: nano
+    # resources: ~
+
+    extraVolumes:
+      - name: tls-thanos
+        secret:
+          secretName: "{{ thanos_secrets['query'] }}"
+      - name: tripper-config
+        configMap:
+          name: thanos-query-frontend-tripper
+
+    extraVolumeMounts:
+      - name: tls-thanos
+        mountPath: /tls/thanos
+        readOnly: true
+      - name: tripper-config
+        mountPath: /conf/tripper
+        readOnly: true
+
+    # override default probes in
+    # order to supply basic auth
+    customReadinessProbe: *readiness_probe
+    customLivenessProbe: *liveness_probe
+
+    ingress: # in-cluster access only
+      enabled: false
+
+  # ======================================= Ruler =======================================
+  #
+  # https://thanos.io/tip/components/rule.md
+  # https://github.com/bitnami/charts/tree/main/bitnami/thanos/#thanos-ruler-parameters
+  ruler:
+    enabled: true
+    replicaCount: 1
+    revisionHistoryLimit: 2
+
+    # default interval
+    evalInterval: 1m
+
+    # https://thanos.io/tip/components/rule.md/#configuring-rules
+    config: |
+      groups: []
+
+    resourcesPreset: nano
+    # resources: ~
+
+    persistence:
+      enabled: true
+      storageClass: "{{ storage_classes['default'] }}"
+      # min XFS volume size is 300Mi
+      size: 384Mi
+
+    persistentVolumeClaimRetentionPolicy:
+      enabled: true
+      whenScaled: Retain
+      whenDeleted: Delete
+
+    dnsDiscovery:
+      enabled: true
+    # externally accessible URL in alerts' "Source" field
+    queryURL: https://{{ thanos_fqdns['query'] | first }}
+
+    # https://thanos.io/tip/components/rule.md/#alertmanager
+    alertmanagersConfig:
+      alertmanagers:
+        - api_version: v2
+          # https://thanos.io/tip/thanos/service-discovery.md/#thanos-ruler
+          static_configs:
+            - "{{ alertmanager_service_host }}:{{ alertmanager_service_port }}"
+          scheme: https
+          http_config:
+            tls_config:
+              # same cert as http-config.yml
+              cert_file: /tls/thanos/tls.crt
+              key_file: /tls/thanos/tls.key
+              ca_file: /tls/thanos/ca.crt
+
+    # https://thanos.io/tip/components/rule.md/#flags
+    extraFlags:
+      # not sure why the chart doesn't
+      # allow gRPC server TLS settings
+      - --grpc-server-tls-cert=/tls/thanos/tls.crt
+      - --grpc-server-tls-key=/tls/thanos/tls.key
+      - --grpc-server-tls-client-ca=/tls/thanos/ca.crt
+
+    extraVolumeMounts: *tls_thanos
+    extraVolumes:
+      - name: tls-thanos
+        secret:
+          secretName: "{{ thanos_secrets['rule'] }}"
+
+    # override default probes in
+    # order to supply basic auth
+    customReadinessProbe: *readiness_probe
+    customLivenessProbe: *liveness_probe
+
+    ingress:
+      enabled: true
+      ingressClassName: "{{ rke_ingress_class }}"
+      annotations:
+        nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+        nginx.ingress.kubernetes.io/ssl-passthrough: "true"
+      # both .hostname and .tls are for single
+      # FQDN, but since we have multiple FQDNs,
+      # configure in .extraHosts and .extraTls
+      hostname: ""
+      extraHosts: |
+        {% set hosts = [] %}
+        {% for fqdn in thanos_fqdns['rule'] %}
+        {%   set _ = hosts.append({
+               'name':     fqdn,
+               'path':     '/',
+               'pathType': 'Prefix'
+             }) %}
+        {% endfor %}
+        {{ hosts  }}
+      extraTls:
+        - secretName: "{{ thanos_secrets['rule'] }}"
+          hosts: "{{ thanos_fqdns['rule'] }}"
+
+  # =================================== Store Gateway ===================================
+  #
+  # https://thanos.io/tip/components/store.md/#index-cache
+  indexCacheConfig: |
+    type: IN-MEMORY
+    config:
+      max_size: 128MB
+
+  # https://thanos.io/tip/components/store.md/#caching-bucket
+  bucketCacheConfig: |
+    type: REDIS
+    config:
+      addr: {{ valkey_service_host }}:{{ valkey_service_port }}
+      password: {{ valkey_pass }}
+      tls_enabled: true
+      tls_config:
+        # same cert as http-config.yml
+        cert_file: /tls/thanos/tls.crt
+        key_file:  /tls/thanos/tls.key
+        ca_file:   /tls/thanos/ca.crt
+      # enable client-side caching
+      cache_size: 64MB
+      ttl: 24h # Valkey
+
+  # https://thanos.io/tip/components/store.md
+  # https://github.com/bitnami/charts/tree/main/bitnami/thanos/#thanos-store-gateway-parameters
+  storegateway:
+    enabled: true
+    replicaCount: 1
+    revisionHistoryLimit: 2
+
+    # shard using StatefulSet based on
+    # time ranges or hashmod of blocks
+    # https://thanos.io/tip/components/store.md/#time-based-partitioning
+    sharded:
+      enabled: false
+
+    resourcesPreset: nano
+    # resources: ~
+
+    persistence:
+      enabled: true
+      # no need for storage replicas as
+      # data can be recreated on startup
+      storageClass: "{{ storage_classes['single'] }}"
+      # min XFS volume size is 300Mi
+      size: 384Mi
+
+    persistentVolumeClaimRetentionPolicy:
+      enabled: true
+      whenScaled: Delete
+      whenDeleted: Delete
+
+    grpc:
+      server:
+        tls:
+          enabled: true
+          existingSecret:
+            name: "{{ thanos_secrets['store'] }}"
+            keyMapping: # mounted under /certs/server
+              tls-cert: tls.crt
+              tls-key: tls.key
+              ca-cert: ca.crt
+          clientAuthEnabled: true
+
+    extraVolumeMounts: *tls_thanos
+    extraVolumes:
+      - name: tls-thanos
+        secret:
+          secretName: "{{ thanos_secrets['store'] }}"
+
+    # override default probes in
+    # order to supply basic auth
+    customReadinessProbe: *readiness_probe
+    customLivenessProbe: *liveness_probe
+
+    # make Query access Store API using
+    # "endpoint-group" feature if there
+    # are multiple replicas
+    useEndpointGroup: false
+
+    ingress:
+      enabled: true
+      grpc: # in-cluster access only
+        enabled: false
+      ingressClassName: "{{ rke_ingress_class }}"
+      annotations:
+        nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+        nginx.ingress.kubernetes.io/ssl-passthrough: "true"
+      # both .hostname and .tls are for single
+      # FQDN, but since we have multiple FQDNs,
+      # configure in .extraHosts and .extraTls
+      hostname: ""
+      extraHosts: |
+        {% set hosts = [] %}
+        {% for fqdn in thanos_fqdns['store'] %}
+        {%   set _ = hosts.append({
+               'name':     fqdn,
+               'path':     '/',
+               'pathType': 'Prefix'
+             }) %}
+        {% endfor %}
+        {{ hosts  }}
+      extraTls:
+        - secretName: "{{ thanos_secrets['store'] }}"
+          hosts: "{{ thanos_fqdns['store'] }}"
+
+  # ===================================== Bucket Web ====================================
+  #
+  # https://thanos.io/tip/components/tools.md/#bucket-web
+  # https://github.com/bitnami/charts/tree/main/bitnami/thanos/#thanos-bucket-web-parameters
+  bucketweb:
+    enabled: true
+    replicaCount: 1
+    revisionHistoryLimit: 2
+
+    # interval to refresh bucket metadata
+    refresh: 30m
+
+    resourcesPreset: nano
+    # resources: ~
+
+    extraVolumeMounts: *tls_thanos
+    extraVolumes:
+      - name: tls-thanos
+        secret:
+          secretName: "{{ thanos_secrets['bucket'] }}"
+
+    # override default probes in
+    # order to supply basic auth
+    customReadinessProbe: *readiness_probe
+    customLivenessProbe: *liveness_probe
+
+    ingress:
+      enabled: true
+      ingressClassName: "{{ rke_ingress_class }}"
+      annotations:
+        nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+        nginx.ingress.kubernetes.io/ssl-passthrough: "true"
+      # both .hostname and .tls are for single
+      # FQDN, but since we have multiple FQDNs,
+      # configure in .extraHosts and .extraTls
+      hostname: ""
+      extraHosts: |
+        {% set hosts = [] %}
+        {% for fqdn in thanos_fqdns['bucket'] %}
+        {%   set _ = hosts.append({
+               'name':     fqdn,
+               'path':     '/',
+               'pathType': 'Prefix'
+             }) %}
+        {% endfor %}
+        {{ hosts  }}
+      extraTls:
+        - secretName: "{{ thanos_secrets['bucket'] }}"
+          hosts: "{{ thanos_fqdns['bucket'] }}"
+
+  # ===================================== Compactor =====================================
+  #
+  # https://thanos.io/tip/components/compact.md
+  # https://github.com/bitnami/charts/tree/main/bitnami/thanos/#thanos-compactor-parameters
+  compactor:
+    enabled: true
+    revisionHistoryLimit: 2
+
+    # deploy as a service
+    # instead of cron job
+    cronJob:
+      enabled: false
+
+    retentionResolutionRaw: 7d
+    retentionResolution5m: 14d # raw metrics older than 40 hours
+    retentionResolution1h: 30d #  5m metrics older than 10 days
+
+    # number of goroutines to
+    # use when compact groups
+    concurrency: 1
+    # minimum age of fresh (non-compacted)
+    # blocks before they can be processed
+    consistencyDelay: 30m
+
+    # resourcesPreset: small
+    resources:
+      requests:
+        cpu: 50m
+        memory: 256Mi
+        ephemeral-storage: 50Mi
+      limits:
+        cpu: 500m
+        memory: 1Gi
+
+    persistence:
+      enabled: true
+      ephemeral: false
+      # no need for replicas as storage
+      # is used merely as scratch space
+      storageClass: "{{ storage_classes['single'] }}"
+      size: 10Gi
+
+    extraVolumeMounts: *tls_thanos
+    extraVolumes:
+      - name: tls-thanos
+        secret:
+          secretName: "{{ thanos_secrets['compact'] }}"
+
+    # override default probes in
+    # order to supply basic auth
+    customReadinessProbe: *readiness_probe
+    customLivenessProbe: *liveness_probe
+
+    ingress:
+      enabled: true
+      ingressClassName: "{{ rke_ingress_class }}"
+      annotations:
+        nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+        nginx.ingress.kubernetes.io/ssl-passthrough: "true"
+      # both .hostname and .tls are for single
+      # FQDN, but since we have multiple FQDNs,
+      # configure in .extraHosts and .extraTls
+      hostname: ""
+      extraHosts: |
+        {% set hosts = [] %}
+        {% for fqdn in thanos_fqdns['compact'] %}
+        {%   set _ = hosts.append({
+               'name':     fqdn,
+               'path':     '/',
+               'pathType': 'Prefix'
+             }) %}
+        {% endfor %}
+        {{ hosts  }}
+      extraTls:
+        - secretName: "{{ thanos_secrets['compact'] }}"
+          hosts: "{{ thanos_fqdns['compact'] }}"
+
+  # ====================================== Receive ======================================
+  #
+  # https://thanos.io/tip/components/receive.md
+  # https://github.com/bitnami/charts/tree/main/bitnami/thanos/#thanos-receive-parameters
+  receive:
+    enabled: false
+  receiveDistributor:
+    enabled: false
+
+  # ====================================== Metrics ======================================
+  #
+  # https://github.com/bitnami/charts/tree/main/bitnami/thanos/#metrics-parameters
+  metrics:
+    enabled: true
+
+    serviceMonitor:
+      enabled: true
+      labels:
+        release: "{{ monitoring_release_name }}"
+      extraParameters:
+        scheme: https
+        # TLSConfig (mTLS client certificate):
+        # https://github.com/prometheus-operator/prometheus-operator/tree/main/Documentation/api-reference/api.md#safetlsconfig
+        tlsConfig: "{{ metric_scraper_tls_config }}"
+        # https://github.com/prometheus-operator/prometheus-operator/tree/main/Documentation/api-reference/api.md#basicauth
+        basicAuth: "{{ thanos_metrics_auth }}"
+
+    prometheusRule:
+      enabled: true
+      additionalLabels:
+        release: "{{ monitoring_release_name }}"

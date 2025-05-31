@@ -1,11 +1,12 @@
 # Emacs -*-Shell-Script-*- Mode
 
 # shellcheck disable=SC2148 # Tips depend on target shell
+# shellcheck disable=SC1090 # Can't follow non-const source
 # shellcheck disable=SC1091 # Not following: not input file
 # shellcheck disable=SC2155 # Declare and assign separately
 # shellcheck disable=SC2086 # Double quote prevent globbing
+# shellcheck disable=SC2206 # Quote to avoid word splitting
 # shellcheck disable=SC2207 # Prefer mapfile to split output
-# shellcheck disable=SC1090 # Can't follow non-const source
 
 alias sudo='sudo -E '
 alias cdd='cd "$OLDPWD"'
