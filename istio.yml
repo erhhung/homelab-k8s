@@ -186,7 +186,6 @@
         validate:
           fail_on_error: false
         state: present
-        apply: true
 
     # Kiali Operator shall deploy Kiali
     - name: Create Kiali custom resource
@@ -231,15 +230,17 @@
       ansible.builtin.include_tasks: tasks/localfacts.yml
       when: local_python_interpreter is not defined
   tasks:
-    - name: Apply manifests for Istio
+    - name: Create missing resources
       vars:
         # required kubernetes>=24.2 package only in user virtualenv
         ansible_python_interpreter: "{{ venv_python_interpreter }}"
+        definitions: |-
+          {{ lookup('ansible.builtin.template', template_dir ~ '/istio/monitoring.yaml.j2') }}
       kubernetes.core.k8s:
         kubeconfig: "{{ rke_kubeconfig }}"
         namespace: "{{ istio_namespace }}"
         # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/template_lookup.html
-        definition: "{{ lookup('ansible.builtin.template', template_dir ~ '/istio/monitoring.yaml.j2') }}"
+        definition: "{{ definitions }}"
         state: present
         apply: true
         wait: true

@@ -77,7 +77,7 @@ All cluster services will be provisioned with TLS certificates from Erhhung's pr
     * Install Kiali using the [`kiali-operator`](https://kiali.io/docs/installation/installation-guide/install-with-helm/#install-with-operator/) Helm chart and `Kiali` CR
 - [X] [Argo CD Declarative GitOps](https://argo-cd.readthedocs.io/) — manage deployment of other applications in the main RKE cluster
     * Install on main RKE cluster using the [`argo-cd`](https://github.com/argoproj/argo-helm/tree/main/charts/argo-cd) Helm chart
-- [ ] [Kubernetes Metacontroller](https://metacontroller.github.io/metacontroller/) — enable easy creation of custom controllers
+- [X] [Kubernetes Metacontroller](https://metacontroller.github.io/metacontroller/) — enable easy creation of custom controllers
     * Install on main RKE cluster using the [`metacontroller`](https://metacontroller.github.io/metacontroller/guide/helm-install.html) Helm chart
 - [ ] [Ollama Server](https://github.com/ollama/ollama) with [Ollama CLI](https://github.com/masgari/ollama-cli) — run LLMs on Kubernetes cluster instead of locally
     * Install onto `k8s1`/`k8s2` with **GPU passthrough** using the [`ollama`](https://github.com/cowboysysop/charts/tree/master/charts/ollama) Helm chart
@@ -157,7 +157,7 @@ export ANSIBLE_CONFIG="./ansible.cfg"
     1.3. **Helm** — Helm plugins: e.g. `helm-diff`
 
     ```bash
-    ansible-playbook packages.yml
+    ./play.sh packages
     ```
 
 2. Configure system settings
@@ -169,7 +169,7 @@ export ANSIBLE_CONFIG="./ansible.cfg"
     2.5. **Certs** — add CA certificates to trust store
 
     ```bash
-    ansible-playbook basics.yml
+    ./play.sh basics
     ```
 
 3. Set up admin user's home directory
@@ -178,26 +178,26 @@ export ANSIBLE_CONFIG="./ansible.cfg"
     3.2. **Config files**: `htop`, `fastfetch`
 
     ```bash
-    ansible-playbook files.yml
+    ./play.sh files
     ```
 
-4. Set up **Rancher Server** on single-node **K3s** cluster
+4. Install **Rancher Server** on single-node **K3s** cluster
     ```bash
-    ansible-playbook rancher.yml
+    ./play.sh rancher
     ```
 
-5. Set up **Kubernetes cluster** with **RKE** on 4 nodes
+5. Provision **Kubernetes cluster** with **RKE** on 4 nodes
 
     Install **RKE2** with a single control plane node and 3 worker nodes, all permitting workloads,  
     or RKE2 in HA mode with 3 control plane nodes and 1 worker node, all permitting workloads  
     _(in HA mode, the cluster will be accessible thru a **virtual IP** address courtesy of `kube-vip`)_
 
     ```bash
-    ansible-playbook cluster.yml
+    ./play.sh cluster
     ```
 
-6. Set up **Longhorn** dynamic PV provisioner  
-   Set up **MinIO** object storage in _**HA**_ mode
+6. Install **Longhorn** dynamic PV provisioner  
+   Install **MinIO** object storage in _**HA**_ mode
 
     6.1. Create a pool of LVM logical volumes  
     6.2. Install Longhorn storage components  
@@ -205,7 +205,7 @@ export ANSIBLE_CONFIG="./ansible.cfg"
     6.4. Install MinIO tenant using NFS PVs
 
     ```bash
-    ansible-playbook storage.yml minio.yml
+    ./play.sh storage minio
     ```
 
 7. Create resources from manifest files
@@ -214,79 +214,84 @@ export ANSIBLE_CONFIG="./ansible.cfg"
     into because the playbook simply applies each one without targeting a specific namespace
 
     ```bash
-    ansible-playbook manifests.yml
+    ./play.sh manifests
     ```
 
-8. Set up **Harbor** private OCI registry
+8. Install **Harbor** private OCI registry
     ```bash
-    ansible-playbook harbor.yml
+    ./play.sh harbor
     ```
 
-9. Set up **OpenSearch** cluster in _**HA**_ mode
+9. Install **OpenSearch** cluster in _**HA**_ mode
 
     9.1. Configure the OpenSearch security plugin (users and roles) for downstream applications  
     9.2. Install **OpenSearch Dashboards** UI
 
     ```bash
-    ansible-playbook opensearch.yml
+    ./play.sh opensearch
     ```
 
-10. Set up **Fluent Bit** to ingest logs into OpenSearch
+10. Install **Fluent Bit** to ingest logs into OpenSearch
     ```bash
-    ansible-playbook logging.yml
+    ./play.sh logging
     ```
 
-11. Set up **PostgreSQL** database in _**HA**_ mode
+11. Install **PostgreSQL** database in _**HA**_ mode
 
     11.1. Run initialization SQL script to create roles and databases for downstream applications  
     11.2. Create users in both PostgreSQL and **Pgpool**
 
     ```bash
-    ansible-playbook postgresql.yml
+    ./play.sh postgresql
     ```
 
-12. Set up **Keycloak** IAM & OIDC provider
+12. Install **Keycloak** IAM & OIDC provider
 
     12.1. Bootstrap **PostgreSQL** database with realm `homelab`, user `erhhung`, and OIDC clients
 
     ```bash
-    ansible-playbook keycloak.yml
+    ./play.sh keycloak
     ```
 
-13. Set up **Valkey** key-value store in _**HA**_ mode
+13. Install **Valkey** key-value store in _**HA**_ mode
 
     13.1. Deploy 6 nodes in total: 3 primaries and 3 replicas
 
     ```bash
-    ansible-playbook valkey.yml
+    ./play.sh valkey
     ```
 
-14. Set up **Prometheus**, **Thanos**, and **Grafana** in _**HA**_ mode
+14. Install **Prometheus**, **Thanos**, and **Grafana** in _**HA**_ mode
 
     14.1. Expose Prometheus & Alertmanager UIs via `oauth2-proxy` integration with **Keycloak**  
     14.2. Connect Thanos sidecars to **MinIO** to store scraped metrics in the `metrics` bucket  
     14.3. Deploy and integrate other Thanos components with Prometheus and Alertmanager
 
     ```bash
-    ansible-playbook monitoring.yml thanos.yml
+    ./play.sh monitoring thanos
     ```
 
-15. Set up **Istio** service mesh in _**ambient**_ mode
+15. Install **Istio** service mesh in _**ambient**_ mode
     ```bash
-    ansible-playbook istio.yml
+    ./play.sh istio
     ```
 
-16. Set up **Argo CD** GitOps delivery tool in _**HA**_ mode
+16. Install **Argo CD** GitOps delivery in _**HA**_ mode
 
     16.1. Configure Argo CD components to use the **Valkey** cluster for their caching needs
 
     ```bash
-    ansible-playbook argocd.yml
+    ./play.sh argocd
     ```
 
-17. Create **virtual clusters** in RKE running **K0s**
+17. Install Kubernetes **Metacontroller** add-on
     ```bash
-    ansible-playbook vclusters.yml
+    ./play.sh metacontroller
+    ```
+
+18. Create **virtual clusters** in RKE running **K0s**
+    ```bash
+    ./play.sh vclusters
     ```
 
 Alternatively, **run all playbooks** automatically in order:

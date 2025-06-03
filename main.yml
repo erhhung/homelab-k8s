@@ -80,6 +80,10 @@
   ansible.builtin.import_playbook: argocd.yml
   tags: argocd
 
+- name: Include K8s Metacontroller playbook
+  ansible.builtin.import_playbook: metacontroller.yml
+  tags: metacontroller
+
 - name: Include virtual clusters playbook
   ansible.builtin.import_playbook: vclusters.yml
   tags: vclusters
