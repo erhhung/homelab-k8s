@@ -1,0 +1,118 @@
+# https://metacontroller.github.io/metacontroller/
+---
+- name: Install Kubernetes Metacontroller
+  tags: install
+  hosts: "{{ rke_control_plane_host }}"
+  gather_facts: false
+  vars_files:
+    - vars/basics.yml
+    - vars/kubernetes.yml
+    - vars/monitoring.yml
+    - vars/metacontroller.yml
+  vars:
+    # required kubernetes>=24.2 package only in user virtualenv
+    ansible_python_interpreter: "{{ venv_python_interpreter }}"
+    kubeconfig: "{{ rke_kubeconfig }}"
+  pre_tasks:
+    - name: Is the monitoring stack ready?
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
+      ansible.builtin.include_tasks: tasks/monitoring/stackready.yml
+      when: monitoring_stack_ready is not defined
+  tasks:
+    - name: Create {{ metacontroller_namespace }} Namespace
+      # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_module.html
+      kubernetes.core.k8s:
+        kubeconfig: "{{ kubeconfig }}"
+        api_version: v1
+        kind: Namespace
+        name: "{{ metacontroller_namespace }}"
+        state: present
+
+    # https://metacontroller.github.io/metacontroller/guide/helm-install.html
+    - name: Render Metacontroller Helm template
+      # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/helm_template_module.html
+      kubernetes.core.helm_template:
+        chart_ref: oci://ghcr.io/metacontroller/{{ metacontroller_chart_name }}
+        chart_version: "{{ metacontroller_chart_version }}"
+        release_name: metacontroller
+        release_namespace: "{{ metacontroller_namespace }}"
+        release_values: "{{ metacontroller_chart_values }}"
+        output_dir: /tmp # /tmp/metacontroller-helm/templates
+      changed_when: false
+
+    # add missing StatefulSet .serviceName and pod
+    # metrics port; adjust container probe timeouts
+    - name: Apply manifests with Kustomizations
+      vars:
+        metrics_port: "{{ metacontroller_chart_values.service.ports[0].port }}"
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/shell_module.html
+      ansible.builtin.shell: |
+        # run Bash and source /etc/profile.d
+        # scripts so that kubectl is in PATH
+        exec /bin/bash -l <<'EOT'
+        set -o pipefail
+
+        KUSTOMIZE_DIR="/tmp/{{ metacontroller_chart_name }}"
+        [ -d "$KUSTOMIZE_DIR/templates" ] || {
+          echo "$KUSTOMIZE_DIR/templates not found!"
+          exit 1
+        }
+        cd "$KUSTOMIZE_DIR"
+        trap 'rm -rf "$KUSTOMIZE_DIR"' EXIT
+
+        cat <<EOF > kustomization.yaml
+        apiVersion: kustomize.config.k8s.io/v1beta1
+        kind: Kustomization
+        namespace: {{ metacontroller_namespace }}
+        resources:
+        $( # no wildcards allowed
+          files=(templates/*.yaml)
+          printf -- "  - %s\n" "${files[@]}"
+        )
+        patches:
+          - path: sts-patch.yaml
+        EOF
+
+        cat <<'EOF' > sts-patch.yaml
+        apiVersion: apps/v1
+        kind: StatefulSet
+        metadata:
+          name: metacontroller
+          namespace: {{ metacontroller_namespace }}
+        spec:
+          revisionHistoryLimit: 2
+          serviceName: metacontroller
+          template:
+            spec:
+              containers:
+                - name: {{ metacontroller_chart_name }}
+                  ports:
+                    - name: metrics
+                      containerPort: {{ metrics_port }}
+                  readinessProbe: &probe
+                    timeoutSeconds: 3
+                  livenessProbe: *probe
+        EOF
+        kubectl apply -k . \
+          --force --wait | tee apply.out || exit $?
+        egrep -qv "unchanged$" apply.out || exit 9 # no change
+        EOT
+      register: kustomize
+      changed_when: kustomize.rc == 0
+      failed_when: >-
+        kustomize.rc != 0 and
+        kustomize.rc != 9
+
+    - name: Create Metacontroller ServiceMonitor
+      vars:
+        definition: |-
+          {{ lookup('ansible.builtin.template', template_dir ~
+                    '/monitoring/smons/metacontroller.yaml.j2') }}
+      kubernetes.core.k8s:
+        kubeconfig: "{{ kubeconfig }}"
+        namespace: "{{ metacontroller_namespace }}"
+        definition: "{{ definition }}"
+        state: present
+        apply: true
+      when: prometheus_crds_installed
+  any_errors_fatal: true

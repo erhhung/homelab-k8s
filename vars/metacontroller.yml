@@ -1,0 +1,35 @@
+metacontroller_namespace: metacontroller
+
+# https://metacontroller.github.io/metacontroller/guide/helm-install.html
+metacontroller_chart_name: metacontroller-helm
+metacontroller_chart_version: "4.12.1"
+
+# https://github.com/metacontroller/metacontroller/tree/master/deploy/helm/metacontroller/values.yaml
+metacontroller_chart_values:
+  # remove name suffix "-helm"
+  nameOverride: metacontroller
+  replicas: 1
+
+  # https://metacontroller.github.io/metacontroller/guide/configuration.html
+  commandArgs:
+    - --zap-log-level=5
+    - --discovery-interval=10s
+    - --cache-flush-interval=30m
+    - --health-probe-bind-address=:8081
+    - --metrics-address=:9090
+
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+
+  probes:
+    port: 8081
+
+  service:
+    enabled: true
+    ports:
+      - name: metrics
+        protocol: TCP
+        port: 9090
+        targetPort: metrics
