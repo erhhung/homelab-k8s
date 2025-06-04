@@ -73,13 +73,17 @@ minio_secrets:
   s3api: minio-s3-tls
 
 # https://min.io/docs/minio/kubernetes/upstream/operations/install-deploy-manage/deploy-operator-helm.html
-# https://min.io/docs/minio/kubernetes/upstream/operations/install-deploy-manage/deploy-minio-tenant-helm.html
-minio_operator_chart_version: "7.1.0"
-minio_tenant_chart_version: "7.1.0"
-
 # https://github.com/minio/operator/tree/master/helm/operator
-# https://github.com/minio/operator/tree/master/helm/operator/values.yaml
+minio_operator_chart_version: "7.1.0"
+minio_operator_release_name: operator
+
+# https://min.io/docs/minio/kubernetes/upstream/operations/install-deploy-manage/deploy-minio-tenant-helm.html
+# https://github.com/minio/operator/tree/master/helm/tenant
+minio_tenant_chart_version: "7.1.0"
+minio_tenant_release_name: tenant
+
 # https://min.io/docs/minio/kubernetes/upstream/reference/operator-chart-values.html
+# https://github.com/minio/operator/tree/master/helm/operator/values.yaml
 minio_operator_chart_values:
   operator:
     replicaCount: 1
@@ -141,9 +145,8 @@ minio_collect_metrics_for:
   - node
   - bucket
 
-# https://github.com/minio/operator/tree/master/helm/tenant
-# https://github.com/minio/operator/tree/master/helm/tenant/values.yaml
 # https://min.io/docs/minio/kubernetes/upstream/reference/tenant-chart-values.html
+# https://github.com/minio/operator/tree/master/helm/tenant/values.yaml
 minio_tenant_chart_values:
   tenant:
     name: "{{ minio_tenant_name }}"

@@ -12,8 +12,10 @@ rancher_secrets:
   ingress: tls-rancher-ingress
   ca-tls: tls-ca
 
-rancher_chart_version: "2.11.1"
 # https://github.com/rancher/rancher/tree/main/chart
+rancher_chart_version: "2.11.1"
+rancher_release_name: rancher
+
 # https://github.com/rancher/rancher/tree/main/chart/values.yaml
 rancher_chart_values:
   replicas: 1

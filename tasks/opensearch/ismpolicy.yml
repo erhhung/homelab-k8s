@@ -1,0 +1,51 @@
+# apply OpenSearch ISM policy
+#
+# pass the following vars:
+#   policy <required> {name,policy}
+---
+- name: Apply OpenSearch ISM policy
+  become: false
+  vars:
+    uri_params: &uri_params
+      url_username: admin
+      url_password: "{{ opensearch_admin_pass }}"
+      force_basic_auth: true
+      return_content: true
+    # https://docs.opensearch.org/docs/latest/im-plugin/ism/api
+    policy_url: "{{ opensearch_url }}/_plugins/_ism/policies/{{ policy['name'] }}"
+  block:
+    - name: Get ISM policy if exists
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/uri_module.html
+      ansible.builtin.uri:
+        <<: *uri_params
+        url: "{{ policy_url }}"
+        status_code: [200, 404]
+      register: ism_policy
+
+    # it's too difficult to compare for changes if policy already exists,
+    # so just overwrite it by getting ._seq_no and ._primary_term values
+    # to use in the PUT request params:
+    # https://docs.opensearch.org/docs/latest/im-plugin/ism/api#update-policy
+    - name: Get policy "seq_no" value
+      vars:
+        existing: "{{ ism_policy.json }}"
+      ansible.builtin.set_fact:
+        url_params: "?if_seq_no={{ existing._seq_no
+          }}&if_primary_term={{ existing._primary_term }}"
+      when: ism_policy.status == 200
+
+    - name: >-
+        {{ 'Create' if ism_policy.status == 404 else 'Update' }}
+        policy "{{ policy['name'] }}"
+      vars:
+        url: "{{ policy_url ~ url_params | default('') }}"
+      ansible.builtin.uri:
+        <<: *uri_params
+        method: PUT
+        url: "{{ url }}"
+        body_format: json
+        body:
+          policy: "{{ policy['policy'] }}"
+        status_code: [200, 201]
+      changed_when: true
+  any_errors_fatal: true

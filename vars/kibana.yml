@@ -8,14 +8,18 @@ kibana_host_name: kibana # alias of "homelab"
 # https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_filters.html#products
 kibana_fqdn: "{{ [kibana_host_name] | product(search_domains) | map('join','.') | first }}"
 
+kibana_api_url: https://{{ kibana_fqdn }}/api
+
 kibana_secrets:
   ingress: dashboards-ingress-tls
 
-dashboards_chart_version: "2.30.0"
 # https://github.com/opensearch-project/helm-charts/tree/main/charts/opensearch-dashboards
+dashboards_chart_version: "2.30.0"
+dashboards_release_name: opensearch-dashboards
+
 # https://github.com/opensearch-project/helm-charts/tree/main/charts/opensearch-dashboards/values.yaml
 dashboards_chart_values:
-  opensearchHosts: https://{{ opensearch_master_service }}.{{ opensearch_namespace }}.svc:9200
+  opensearchHosts: "{{ opensearch_service_url }}"
 
   # opensearchAccount:
   #   secret: "{{ opensearch_secrets['passwords'] }}"

@@ -1,8 +1,10 @@
 metacontroller_namespace: metacontroller
 
 # https://metacontroller.github.io/metacontroller/guide/helm-install.html
+# https://github.com/metacontroller/metacontroller/tree/master/deploy/helm/metacontroller
 metacontroller_chart_name: metacontroller-helm
 metacontroller_chart_version: "4.12.1"
+metacontroller_release_name: metacontroller
 
 # https://github.com/metacontroller/metacontroller/tree/master/deploy/helm/metacontroller/values.yaml
 metacontroller_chart_values:

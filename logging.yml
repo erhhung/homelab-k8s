@@ -19,6 +19,7 @@
     ansible_python_interpreter: "{{ venv_python_interpreter }}"
     kubeconfig: "{{ rke_kubeconfig }}"
     secret_ns: "{{ logging_namespace }}"
+    release: "{{ fluent_operator_release_name }}"
   pre_tasks:
     - name: Is the monitoring stack ready?
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
@@ -50,7 +51,7 @@
         chart_repo_url: https://fluent.github.io/helm-charts
         chart_ref: fluent-operator
         chart_version: "{{ fluent_operator_chart_version }}"
-        release_name: fluent-operator
+        release_name: "{{ fluent_operator_release_name }}"
         release_namespace: "{{ logging_namespace }}"
         release_values: "{{ fluent_operator_chart_values }}"
         atomic: true
@@ -104,6 +105,13 @@
               release: "{{ monitoring_release_name }}"
         state: patched
       when: prometheus_crds_installed | default(false)
+
+    - name: Configure Fluent logs ISM policy
+      vars:
+        policy: |
+          {{ lookup('ansible.builtin.template', template_dir ~
+                    '/logging/ismpolicy.yaml.j2') | from_yaml }}
+      ansible.builtin.include_tasks: tasks/opensearch/ismpolicy.yml
   any_errors_fatal: true
 
 - name: Configure logging dashboards

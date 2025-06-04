@@ -19,7 +19,7 @@
       force_basic_auth: true
       return_content: true
     # https://opensearch-project.github.io/OpenSearch-Dashboards/docs/openapi/saved_objects/
-    saved_objs_url: https://{{ kibana_fqdn }}/api/saved_objects
+    saved_objs_url: "{{ kibana_api_url }}/saved_objects"
   block:
     - name: Get existing patterns
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/uri_module.html

@@ -11,7 +11,7 @@
   vars:
     ansible_python_interpreter: "{{ local_python_interpreter }}"
     uri_params: &uri_params
-      url: https://{{ kibana_fqdn }}/api/opensearch-dashboards/settings
+      url: "{{ kibana_api_url }}/opensearch-dashboards/settings"
       url_username: "{{ username }}"
       url_password: "{{ password }}"
       force_basic_auth: true
@@ -53,6 +53,6 @@
         body:
           changes: "{{ settings }}"
       register: apply_settings
-      when: needs_apply is truthy
+      when: needs_apply | default(false) is truthy
       changed_when: apply_settings.status == 200
   any_errors_fatal: true

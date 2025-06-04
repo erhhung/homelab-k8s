@@ -14,8 +14,11 @@ harbor_fqdn: "{{ [harbor_host_name] | product(search_domains) | map('join','.') 
 harbor_secrets:
   ingress: harbor-ingress-tls
 
-harbor_chart_version: "1.17.0"
 # https://goharbor.io/docs/latest/install-config/harbor-ha-helm/
+# https://github.com/goharbor/harbor-helm/tree/main
+harbor_chart_version: "1.17.0"
+harbor_release_name: harbor
+
 # https://github.com/goharbor/harbor-helm/tree/main/values.yaml
 harbor_chart_values:
   externalURL: https://{{ harbor_fqdn }}

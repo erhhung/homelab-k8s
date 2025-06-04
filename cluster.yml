@@ -29,11 +29,6 @@
         fail_msg: Number of control plane nodes must be odd!
         success_msg: Deploying {{ count }} control plane nodes.
   tasks:
-    # https://github.com/rancherfederal/rke2-ansible
-    # - name: Include rancherfederal.rke2.rke2 role
-    #   ansible.builtin.include_role:
-    #     name: rancherfederal.rke2.rke2
-
     # https://github.com/lablabs/ansible-role-rke2
     - name: Include lablabs.rke2 role
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_role_module.html

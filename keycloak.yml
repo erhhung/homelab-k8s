@@ -17,6 +17,7 @@
     kubeconfig: "{{ rke_kubeconfig }}"
     secret_ns: "{{ keycloak_namespace }}"
     create_ns: false
+    release: "{{ keycloakx_release_name }}"
   pre_tasks:
     - name: Get controller facts
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
@@ -33,7 +34,7 @@
         kubeconfig: "{{ kubeconfig }}"
         api_version: apps/v1
         kind: StatefulSet
-        name: postgresql-postgresql
+        name: "{{ postgresql_release_name }}-postgresql"
         namespace: "{{ postgresql_namespace }}"
       register: postgresql_sts
 
@@ -171,7 +172,7 @@
         chart_repo_url: https://codecentric.github.io/helm-charts
         chart_ref: keycloakx
         chart_version: "{{ keycloakx_chart_version }}"
-        release_name: keycloakx
+        release_name: "{{ keycloakx_release_name }}"
         release_namespace: "{{ keycloak_namespace }}"
         release_values: "{{ keycloakx_chart_values }}"
         atomic: true
@@ -189,7 +190,7 @@
         kubeconfig: "{{ kubeconfig }}"
         api_version: monitoring.coreos.com/v1
         kind: ServiceMonitor
-        name: keycloakx-keycloakx
+        name: "{{ keycloakx_release_name }}-keycloakx"
         namespace: "{{ keycloak_namespace }}"
         patch:
           - op: add

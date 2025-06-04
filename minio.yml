@@ -27,6 +27,7 @@
         cert_file: "{{ item.file }}"
         secret_name: "{{ item.name }}"
         secret_ns: "{{ minio_tenant_namespace }}"
+        release: "{{ minio_tenant_release_name }}"
       ansible.builtin.include_tasks: tasks/k8s/secrets/tls.pki.yml
       loop:
         - name: "{{ minio_secrets['console'] }}"
@@ -54,12 +55,15 @@
           public.crt: "{{ ca_certs }}"
         secret_ns: "{{ item.namespace }}"
         create_ns: "{{ item.namespace != minio_tenant_namespace }}"
+        release: "{{ item.release }}"
       ansible.builtin.include_tasks: tasks/k8s/secrets/generic.yml
       loop:
         - name: "{{ minio_secrets['operator-ca'] }}"
           namespace: "{{ minio_operator_namespace }}"
+          release: "{{ minio_operator_release_name }}"
         - name: "{{ minio_secrets['tenant-ca'] }}"
           namespace: "{{ minio_tenant_namespace }}"
+          release: "{{ minio_tenant_release_name }}"
       loop_control:
         label: "{{ item.name }}"
 
@@ -76,6 +80,7 @@
           CONSOLE_SECRET_KEY: "{{ item.value.secret_key }}"
         secret_ns: "{{ minio_tenant_namespace }}"
         create_ns: false
+        release: "{{ minio_tenant_release_name }}"
       ansible.builtin.include_tasks: tasks/k8s/secrets/generic.yml
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/dict2items_filter.html
       loop: "{{ minio_users | ansible.builtin.dict2items }}"
@@ -90,7 +95,7 @@
         chart_repo_url: https://operator.min.io
         chart_ref: operator
         chart_version: "{{ minio_operator_chart_version }}"
-        release_name: operator
+        release_name: "{{ minio_operator_release_name }}"
         release_namespace: "{{ minio_operator_namespace }}"
         release_values: "{{ minio_operator_chart_values }}"
         atomic: true
@@ -104,7 +109,7 @@
         chart_repo_url: https://operator.min.io
         chart_ref: tenant
         chart_version: "{{ minio_tenant_chart_version }}"
-        release_name: tenant
+        release_name: "{{ minio_tenant_release_name }}"
         release_namespace: "{{ minio_tenant_namespace }}"
         release_values: "{{ minio_tenant_chart_values }}"
         atomic: true

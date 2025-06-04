@@ -25,8 +25,10 @@ argocd_redis_options:
   - --redis-client-certificate=/tls/valkey/tls.crt
   - --redis-client-key=/tls/valkey/tls.key
 
-argocd_chart_version: "8.0.12"
 # https://github.com/argoproj/argo-helm/tree/main/charts/argo-cd
+argocd_chart_version: "8.0.12"
+argocd_release_name: argocd
+
 # https://github.com/argoproj/argo-helm/tree/main/charts/argo-cd/values.yaml
 argocd_chart_values:
   crds:
