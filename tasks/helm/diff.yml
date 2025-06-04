@@ -8,7 +8,7 @@
 #   repo_url     <required> repository URL
 #   chart_name   <required> chart name
 #   chart_ver    <required> chart version
-#   release_name <required> release name
+#   release      <required> release name
 #   release_ns   <required> release namespace
 #   values_json  <required> chart values JSON
 # sets the following facts:
@@ -30,7 +30,7 @@
           - hist
           - --kubeconfig={{ kubeconfig }}
           - -n={{ release_ns }}
-          - "{{ release_name }}"
+          - "{{ release }}"
       register: helm_hist
       changed_when: false
       failed_when: false
@@ -42,7 +42,7 @@
           helm_hist.rc == 0 and
           helm_hist.stdout is search('REVISION')
           }}"
-        values_file: /tmp/{{ release_name }}-values.yaml
+        values_file: /tmp/{{ release }}-values.yaml
 
     - name: Add Helm chart repository
       # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/helm_repository_module.html
@@ -73,7 +73,7 @@
           - upgrade
           - --kubeconfig={{ kubeconfig }}
           - -n={{ release_ns }}
-          - "{{ release_name }}"
+          - "{{ release }}"
           - "{{ repo_name }}/{{ chart_name }}"
           - --version={{ chart_ver }}
           - -f={{ values_file }}

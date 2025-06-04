@@ -73,8 +73,10 @@ thanos_tripper_config:
       key_file:  /tls/thanos/tls.key
       ca_file:   /tls/thanos/ca.crt
 
-thanos_chart_version: "16.0.7"
 # https://github.com/bitnami/charts/tree/main/bitnami/thanos
+thanos_chart_version: "16.0.7"
+thanos_release_name: thanos
+
 # https://github.com/bitnami/charts/tree/main/bitnami/thanos/values.yaml
 thanos_chart_values:
   # https://thanos.io/tip/operating/https.md

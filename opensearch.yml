@@ -19,6 +19,7 @@
     kubeconfig: "{{ rke_kubeconfig }}"
     secret_ns: "{{ opensearch_namespace }}"
     create_ns: false
+    release: "{{ opensearch_release_name }}"
   pre_tasks:
     - name: Hash OpenSearch user passwords
       vars:
@@ -102,7 +103,7 @@
         chart_repo_url: https://opensearch-project.github.io/helm-charts
         chart_ref: opensearch
         chart_version: "{{ opensearch_chart_version }}"
-        release_name: opensearch
+        release_name: "{{ opensearch_release_name }}"
         release_namespace: "{{ opensearch_namespace }}"
         release_values: "{{ opensearch_chart_values }}"
         atomic: true
@@ -135,11 +136,6 @@
       # a handler cannot have block of subtasks, so the
       # tasks have been refactored into a separate file
       ansible.builtin.include_tasks: tasks/opensearch/security.yml
-      when: >-
-        opensearch_info.resources[0].status               is defined and
-        opensearch_info.resources[0].status.readyReplicas is defined and
-        opensearch_info.resources[0].status.readyReplicas ==
-                         opensearch_chart_values.replicas
   any_errors_fatal: true
 
 # https://docs.opensearch.org/docs/latest/install-and-configure/install-dashboards/helm/
@@ -161,6 +157,7 @@
         secret_name: "{{ kibana_secrets['ingress'] }}"
         secret_ns: "{{ kibana_namespace }}"
         create_ns: false
+        release: "{{ dashboards_release_name }}"
       ansible.builtin.include_tasks: tasks/k8s/secrets/tls.pki.yml
 
     # https://github.com/opensearch-project/helm-charts/tree/main/charts/opensearch-dashboards
@@ -173,7 +170,7 @@
         chart_repo_url: https://opensearch-project.github.io/helm-charts
         chart_ref: opensearch-dashboards
         chart_version: "{{ dashboards_chart_version }}"
-        release_name: opensearch-dashboards
+        release_name: "{{ dashboards_release_name }}"
         release_namespace: "{{ kibana_namespace }}"
         release_values: "{{ dashboards_chart_values }}"
         atomic: true

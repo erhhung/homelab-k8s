@@ -1,8 +1,6 @@
 # valkey_pass: {vault.yml}
 
 valkey_namespace: valkey
-valkey_release_name: valkey-cluster
-
 valkey_host_names: # 192.168.0.222-227
   - valkey
   - redis
@@ -51,10 +49,14 @@ valkey_secrets:
   node-tls: valkey-tls
   password: valkey-password
 
-valkey_chart_version: "3.0.3"
 # https://github.com/bitnami/charts/tree/main/bitnami/valkey-cluster
+valkey_chart_version: "3.0.3"
+valkey_release_name: valkey
+
 # https://github.com/bitnami/charts/tree/main/bitnami/valkey-cluster/values.yaml
 valkey_chart_values:
+  nameOverride: "{{ valkey_release_name }}"
+
   tls: # for replication traffic
     enabled: true
     # IRedis doesn't currently support mTLS parameters

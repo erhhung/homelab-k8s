@@ -16,8 +16,10 @@ storage_classes:
 # cannot use any other namespace!
 longhorn_namespace: longhorn-system
 
-longhorn_chart_version: "1.8.1"
 # https://github.com/longhorn/charts/tree/master/charts/longhorn
+longhorn_chart_version: "1.8.1"
+longhorn_release_name: longhorn
+
 # https://github.com/longhorn/charts/tree/master/charts/longhorn/values.yaml
 # https://longhorn.io/docs/1.8.1/references/settings/
 longhorn_chart_values:

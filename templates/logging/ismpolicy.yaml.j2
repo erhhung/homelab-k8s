@@ -1,0 +1,27 @@
+# OpenSearch Index State Management policy for Fluent log indices
+# NOTE: {name,policy} format is specific to our Ansible playbook
+---
+name: delete-old-logs
+policy:
+  description: Delete log indices older than {{
+    log_index_max_age | regex_replace('d$',' days') }}
+  default_state: hot
+  states:
+    - name: hot
+      actions: []
+        # https://docs.opensearch.org/docs/latest/im-plugin/ism/policies/#rollover
+        # rollover: # requires setting up alias
+        #   max_size: {{ log_index_max_size }}
+      # https://docs.opensearch.org/docs/latest/im-plugin/ism/policies/#transitions
+      transitions:
+        - state_name: delete
+          conditions:
+            min_index_age: {{ log_index_max_age }}
+    - name: delete
+      actions:
+        # https://docs.opensearch.org/docs/latest/im-plugin/ism/policies/#delete
+        - delete: {}
+  ism_template:
+    index_patterns:
+      - fluent-bit-*
+    priority: 100

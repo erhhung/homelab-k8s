@@ -11,8 +11,6 @@ opensearch_passwords:
   metrics: "{{ fluent_os_pass }}"
 
 opensearch_namespace: opensearch
-opensearch_cluster_name: opensearch
-opensearch_master_service: "{{ opensearch_cluster_name }}-master"
 opensearch_host_names: # aliases of "homelab"
   - opensearch
   - es
@@ -21,6 +19,13 @@ opensearch_host_names: # aliases of "homelab"
 # to pfSense DNS as aliases of homelab.fourteeners.local: 192.168.0.221
 # https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_filters.html#products
 opensearch_fqdns: "{{ opensearch_host_names | product(search_domains) | map('join','.') }}"
+
+opensearch_cluster_name: opensearch
+opensearch_master_service: "{{ opensearch_cluster_name }}-master"
+opensearch_service_host: "{{ opensearch_master_service }}.{{ opensearch_namespace }}.svc.cluster.local"
+opensearch_service_port: 9200
+opensearch_service_url: https://{{ opensearch_service_host }}:{{ opensearch_service_port }}
+opensearch_url: https://{{ opensearch_fqdns | first }}:{{ opensearch_service_port }}
 
 opensearch_secrets:
   node-tls: opensearch-node-tls # inter-node and ingress
@@ -208,9 +213,10 @@ opensearch_version: "2.19.2"
 # IMPORTANT! keep opensearch_version and opensearch_chart_version
 # in sync: helm show chart opensearch/opensearch --version 2.xx.x
 # opensearch_version will be used to select proper plugin version
-opensearch_chart_version: "2.34.0"
-
 # https://github.com/opensearch-project/helm-charts/tree/main/charts/opensearch
+opensearch_chart_version: "2.34.0"
+opensearch_release_name: opensearch
+
 # https://github.com/opensearch-project/helm-charts/tree/main/charts/opensearch/values.yaml
 opensearch_chart_values:
   replicas: 3
@@ -239,7 +245,9 @@ opensearch_chart_values:
                                                                        indent(4) }}
 
   persistence:
-    storageClass: "{{ storage_classes['default'] }}"
+    # no need for storage level replicas when
+    # the cluster stores indices with replicas
+    storageClass: "{{ storage_classes['single'] }}"
     size: 5Gi # allocate enough for logging
 
   extraVolumes:
@@ -355,6 +363,30 @@ opensearch_chart_values:
         opensearch_version }}.0/prometheus-exporter-{{ opensearch_version }}.0.zip
       # - telemetry-otel
       # - repository-s3
+
+  extraObjects:
+    # create LoadBalancer service to listen on port 9200
+    # in addition to the ingress controller on port 443
+    - apiVersion: v1
+      kind: Service
+      metadata:
+        name: "{{ opensearch_master_service }}-external"
+        labels:
+          app.kubernetes.io/name: opensearch
+          app.kubernetes.io/instance: "{{ opensearch_cluster_name }}"
+          app.kubernetes.io/component: "{{ opensearch_master_service }}"
+      spec:
+        type: LoadBalancer
+        loadBalancerIP: "{{ rke_lb_vip }}" # ingress IP
+        ports:
+          - name: http
+            port: "{{ opensearch_service_port }}"
+            protocol: TCP
+            targetPort: http
+            appProtocol: https
+        selector:
+          app.kubernetes.io/name: opensearch
+          app.kubernetes.io/instance: "{{ opensearch_cluster_name }}"
 
   # this will only create the ServiceMonitor resource,
   # but metrics won't be available for scraping unless

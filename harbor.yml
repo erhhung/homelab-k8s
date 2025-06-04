@@ -14,7 +14,7 @@
     repo_url: https://helm.goharbor.io
     chart_name: harbor
     chart_ver: "{{ harbor_chart_version }}"
-    release_name: harbor
+    release: "{{ harbor_release_name }}"
     release_ns: "{{ harbor_namespace }}"
   pre_tasks:
     # despite providing fixed values for various secrets and certs
@@ -48,7 +48,7 @@
         chart_repo_url: "{{ repo_url }}"
         chart_ref: "{{ chart_name }}"
         chart_version: "{{ chart_ver }}"
-        release_name: "{{ release_name }}"
+        release_name: "{{ release }}"
         release_namespace: "{{ release_ns }}"
         release_values: "{{ harbor_chart_values }}"
         atomic: true

@@ -38,8 +38,10 @@ keycloak_jdbc_params:
 # file is in "keycloakx-dbsql" ConfigMap
 keycloak_sql_gz_b64: keycloak.sql.gz.b64
 
-keycloakx_chart_version: "7.0.1"
 # https://github.com/codecentric/helm-charts/tree/master/charts/keycloakx
+keycloakx_chart_version: "7.0.1"
+keycloakx_release_name: keycloakx
+
 # https://github.com/codecentric/helm-charts/tree/master/charts/keycloakx/values.yaml
 keycloakx_chart_values:
   replicas: 1

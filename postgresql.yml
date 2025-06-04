@@ -12,6 +12,7 @@
   vars:
     kubeconfig: "{{ rke_kubeconfig }}"
     secret_ns: "{{ postgresql_namespace }}"
+    release: "{{ postgresql_release_name }}"
   pre_tasks:
     - name: Get controller facts
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html

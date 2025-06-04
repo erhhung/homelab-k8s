@@ -34,7 +34,7 @@
       kubernetes.core.helm_template:
         chart_ref: oci://ghcr.io/metacontroller/{{ metacontroller_chart_name }}
         chart_version: "{{ metacontroller_chart_version }}"
-        release_name: metacontroller
+        release_name: "{{ metacontroller_release_name }}"
         release_namespace: "{{ metacontroller_namespace }}"
         release_values: "{{ metacontroller_chart_values }}"
         output_dir: /tmp # /tmp/metacontroller-helm/templates

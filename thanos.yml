@@ -18,6 +18,7 @@
     kubeconfig: "{{ rke_kubeconfig }}"
     secret_ns: "{{ monitoring_namespace }}"
     create_ns: false
+    release: "{{ thanos_release_name }}"
   tasks:
     - name: Create Thanos ingress secret
       vars:
@@ -70,7 +71,7 @@
         chart_repo_url: https://charts.bitnami.com/bitnami
         chart_ref: thanos
         chart_version: "{{ thanos_chart_version }}"
-        release_name: thanos
+        release_name: "{{ thanos_release_name }}"
         release_namespace: "{{ monitoring_namespace }}"
         release_values: "{{ thanos_chart_values }}"
         atomic: true

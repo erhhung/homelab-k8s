@@ -6,8 +6,10 @@ logging_secrets:
   credentials: fluent-credentials
   plugin: fluent-plugin-tls
 
-fluent_operator_chart_version: "3.3.0"
 # https://github.com/fluent/helm-charts/tree/main/charts/fluent-operator
+fluent_operator_chart_version: "3.3.0"
+fluent_operator_release_name: fluent-operator
+
 # https://github.com/fluent/helm-charts/tree/main/charts/fluent-operator/values.yaml
 fluent_operator_chart_values:
   containerRuntime: "{{ container_runtime }}"
@@ -31,13 +33,15 @@ fluent_operator_chart_values:
     input:
       tail:
         memBufLimit: 10MB
+
     output:
       # https://github.com/fluent/fluent-operator/tree/master/docs/plugins/fluentbit/output/open_search.md
       # https://docs.fluentbit.io/manual/pipeline/outputs/opensearch (shows default values)
       # https://github.com/fluent/helm-charts/tree/main/charts/fluent-operator/templates/fluentbit-output-opensearch.yaml
       # https://doc.crds.dev/github.com/fluent/fluent-operator/fluentbit.fluent.io/ClusterOutput/v1alpha2#spec-opensearch
       opensearch:
-        host: "{{ opensearch_master_service }}.{{ opensearch_namespace }}.svc.cluster.local"
+        host: "{{ opensearch_service_host }}"
+        port: "{{ opensearch_service_port }}"
         tls:
           crtFile: /fluent-bit/secrets/{{ logging_secrets['plugin'] }}/tls.crt
           keyFile: /fluent-bit/secrets/{{ logging_secrets['plugin'] }}/tls.key
@@ -52,7 +56,15 @@ fluent_operator_chart_values:
             secretKeyRef:
               name: "{{ logging_secrets['credentials'] }}"
               key: opensearch-password
+
+        # index: fluent-bit
+        # enable "Logstash_Format" to auto-generate
+        # index names based on date pattern per-day
+        logstashFormat: On
+        logstashPrefix: fluent-bit
+        logstashDateFormat: "%Y.%m.%d" # strftime
         suppressTypeName: true # _type is deprecated in OpenSearch
+
     filter:
       multiline:
         enable: false # chart does not create any ClusterParser CRs
@@ -87,13 +99,18 @@ remove_log_fields:
 saved_log_search:
   title: k8s-logs
   description: Search Kubernetes logs
-  index_pattern: fluent-bit*
+  index_pattern: fluent-bit-*
   time_field: time
   selected_fields:
     - kubernetes.namespace_name
     - kubernetes.pod_name
     - kubernetes.container_name
     - log
+
+# roll over if too big
+log_index_max_size: 1gb
+# delete after a week
+log_index_max_age: 7d
 
 # https://grafana.com/grafana/dashboards/?search=Fluent&dataSource=prometheus
 logging_grafana_dashboards:

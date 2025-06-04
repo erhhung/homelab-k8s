@@ -15,6 +15,10 @@ spec:
     controller:
       # https://kubernetes.github.io/ingress-nginx/user-guide/nginx-configuration/configmap
       config:
+        # https://kubernetes.github.io/ingress-nginx/user-guide/nginx-configuration/configmap/#use-forwarded-headers
+        use-forwarded-headers: true
+        enable-real-ip: true
+
         # https://kubernetes.github.io/ingress-nginx/user-guide/nginx-configuration/configmap/#http-snippet
         http-snippet: |
           # set custom variable $request_origin = $http_origin

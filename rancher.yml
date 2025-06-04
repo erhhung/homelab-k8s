@@ -78,6 +78,7 @@
     # required kubernetes>=24.2 package only in user virtualenv
     ansible_python_interpreter: "{{ venv_python_interpreter }}"
     kubeconfig: "{{ k3s_kubeconfig }}"
+    release: "{{ rancher_release_name }}"
   tasks:
     - name: Install cert-manager Helm chart
       # this is technically not required when migrating to using "bring-your-own-cert":
@@ -127,7 +128,7 @@
         chart_repo_url: https://releases.rancher.com/server-charts/latest
         chart_ref: rancher
         chart_version: "{{ rancher_chart_version }}"
-        release_name: rancher
+        release_name: "{{ rancher_release_name }}"
         release_namespace: "{{ rancher_namespace }}"
         release_values: "{{ rancher_chart_values }}"
         atomic: true

@@ -14,6 +14,7 @@
   vars:
     kubeconfig: "{{ rke_kubeconfig }}"
     secret_ns: "{{ valkey_namespace }}"
+    release: "{{ valkey_release_name }}"
   pre_tasks:
     - name: Get controller facts
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
