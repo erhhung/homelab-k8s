@@ -4,9 +4,10 @@ exclude_paths:
 
 # https://ansible.readthedocs.io/projects/lint/rules/
 skip_list:
-  - name[template] # {{ .. }} in task name
-  - yaml[colons]   # 2+ spaces after colon
+  - name[template] # {{ }} in task name
+  - yaml[colons] # 2+ spaces after colon
   - yaml[comments] # no space after # char
+  - yaml[line-length] # line over 160 chars
   - jinja[spacing] # no spaces around vars
   - run-once[task]
   - key-order[task]

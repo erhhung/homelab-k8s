@@ -22,22 +22,32 @@
   ansible.builtin.import_playbook: cluster.yml
   tags: cluster
 
-- name: Include storage provisioners playbook
-  ansible.builtin.import_playbook: storage.yml
-  tags: storage
-
-- name: Include MinIO object storage playbook
-  ansible.builtin.import_playbook: minio.yml
-  tags: minio
-
 - name: Include resource manifests playbook
   ansible.builtin.import_playbook: manifests.yml
   tags: manifests
+
+- name: Include storage provisioners playbook
+  ansible.builtin.import_playbook: storage.yml
+  tags: storage
 
 # Harbor depends on NFS storage provisioner
 - name: Include Harbor OCI registry playbook
   ansible.builtin.import_playbook: harbor.yml
   tags: harbor
+
+# MinIO depends on NFS storage provisioner
+- name: Include MinIO object storage playbook
+  ansible.builtin.import_playbook: minio.yml
+  tags: minio
+
+- name: Include cert-manager and PKI playbook
+  ansible.builtin.import_playbook: certmanager.yml
+  tags: certmanager
+
+# Intel Device Plugins depends on cert-manager
+- name: Include Node Feature Discovery playbook
+  ansible.builtin.import_playbook: nodefeatures.yml
+  tags: nodefeatures
 
 - name: Include OpenSearch cluster playbook
   ansible.builtin.import_playbook: opensearch.yml
@@ -76,6 +86,7 @@
   ansible.builtin.import_playbook: istio.yml
   tags: istio
 
+# Argo CD depends on Valkey
 - name: Include Argo CD GitOps tool playbook
   ansible.builtin.import_playbook: argocd.yml
   tags: argocd
@@ -83,6 +94,10 @@
 - name: Include K8s Metacontroller playbook
   ansible.builtin.import_playbook: metacontroller.yml
   tags: metacontroller
+
+- name: Include Ollama LLM server playbook
+  ansible.builtin.import_playbook: ollama.yml
+  tags: ollama
 
 - name: Include virtual clusters playbook
   ansible.builtin.import_playbook: vclusters.yml

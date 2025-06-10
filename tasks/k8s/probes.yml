@@ -97,17 +97,17 @@
     # apply your changes to the latest version and try again"
     - name: Increment retry_count
       ansible.builtin.set_fact:
-        retry_count: "{{ retry_count | default(0) + 1 }}"
+        retry_count: "{{ (retry_count | default(0) | int) + 1 }}"
 
     - name: Delay before retrying
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/pause_module.html
       ansible.builtin.pause:
         seconds: "{{ retry_delay }}"
-      when: retry_count < max_retries
+      when: retry_count | int < max_retries
 
     - name: Retry configuring probes
       ansible.builtin.include_tasks: tasks/k8s/probes.yml # recursion
-      when: retry_count < max_retries
+      when: retry_count | int < max_retries
 
     - name: Set retry_count to zero
       ansible.builtin.set_fact:

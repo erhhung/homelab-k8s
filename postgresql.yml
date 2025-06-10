@@ -2,24 +2,20 @@
 ---
 - name: Install PostgreSQL on RKE cluster
   hosts: "{{ rke_control_plane_host }}"
+  gather_facts: false
   vars_files:
-    - vars/basics.yml
     - vars/kubernetes.yml
     - vars/storage.yml
-    - vars/keycloak.yml
     - vars/monitoring.yml
+    - vars/keycloak.yml
     - vars/postgresql.yml
   vars:
     kubeconfig: "{{ rke_kubeconfig }}"
     secret_ns: "{{ postgresql_namespace }}"
     release: "{{ postgresql_release_name }}"
   pre_tasks:
-    - name: Get controller facts
-      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
-      ansible.builtin.include_tasks: tasks/localfacts.yml
-      when: local_python_interpreter is not defined
-
     - name: Is the monitoring stack ready?
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
       ansible.builtin.include_tasks: tasks/monitoring/stackready.yml
       when: monitoring_stack_ready is not defined
   tasks:

@@ -10,16 +10,23 @@
 # sets the following facts:
 #   index_pattern_id
 ---
+- name: Gather facts about controller
+  # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
+  ansible.builtin.include_tasks: tasks/localfacts.yml
+  when: local_python_interpreter is not defined
+
 - name: Create index pattern
+  delegate_to: localhost
   become: false
   vars:
+    ansible_python_interpreter: "{{ local_python_interpreter }}"
+    # https://opensearch-project.github.io/OpenSearch-Dashboards/docs/openapi/saved_objects/
+    saved_objs_url: "{{ kibana_api_url }}/saved_objects"
     uri_params: &uri_params
       url_username: admin
       url_password: "{{ opensearch_admin_pass }}"
       force_basic_auth: true
       return_content: true
-    # https://opensearch-project.github.io/OpenSearch-Dashboards/docs/openapi/saved_objects/
-    saved_objs_url: "{{ kibana_api_url }}/saved_objects"
   block:
     - name: Get existing patterns
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/uri_module.html

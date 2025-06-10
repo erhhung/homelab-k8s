@@ -7,7 +7,6 @@
   hosts: cluster
   become: true
   vars_files:
-    - vars/basics.yml
     - vars/kubernetes.yml
     - vars/lablabs.rke2.yml
     - vars/vclusters.yml
@@ -48,7 +47,6 @@
   hosts: "{{ rke_control_plane_group }}"
   gather_facts: false
   vars_files: &vars_files
-    - vars/basics.yml
     - vars/kubernetes.yml
   tasks:
     - name: Make RKE kubeconfig readable
@@ -71,7 +69,11 @@
       vars:
         kubeconfig: "{{ rke_kubeconfig }}"
         context: "{{ rke_cluster_name }}"
-        server: https://{{ rke_fqdns[0] }}:6443
+        # rke_fqdns[0] resolves to the virtual IP, but,
+        # for reasons not yet known, the connection is
+        # very flaky, while resolving directly to k8s1
+        # or another control plane node is very stable
+        server: https://{{ rke_fqdns[1] }}:6443
       ansible.builtin.include_tasks: tasks/k8s/kubeconfig.yml
   any_errors_fatal: true
 
@@ -302,10 +304,10 @@
         restart_rke.changed
 
     - name: Register cluster with Rancher
+      when: inventory_hostname == rke_control_plane_host
       vars:
         # required kubernetes>=24.2 package only in user virtualenv
         ansible_python_interpreter: "{{ venv_python_interpreter }}"
-      when: inventory_hostname == rke_control_plane_host
       block:
         - name: Wait for CoreDNS to be ready
           # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_info_module.html
@@ -325,8 +327,16 @@
           retries: 30
           delay: 10
 
-        - name: Apply worker role node label
-          # this could also have been done using "k8s_node_label" config variable of RKE2 role
+        - name: Apply additional node labels
+          vars:
+            labels_by_node: |
+              {% set nodes = {} %}
+              {% for label in additional_node_labels %}
+              {%   for node in label.nodes %}
+              {%     set _ = nodes.setdefault(node, {}).update({label.label: label.value}) %}
+              {%   endfor %}
+              {% endfor %}
+              {{ nodes  }}
           # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_module.html
           kubernetes.core.k8s:
             kubeconfig: "{{ rke_kubeconfig }}"
@@ -335,15 +345,11 @@
             name: "{{ item }}"
             definition:
               metadata:
-                labels:
-                  node-role.kubernetes.io/worker: "true"
+                labels: "{{ labels_by_node[item] }}"
             state: patched
             wait: true
-          # all cluster nodes, including control plane node(s),
-          # can run user workloads, so they are labeled worker
-          # role (control plane nodes have already been labeled
-          # with roles: "control-plane", "etcd", and "master")
           loop: "{{ groups['cluster'] }}"
+          when: item in labels_by_node
 
         - name: Apply registration manifest
           vars:

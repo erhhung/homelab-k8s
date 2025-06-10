@@ -337,7 +337,7 @@ opensearch_chart_values:
       prometheus.io/scrape: "true"
     labelsHeadless: {}
 
-  ingress: # port 9200
+  ingress:
     enabled: true
     tls:
       - secretName: "{{ opensearch_secrets['node-tls'] }}"

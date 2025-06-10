@@ -3,9 +3,9 @@
 - name: Prepare nodes for Longhorn
   tags: prepare
   hosts: k8s_all
+  gather_facts: false
   become: true
   vars_files: &vars_files
-    - vars/basics.yml
     - vars/kubernetes.yml
     - vars/monitoring.yml
     - vars/storage.yml
@@ -20,6 +20,7 @@
       failed_when: false
 
     - name: Is Longhorn already installed?
+      become: false
       vars:
         # required kubernetes>=24.2 package only in user virtualenv
         ansible_python_interpreter: "{{ venv_python_interpreter }}"
@@ -96,8 +97,6 @@
 - name: Create LV for Longhorn PVs
   tags: lvs
   hosts: cluster
-  # https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_strategies.html#rolling-update-batch-size
-  # serial: 1
   become: true
   vars_files:
     - vars/storage.yml
@@ -252,10 +251,6 @@
   hosts: "{{ rke_control_plane_host }}"
   gather_facts: false
   vars_files: *vars_files
-  pre_tasks:
-    - name: Get controller facts
-      ansible.builtin.include_tasks: tasks/localfacts.yml
-      when: local_python_interpreter is not defined
   tasks:
     - name: Import Grafana dashboards
       vars:

@@ -1,8 +1,8 @@
 ---
 - name: Shut down all or specific VMs
   hosts: "{{ targets }}"
+  gather_facts: false
   vars_files:
-    - vars/basics.yml
     - vars/kubernetes.yml
   vars:
     # targets can be overridden on command-line:
@@ -10,9 +10,6 @@
     targets: k8s_all
     # fail fast if host already appears to be shut down
     ansible_ssh_args: -o ConnectTimeout=1s -o ConnectionAttempts=1
-  gather_facts: false
-  ignore_errors: true
-  ignore_unreachable: true
   tasks:
     - name: Shut down worker nodes
       vars:
@@ -35,3 +32,5 @@
           - k3s
       ansible.builtin.include_tasks: tasks/hosts/shutdown.yml
       when: inventory_hostname in groups['_rancher']
+  ignore_unreachable: true
+  ignore_errors: true

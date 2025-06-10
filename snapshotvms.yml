@@ -1,6 +1,8 @@
 ---
 - name: Create/revert/delete VM snapshots
   hosts: "{{ xcp_master }}"
+  gather_facts: false
+  become: true
   vars_files:
     - vars/xcp.yml
   vars:
@@ -14,8 +16,6 @@
     do: create
     date: ""
     desc: ""
-  gather_facts: false
-  become: true
   pre_tasks:
     - name: Validate input vars
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/assert_module.html

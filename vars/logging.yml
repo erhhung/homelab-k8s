@@ -27,8 +27,7 @@ fluent_operator_chart_values:
     crdsEnable: true
 
     # https://doc.crds.dev/github.com/fluent/fluent-operator/fluentbit.fluent.io/FluentBit/v1alpha2#spec-secrets
-    secrets:
-      - "{{ logging_secrets['plugin'] }}"
+    secrets: ["{{ logging_secrets['plugin'] }}"]
 
     input:
       tail:
@@ -60,14 +59,14 @@ fluent_operator_chart_values:
         # index: fluent-bit
         # enable "Logstash_Format" to auto-generate
         # index names based on date pattern per-day
-        logstashFormat: On
+        logstashFormat: true
         logstashPrefix: fluent-bit
         logstashDateFormat: "%Y.%m.%d" # strftime
         suppressTypeName: true # _type is deprecated in OpenSearch
 
     filter:
       multiline:
-        enable: false # chart does not create any ClusterParser CRs
+        enable: false # chart doesn't create any ClusterParser CRs
         emitterMemBufLimit: 10 # MB
 
     serviceMonitor:

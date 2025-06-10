@@ -1,0 +1,177 @@
+nfd_namespace: node-feature-discovery
+
+# https://github.com/kubernetes-sigs/node-feature-discovery/tree/master/deployment/helm/node-feature-discovery
+nfd_chart_version: "0.17.3"
+nfd_release_name: nfd
+
+# https://github.com/kubernetes-sigs/node-feature-discovery/tree/master/deployment/helm/node-feature-discovery/values.yaml
+nfd_chart_values:
+  nameOverride: "{{ nfd_release_name }}"
+
+  # https://kubernetes-sigs.github.io/node-feature-discovery/stable/get-started/introduction.html#nfd-master
+  master:
+    enable: true
+    replicaCount: 1
+    revisionHistoryLimit: 2
+
+    resources:
+      requests:
+        cpu: 10m
+        memory: 32Mi
+      limits:
+        cpu: 20m
+        memory: 64Mi
+
+    # run NFD-Master on a control plane node
+    affinity:
+      nodeAffinity:
+        # clear affinity rules from default chart values
+        preferredDuringSchedulingIgnoredDuringExecution:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          nodeSelectorTerms:
+            - matchExpressions:
+                - key: node-role.kubernetes.io/control-plane
+                  operator: Exists
+
+    tolerations:
+      - key: node-role.kubernetes.io/control-plane
+        operator: Exists
+        effect: NoSchedule
+
+    startupProbe: &probe
+      periodSeconds: 10
+      timeoutSeconds: 3
+      failureThreshold: 3
+    readinessProbe: *probe
+    livenessProbe: *probe
+
+    # https://kubernetes-sigs.github.io/node-feature-discovery/stable/reference/master-configuration-reference.html
+    config:
+      # whitelist is single regex pattern to filter
+      # labels ("basename" portion only) to publish
+      # labelWhiteList: ""
+      resyncPeriod: 6h
+
+  # https://kubernetes-sigs.github.io/node-feature-discovery/stable/get-started/introduction.html#nfd-worker
+  worker: # DaemonSet
+    enable: true
+    revisionHistoryLimit: 2
+
+    resources:
+      requests:
+        cpu: 5m
+        memory: 24Mi
+      limits:
+        cpu: 10m
+        memory: 64Mi
+
+    readinessProbe: *probe
+    livenessProbe: *probe
+
+    # https://kubernetes-sigs.github.io/node-feature-discovery/stable/reference/worker-configuration-reference.html
+    config:
+      core:
+        # hardware features will
+        # rarely change, if ever
+        sleepInterval: 15m
+
+  # https://kubernetes-sigs.github.io/node-feature-discovery/stable/get-started/introduction.html#nfd-topology-updater
+  topologyUpdater:
+    enable: false
+
+  # https://kubernetes-sigs.github.io/node-feature-discovery/stable/get-started/introduction.html#nfd-gc
+  gc:
+    enable: true
+    replicaCount: 1
+    revisionHistoryLimit: 2
+    interval: 1h
+
+    resources:
+      requests:
+        cpu: 5m
+        memory: 32Mi
+
+  prometheus: # PodMonitor
+    enable: "{{ prometheus_crds_installed }}"
+    labels:
+      release: "{{ monitoring_release_name }}"
+    scrapeInterval: 15m
+
+# [{name,url} or {name,def}]
+additional_node_feature_rules:
+  - name: intel-dp-devices
+    url: https://raw.githubusercontent.com/intel/intel-device-plugins-for-kubernetes/refs/heads/main/deployments/nfd/overlays/node-feature-rules/node-feature-rules.yaml
+
+# https://github.com/intel/intel-device-plugins-for-kubernetes/tree/main/INSTALL.md
+# https://github.com/intel/helm-charts/tree/main/charts/device-plugin-operator
+intel_device_plugins_namespace: intel-system
+intel_dp_operator_chart_version: "0.32.1"
+intel_dp_operator_release_name: intel-device-plugins-operator
+
+# https://github.com/intel/helm-charts/tree/main/charts/device-plugin-operator/values.yaml
+intel_dp_operator_chart_values:
+  manager:
+    # enable operator support for these devices
+    devices:
+      gpu: true
+      fpga: true
+      # QuickAssist Technology
+      # https://www.intel.com/content/www/us/en/products/docs/accelerator-engines/what-is-intel-qat.html
+      qat: true
+      # Software Guard Extensions
+      # https://www.intel.com/content/www/us/en/products/docs/accelerator-engines/software-guard-extensions.html
+      sgx: true
+      # Data Streaming Accelerator
+      # https://www.intel.com/content/www/us/en/products/docs/accelerator-engines/data-streaming-accelerator.html
+      dsa: true
+      # In-Memory Analytics Accelerator
+      # https://www.intel.com/content/www/us/en/products/docs/accelerator-engines/in-memory-analytics-accelerator.html
+      iaa: true
+      # Dynamic Load Balancer
+      # https://www.intel.com/content/www/us/en/developer/articles/technical/proof-points-of-dynamic-load-balancer-dlb.html
+      dlb: true
+
+  # chart doesn't currently support affinity rules
+  nodeSelector:
+    kubernetes.io/arch: amd64 # of course!
+    # run the controller on a control plane node
+    node-role.kubernetes.io/control-plane: "true"
+
+  tolerations:
+    - key: node-role.kubernetes.io/control-plane
+      operator: Exists
+      effect: NoSchedule
+
+  resources:
+    requests:
+      cpu: 20m
+      memory: 32Mi
+    limits:
+      cpu: 100m
+      memory: 64Mi
+
+intel_device_plugin_crs:
+  # https://intel.github.io/intel-device-plugins-for-kubernetes/cmd/gpu_plugin/README.html
+  # https://intel.github.io/intel-technology-enabling-for-openshift/development/device_plugins/deploy_gpu.html
+  gpu:
+    apiVersion: deviceplugin.intel.com/v1
+    kind: GpuDevicePlugin
+    metadata:
+      name: intel-gpu-plugin
+    spec:
+      image: intel/intel-gpu-plugin:{{ intel_dp_operator_chart_version }}
+      nodeSelector:
+        intel.feature.node.kubernetes.io/gpu: "true"
+      # number of containers that
+      # can share same GPU device
+      sharedDevNum: 1
+      # "balanced", "packed" or "none"
+      preferredAllocationPolicy: none
+      enableMonitoring: true
+      logLevel: 4
+
+# https://docs.nvidia.com/datacenter/cloud-native/gpu-operator/latest/overview.html
+# https://docs.nvidia.com/datacenter/cloud-native/gpu-operator/latest/getting-started.html
+# https://docs.rke2.io/advanced#deploy-nvidia-operator
+nvidia_gpu_operator_namespace: nvidia-system
+# TODO: procure mini PC with an NVIDIA card!

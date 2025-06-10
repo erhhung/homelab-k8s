@@ -4,10 +4,9 @@
   hosts: control_plane
   gather_facts: true
   pre_tasks:
-    - name: Get controller facts
+    - name: Gather facts about controller
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
       ansible.builtin.include_tasks: tasks/localfacts.yml
-      when: local_python_interpreter is not defined
   tasks:
     - name: Dump "ansible_facts"
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/debug_module.html
@@ -130,10 +129,9 @@
   hosts: localhost
   gather_facts: false
   vars_files:
-    - vars/basics.yml
     - vars/kubernetes.yml
+    - vars/storage.yml
     - vars/harbor.yml
-    - vars/argocd.yml
   tasks:
     - name: Write Helm chart values file
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/shell_module.html
@@ -147,8 +145,6 @@
       loop:
         - json: "{{ harbor_chart_values | to_json }}"
           dest: values-harbor.yaml
-        - json: "{{ argocd_chart_values | to_json }}"
-          dest: values-argocd.yaml
       loop_control:
         label: "{{ item.dest }}"
       changed_when: true
@@ -337,7 +333,7 @@
           - desc: empty list
             expr: []
           - desc: 1-key dict
-            expr: {foo: bar}
+            expr: { foo: bar }
           - desc: empty dict
             expr: {}
           - desc: number one
@@ -349,6 +345,19 @@
       loop: "{{ expressions }}"
       loop_control:
         label: "{{ item.desc }}"
+
+- name: Debug various Ansible lookups
+  tags: lookups
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Debug url lookup
+      vars:
+        url: https://raw.githubusercontent.com/intel/intel-device-plugins-for-kubernetes/refs/heads/main/deployments/nfd/overlays/node-feature-rules/node-feature-rules.yaml
+        # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/url_lookup.html
+        content: "{{ lookup('ansible.builtin.url', url, split_lines=false) | from_yaml }}"
+      ansible.builtin.debug:
+        var: content
 
 - name: Useful collection of tasks
   tags: tasks

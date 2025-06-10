@@ -1,0 +1,217 @@
+ollama_namespace: ollama
+ollama_host_name: ollama # alias of "homelab"
+
+# remember to add ollama.fourteeners.local to pfSense DNS
+# as an alias of homelab.fourteeners.local: 192.168.0.221
+# https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_filters.html#products
+ollama_fqdn: "{{ [ollama_host_name] | product(search_domains) | map('join','.') | first }}"
+
+ollama_service_host: "{{ ollama_release_name }}.{{ ollama_namespace }}.svc.cluster.local"
+ollama_service_port: 11434
+
+ollama_secrets:
+  ingress: ollama-tls
+
+# models to pull on startup
+# https://ollama.com/search
+ollama_models:
+  - llama3.2:3b # 2.0GB
+  #- qwen2.5:7b # 4.7GB
+
+  # NOTE: the latest "Ollama Portable Zip" from
+  # IPEX-LLM is based on an Ollama version that
+  # is too old to run some of the latest models
+  #- deepseek-r1:8b # 5.2GB
+
+# https://github.com/cowboysysop/charts/tree/master/charts/ollama
+ollama_chart_version: "2.1.0"
+ollama_release_name: ollama
+
+# https://github.com/cowboysysop/charts/tree/master/charts/ollama/values.yaml
+ollama_chart_values:
+  replicaCount: 1
+  revisionHistoryLimit: 2
+
+  # run Ollama on a GPU-capable node if possible
+  # based on label set by Node Feature Discovery
+  affinity:
+    nodeAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 1
+          preference:
+            matchExpressions: # Intel GPU
+              - key: intel.feature.node.kubernetes.io/gpu
+                operator: Exists
+        - weight: 1
+          preference:
+            matchExpressions: # NVIDIA GPU
+              - key: feature.node.kubernetes.io/pci-10de.present
+                operator: Exists
+        - weight: 1
+          preference:
+            matchExpressions:
+              # custom label to select latest generation GPU
+              - key: feature.node.kubernetes.io/gpu.preferred
+                operator: Exists
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 4Gi
+      gpu.intel.com/i915: "1"
+    limits:
+      cpu: 1000m
+      memory: 8Gi # should be enough for model
+      gpu.intel.com/i915: "1"
+
+  persistence:
+    enabled: true
+    # don't need replicas of huge model files!
+    storageClass: "{{ storage_classes['single'] }}"
+    size: 6Gi # should be enough for one model
+
+  image:
+    pullPolicy: Always
+    # use custom Docker image (files/ollama/Dockerfile) that
+    # runs "Ollama Portable Zip" on Intel GPU with IPEX-LLM:
+    # https://github.com/intel/ipex-llm/tree/main/docs/mddocs/Quickstart/ollama_portable_zip_quickstart.md
+    registry: "{{ harbor_container_registry }}"
+    repository: library/ollama-ipex-llm
+    tag: latest
+
+  # Environment variables: ollama serve --help
+  # https://github.com/ollama/ollama/issues/2941#issuecomment-2322778733
+  extraEnvVars:
+    # run Gin in production mode
+    - name: GIN_MODE
+      value: release
+    # enable Intel GPU detection
+    - name: OLLAMA_INTEL_GPU
+      value: "1"
+    # force all layers to use GPU
+    - name: OLLAMA_NUM_GPU
+      value: "999"
+    # force Ollama to use one GPU
+    - name: ONEAPI_DEVICE_SELECTOR
+      value: level_zero:0
+    # limit to 1 request at a time so
+    # cluster doesn't grind to a halt!
+    - name: OLLAMA_NUM_PARALLEL
+      value: "1"
+    # memory limit only holds 1 model
+    - name: OLLAMA_MAX_LOADED_MODELS
+      value: "1"
+    # fail model loading after
+    - name: OLLAMA_LOAD_TIMEOUT
+      value: 10m
+    # keep model in memory for
+    - name: OLLAMA_KEEP_ALIVE
+      value: 30m
+    # per IPEX-LLM recommendation
+    - name: SYCL_PI_LEVEL_ZERO_USE_IMMEDIATE_COMMANDLISTS
+      value: "1"
+    # per llama.cpp recommendation
+    - name: SYCL_CACHE_PERSISTENT
+      value: "1"
+    # support ext_intel_free_memory
+    - name: ZES_ENABLE_SYSMAN
+      value: "1"
+
+  podSecurityContext:
+    fsGroup: 2000
+  securityContext:
+    capabilities:
+      drop: ["ALL"]
+    # allow Ollama to create
+    #  ~/.ollama/id_ed25519
+    readOnlyRootFilesystem: false
+    runAsNonRoot: true
+    runAsUser: 1000
+
+  readinessProbe: &probe
+    initialDelaySeconds: 10
+    periodSeconds: 30
+    timeoutSeconds: 10
+    failureThreshold: 6
+  livenessProbe: *probe
+
+  ingress:
+    enabled: true
+    tls:
+      - secretName: "{{ ollama_secrets['ingress'] }}"
+        hosts: ["{{ ollama_fqdn }}"]
+    ingressClassName: "{{ rke_ingress_class }}"
+    annotations:
+      nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+      nginx.ingress.kubernetes.io/backend-protocol: HTTP
+    hosts:
+      - host: "{{ ollama_fqdn }}"
+        paths: ["/"]
+    pathType: Prefix
+
+  extraDeploy:
+    # create LoadBalancer service to listen on non-TLS
+    # port 11434 in addition to the ingress controller
+    # on HTTPS port 443
+    - |-
+      apiVersion: v1
+      kind: Service
+      metadata:
+        name: {{ ollama_release_name }}-external
+        labels:
+          app.kubernetes.io/name: ollama
+          app.kubernetes.io/instance: {{ ollama_release_name }}
+      spec:
+        type: LoadBalancer
+        loadBalancerIP: {{ rke_lb_vip }} # ingress IP
+        ports:
+          - name: http
+            port: {{ ollama_service_port }}
+            protocol: TCP
+            targetPort: http
+            appProtocol: http
+        selector:
+          app.kubernetes.io/name: ollama
+          app.kubernetes.io/instance: {{ ollama_release_name }}
+
+    # create Job to automatically pull models on startup
+    - |-
+      apiVersion: batch/v1
+      kind: Job
+      metadata:
+        name: {{ ollama_release_name }}-models
+        labels:
+          app.kubernetes.io/name: ollama
+          app.kubernetes.io/instance: {{ ollama_release_name }}
+      spec:
+        template:
+          spec:
+            containers:
+              - name: ollama
+                # use official image as client
+                image: docker.io/ollama/ollama
+                imagePullPolicy: IfNotPresent
+                command:
+                  - bash
+                args:
+                  - -c
+                  - |
+                    (apt-get update; apt-get install curl -y) &> /dev/null
+                    until curl -s $OLLAMA_HOST; do
+                      echo 'Waiting for Ollama...'
+                      sleep 5
+                    done
+                    echo -e '!\n\nPulling models...'
+                    for model in {{ ollama_models | join(' ') }}; do
+                      ollama pull $model || exit $?
+                    done
+                env:
+                  - name: OLLAMA_HOST
+                    value: {{ ollama_release_name }}:{{ ollama_service_port }}
+            restartPolicy: OnFailure
+
+        # allow 5 minutes per model
+        activeDeadlineSeconds: {{ 300 * ollama_models | length }}
+        backoffLimit: 2 # retry twice
+        # keep pod around for an hour
+        ttlSecondsAfterFinished: 3600

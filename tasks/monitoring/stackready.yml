@@ -2,6 +2,8 @@
 # so that ServiceMonitor resources can be created
 # and whether Grafana API server is online
 #
+# pass the following vars:
+#   kubeconfig  [optional] default=<RKE>
 # sets the following facts:
 #   prometheus_crds_installed: true/false
 #   grafana_api_server_online: true/false
@@ -20,7 +22,7 @@
         ansible_python_interpreter: "{{ venv_python_interpreter }}"
       # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_info_module.html
       kubernetes.core.k8s_info:
-        kubeconfig: "{{ rke_kubeconfig }}"
+        kubeconfig: "{{ kubeconfig | default(rke_kubeconfig) }}"
         api_version: apiextensions.k8s.io/v1
         kind: CustomResourceDefinition
         name: "{{ check_crd }}"
@@ -32,9 +34,11 @@
         url: "{{ api_base }}"
         # if Grafana hasn't been installed, status code
         # would be -1 for CERTIFICATE_VERIFY_FAILED due
-        # to Nginx returning the default cert; otherwise,
-        # it would be 401 due to missing API credentials
-        status_code: -1, 401
+        # to Nginx returning its default cert; it would
+        # be 502 Bad Gateway if the Grafana pod is down;
+        # otherwise, it would be 401 due to missing API
+        # credentials
+        status_code: [-1, 401, 502]
       register: grafana_api
 
     - name: Set output facts about stack readiness

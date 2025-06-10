@@ -147,14 +147,14 @@ postgresql_chart_values:
           # will be created by Ansible
           secretName: "{{ postgresql_secrets['scraper-tls'] }}"
 
-  service:
+  service: # port 5432
     # since PostgreSQL does not talk HTTP, we do not create
     # an Ingress; instead, we create a LoadBalancer service:
     # https://github.com/bitnami/charts/tree/main/bitnami/postgresql-ha#configure-the-way-how-to-expose-postgresql
     type: LoadBalancer
     # https://docs.ansible.com/ansible/latest/collections/ansible/utils/ipmath_filter.html
     # (requires Python package "netaddr" on Ansible controller)
-    loadBalancerIP: "{{ rke_lb_vip | ansible.utils.ipmath(1) }}" # port 5432
+    loadBalancerIP: "{{ rke_lb_vip | ansible.utils.ipmath(1) }}"
 
   metrics:
     # adds postgres-exporter sidecar container:

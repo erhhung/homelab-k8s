@@ -3,8 +3,8 @@
 ---
 - name: Create resources on RKE cluster
   hosts: "{{ rke_control_plane_host }}"
+  gather_facts: false
   vars_files:
-    - vars/basics.yml
     - vars/kubernetes.yml
   vars:
     # required kubernetes>=24.2 package only in user virtualenv
@@ -13,7 +13,8 @@
     - name: Apply Kubernetes manifests
       vars:
         # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/fileglob_lookup.html
-        manifests: "{{ lookup('ansible.builtin.fileglob', 'manifests/*.y*ml', wantlist=True) }}"
+        # https://docs.ansible.com/ansible/latest/plugins/lookup.html#forcing-lookups-to-return-lists-query-and-wantlist-true
+        manifests: "{{ query('ansible.builtin.fileglob', 'manifests/*.y*ml') }}"
       # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_module.html
       kubernetes.core.k8s:
         kubeconfig: "{{ rke_kubeconfig }}"

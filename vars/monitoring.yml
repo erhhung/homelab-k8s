@@ -307,7 +307,7 @@ prometheus_stack_chart_values:
             storageClassName: "{{ storage_classes['single'] }}"
             resources:
               requests:
-                storage: 5Gi
+                storage: 6Gi
 
       persistentVolumeClaimRetentionPolicy:
         whenScaled: Retain
@@ -937,7 +937,7 @@ prometheus_stack_chart_values:
         memory: 16Mi
       limits:
         cpu: 50m
-        memory: 64Mi
+        memory: 128Mi
 
     volumes:
       # volume to be mounted in

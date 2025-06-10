@@ -55,18 +55,33 @@
   vars_files:
     - vars/packages.yml
   tasks:
+    - name: Add required Apt repositories
+      become: true
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/apt_repository_module.html
+      ansible.builtin.apt_repository:
+        repo: "{{ item[1] }}"
+        state: present
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/subelements_filter.html
+      loop: "{{ add_apt_repositories | ansible.builtin.subelements('repos') }}"
+      loop_control:
+        label: "{{ item[0].hosts | join(',') ~'|'~ item[1] }}"
+      when: inventory_hostname in item[0].hosts
+
     - name: Install required Apt packages
       become: true
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/apt_module.html
       ansible.builtin.apt:
-        name: "{{ install_apt_packages }}"
+        name: "{{ item.packages }}"
         state: present
-        force_apt_get: true
         update_cache: true
+        force_apt_get: true
         install_recommends: false
-      when: install_apt_packages | length > 0
-      # Could fail due to normal Apt updates that
-      # hold the lock, so retry until successful
+      loop: "{{ install_apt_packages }}"
+      loop_control:
+        label: "{{ item.hosts | join(',') ~'|...' }}"
+      when: inventory_hostname in item.hosts
+      # task could fail due to normal Apt updates
+      # that hold lock, so retry until successful
       # https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_loops.html#retrying-a-task-until-a-condition-is-met
       retries: 5
       delay: 5
@@ -79,7 +94,6 @@
         name: "{{ install_pip_packages }}"
         state: present
         virtualenv: "{{ ansible_user_virtualenv }}"
-      when: install_pip_packages | length > 0
 
     - name: Install useful Helm plugins
       # plugins are installed in the user's home

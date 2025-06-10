@@ -1,0 +1,54 @@
+certmanager_namespace: cert-manager
+
+# https://github.com/cert-manager/cert-manager/tree/master/deploy/charts/cert-manager
+certmanager_chart_version: "1.17.2"
+certmanager_release_name: cert-manager
+
+# https://github.com/cert-manager/cert-manager/tree/master/deploy/charts/cert-manager/values.yaml
+certmanager_chart_values:
+  crds:
+    enabled: true
+    # let Helm delete the CRDs when uninstalling
+    # (this will cause the GC to also delete all
+    # CRs, like Certificates & Issuers, but they
+    # can be recreated by our playbook)
+    keep: false
+
+  # controller
+  replicaCount: 1
+  resources: &resources
+    requests:
+      cpu: 10m
+      memory: 32Mi
+
+  webhook:
+    replicaCount: 1
+    resources: *resources
+    serviceType: ClusterIP
+    securePort: 10250
+
+  cainjector:
+    enabled: true
+    replicaCount: 1
+    resources:
+      requests:
+        cpu: 10m
+        memory: 64Mi
+
+  # create Helm post-install hook Job that waits
+  # for the webhook endpoint to become available
+  startupapicheck:
+    enabled: true
+    timeout: 1m
+
+  prometheus:
+    enabled: true
+    servicemonitor:
+      enabled: "{{ prometheus_crds_installed }}"
+      labels:
+        release: "{{ monitoring_release_name }}"
+      # targetPort value before chart
+      # version 1.18.x must be number
+      targetPort: 9402 # http-metrics
+      path: /metrics
+      interval: 60s

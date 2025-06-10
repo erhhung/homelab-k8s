@@ -1,0 +1,38 @@
+# https://cert-manager.io/docs/
+# https://cert-manager.io/docs/installation/helm/
+---
+- name: Install Certificate Manager
+  hosts:
+    - "{{ k3s_control_plane_host }}"
+    - "{{ rke_control_plane_host }}"
+  gather_facts: false
+  vars_files:
+    - vars/kubernetes.yml
+    - vars/monitoring.yml
+    - vars/certmanager.yml
+  vars:
+    # required kubernetes>=24.2 package only in user virtualenv
+    ansible_python_interpreter: "{{ venv_python_interpreter }}"
+    # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/ternary_filter.html
+    cluster: "{{ (inventory_hostname == k3s_control_plane_host) | ternary('k3s','rke') }}"
+    kubeconfig: "{{ vars[cluster ~'_kubeconfig'] }}"
+  pre_tasks:
+    - name: Is the monitoring stack ready?
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
+      ansible.builtin.include_tasks: tasks/monitoring/stackready.yml
+      when: monitoring_stack_ready is not defined
+  tasks:
+    - name: Install cert-manager Helm chart
+      # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/helm_module.html
+      kubernetes.core.helm:
+        kubeconfig: "{{ kubeconfig }}"
+        chart_repo_url: https://charts.jetstack.io
+        chart_ref: cert-manager
+        chart_version: "{{ certmanager_chart_version }}"
+        release_name: "{{ certmanager_release_name }}"
+        release_values: "{{ certmanager_chart_values }}"
+        release_namespace: "{{ certmanager_namespace }}"
+        create_namespace: true
+        atomic: true
+        wait: true
+  any_errors_fatal: true

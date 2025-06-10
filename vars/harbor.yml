@@ -66,21 +66,22 @@ harbor_chart_values:
     # EOF
     tokenKey: "{{ harbor_ca_key }}"
     # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/file_lookup.html
-    tokenCert: "{{ lookup('ansible.builtin.file', 'vars/harbor/ca.crt', rstrip=false) }}"
+    tokenCert: "{{ lookup('ansible.builtin.file', 'files/harbor/ca.crt', rstrip=false) }}"
 
   registry:
     secret: "{{ harbor_secret }}"
     credentials:
-      username: admin
+      username: "{{ harbor_admin_user }}"
       password: "{{ harbor_admin_pass }}"
-      # username and password values will actually be ignored
-      # because we set htpasswdString to fixed value so that
-      # Helm template won't generate new value each time via
-      # htpasswd function, which uses random salt:
+      # username and password values will be ignored because
+      # we set htpasswdString to a fixed string so that Helm
+      # template won't generate a new string each time using
+      # htpasswd function, which uses a random salt:
       # htpasswd -nbBC 10 $HARBOR_USER $HARBOR_PASS | \
       #                tr -d '\n' | sed 's/$2y/$2a/'
-      htpasswdString: |-
-        admin:$2a$10$DrFWro1.BxgRJ.stQoqSyOx2cjaIC5AoROgDOODjP.NgOj5wFAPWa
+      htpasswdString: >-
+        {{ harbor_admin_user }}:{{ harbor_admin_pass |
+           ansible.builtin.password_hash('bcrypt', salt=bcrypt_salt, rounds=bcrypt_rounds) }}
 
   jobservice:
     secret: "{{ harbor_secret }}"
