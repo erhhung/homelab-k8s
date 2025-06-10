@@ -4,12 +4,11 @@
 ---
 - name: Install Keycloak on RKE cluster
   hosts: "{{ rke_control_plane_host }}"
+  gather_facts: false
   vars_files:
-    - vars/basics.yml
     - vars/kubernetes.yml
-    - vars/storage.yml
-    - vars/postgresql.yml
     - vars/monitoring.yml
+    - vars/postgresql.yml
     - vars/keycloak.yml
   vars:
     # required kubernetes>=24.2 package only in user virtualenv
@@ -19,12 +18,8 @@
     create_ns: false
     release: "{{ keycloakx_release_name }}"
   pre_tasks:
-    - name: Get controller facts
-      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
-      ansible.builtin.include_tasks: tasks/localfacts.yml
-      when: local_python_interpreter is not defined
-
     - name: Is the monitoring stack ready?
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
       ansible.builtin.include_tasks: tasks/monitoring/stackready.yml
       when: monitoring_stack_ready is not defined
 
@@ -58,7 +53,7 @@
       vars:
         # gzip-compressed and base64-encoded SQL is
         # ~80K, well under 256K limit for ConfigMap
-        db_file: vars/keycloak/keycloak.sql.gz.age
+        db_file: files/keycloak/keycloak.sql.gz.age
 
         # use the default Python interpreter on Ansible controller
         ansible_python_interpreter: "{{ default_python_interpreter }}"
@@ -140,7 +135,7 @@
     - name: Create {{ keycloak_configmaps['admin'] }} ConfigMap
       vars:
         files:
-          - vars/keycloak/profile.sh
+          - files/keycloak/profile.sh
         data: |
           {% set data = {} %}
           {% for file in files %}

@@ -3,16 +3,23 @@
 # pass the following vars:
 #   policy <required> {name,policy}
 ---
+- name: Gather facts about controller
+  # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
+  ansible.builtin.include_tasks: tasks/localfacts.yml
+  when: local_python_interpreter is not defined
+
 - name: Apply OpenSearch ISM policy
+  delegate_to: localhost
   become: false
   vars:
+    ansible_python_interpreter: "{{ local_python_interpreter }}"
+    # https://docs.opensearch.org/docs/latest/im-plugin/ism/api
+    policy_url: "{{ opensearch_url }}/_plugins/_ism/policies/{{ policy['name'] }}"
     uri_params: &uri_params
       url_username: admin
       url_password: "{{ opensearch_admin_pass }}"
       force_basic_auth: true
       return_content: true
-    # https://docs.opensearch.org/docs/latest/im-plugin/ism/api
-    policy_url: "{{ opensearch_url }}/_plugins/_ism/policies/{{ policy['name'] }}"
   block:
     - name: Get ISM policy if exists
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/uri_module.html
@@ -47,5 +54,6 @@
         body:
           policy: "{{ policy['policy'] }}"
         status_code: [200, 201]
-      changed_when: true
+      # update almost never changes anything
+      changed_when: ism_policy.status == 404
   any_errors_fatal: true

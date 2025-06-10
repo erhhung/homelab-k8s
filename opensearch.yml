@@ -7,7 +7,6 @@
   hosts: "{{ rke_control_plane_host }}"
   gather_facts: false
   vars_files: &vars_files
-    - vars/basics.yml
     - vars/kubernetes.yml
     - vars/storage.yml
     - vars/monitoring.yml
@@ -144,10 +143,6 @@
   hosts: "{{ rke_control_plane_host }}"
   gather_facts: false
   vars_files: *vars_files
-  pre_tasks:
-    - name: Get controller facts
-      ansible.builtin.include_tasks: tasks/localfacts.yml
-      when: local_python_interpreter is not defined
   tasks:
     - name: Create Dashboards ingress secret
       vars:

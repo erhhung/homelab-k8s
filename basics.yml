@@ -85,6 +85,7 @@
 - name: Configure network settings
   tags: network
   hosts: k8s_all
+  gather_facts: false
   become: true
   vars_files:
     - vars/basics.yml
@@ -211,6 +212,7 @@
 - name: Customize login MOTD messages
   tags: motd
   hosts: k8s_all
+  gather_facts: false
   become: true
   tasks:
     - name: Suppress select MOTD messages
@@ -231,9 +233,30 @@
         mode: "0755"
   any_errors_fatal: true
 
+- name: Manage Linux users and groups
+  tags: groups
+  hosts: k8s_all
+  gather_facts: false
+  become: true
+  vars_files:
+    - vars/basics.yml
+  tasks:
+    - name: Add users to Linux groups
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/user_module.html
+      ansible.builtin.user:
+        name: "{{ item.user }}"
+        groups: "{{ item.groups }}"
+        append: true # IMPORTANT!
+      loop: "{{ add_users_to_groups }}"
+      loop_control:
+        label: "{{ item.user ~'|'~ item.groups | join(',') }}"
+      when: inventory_hostname in item.hosts
+
 - name: Add CA certs to trust store
   tags: certs
   hosts: k8s_all
+  gather_facts: false
+  become: true
   pre_tasks:
     - name: Fetch CA certs from PKI
       delegate_to: "{{ pki_host }}"
@@ -244,7 +267,6 @@
       changed_when: false
   tasks:
     - name: Add certs to trust store
-      become: true
       vars:
         # split chain into individual intermediate and root CA certs
         chain: "{{ hostvars[groups['k8s_all'][0]]['cat_chain'] }}"
@@ -264,7 +286,6 @@
       notify: Update CA trust store
   handlers:
     - name: Update CA trust store
-      become: true
       ansible.builtin.command: update-ca-certificates
       changed_when: true
   any_errors_fatal: true

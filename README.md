@@ -25,24 +25,25 @@ All cluster services will be provisioned with TLS certificates from Erhhung's pr
 
 ## Service Endpoints
 
-|                  Service Endpoint | Description
-|----------------------------------:|:----------------------
-| https://rancher.fourteeners.local | Rancher Server console
-|  https://harbor.fourteeners.local | Harbor OCI registry
-|   https://minio.fourteeners.local | MinIO console
-|      https://s3.fourteeners.local | MinIO S3 API
-| opensearch.fourteeners.local:9200 | OpenSearch _(HTTPS only)_
-|  https://kibana.fourteeners.local | OpenSearch Dashboards
-|   postgres.fourteeners.local:5432 | PostgreSQL via Pgpool _(mTLS only)_
-|     https://sso.fourteeners.local | Keycloak IAM console
-|     valkey.fourteeners.local:6379 <br/> valkey<i>{1..6}</i>.fourteeners.local:6379 | Valkey cluster _(mTLS only)_
-| https://grafana.fourteeners.local | Grafana dashboards
-| https://metrics.fourteeners.local | Prometheus UI _(Keycloak SSO)_
-|  https://alerts.fourteeners.local | Alertmanager UI _(Keycloak SSO)_
-|  https://thanos.fourteeners.local | Thanos Query UI
-| https://rule.thanos.fourteeners.local <br/> https://store.thanos.fourteeners.local <br/> https://bucket.thanos.fourteeners.local <br/> https://compact.thanos.fourteeners.local | Thanos component status UIs
-|   https://kiali.fourteeners.local | Kiali console _(Keycloak SSO)_
-|  https://argocd.fourteeners.local | Argo CD console
+|                       Service Endpoint | Description
+|---------------------------------------:|:----------------------
+|      https://rancher.fourteeners.local | Rancher Server console
+|       https://harbor.fourteeners.local | Harbor OCI registry
+|        https://minio.fourteeners.local | MinIO console
+|           https://s3.fourteeners.local | MinIO S3 API
+|      opensearch.fourteeners.local:9200 | OpenSearch _(HTTPS only)_
+|       https://kibana.fourteeners.local | OpenSearch Dashboards
+|        postgres.fourteeners.local:5432 | PostgreSQL via Pgpool _(mTLS only)_
+|          https://sso.fourteeners.local | Keycloak IAM console
+|          valkey.fourteeners.local:6379 <br/> valkey<i>{1..6}</i>.fourteeners.local:6379 | Valkey cluster _(mTLS only)_
+|      https://grafana.fourteeners.local | Grafana dashboards
+|      https://metrics.fourteeners.local | Prometheus UI _(Keycloak SSO)_
+|       https://alerts.fourteeners.local | Alertmanager UI _(Keycloak SSO)_
+|       https://thanos.fourteeners.local | Thanos Query UI
+|  https://rule.thanos.fourteeners.local <br/> https://store.thanos.fourteeners.local <br/> https://bucket.thanos.fourteeners.local <br/> https://compact.thanos.fourteeners.local | Thanos component status UIs
+|        https://kiali.fourteeners.local | Kiali console _(Keycloak SSO)_
+|       https://argocd.fourteeners.local | Argo CD console
+|  http://ollama.fourteeners.local:11434 | Ollama LLM server
 
 ## Installation Sources
 
@@ -54,10 +55,17 @@ All cluster services will be provisioned with TLS certificates from Erhhung's pr
     * Install on hosts `k8s1`-`k8s4` using the [RKE2 Ansible Role](https://github.com/lablabs/ansible-role-rke2) with HA mode enabled
 - [X] [NFS Dynamic Provisioners](https://computingforgeeks.com/configure-nfs-as-kubernetes-persistent-volume-storage/) — create persistent volumes on NFS shares
     * Install on K3s and RKE clusters using the [`nfs-subdir-external-provisioner`](https://github.com/kubernetes-sigs/nfs-subdir-external-provisioner/) Helm chart
-- [X] [MinIO Object Storage](https://github.com/minio/minio) — S3-compatible object storage with console
-    * Install on main RKE cluster using the [MinIO Operator](https://min.io/docs/minio/kubernetes/upstream/operations/install-deploy-manage/deploy-operator-helm.html) and [MinIO Tenant](https://min.io/docs/minio/kubernetes/upstream/operations/install-deploy-manage/deploy-minio-tenant-helm.html) Helm charts
 - [X] [Harbor Container Registry](https://goharbor.io/) — private OCI container and [Helm chart](https://goharbor.io/docs/main/working-with-projects/working-with-oci/working-with-helm-oci-charts/) registry
     * Install on K3s cluster using the [`harbor`](https://github.com/goharbor/harbor-helm/) Helm chart
+- [X] [MinIO Object Storage](https://github.com/minio/minio) — S3-compatible object storage with console
+    * Install on main RKE cluster using the [MinIO Operator](https://min.io/docs/minio/kubernetes/upstream/operations/install-deploy-manage/deploy-operator-helm.html) and [MinIO Tenant](https://min.io/docs/minio/kubernetes/upstream/operations/install-deploy-manage/deploy-minio-tenant-helm.html) Helm charts
+- [X] [Certificate Manager](https://cert-manager.io/) — X.509 certificate management for Kubernetes
+    * Install on K3s and RKE clusters using the [`cert-manager`](https://cert-manager.io/docs/installation/helm/) Helm chart
+    * [ ] Integrate with private CA `pki.fourteeners.local` using [ACME `ClusterIssuer`](https://cert-manager.io/docs/configuration/acme/)
+- [X] [Node Feature Discovery](https://kubernetes-sigs.github.io/node-feature-discovery) — label nodes with available hardware features, like GPUs
+    * Install on K3s and RKE clusters using the [`node-feature-discovery`](https://kubernetes-sigs.github.io/node-feature-discovery/stable/deployment/helm.html) Helm chart
+    * [X] Install [Intel Device Plugins](https://intel.github.io/intel-device-plugins-for-kubernetes) using the [`intel-device-plugins-operator`](https://github.com/intel/helm-charts/tree/main/charts/device-plugin-operator) Helm chart
+    * [ ] Install [NVIDIA GPU Operator](https://docs.nvidia.com/datacenter/cloud-native/gpu-operator/latest/overview.html) on RKE cluster ... _when I procure an NVIDIA card_ :(
 - [X] [OpenSearch Logging Stack](https://opensearch.org/docs/latest/) — aggregate and filter logs using OpenSearch and Fluent Bit
     * Install on main RKE cluster using the [`opensearch`](https://opensearch.org/docs/latest/install-and-configure/install-opensearch/helm/) and [`opensearch-dashboards`](https://opensearch.org/docs/latest/install-and-configure/install-dashboards/helm/) Helm charts
     * Instal Fluent Bit using the [`fluent-operator`](https://github.com/fluent/fluent-operator) Helm chart and `FluentBit` CR
@@ -79,13 +87,10 @@ All cluster services will be provisioned with TLS certificates from Erhhung's pr
     * Install on main RKE cluster using the [`argo-cd`](https://github.com/argoproj/argo-helm/tree/main/charts/argo-cd) Helm chart
 - [X] [Kubernetes Metacontroller](https://metacontroller.github.io/metacontroller/) — enable easy creation of custom controllers
     * Install on main RKE cluster using the [`metacontroller`](https://metacontroller.github.io/metacontroller/guide/helm-install.html) Helm chart
-- [ ] [Ollama Server](https://github.com/ollama/ollama) with [Ollama CLI](https://github.com/masgari/ollama-cli) — run LLMs on Kubernetes cluster instead of locally
-    * Install onto `k8s1`/`k8s2` with **GPU passthrough** using the [`ollama`](https://github.com/cowboysysop/charts/tree/master/charts/ollama) Helm chart
+- [X] [Ollama LLM Server](https://github.com/ollama/ollama) with [Ollama CLI](https://github.com/masgari/ollama-cli) — run LLMs on Kubernetes cluster
+    * Install on a GPU-capable node using the [`ollama`](https://github.com/cowboysysop/charts/tree/master/charts/ollama) Helm chart
 - [ ] [Flowise Agentic Workflows](https://flowiseai.com/) — build AI agents using visual workflows
     * Install on main RKE cluster using the [`flowise`](https://github.com/cowboysysop/charts/tree/master/charts/flowise) Helm chart
-- [ ] [Certificate Manager](https://cert-manager.io/) — X.509 certificate management for Kubernetes
-    * Install on main RKE cluster using the [`cert-manager`](https://cert-manager.io/docs/installation/helm/) Helm chart
-    * [ ] Integrate with private CA `pki.fourteeners.local` using [ACME `ClusterIssuer`](https://cert-manager.io/docs/configuration/acme/)
 - [ ] [OpenTelemetry Collector](https://opentelemetry.io/docs/collector/) with [Jaeger UI](https://www.jaegertracing.io/) -- telemetry collector agent and distributed tracing backend
     * Install on main RKE cluster using the [OpenTelemetry Collector](https://opentelemetry.io/docs/platforms/kubernetes/helm/collector/) Helm chart
     * Install Jaeger using the [Jaeger](https://github.com/jaegertracing/helm-charts/tree/main/charts/jaeger) Helm chart
@@ -109,7 +114,8 @@ ansible-vault edit   $VAULTFILE
 ansible-vault view   $VAULTFILE
 ```
 
-Some variables stored in Ansible Vault _(there are many more)_:
+<details>
+<summary>Some variables stored in Ansible Vault <em>(there are many more)</em></summary><br/>
 
 |      Infrastructure Secrets       |    User Passwords
 |:---------------------------------:|:-------------------:
@@ -134,6 +140,7 @@ Some variables stored in Ansible Vault _(there are many more)_:
 | `oauth2_proxy_cookie_secret`      |
 | `kiali_oidc_client_secret`        |
 | `argocd_signing_key`              |
+</details>
 
 ## Connections
 
@@ -144,13 +151,7 @@ however, all privileged operations using `sudo` will require the password stored
 
 ## Playbooks
 
-Set the config variable first for the `ansible-playbook` commands below:
-
-```bash
-export ANSIBLE_CONFIG="./ansible.cfg"
-```
-
-1. Install required packages
+1. <details><summary>Install required packages</summary><br/>
 
     1.1. **Tools** — `emacs`, `jq`, `yq`, `git`, and `helm`  
     1.2. **Python** — Pip packages in user **virtualenv**  
@@ -159,8 +160,9 @@ export ANSIBLE_CONFIG="./ansible.cfg"
     ```bash
     ./play.sh packages
     ```
+</details>
 
-2. Configure system settings
+2. <details><summary>Configure system settings</summary><br/>
 
     2.1. **Host** — host name, time zone, and locale  
     2.2. **Kernel** — `sysctl` params and `pam_limits`  
@@ -171,8 +173,9 @@ export ANSIBLE_CONFIG="./ansible.cfg"
     ```bash
     ./play.sh basics
     ```
+</details>
 
-3. Set up admin user's home directory
+3. <details><summary>Set up admin user's home directory</summary><br/>
 
     3.1. **Dot files**: `.bash_aliases`, etc.  
     3.2. **Config files**: `htop`, `fastfetch`
@@ -180,13 +183,16 @@ export ANSIBLE_CONFIG="./ansible.cfg"
     ```bash
     ./play.sh files
     ```
+</details>
 
-4. Install **Rancher Server** on single-node **K3s** cluster
+4. <details><summary>Install <strong>Rancher Server</strong> on single-node <strong>K3s</strong> cluster</summary><br/>
+
     ```bash
     ./play.sh rancher
     ```
+</details>
 
-5. Provision **Kubernetes cluster** with **RKE** on 4 nodes
+5. <details><summary>Provision <strong>Kubernetes cluster</strong> with <strong>RKE</strong> on 4 nodes</summary><br/>
 
     Install **RKE2** with a single control plane node and 3 worker nodes, all permitting workloads,  
     or RKE2 in HA mode with 3 control plane nodes and 1 worker node, all permitting workloads  
@@ -195,9 +201,10 @@ export ANSIBLE_CONFIG="./ansible.cfg"
     ```bash
     ./play.sh cluster
     ```
+</details>
 
-6. Install **Longhorn** dynamic PV provisioner  
-   Install **MinIO** object storage in _**HA**_ mode
+6. <details><summary>Install <strong>Longhorn</strong> dynamic PV provisioner<br/> &nbsp; &nbsp;
+    Install <strong>MinIO</strong> object storage in <em><strong>HA</strong></em> mode</summary><br/>
 
     6.1. Create a pool of LVM logical volumes  
     6.2. Install Longhorn storage components  
@@ -207,8 +214,9 @@ export ANSIBLE_CONFIG="./ansible.cfg"
     ```bash
     ./play.sh storage minio
     ```
+</details>
 
-7. Create resources from manifest files
+7. <details><summary>Create resources from manifest files</summary><br/>
 
     **IMPORTANT**: Resource manifests must specify the namespaces they wished to be installed  
     into because the playbook simply applies each one without targeting a specific namespace
@@ -216,83 +224,125 @@ export ANSIBLE_CONFIG="./ansible.cfg"
     ```bash
     ./play.sh manifests
     ```
+</details>
 
-8. Install **Harbor** private OCI registry
+8. <details><summary>Install <strong>Harbor</strong> OCI & Helm registry</summary><br/>
+
     ```bash
     ./play.sh harbor
     ```
+</details>
 
-9. Install **OpenSearch** cluster in _**HA**_ mode
+9. <details><summary>Install <strong><code>cert-manager</code></strong> to automate certificate issuing</summary><br/>
 
-    9.1. Configure the OpenSearch security plugin (users and roles) for downstream applications  
-    9.2. Install **OpenSearch Dashboards** UI
+    9.1. Connect to `pki.fourteeners.local` as a `ClusterIssuer`
+
+    ```bash
+    ./play.sh certmanager
+    ```
+</details>
+
+10. <details><summary>Install <strong>Node Feature Discovery</strong> to identify GPU nodes</summary><br/>
+
+    10.1. Install Intel Device Plugins and `GpuDevicePlugin`
+
+    ```bash
+    ./play.sh nodefeatures
+    ```
+</details>
+
+11. <details><summary>Install <strong>OpenSearch</strong> cluster in <em><strong>HA</strong></em> mode</summary><br/>
+
+    11.1. Configure the OpenSearch security plugin (users and roles) for downstream applications  
+    11.2. Install **OpenSearch Dashboards** UI
 
     ```bash
     ./play.sh opensearch
     ```
+</details>
 
-10. Install **Fluent Bit** to ingest logs into OpenSearch
+12. <details><summary>Install <strong>Fluent Bit</strong> to ingest logs into OpenSearch</summary><br/>
+
     ```bash
     ./play.sh logging
     ```
+</details>
 
-11. Install **PostgreSQL** database in _**HA**_ mode
+13. <details><summary>Install <strong>PostgreSQL</strong> database in <em><strong>HA</strong></em> mode</summary><br/>
 
-    11.1. Run initialization SQL script to create roles and databases for downstream applications  
-    11.2. Create users in both PostgreSQL and **Pgpool**
+    13.1. Run initialization SQL script to create roles and databases for downstream applications  
+    13.2. Create users in both PostgreSQL and **Pgpool**
 
     ```bash
     ./play.sh postgresql
     ```
+</details>
 
-12. Install **Keycloak** IAM & OIDC provider
+14. <details><summary>Install <strong>Keycloak</strong> IAM & OIDC provider</summary><br/>
 
-    12.1. Bootstrap **PostgreSQL** database with realm `homelab`, user `erhhung`, and OIDC clients
+    14.1. Bootstrap **PostgreSQL** database with realm `homelab`, user `erhhung`, and OIDC clients
 
     ```bash
     ./play.sh keycloak
     ```
+</details>
 
-13. Install **Valkey** key-value store in _**HA**_ mode
+15. <details><summary>Install <strong>Valkey</strong> key-value store in <em><strong>HA</strong></em> mode</summary><br/>
 
-    13.1. Deploy 6 nodes in total: 3 primaries and 3 replicas
+    15.1. Deploy 6 nodes in total: 3 primaries and 3 replicas
 
     ```bash
     ./play.sh valkey
     ```
+</details>
 
-14. Install **Prometheus**, **Thanos**, and **Grafana** in _**HA**_ mode
+16. <details><summary>Install <strong>Prometheus</strong>, <strong>Thanos</strong>, and <strong>Grafana</strong> in <em><strong>HA</strong></em> mode</summary><br/>
 
-    14.1. Expose Prometheus & Alertmanager UIs via `oauth2-proxy` integration with **Keycloak**  
-    14.2. Connect Thanos sidecars to **MinIO** to store scraped metrics in the `metrics` bucket  
-    14.3. Deploy and integrate other Thanos components with Prometheus and Alertmanager
+    16.1. Expose Prometheus & Alertmanager UIs via `oauth2-proxy` integration with **Keycloak**  
+    16.2. Connect Thanos sidecars to **MinIO** to store scraped metrics in the `metrics` bucket  
+    16.3. Deploy and integrate other Thanos components with Prometheus and Alertmanager
 
     ```bash
     ./play.sh monitoring thanos
     ```
+</details>
 
-15. Install **Istio** service mesh in _**ambient**_ mode
+17. <details><summary>Install <strong>Istio</strong> service mesh in <em><strong>ambient</strong></em> mode</summary><br/>
+
     ```bash
     ./play.sh istio
     ```
+</details>
 
-16. Install **Argo CD** GitOps delivery in _**HA**_ mode
+18. <details><summary>Install <strong>Argo CD</strong> GitOps delivery in <em><strong>HA</strong></em> mode</summary><br/>
 
-    16.1. Configure Argo CD components to use the **Valkey** cluster for their caching needs
+    18.1. Configure Argo CD components to use the **Valkey** cluster for their caching needs
 
     ```bash
     ./play.sh argocd
     ```
+</details>
 
-17. Install Kubernetes **Metacontroller** add-on
+19. <details><summary>Install <strong>Metacontroller</strong> to create Operators</summary><br/>
+
     ```bash
     ./play.sh metacontroller
     ```
+</details>
 
-18. Create **virtual clusters** in RKE running **K0s**
+20. <details><summary>Install <strong>Ollama</strong> LLM server with models</summary><br/>
+
+    ```bash
+    ./play.sh ollama
+    ```
+</details>
+
+21. <details><summary>Create <strong>virtual clusters</strong> in RKE running <strong>K0s</strong></summary><br/>
+
     ```bash
     ./play.sh vclusters
     ```
+</details>
 
 Alternatively, **run all playbooks** automatically in order:
 
@@ -358,8 +408,9 @@ To expand the VM disk on a cluster node, the VM must be shut down
 (attempting to resize the disk from Xen Orchestra will fail with
 error: `VDI in use`).
 
-Once the VM disk has been expanded, restart the VM and SSH into
-the node to resize the partition and LV.
+<details>
+<summary>Once the VM disk has been expanded, restart the VM and SSH into
+the node to resize the partition and LV.</summary><br/>
 
 ```bash
 $ sudo su
@@ -403,13 +454,13 @@ Extending logical volume ubuntu-vg/ubuntu-lv to up to...
 fsadm: Executing resize2fs /dev/mapper/ubuntu--vg-ubuntu--lv
 The filesystem on /dev/mapper/ubuntu--vg-ubuntu--lv is now...
 ```
+</details>
 
-After expanding all desired disks, run `./diskfree.sh`
-to verify available disk space on all cluster nodes:
+<details>
+<summary>After expanding all desired disks, run <code>./diskfree.sh</code>
+to confirm available disk space on all cluster nodes.</summary><br/>
 
 ```bash
-$ ./diskfree.sh
-
 rancher
 -------
 Filesystem      Size  Used Avail Use% Mounted on
@@ -439,6 +490,7 @@ Filesystem                         Size  Used Avail Use% Mounted on
 /dev/mapper/ubuntu--vg-ubuntu--lv   50G   27G   21G  57% /
 /dev/mapper/ubuntu--vg-data--lv     30G  1.2G   29G   4% /data
 ```
+</details>
 
 ## Troubleshooting
 
@@ -457,10 +509,13 @@ Ansible's [ad-hoc commands](https://docs.ansible.com/ansible/latest/command_guid
 2. All `kube-proxy` static pods on continuous `CrashLoopBackOff`
 
     This turns out to be a [Linux kernel bug](https://bugs.launchpad.net/ubuntu/+source/linux/+bug/2104282) in `linux-image-6.8.0-56-generic` and above _(discovered on upgrade to `linux-image-6.8.0-57-generic`)_, causing this error in the container logs:
+
     ```
     ip6tables-restore v1.8.9 (nf_tables): unknown option "--xor-mark"
     ```
-    Workaround is to downgrade to an earlier kernel:
+
+    <details><summary>Current workaround is to downgrade to an earlier kernel.</summary><br/>
+
     ```bash
     # list installed kernel images
     ansible -v k8s_all -a 'bash -c "dpkg -l | grep linux-image"'
@@ -497,3 +552,4 @@ Ansible's [ad-hoc commands](https://docs.ansible.com/ansible/latest/command_guid
     # so upgrade won't install again)
     ansible -v k8s_all -b -a 'apt-get autoremove -y --purge'
     ```
+    </details>

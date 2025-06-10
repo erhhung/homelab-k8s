@@ -7,7 +7,6 @@
   hosts: "{{ rke_control_plane_host }}"
   gather_facts: false
   vars_files:
-    - vars/basics.yml
     - vars/kubernetes.yml
     - vars/storage.yml
     - vars/minio.yml
@@ -160,8 +159,8 @@
     - name: Load custom scrape configurations
       vars:
         # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/fileglob_lookup.html
-        configs: "{{ lookup('ansible.builtin.fileglob',
-          'tasks/monitoring/configs/*.yml', wantlist=True) }}"
+        # https://docs.ansible.com/ansible/latest/plugins/lookup.html#forcing-lookups-to-return-lists-query-and-wantlist-true
+        configs: "{{ query('ansible.builtin.fileglob', 'tasks/monitoring/configs/*.yml') }}"
       # each tasks file should set fact referenced by
       # additional_scrape_configs in the chart values
       ansible.builtin.include_tasks: "{{ item }}"
@@ -205,12 +204,7 @@
   hosts: localhost
   gather_facts: false
   vars_files:
-    - vars/basics.yml
     - vars/monitoring.yml
-  pre_tasks:
-    - name: Get controller facts
-      ansible.builtin.include_tasks: tasks/localfacts.yml
-      when: local_python_interpreter is not defined
   tasks:
     - name: Customize Grafana user settings
       vars:

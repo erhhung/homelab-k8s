@@ -4,10 +4,9 @@
 - name: Install Argo CD on RKE cluster
   hosts: "{{ rke_control_plane_host }}"
   vars_files:
-    - vars/basics.yml
     - vars/kubernetes.yml
-    - vars/valkey.yml
     - vars/monitoring.yml
+    - vars/valkey.yml
     - vars/argocd.yml
   vars:
     kubeconfig: "{{ rke_kubeconfig }}"

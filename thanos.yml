@@ -5,7 +5,6 @@
   hosts: "{{ rke_control_plane_host }}"
   gather_facts: false
   vars_files:
-    - vars/basics.yml
     - vars/kubernetes.yml
     - vars/storage.yml
     - vars/minio.yml

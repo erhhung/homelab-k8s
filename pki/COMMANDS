@@ -208,4 +208,7 @@ cd "$HOME"
   \*.argocd.svc.cluster.local \
   \*.argocd.svc
 
+./cert.sh --exp=365 \
+  ollama.fourteeners.local
+
 rsync certs cosmos:.

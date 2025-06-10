@@ -28,9 +28,10 @@ name_servers:
   - 192.168.0.1
   - 1.1.1.1
   - 1.0.0.1
-search_domains:
-  - fourteeners.local
-# virtual IP range reserved for kube-vip
-lb_vip_range:
-  start: 192.168.0.221
-  end: 192.168.0.240
+
+add_users_to_groups:
+  - user: "{{ ansible_user }}"
+    groups:
+      - render # access /dev/dri/ by clinfo
+    # GPU passthrough enabled hosts
+    hosts: ["k8s2", "k8s3", "k8s4"]

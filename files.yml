@@ -3,7 +3,6 @@
   hosts: k8s_all
   vars_files:
     - vars/files.yml
-    - vars/basics.yml
     - vars/kubernetes.yml
     - vars/rancher.yml
   tasks:

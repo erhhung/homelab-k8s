@@ -12,8 +12,9 @@
     - name: Add to static_scrape_configs
       vars:
         # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/fileglob_lookup.html
-        _configs: "{{ lookup('ansible.builtin.fileglob',
-          playbook_dir ~ '/templates/monitoring/configs/*.yaml*', wantlist=True) }}"
+        # https://docs.ansible.com/ansible/latest/plugins/lookup.html#forcing-lookups-to-return-lists-query-and-wantlist-true
+        _configs: "{{ query('ansible.builtin.fileglob',
+          playbook_dir ~ '/templates/monitoring/configs/*.yaml*') }}"
       ansible.builtin.set_fact:
         # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/template_lookup.html
         static_scrape_configs: "{{ static_scrape_configs +

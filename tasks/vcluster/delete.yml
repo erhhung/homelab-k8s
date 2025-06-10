@@ -1,16 +1,17 @@
 # pass the following vars:
 #   vcluster <required> object {name,node}
 ---
+- name: Gather facts about controller
+  # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
+  ansible.builtin.include_tasks: tasks/localfacts.yml
+  when: local_python_interpreter is not defined
+
 - name: Delete vCluster "{{ vcluster.name }}"
-  vars:
-    # required kubernetes>=24.2 package only in user virtualenv
-    ansible_python_interpreter: "{{ venv_python_interpreter }}"
   become: false
   block:
     - name: Get pods deployed in namespace
-      # requires Pip package "kubernetes"
       delegate_to: localhost
-      vars: &local_kubectl_vars
+      vars: &localhost_vars
         ansible_python_interpreter: "{{ local_python_interpreter }}"
         # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/env_lookup.html
         user_kubeconfig: "{{ lookup('ansible.builtin.env', 'HOME') }}/.kube/config"
@@ -59,6 +60,9 @@
       when: >-
         confirm is not defined or
         confirm.user_input | lower == 'y'
+      vars:
+        # required kubernetes>=24.2 package only in user virtualenv
+        ansible_python_interpreter: "{{ venv_python_interpreter }}"
       block:
         - name: Uninstall vCluster Helm release
           # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/helm_module.html
@@ -117,9 +121,9 @@
               loop: "{{ pv_names }}"
 
         - name: Delete local kubeconfig context
-          vars:
-            <<: *local_kubectl_vars
           delegate_to: localhost
+          vars:
+            <<: *localhost_vars
           # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/command_module.html
           ansible.builtin.command:
             argv:

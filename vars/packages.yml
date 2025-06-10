@@ -4,31 +4,60 @@
 # see installed packages:
 # apt list --installed
 
+add_apt_repositories:
+  - repos:
+      # https://dgpu-docs.intel.com/driver/client/overview.html
+      - ppa:kobuk-team/intel-graphics
+    # GPU passthrough enabled hosts
+    hosts: ["k8s2", "k8s3", "k8s4"]
+
 install_apt_packages:
-  - apt-transport-https
-  - locales         # required by community.general.locale_gen
-  - bash-completion # required by crictl/kubectl completion
-  - less
-  - tree
-  - htop
-  - lsof  # used by custom Bash function "listening"
-  - rsync # required by ansible.posix.synchronize
-  - unzip
-  - emacs-nox
-  # iptables is required by Calico networking in RKE2:
-  # https://github.com/rancher/rke2/issues/4385#issuecomment-1738848974
-  - iptables
-  - dnsutils # provides nslookup/dig/host
-  - iputils-ping
-  - open-iscsi # required by Longhorn storage engine
-  - nfs-common # required by Longhorn storage engine
-  - python3-pip
-  - python3-virtualenv # required by ansible.builtin.pip
-  # yq from Apt is not the mikefarah/yq package we want
-  - jq
-  - jo
-  - git  # required by kubernetes.core.helm_plugin
-  - helm # requires /etc/apt/sources.list.d/helm.sources
+  - packages:
+      - linux-modules-extra-{{ ansible_kernel }} # GPU drivers
+      - apt-transport-https
+      - locales # required by community.general.locale_gen
+      - bash-completion # required by crictl/kubectl completion
+      - less
+      - tree
+      - htop
+      - lsof # used by custom Bash function "listening"
+      - rsync # required by ansible.posix.synchronize
+      - unzip
+      - emacs-nox
+      # iptables is required by Calico networking in RKE2:
+      # https://github.com/rancher/rke2/issues/4385#issuecomment-1738848974
+      - iptables
+      - dnsutils # provides nslookup/dig/host
+      - iputils-ping
+      - open-iscsi # required by Longhorn storage engine
+      - nfs-common # required by Longhorn storage engine
+      - python3-pip
+      - python3-virtualenv # required by ansible.builtin.pip
+      # yq from Apt is not the mikefarah/yq package we want
+      - jq
+      - jo
+      - git # required by kubernetes.core.helm_plugin
+      - helm # requires /etc/apt/sources.list.d/helm.sources
+    hosts: "{{ groups['k8s_all'] }}"
+
+  # PPA packages below offer support for Intel client GPUs:
+  # https://dgpu-docs.intel.com/driver/client/overview.html
+  - packages:
+      - libze-intel-gpu1
+      - libze1
+      - intel-gsc
+      - intel-metrics-discovery
+      - intel-opencl-icd
+      - clinfo
+      - intel-media-va-driver-non-free
+      - libmfx-gen1
+      - libvpl2
+      - libvpl-tools
+      - libva-glx2
+      - va-driver-all
+      - vainfo
+    # GPU passthrough enabled hosts
+    hosts: ["k8s2", "k8s3", "k8s4"]
 
 # packages will be installed under
 # virtualenv ansible_user_dir/.venv

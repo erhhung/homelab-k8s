@@ -3,17 +3,12 @@
 ---
 - name: Create virtual clusters
   hosts: "{{ rke_control_plane_host }}"
+  gather_facts: false
   vars_files:
-    - vars/basics.yml
     - vars/kubernetes.yml
-    - vars/vclusters.yml
     - vars/storage.yml
+    - vars/vclusters.yml
   pre_tasks:
-    - name: Get controller facts
-      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
-      ansible.builtin.include_tasks: tasks/localfacts.yml
-      when: local_python_interpreter is not defined
-
     - name: List existing vClusters
       vars:
         keep: "{{ vclusters | map(attribute='name') | to_json }}"
