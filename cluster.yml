@@ -132,7 +132,7 @@
       ansible.builtin.shell: |
         # run Bash and source /etc/profile.d
         # scripts so that kubectl is in PATH
-        exec /bin/bash -l <<'EOF'
+        exec /bin/bash -l <<'EOT'
         set -o pipefail
 
         # get exact version of Calico deployed by RKE2 as part
@@ -154,7 +154,7 @@
         REL="https://github.com/projectcalico/calico/releases/download"
         curl -fsSLo "$BIN/calicoctl" "$REL/$VER/calicoctl-linux-$ARCH"
         chmod +x    "$BIN/calicoctl"
-        EOF
+        EOT
       register: calicoctl
       changed_when: calicoctl.rc == 0
       failed_when: >-

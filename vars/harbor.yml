@@ -1,5 +1,4 @@
 # harbor_secret:     {vault.yml}
-# harbor_ca_key:     {vault.yml}
 # harbor_db_pass:    {vault.yml}
 # harbor_admin_pass: {vault.yml}
 
@@ -56,7 +55,7 @@ harbor_chart_values:
     # so that Helm template won't generate new cert
     # each time, but need to update it when expired:
     # openssl genrsa -out ca.key -traditional 2048
-    # openssl req -x509 -key ca.key -out ca.crt -sha256 -days 365 \
+    # openssl req -x509 -key ca.key -out ca.crt -sha256 -days 3650 \
     #   -subj /CN=harbor-token-ca -extensions v3_ca -config - <<EOF
     # [v3_ca]
     # keyUsage=critical,digitalSignature,keyEncipherment,keyCertSign
@@ -64,9 +63,11 @@ harbor_chart_values:
     # basicConstraints=critical,CA:true
     # subjectKeyIdentifier=hash
     # EOF
-    tokenKey: "{{ harbor_ca_key }}"
+    # ansible-vault encrypt ca.key
     # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/file_lookup.html
     tokenCert: "{{ lookup('ansible.builtin.file', 'files/harbor/ca.crt', rstrip=false) }}"
+    # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/unvault_lookup.html
+    tokenKey: "{{ lookup('ansible.builtin.unvault', 'files/harbor/ca.key') }}"
 
   registry:
     secret: "{{ harbor_secret }}"

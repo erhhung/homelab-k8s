@@ -98,7 +98,7 @@
       ansible.builtin.shell: |
         # run Bash then source /etc/profile.d
         # scripts so that istioctl is in PATH
-        exec /bin/bash -l <<'EOF'
+        exec /bin/bash -l <<'EOT'
         set -o pipefail
 
         if [ {{ istio_cr.changed }} == False ]; then
@@ -116,7 +116,7 @@
           -f .istio/operator.yaml \
           --set profile=ambient \
           --skip-confirmation
-        EOF
+        EOT
       register: install_istio
       changed_when: install_istio.rc == 0
       failed_when: >-

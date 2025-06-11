@@ -56,12 +56,12 @@ ollama_chart_values:
 
   resources:
     requests:
-      cpu: 100m
-      memory: 4Gi
+      cpu: 200m
+      memory: 2Gi
       gpu.intel.com/i915: "1"
     limits:
-      cpu: 1000m
-      memory: 8Gi # should be enough for model
+      cpu: 2000m
+      memory: 6Gi # should be enough for model
       gpu.intel.com/i915: "1"
 
   persistence:

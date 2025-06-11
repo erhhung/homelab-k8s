@@ -258,24 +258,14 @@
   gather_facts: false
   become: true
   pre_tasks:
-    - name: Fetch CA certs from PKI
-      delegate_to: "{{ pki_host }}"
-      run_once: true
-      # catting is easier than ansible.builtin.slurp
-      ansible.builtin.command: cat certs/chain.pem
-      register: cat_chain
-      changed_when: false
+    - name: Get CA certificates from PKI
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
+      ansible.builtin.include_tasks: tasks/pki/cacerts.yml
+      when: ca_certificates is not defined
   tasks:
     - name: Add certs to trust store
-      vars:
-        # split chain into individual intermediate and root CA certs
-        chain: "{{ hostvars[groups['k8s_all'][0]]['cat_chain'] }}"
-        # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/regex_findall_filter.html
-        certs: "{{ chain.stdout | ansible.builtin.regex_findall(
-          '(-----BEGIN CERTIFICATE-----(?:\\n\\S+)+\\n-----END CERTIFICATE-----)',
-          multiline=True) }}"
       ansible.builtin.copy:
-        content: "{{ certs[i] ~'\n' }}"
+        content: "{{ ca_certificates[i] ~'\n' }}"
         dest: /usr/local/share/ca-certificates/fourteeners_{{ item }}.crt
         mode: "0644"
       loop:
