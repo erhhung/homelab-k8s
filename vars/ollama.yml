@@ -32,21 +32,16 @@ ollama_chart_values:
   replicaCount: 1
   revisionHistoryLimit: 2
 
-  # run Ollama on a GPU-capable node if possible
-  # based on label set by Node Feature Discovery
+  # run Ollama on a GPU-capable node based
+  # on label set by Node Feature Discovery
   affinity:
     nodeAffinity:
-      preferredDuringSchedulingIgnoredDuringExecution:
-        - weight: 1
-          preference:
-            matchExpressions: # Intel GPU
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+          - matchExpressions:
               - key: intel.feature.node.kubernetes.io/gpu
-                operator: Exists
-        - weight: 1
-          preference:
-            matchExpressions: # NVIDIA GPU
-              - key: feature.node.kubernetes.io/pci-10de.present
-                operator: Exists
+                operator: Exists # Intel GPU
+      preferredDuringSchedulingIgnoredDuringExecution:
         - weight: 1
           preference:
             matchExpressions:
