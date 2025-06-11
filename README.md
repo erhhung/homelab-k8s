@@ -126,8 +126,8 @@ ansible-vault view   $VAULTFILE
 | `k3s_token`                       | `opensearch_admin_pass`
 | `rke2_token`                      | `keycloak_admin_pass`
 | `harbor_secret`                   | `thanos_admin_pass`
-| `harbor_ca_key`                   | `grafana_admin_pass`
-| `minio_client_pass`               | `argocd_admin_pass`
+| `minio_client_pass`               | `grafana_admin_pass`
+| `stepca_provisioner_pass`         | `argocd_admin_pass`
 | `dashboards_os_pass`              |
 | `fluent_os_pass`                  |
 | `valkey_pass`                     |

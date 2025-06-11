@@ -52,3 +52,57 @@ certmanager_chart_values:
       targetPort: 9402 # http-metrics
       path: /metrics
       interval: 60s
+
+# stepca_provisioner_pass: {vault.yml}
+
+# deploy into cert-manager namespace
+step_issuer_namespace: cert-manager
+
+step_issuer_secrets:
+  provisioners: step-ca-provisioners
+
+# https://github.com/smallstep/helm-charts/tree/master/step-issuer
+step_issuer_chart_version: "1.9.8"
+step_issuer_release_name: step-issuer
+
+# https://github.com/smallstep/helm-charts/tree/master/step-issuer/values.yaml
+step_issuer_chart_values:
+  replicaCount: 1
+
+  resources:
+    requests:
+      cpu: 20m
+      memory: 32Mi
+    limits:
+      cpu: 100m
+      memory: 128Mi
+
+  service:
+    port: 8443
+    targetPorts: https
+    scrapePort: 8443
+    scrape: false
+
+  serviceAccount:
+    create: true
+
+  certManager:
+    serviceAccount:
+      name: "{{ certmanager_release_name }}"
+      namespace: "{{ certmanager_namespace }}"
+
+  # https://github.com/smallstep/step-issuer#3-configure-step-issuer
+  stepClusterIssuer:
+    create: true
+
+    caUrl: https://pki.fourteeners.local
+    caBundle: "{{ ca_certificates[1] | b64encode }}" # root CA only
+    provisioner:
+      name: "{{ stepca_provisioner.name }}"
+      kid: "{{ stepca_provisioner.key.kid }}"
+      passwordRef:
+        # step-ca-provisioners Secret
+        # will be created by Ansible
+        name: "{{ step_issuer_secrets['provisioners'] }}"
+        namespace: "{{ step_issuer_namespace }}"
+        key: jwk-provisioner-password

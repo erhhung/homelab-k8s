@@ -15,7 +15,7 @@
       ansible.builtin.shell: |
         # run Bash and source /etc/profile.d
         # scripts so that kubectl is in PATH
-        exec /bin/bash -l <<'EOF'
+        exec /bin/bash -l <<'EOT'
         # set MC_CONFIG_DIR
         . ~/.bash_aliases
         set -o pipefail
@@ -62,7 +62,7 @@
               }]
             }]'
         done | yq -PM
-        EOF
+        EOT
       register: add_configs
       changed_when: false
 

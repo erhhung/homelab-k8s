@@ -65,13 +65,13 @@
       ansible.builtin.shell: |
         # run Bash and source /etc/profile.d
         # scripts so that kubectl is in PATH
-        exec /bin/bash -l <<'EOF'
+        exec /bin/bash -l <<'EOT'
         set -o pipefail
 
         # sed command strips colored output
         curl -s {{ script_url }} | bash | \
           sed -r 's/\x1B\[([0-9]{1,3}(;[0-9]{1,2})?)?[mGK]//g'
-        EOF
+        EOT
       timeout: 300
       # run once in each cluster if
       # Longhorn isn't installed yet

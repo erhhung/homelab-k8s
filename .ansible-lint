@@ -1,13 +1,16 @@
+# https://ansible.readthedocs.io/projects/lint/configuring/#ansible-lint-configuration
+
 exclude_paths:
   - .ansible/
   - group_vars/all/vault.yml
 
 # https://ansible.readthedocs.io/projects/lint/rules/
 skip_list:
-  - name[template] # {{ }} in task name
-  - yaml[colons] # 2+ spaces after colon
-  - yaml[comments] # no space after # char
+  - var-naming[pattern] # var not snake_case
+  - name[template] # {{ ... }} in task name
   - yaml[line-length] # line over 160 chars
+  - yaml[colons] # >= 2 spaces after colon
+  - yaml[comments] # no space after # char
   - jinja[spacing] # no spaces around vars
   - run-once[task]
   - key-order[task]

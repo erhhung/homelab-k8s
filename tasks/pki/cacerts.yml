@@ -1,0 +1,31 @@
+# fetch CA certs from PKI host
+# and set ca_certificates fact:
+#   ca_certificates[0]: intermediate CA cert
+#   ca_certificates[1]:         root CA cert
+---
+- name: Fetch CA certs from PKI
+  run_once: true
+  become: false
+  block:
+    - name: Fetch CA certs from PKI
+      delegate_to: "{{ pki_host }}"
+      vars:
+        ansible_python_interpreter: "{{ default_python_interpreter }}"
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/command_module.html
+      ansible.builtin.command: cat certs/chain.pem
+      register: ca_chain
+      changed_when: false
+
+    - name: Set ca_certificates fact
+      # delegating to localhost sets fact at
+      # global scope so all hosts can access
+      delegate_to: localhost
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/set_fact_module.html
+      ansible.builtin.set_fact:
+        # split CA chain into intermediate and root CA certs
+        # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/regex_findall_filter.html
+        ca_certificates: |
+          {{ ca_chain.stdout | ansible.builtin.regex_findall(
+            '(-----BEGIN CERTIFICATE-----(?:\n\S+)+\n-----END CERTIFICATE-----)',
+              multiline=true) }}
+  any_errors_fatal: true

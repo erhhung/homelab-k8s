@@ -1,16 +1,18 @@
 # https://cert-manager.io/docs/
 # https://cert-manager.io/docs/installation/helm/
+# https://cert-manager.io/docs/configuration/issuers/
 ---
 - name: Install Certificate Manager
-  hosts:
+  tags: install
+  hosts: &hosts
     - "{{ k3s_control_plane_host }}"
     - "{{ rke_control_plane_host }}"
   gather_facts: false
-  vars_files:
+  vars_files: &vars_files
     - vars/kubernetes.yml
     - vars/monitoring.yml
     - vars/certmanager.yml
-  vars:
+  vars: &vars
     # required kubernetes>=24.2 package only in user virtualenv
     ansible_python_interpreter: "{{ venv_python_interpreter }}"
     # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/ternary_filter.html
@@ -33,6 +35,69 @@
         release_values: "{{ certmanager_chart_values }}"
         release_namespace: "{{ certmanager_namespace }}"
         create_namespace: true
+        atomic: true
+        wait: true
+  any_errors_fatal: true
+
+# https://smallstep.com/docs/certificate-manager/kubernetes-step-issuer
+# https://github.com/smallstep/step-issuer
+- name: Configure Step CA as ClusterIssuer
+  tags: issuer
+  hosts: *hosts
+  gather_facts: false
+  vars_files: *vars_files
+  vars: *vars
+  pre_tasks:
+    - name: Get CA certificates from PKI
+      ansible.builtin.include_tasks: tasks/pki/cacerts.yml
+      when: ca_certificates is not defined
+
+    - name: Get Step CA provisioner info
+      run_once: true
+      block:
+        - name: Fetch Step CA provisioners
+          delegate_to: "{{ pki_host }}"
+          vars:
+            ansible_python_interpreter: "{{ default_python_interpreter }}"
+          # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/shell_module.html
+          ansible.builtin.shell: |
+            exec /bin/bash -l <<'EOT'
+            export XDG_CONFIG_HOME="$HOME/.config"
+            eval "$(grep STEPPATH .bash_aliases)"
+            step ca provisioner list
+            EOT
+          register: step_cmd
+          changed_when: false
+
+        - name: Set stepca_provisioner fact
+          # delegating to localhost sets fact at
+          # global scope so all hosts can access
+          delegate_to: localhost
+          # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/set_fact_module.html
+          ansible.builtin.set_fact:
+            stepca_provisioner: "{{ step_cmd.stdout | from_json |
+              selectattr('type', '==', 'JWK') | first }}"
+  tasks:
+    - name: Create CA provisioner secret
+      vars:
+        passwordRef: "{{ step_issuer_chart_values.stepClusterIssuer.provisioner.passwordRef }}"
+        secret_name: "{{ passwordRef.name }}"
+        secret_ns: "{{ step_issuer_namespace }}"
+        create_ns: false
+        secret_data: "{{ {
+          passwordRef.key: stepca_provisioner_pass
+          } }}"
+      ansible.builtin.include_tasks: tasks/k8s/secrets/generic.yml
+
+    - name: Install Step Issuer Helm chart
+      kubernetes.core.helm:
+        kubeconfig: "{{ kubeconfig }}"
+        chart_repo_url: https://smallstep.github.io/helm-charts
+        chart_ref: step-issuer
+        chart_version: "{{ step_issuer_chart_version }}"
+        release_name: "{{ step_issuer_release_name }}"
+        release_values: "{{ step_issuer_chart_values }}"
+        release_namespace: "{{ step_issuer_namespace }}"
         atomic: true
         wait: true
   any_errors_fatal: true
