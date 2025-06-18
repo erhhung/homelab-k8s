@@ -84,11 +84,11 @@
             kubeconfig: "{{ rke_kubeconfig }}"
             chart_repo_url: https://charts.loft.sh
             chart_ref: vcluster
+            release_state: present
             release_name: "{{ vcluster.name }}"
+            release_values: "{{ values | from_yaml }}"
             release_namespace: vcluster-{{ vcluster.name }}
             create_namespace: true
-            release_values: "{{ values | from_yaml }}"
-            release_state: present
             atomic: true
           timeout: 300
           register: helm_install

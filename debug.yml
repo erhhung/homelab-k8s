@@ -366,6 +366,18 @@
       ansible.builtin.debug:
         var: content
 
+    # lookup_plugins/one_bucket_iam_policy.py
+    - name: Custom one_bucket_iam_policy lookup
+      vars:
+        rw_policy: "{{ lookup('one_bucket_iam_policy', 'backups') }}"
+        ro_policy: "{{ lookup('one_bucket_iam_policy', 'configs', readonly=true) }}"
+        policies: "{{ {
+          'rw_policy': rw_policy,
+          'ro_policy': ro_policy,
+          } }}"
+      ansible.builtin.debug:
+        var: policies
+
 - name: Useful collection of tasks
   tags: tasks
   hosts: localhost

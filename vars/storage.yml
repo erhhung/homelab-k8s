@@ -13,15 +13,21 @@ storage_classes:
   local: local-storage
   nfs: nfs-qnap
 
+snapshot_classes:
+  backup: longhorn-backup
+
 # cannot use any other namespace!
 longhorn_namespace: longhorn-system
 
+longhorn_secrets:
+  minio: minio-credentials
+
 # https://github.com/longhorn/charts/tree/master/charts/longhorn
-longhorn_chart_version: "1.8.1"
+longhorn_chart_version: "1.9.0"
 longhorn_release_name: longhorn
 
-# https://github.com/longhorn/charts/tree/master/charts/longhorn/values.yaml
-# https://longhorn.io/docs/1.8.1/references/settings/
+# https://github.com/longhorn/charts/tree/v1.9.x/charts/longhorn/values.yaml
+# https://longhorn.io/docs/1.9.0/references/settings/
 longhorn_chart_values:
   longhornUI:
     replicas: 1
@@ -38,7 +44,26 @@ longhorn_chart_values:
 
   defaultSettings:
     defaultDataPath: "{{ data_lv.mount }}"
+    # prefer replicas of the same volume to be
+    # on different nodes, but allow them to be
+    # on the same node should space be limited
+    replicaSoftAntiAffinity: true
     defaultReplicaCount: 2
+    snapshotMaxCount: 2
+
+  defaultBackupStore:
+    # user "longhorn" and "backups"
+    # bucket to be created by MinIO
+    backupTarget: s3://backups@{{ minio_region }}/longhorn
+    backupTargetCredentialSecret: "{{ longhorn_secrets['minio'] }}"
+
+  csi:
+    # one extra replica should be enough
+    # for all controllers (default is 3)
+    provisionerReplicaCount: 2
+    attacherReplicaCount: 2
+    resizerReplicaCount: 2
+    snapshotterReplicaCount: 2
 
   service:
     ui:
@@ -56,6 +81,24 @@ longhorn_chart_values:
       enabled: "{{ prometheus_crds_installed }}"
       additionalLabels:
         release: "{{ monitoring_release_name }}"
+
+  extraObjects:
+    # create VolumeSnapshotClass for remote backups (use
+    # "bak" as parameters.type instead of "snap" because
+    # in-cluster snapshots are useless in a DR scenario):
+    # https://longhorn.io/docs/latest/snapshots-and-backups/csi-snapshot-support/csi-volume-snapshot-associated-with-longhorn-backup
+    - kind: VolumeSnapshotClass
+      apiVersion: snapshot.storage.k8s.io/v1
+      metadata:
+        name: "{{ snapshot_classes['backup'] }}"
+        labels:
+          # make Velero create VSs using this class
+          velero.io/csi-volumesnapshot-class: "true"
+      driver: driver.longhorn.io
+      deletionPolicy: Delete
+      parameters:
+        type: bak
+        backupMode: full
 
 # https://computingforgeeks.com/configure-nfs-as-kubernetes-persistent-volume-storage/
 nfs_mount_opts: rw,nosuid,nodev,noexec,hard,timeo=600,retrans=3,rsize=32768,wsize=32768

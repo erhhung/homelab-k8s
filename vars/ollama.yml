@@ -102,6 +102,13 @@ ollama_chart_values:
     # keep model in memory for
     - name: OLLAMA_KEEP_ALIVE
       value: 30m
+    # increase Ollama default
+    # 2048-token context size
+    - name: OLLAMA_NUM_CTX
+      value: &num_ctx "8192"
+    # version < 2.3.0b20250429
+    - name: IPEX_LLM_NUM_CTX
+      value: *num_ctx
     # per IPEX-LLM recommendation
     - name: SYCL_PI_LEVEL_ZERO_USE_IMMEDIATE_COMMANDLISTS
       value: "1"

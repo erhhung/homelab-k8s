@@ -12,12 +12,12 @@
     name: "{{ opensearch_master_service }}"
     namespace: "{{ opensearch_namespace }}"
   # https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_loops.html#retrying-a-task-until-a-condition-is-met
-  register: opensearch_info
+  register: deploy_info
   until: >-
-    opensearch_info.resources[0].status               is defined and
-    opensearch_info.resources[0].status.readyReplicas is defined and
-    opensearch_info.resources[0].status.readyReplicas ==
-    opensearch_info.resources[0].status.replicas
+    deploy_info.resources[0].status               is defined and
+    deploy_info.resources[0].status.readyReplicas is defined and
+    deploy_info.resources[0].status.readyReplicas ==
+    deploy_info.resources[0].status.replicas
   retries: 30
   delay: 10
 

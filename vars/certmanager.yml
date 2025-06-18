@@ -1,7 +1,7 @@
 certmanager_namespace: cert-manager
 
 # https://github.com/cert-manager/cert-manager/tree/master/deploy/charts/cert-manager
-certmanager_chart_version: "1.17.2"
+certmanager_chart_version: "1.18.0"
 certmanager_release_name: cert-manager
 
 # https://github.com/cert-manager/cert-manager/tree/master/deploy/charts/cert-manager/values.yaml
@@ -96,7 +96,7 @@ step_issuer_chart_values:
     create: true
 
     caUrl: https://pki.fourteeners.local
-    caBundle: "{{ ca_certificates[1] | b64encode }}" # root CA only
+    caBundle: "{{ ca_certificates[1] | b64encode }}"
     provisioner:
       name: "{{ stepca_provisioner.name }}"
       kid: "{{ stepca_provisioner.key.kid }}"

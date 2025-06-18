@@ -2,31 +2,28 @@
 #  minio_admin_pass: {vault.yml}
 # minio_client_pass: {vault.yml}
 
+minio_region: homelab
+
 minio_buckets:
   # bucket for Thanos to store metrics
   metrics: {}
     # https://min.io/docs/minio/linux/reference/minio-mc/mc-mb.html#parameters
     # options: ["--with-versioning"]
+  # bucket for Velero to store backups
+  backups: {}
 
 minio_policies:
   # IAM-compatible policies for users and groups
   # only (there is no support for bucket policy)
   # NOTE: rendered JSON doc cannot exceed 20 KiB
   # https://min.io/docs/minio/linux/administration/identity-access-management/policy-based-access-control.html#policy-document-structure
-  thanos-metrics-rw:
-    # https://docs.aws.amazon.com/AmazonS3/latest/userguide/example-policies-s3.html
-    Statement:
-      - Effect: Allow
-        Action: s3:ListBucket
-        Resource: arn:aws:s3:::metrics
-      - Effect: Allow
-        Action: s3:*
-        Resource: arn:aws:s3:::metrics/*
-      - Effect: Deny
-        Action: s3:*
-        NotResource:
-          - arn:aws:s3:::metrics
-          - arn:aws:s3:::metrics/*
+  # see: lookup_plugins/one_bucket_iam_policy.py
+  metrics-rw: "{{ lookup('one_bucket_iam_policy', 'metrics') }}"
+
+  # one_bucket_iam_policy lookup creates a broad policy.
+  # ideally, the allowed actions should be more limited:
+  # https://github.com/vmware-tanzu/velero-plugin-for-aws#option-1-set-permissions-with-an-iam-user
+  backups-rw: "{{ lookup('one_bucket_iam_policy', 'backups') }}"
 
 minio_users: # non-root
   # name = access_key
@@ -34,18 +31,33 @@ minio_users: # non-root
     secret_key: "{{ minio_admin_pass }}"
     # https://min.io/docs/minio/linux/administration/identity-access-management/policy-based-access-control.html#built-in-policies
     # policies: ["readwrite"]
+  longhorn:
+    # policies managed by "backups" group
+    secret_key: "{{ minio_client_pass }}"
+  velero:
+    # policies managed by "backups" group
+    secret_key: "{{ minio_client_pass }}"
   metrics:
     secret_key: "{{ minio_client_pass }}"
     policies: ["diagnostics"]
   thanos:
+    # policies managed by "metrics" group
     secret_key: "{{ minio_client_pass }}"
-    policies: ["thanos-metrics-rw"]
 
 minio_groups:
   admins:
     policies: ["consoleAdmin"]
     members: # at least one user required
       - erhhung
+  backups:
+    policies: ["backups-rw"]
+    members:
+      - longhorn
+      - velero
+  metrics:
+    policies: ["metrics-rw"]
+    members:
+      - thanos
 
 minio_host_names: # aliases of "homelab"
   - minio # console
@@ -59,11 +71,15 @@ minio_fqdns: "{{ minio_host_names | product(search_domains) | map('join','.') }}
 minio_console_fqdn: "{{ minio_fqdns[0] }}"
 minio_s3api_fqdn: "{{ minio_fqdns[1] }}"
 
+minio_operator_namespace: minio-operator
+minio_tenant_namespace: minio
+
 minio_tenant_name: homelab
 minio_pool_name: qnap-pool
 
-minio_operator_namespace: minio-operator
-minio_tenant_namespace: minio
+minio_service_host: minio.{{ minio_tenant_namespace }}.svc.cluster.local
+minio_service_url: https://{{ minio_service_host }}
+minio_public_url: https://{{ minio_s3api_fqdn }}
 
 minio_secrets:
   root: minio-creds-root

@@ -21,6 +21,11 @@ pam_limits:
     type: "-"
     value: 65536
 
+# only necessary if hosts are not rebooted after
+# drivers get installed by packages.yml playbook
+modprobe:
+  - i915
+
 host_pif: enX0 # XCP-ng VM physical interface
 subnet_mask: /24
 name_servers:

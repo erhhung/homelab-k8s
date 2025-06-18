@@ -449,8 +449,8 @@ prometheus_stack_chart_values:
               # both bucket and user are
               # created by vars/minio.yml
               bucket: metrics
-              endpoint: "{{ minio_s3api_fqdn }}"
-              region: us-east-1
+              endpoint: "{{ minio_service_host }}"
+              region: "{{ minio_region }}"
               access_key: thanos
               secret_key: "{{ minio_client_pass }}"
               http_config:

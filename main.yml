@@ -22,27 +22,32 @@
   ansible.builtin.import_playbook: cluster.yml
   tags: cluster
 
-- name: Include resource manifests playbook
-  ansible.builtin.import_playbook: manifests.yml
-  tags: manifests
+- name: Include cert-manager and PKI playbook
+  ansible.builtin.import_playbook: certmanager.yml
+  tags: certmanager
 
 - name: Include storage provisioners playbook
   ansible.builtin.import_playbook: storage.yml
   tags: storage
-
-# Harbor depends on NFS storage provisioner
-- name: Include Harbor OCI registry playbook
-  ansible.builtin.import_playbook: harbor.yml
-  tags: harbor
 
 # MinIO depends on NFS storage provisioner
 - name: Include MinIO object storage playbook
   ansible.builtin.import_playbook: minio.yml
   tags: minio
 
-- name: Include cert-manager and PKI playbook
-  ansible.builtin.import_playbook: certmanager.yml
-  tags: certmanager
+# Velero depends on MinIO and Longhorn
+- name: Include Velero backup/restore playbook
+  ansible.builtin.import_playbook: velero.yml
+  tags: velero
+
+# Harbor depends on NFS storage provisioner
+- name: Include Harbor OCI registry playbook
+  ansible.builtin.import_playbook: harbor.yml
+  tags: harbor
+
+- name: Include resource manifests playbook
+  ansible.builtin.import_playbook: manifests.yml
+  tags: manifests
 
 # Intel Device Plugins depends on cert-manager
 - name: Include Node Feature Discovery playbook

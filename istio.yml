@@ -29,11 +29,11 @@
         ln -sTf istio-{{ istio_version }} istio
       args:
         executable: /bin/bash
-      register: install_istioctl
-      changed_when: install_istioctl.rc == 0
+      register: install_cli
+      changed_when: install_cli.rc == 0
       failed_when: >-
-        install_istioctl.rc != 0 and
-        install_istioctl.rc != 9
+        install_cli.rc != 0 and
+        install_cli.rc != 9
 
     # istioctl should already be executable,
     # but not its parent dirs /opt/istio/bin
@@ -209,12 +209,12 @@
         name: kiali
         namespace: "{{ kiali_namespace }}"
       # https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_loops.html#retrying-a-task-until-a-condition-is-met
-      register: kiali_info
+      register: deploy_info
       until: >-
-        kiali_info.resources[0].status               is defined and
-        kiali_info.resources[0].status.readyReplicas is defined and
-        kiali_info.resources[0].status.readyReplicas ==
-        kiali_info.resources[0].status.replicas
+        deploy_info.resources[0].status               is defined and
+        deploy_info.resources[0].status.readyReplicas is defined and
+        deploy_info.resources[0].status.readyReplicas ==
+        deploy_info.resources[0].status.replicas
       retries: 30
       delay: 10
   any_errors_fatal: true
