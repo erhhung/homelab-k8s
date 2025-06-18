@@ -113,7 +113,7 @@ log_index_max_age: 7d
 
 # https://grafana.com/grafana/dashboards/?search=Fluent&dataSource=prometheus
 logging_grafana_dashboards:
-  # https://grafana.com/grafana/dashboards/18855-fluent-bit/
+  # https://grafana.com/grafana/dashboards/18855-fluent-bit
   - title: Fluent Bit
     gnetId: 18855
     tags:

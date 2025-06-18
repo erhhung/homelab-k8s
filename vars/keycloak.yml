@@ -316,7 +316,7 @@ keycloakx_chart_values:
 
 # https://grafana.com/grafana/dashboards/?search=Keycloak&dataSource=prometheus
 keycloak_grafana_dashboards:
-  # https://grafana.com/grafana/dashboards/19659-keycloak-metrics-dashboard/
+  # https://grafana.com/grafana/dashboards/19659-keycloak-metrics-dashboard
   - title: Keycloak Metrics Dashboard
     gnetId: 19659
     tags:

@@ -61,16 +61,16 @@
         desc="revision $rev of {{ item.title }} ({{ item.gnetId }})"
 
         echo "Downloading $desc..."
-        json="$(curl -sfL "${retry_opts[@]}" "$revs_url/$rev/download")"
+        echo "URL: $revs_url/$rev/download"
+        json="$(curl -fsSL "${retry_opts[@]}" "$revs_url/$rev/download")"
 
         tags='{{ item.tags | default([]) | to_json }}'
         [ "$tags" == "[]" ] || \
             json="$(jq ".tags += $tags" <<< "$json")"
+        echo >&2 "$json"
 
-        echo "Importing $desc..."
-        DATASOURCE="Prometheus"
-
-        curl -X POST -ku {{ api_auth }} \
+        echo -e "Importing $desc...\n"
+        curl -X POST -fku {{ api_auth }} \
           -H 'Content-Type: application/json' \
           --data-binary '{
             "dashboard": '"$json"',
@@ -79,9 +79,11 @@
               "name":     "{{ item.dsVar | default('DS_PROMETHEUS') }}",
               "type":     "datasource",
               "pluginId": "prometheus",
-              "value":    "'$DATASOURCE'"
+              "value":    "Prometheus"
             }]
-          }' "${retry_opts[@]}" {{ api_base }}/dashboards/import
+          }' \
+          --no-progress-meter "${retry_opts[@]}" \
+          {{ api_base }}/dashboards/import
       args:
         executable: /bin/bash
       loop: "{{ dashboards }}"

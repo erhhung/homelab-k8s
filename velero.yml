@@ -6,7 +6,7 @@
   tags: velero
   hosts: "{{ rke_control_plane_host }}"
   gather_facts: false
-  vars_files:
+  vars_files: &vars_files
     - vars/kubernetes.yml
     - vars/monitoring.yml
     - vars/minio.yml
@@ -72,4 +72,17 @@
       failed_when: >-
         install_cli.rc != 0 and
         install_cli.rc != 9
+  any_errors_fatal: true
+
+- name: Configure Velero dashboards
+  tags: dashboards
+  hosts: "{{ rke_control_plane_host }}"
+  gather_facts: false
+  vars_files: *vars_files
+  tasks:
+    - name: Import Grafana dashboards
+      vars:
+        dashboards: "{{ velero_grafana_dashboards }}"
+      ansible.builtin.include_tasks: tasks/grafana/dashboards.yml
+      when: grafana_api_server_online | default(true)
   any_errors_fatal: true

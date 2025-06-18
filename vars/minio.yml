@@ -294,12 +294,12 @@ minio_tenant_chart_values:
 
 # https://grafana.com/grafana/dashboards/?search=MinIO&dataSource=prometheus
 minio_grafana_dashboards:
-  # https://grafana.com/grafana/dashboards/13502-minio-dashboard/
+  # https://grafana.com/grafana/dashboards/13502-minio-dashboard
   - title: MinIO Dashboard
     gnetId: 13502
-  # https://grafana.com/grafana/dashboards/15305-minio-replication-dashboard/
+  # https://grafana.com/grafana/dashboards/15305-minio-replication-dashboard
   - title: MinIO Replication Dashboard
     gnetId: 15305
-  # https://grafana.com/grafana/dashboards/19237-minio-bucket-dashboard/
+  # https://grafana.com/grafana/dashboards/19237-minio-bucket-dashboard
   - title: MinIO Bucket Dashboard
     gnetId: 19237

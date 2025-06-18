@@ -422,10 +422,9 @@
       vars:
         options:
           tags:
-            - minio
             - storage
         dashboards: |
           {{ minio_grafana_dashboards | map('combine', options) }}
       ansible.builtin.include_tasks: tasks/grafana/dashboards.yml
-      when: grafana_api_server_online | default(false)
+      when: grafana_api_server_online | default(true)
   any_errors_fatal: true

@@ -131,7 +131,7 @@ nfs_provisioners:
 
 # https://grafana.com/grafana/dashboards/?search=Longhorn&dataSource=prometheus
 storage_grafana_dashboards:
-  # https://grafana.com/grafana/dashboards/22705-longhorn-dashboard/
+  # https://grafana.com/grafana/dashboards/22705-longhorn-dashboard
   - title: Longhorn Dashboard
     gnetId: 22705
     tags:
