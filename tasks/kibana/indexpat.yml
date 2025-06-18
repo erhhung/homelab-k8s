@@ -34,6 +34,8 @@
         <<: *uri_params
         url: "{{ saved_objs_url }}/_find?type=index-pattern&fields=title&per_page=1000"
       register: index_patterns
+      retries: 5
+      delay: 2
 
     - name: Need to create pattern?
       vars:
@@ -60,6 +62,8 @@
       register: create_pattern
       when: existing_id == ''
       changed_when: create_pattern.status == 200
+      retries: 5
+      delay: 2
 
     - name: Set index_pattern_id
       ansible.builtin.set_fact:

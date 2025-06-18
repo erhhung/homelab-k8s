@@ -1,0 +1,75 @@
+# https://velero.io/docs/latest
+# https://longhorn.io/docs/latest/advanced-resources/system-backup-restore/restore-to-a-new-cluster-using-velero
+# https://github.com/vmware-tanzu/helm-charts/tree/main/charts/velero
+---
+- name: Install Velero backup & restore
+  tags: velero
+  hosts: "{{ rke_control_plane_host }}"
+  gather_facts: false
+  vars_files:
+    - vars/kubernetes.yml
+    - vars/monitoring.yml
+    - vars/minio.yml
+    - vars/velero.yml
+  vars:
+    # required kubernetes>=24.2 package only in user virtualenv
+    ansible_python_interpreter: "{{ venv_python_interpreter }}"
+    kubeconfig: "{{ rke_kubeconfig }}"
+  pre_tasks:
+    - name: Get CA certificates from PKI
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
+      ansible.builtin.include_tasks: tasks/pki/cacerts.yml
+      when: ca_certificates is not defined
+
+    - name: Is the monitoring stack ready?
+      ansible.builtin.include_tasks: tasks/monitoring/stackready.yml
+      when: monitoring_stack_ready is not defined
+  tasks:
+    - name: Install Velero Helm chart
+      # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/helm_module.html
+      kubernetes.core.helm:
+        kubeconfig: "{{ kubeconfig }}"
+        chart_repo_url: https://vmware-tanzu.github.io/helm-charts
+        chart_ref: velero
+        chart_version: "{{ velero_chart_version }}"
+        release_name: "{{ velero_release_name }}"
+        release_values: "{{ velero_chart_values }}"
+        release_namespace: "{{ velero_namespace }}"
+        create_namespace: true
+        atomic: true
+      timeout: 300
+  any_errors_fatal: true
+
+# https://velero.io/docs/latest/basic-install/#install-the-cli
+- name: Install Velero client
+  tags: client
+  hosts: cluster
+  gather_facts: false
+  become: true
+  tasks:
+    - name: Install velero CLI tool
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/shell_module.html
+      ansible.builtin.shell: |
+        set -o pipefail
+
+        REL="https://github.com/vmware-tanzu/velero/releases/latest"
+        VER=$(curl -Is $REL | sed -En 's/^location:.+\/tag\/(.+)\r$/\1/p')
+
+        # check if latest version already installed
+        command -v velero &> /dev/null && {
+          v=($(velero version --client-only | grep Version))
+          [ "${v[-1]}" == "$VER" ] && exit 9 # no change
+        }
+        ARCH=$(uname -m | sed -e 's/aarch64/arm64/' \
+                              -e  's/x86_64/amd64/')
+        curl -fsSL "$REL/download/velero-$VER-linux-$ARCH.tar.gz" | \
+          tar -xz -C /usr/local/bin --no-same-owner --strip-components=1 \
+            velero-$VER-linux-$ARCH/velero
+      args:
+        executable: /bin/bash
+      register: install_cli
+      changed_when: install_cli.rc == 0
+      failed_when: >-
+        install_cli.rc != 0 and
+        install_cli.rc != 9
+  any_errors_fatal: true

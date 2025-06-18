@@ -28,6 +28,8 @@
         url: "{{ policy_url }}"
         status_code: [200, 404]
       register: ism_policy
+      retries: 5
+      delay: 2
 
     # it's too difficult to compare for changes if policy already exists,
     # so just overwrite it by getting ._seq_no and ._primary_term values
@@ -56,4 +58,6 @@
         status_code: [200, 201]
       # update almost never changes anything
       changed_when: ism_policy.status == 404
+      retries: 5
+      delay: 2
   any_errors_fatal: true

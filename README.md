@@ -2,6 +2,10 @@
 
 This Ansible-based project provisions Erhhung's high-availability Kubernetes cluster `homelab` using Rancher, and installs services to monitor IoT appliances and to deploy other personal projects.
 
+The approach taken on all service deployments is to treat the clusters as a **production** environment _(to the extent possible with limited resources and scaling capacity across a few mini PCs)_. That means TLS everywhere and requiring authenticated user access, scraping metrics, and configuring dashboards and alerts.
+
+## Overview
+
 The top-level Ansible playbook `main.yml` run by `play.sh` will provision 5 VM hosts (`rancher` and `k8s1`..`k8s4`)
 in the existing XCP-ng `Home` pool, all running Ubuntu Server 24.04 Minimal without customizations besides basic networking
 and authorized SSH key for the user `erhhung`.
@@ -51,17 +55,22 @@ All cluster services will be provisioned with TLS certificates from Erhhung's pr
     * Install on the `rancher` host using the official [install script](https://docs.k3s.io/quick-start#install-script)
 - [X] [Rancher Cluster Manager](https://ranchermanager.docs.rancher.com/) — provision (or import), manage, and monitor Kubernetes clusters
     * Install on K3s cluster using the [`rancher`](https://ranchermanager.docs.rancher.com/getting-started/installation-and-upgrade/install-upgrade-on-a-kubernetes-cluster#install-the-rancher-helm-chart) Helm chart
-- [X] [RKE2 Kubernetes Cluster](https://rke2.io/) — Rancher's Kubernetes distribution with focus on security and compliance
+- [X] [RKE2 Kubernetes Cluster](https://rke2.io/) — Kubernetes distribution with focus on security and compliance
     * Install on hosts `k8s1`-`k8s4` using the [RKE2 Ansible Role](https://github.com/lablabs/ansible-role-rke2) with HA mode enabled
-- [X] [NFS Dynamic Provisioners](https://computingforgeeks.com/configure-nfs-as-kubernetes-persistent-volume-storage/) — create persistent volumes on NFS shares
+- [X] [Certificate Manager](https://cert-manager.io/) — X.509 certificate management for Kubernetes
+    * Install on K3s and RKE clusters using the [`cert-manager`](https://cert-manager.io/docs/installation/helm/) Helm chart
+    * [X] Connect to Step CA `pki.fourteeners.local` using the [`step-issuer`](https://github.com/smallstep/helm-charts/tree/master/step-issuer) Helm chart
+    * [ ] Connect to Step CA `pki.fourteeners.local` as an [ACME](https://cert-manager.io/docs/configuration/acme/) `ClusterIssuer`
+- [X] [Longhorn Block Storage](https://longhorn.io/docs/latest/what-is-longhorn/) — distributed block storage for Kubernetes
+    * Install on main RKE cluster using the [`longhorn`](https://longhorn.io/docs/latest/deploy/install/install-with-helm/) Helm chart
+- [X] [NFS Dynamic Provisioner](https://computingforgeeks.com/configure-nfs-as-kubernetes-persistent-volume-storage/) — create persistent volumes on NFS shares
     * Install on K3s and RKE clusters using the [`nfs-subdir-external-provisioner`](https://github.com/kubernetes-sigs/nfs-subdir-external-provisioner/) Helm chart
 - [X] [Harbor Container Registry](https://goharbor.io/) — private OCI container and [Helm chart](https://goharbor.io/docs/main/working-with-projects/working-with-oci/working-with-helm-oci-charts/) registry
     * Install on K3s cluster using the [`harbor`](https://github.com/goharbor/harbor-helm/) Helm chart
 - [X] [MinIO Object Storage](https://github.com/minio/minio) — S3-compatible object storage with console
     * Install on main RKE cluster using the [MinIO Operator](https://min.io/docs/minio/kubernetes/upstream/operations/install-deploy-manage/deploy-operator-helm.html) and [MinIO Tenant](https://min.io/docs/minio/kubernetes/upstream/operations/install-deploy-manage/deploy-minio-tenant-helm.html) Helm charts
-- [X] [Certificate Manager](https://cert-manager.io/) — X.509 certificate management for Kubernetes
-    * Install on K3s and RKE clusters using the [`cert-manager`](https://cert-manager.io/docs/installation/helm/) Helm chart
-    * [ ] Integrate with private CA `pki.fourteeners.local` using [ACME `ClusterIssuer`](https://cert-manager.io/docs/configuration/acme/)
+- [X] [Velero Backup & Restore](https://velero.io/docs/latest/basic-install) — back up and restore persistent volumes
+    * Install on main RKE cluster using the [Velero](https://github.com/vmware-tanzu/helm-charts/tree/main/charts/velero) Helm chart
 - [X] [Node Feature Discovery](https://kubernetes-sigs.github.io/node-feature-discovery) — label nodes with available hardware features, like GPUs
     * Install on K3s and RKE clusters using the [`node-feature-discovery`](https://kubernetes-sigs.github.io/node-feature-discovery/stable/deployment/helm.html) Helm chart
     * [X] Install [Intel Device Plugins](https://intel.github.io/intel-device-plugins-for-kubernetes) using the [`intel-device-plugins-operator`](https://github.com/intel/helm-charts/tree/main/charts/device-plugin-operator) Helm chart
@@ -88,18 +97,21 @@ All cluster services will be provisioned with TLS certificates from Erhhung's pr
 - [X] [Kubernetes Metacontroller](https://metacontroller.github.io/metacontroller/) — enable easy creation of custom controllers
     * Install on main RKE cluster using the [`metacontroller`](https://metacontroller.github.io/metacontroller/guide/helm-install.html) Helm chart
 - [X] [Ollama LLM Server](https://github.com/ollama/ollama) with [Ollama CLI](https://github.com/masgari/ollama-cli) — run LLMs on Kubernetes cluster
-    * Install on a GPU-capable node using the [`ollama`](https://github.com/cowboysysop/charts/tree/master/charts/ollama) Helm chart
+    * Install on an Intel GPU node using the [`ollama`](https://github.com/cowboysysop/charts/tree/master/charts/ollama) Helm chart and [IPEX-LLM Ollama portable zip](https://github.com/intel/ipex-llm/blob/main/docs/mddocs/Quickstart/ollama_portable_zip_quickstart.md)
 - [ ] [Flowise Agentic Workflows](https://flowiseai.com/) — build AI agents using visual workflows
     * Install on main RKE cluster using the [`flowise`](https://github.com/cowboysysop/charts/tree/master/charts/flowise) Helm chart
 - [ ] [OpenTelemetry Collector](https://opentelemetry.io/docs/collector/) with [Jaeger UI](https://www.jaegertracing.io/) -- telemetry collector agent and distributed tracing backend
     * Install on main RKE cluster using the [OpenTelemetry Collector](https://opentelemetry.io/docs/platforms/kubernetes/helm/collector/) Helm chart
     * Install Jaeger using the [Jaeger](https://github.com/jaegertracing/helm-charts/tree/main/charts/jaeger) Helm chart
-- [ ] [Velero Backup & Restore](https://velero.io/docs/latest/basic-install) — back up and restore persistent volumes
-    * Install on main RKE cluster using the [Velero](https://github.com/vmware-tanzu/helm-charts/tree/main/charts/velero) Helm chart
 - [ ] [Backstage Developer Portal](https://backstage.io/) — software catalog and developer portal
 - [ ] [Meshery](https://github.com/meshery/meshery) — visual and collaborative GitOps platform
 - [ ] [NATS](https://docs.nats.io/) — high performance message queues (Kafka alternative) with [JetStream](https://docs.nats.io/nats-concepts/jetstream) for persistence
 - [ ] [KEDA](https://keda.sh/) — Kubernetes Event Driven Autoscaler
+
+## To-Do Tasks
+
+- [ ] Migrate manually provisioned certificates and secrets to ones issued by `cert-manager` with auto-rotation
+- [ ] Automate creation of DNS records in pfSense via custom Ansible module that invokes pfSense REST APIs
 
 ## Ansible Vault
 
@@ -125,9 +137,10 @@ ansible-vault view   $VAULTFILE
 | `icloud_smtp.*`                   | `minio_admin_pass`
 | `k3s_token`                       | `opensearch_admin_pass`
 | `rke2_token`                      | `keycloak_admin_pass`
-| `harbor_secret`                   | `thanos_admin_pass`
+| `stepca_provisioner_pass`         | `thanos_admin_pass`
 | `minio_client_pass`               | `grafana_admin_pass`
-| `stepca_provisioner_pass`         | `argocd_admin_pass`
+| `velero_repo_pass`                | `argocd_admin_pass`
+| `harbor_secret`                   |
 | `dashboards_os_pass`              |
 | `fluent_os_pass`                  |
 | `valkey_pass`                     |
@@ -203,26 +216,25 @@ however, all privileged operations using `sudo` will require the password stored
     ```
 </details>
 
-6. <details><summary>Install <strong>Longhorn</strong> dynamic PV provisioner<br/> &nbsp; &nbsp;
-    Install <strong>MinIO</strong> object storage in <em><strong>HA</strong></em> mode</summary><br/>
+6. <details><summary>Install <strong><code>cert-manager</code></strong> to automate certificate issuing</summary><br/>
 
-    6.1. Create a pool of LVM logical volumes  
-    6.2. Install Longhorn storage components  
-    6.3. Install NFS dynamic PV provisioner  
-    6.4. Install MinIO tenant using NFS PVs
+    6.1. Connect to **Step CA** `pki.fourteeners.local` as a `ClusterIssuer`
 
     ```bash
-    ./play.sh storage minio
+    ./play.sh certmanager
     ```
 </details>
 
-7. <details><summary>Create resources from manifest files</summary><br/>
+7. <details><summary>Install <strong>Longhorn</strong> dynamic PV provisioner<br/> &nbsp; &nbsp; Install <strong>MinIO</strong> object storage in <em><strong>HA</strong></em> mode<br/> &nbsp; &nbsp; Install <strong>Velero</strong> backup and restore tools</summary><br/>
 
-    **IMPORTANT**: Resource manifests must specify the namespaces they wished to be installed  
-    into because the playbook simply applies each one without targeting a specific namespace
+    7.1. Create a pool of LVM logical volumes  
+    7.2. Install Longhorn storage components  
+    7.3. Install NFS dynamic PV provisioner  
+    7.4. Install MinIO tenant using NFS PVs  
+    7.5. Install Velero using MinIO as target
 
     ```bash
-    ./play.sh manifests
+    ./play.sh storage minio velero
     ```
 </details>
 
@@ -233,12 +245,13 @@ however, all privileged operations using `sudo` will require the password stored
     ```
 </details>
 
-9. <details><summary>Install <strong><code>cert-manager</code></strong> to automate certificate issuing</summary><br/>
+9. <details><summary>Create resources from manifest files</summary><br/>
 
-    9.1. Connect to `pki.fourteeners.local` as a `ClusterIssuer`
+    **IMPORTANT**: Resource manifests must specify the namespaces they wished to be installed  
+    into because the playbook simply applies each one without targeting a specific namespace
 
     ```bash
-    ./play.sh certmanager
+    ./play.sh manifests
     ```
 </details>
 
@@ -357,9 +370,13 @@ Alternatively, **run all playbooks** automatically in order:
 
 Output from `play.sh` will be logged in "`ansible.log`".
 
+### VS Code Shortcuts
+
+The default Bash shell for VS Code terminal has been configured to load a custom [`.bash_profile`](.vscode/.bash_profile) containing aliases for common Ansible commands as well as the `play` function with **completions** for playbook tags.
+
 ### Multipass Required
 
-Due to the dependency chain of the **Prometheus monitoring stack** (Keycloak and Valkey), the `monitoring.yml` playbook must be run after most other playbooks. At the same time, those dependent services also want to create `ServiceMonitor` resources that require the Prometheus Operator CRDs. Therefore, a **second pass** through all playbooks, starting with `storage.yml`, is required to **enable metrics collection** on those services.
+Due to the dependency chain of the **Prometheus monitoring stack** (Keycloak and Valkey), the `monitoring.yml` playbook must be run after most other playbooks. At the same time, those dependent services also want to create `ServiceMonitor` resources that require the Prometheus Operator CRDs. Therefore, a **second pass** through all playbooks, starting with `certmanager.yml`, is required to **enable metrics collection** on those services.
 
 ### Optional Playbooks
 

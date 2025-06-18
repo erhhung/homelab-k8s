@@ -80,6 +80,15 @@
       loop: "{{ pam_limits }}"
       loop_control:
         label: "{{ item.item }}"
+
+    # only necessary if hosts are not rebooted after
+    # drivers get installed by packages.yml playbook
+    - name: Load installed kernel modules
+      # https://docs.ansible.com/ansible/latest/collections/community/general/modprobe_module.html
+      community.general.modprobe:
+        name: "{{ item }}"
+        state: present
+      loop: "{{ modprobe }}"
   any_errors_fatal: true
 
 - name: Configure network settings

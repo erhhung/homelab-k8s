@@ -36,6 +36,8 @@
         force_basic_auth: true
         return_content: true
       register: existing_dashboards
+      retries: 5
+      delay: 2
 
     # https://istio.io/latest/docs/ops/integrations/grafana/#option-2-import-from-grafanacom-into-an-existing-deployment
     - name: Import Grafana dashboard
@@ -47,6 +49,7 @@
         set -eo pipefail
 
         revs_url="https://grafana.com/api/dashboards/{{ item.gnetId }}/revisions"
+        retry_opts=(--retry 5 --retry-delay 2)
 
         # find latest revision that matches filter
         filter='{{ item.filter | default('') }}'
@@ -58,7 +61,8 @@
         desc="revision $rev of {{ item.title }} ({{ item.gnetId }})"
 
         echo "Downloading $desc..."
-        json="$(curl -sfL "$revs_url/$rev/download")"
+        json="$(curl -sfL "${retry_opts[@]}" "$revs_url/$rev/download")"
+
         tags='{{ item.tags | default([]) | to_json }}'
         [ "$tags" == "[]" ] || \
             json="$(jq ".tags += $tags" <<< "$json")"
@@ -66,7 +70,7 @@
         echo "Importing $desc..."
         DATASOURCE="Prometheus"
 
-        curl -X POST -sku {{ api_auth }} \
+        curl -X POST -ku {{ api_auth }} \
           -H 'Content-Type: application/json' \
           --data-binary '{
             "dashboard": '"$json"',
@@ -77,7 +81,7 @@
               "pluginId": "prometheus",
               "value":    "'$DATASOURCE'"
             }]
-          }' {{ api_base }}/dashboards/import
+          }' "${retry_opts[@]}" {{ api_base }}/dashboards/import
       args:
         executable: /bin/bash
       loop: "{{ dashboards }}"

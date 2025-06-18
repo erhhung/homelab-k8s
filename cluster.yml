@@ -155,11 +155,11 @@
         curl -fsSLo "$BIN/calicoctl" "$REL/$VER/calicoctl-linux-$ARCH"
         chmod +x    "$BIN/calicoctl"
         EOT
-      register: calicoctl
-      changed_when: calicoctl.rc == 0
+      register: install_cli
+      changed_when: install_cli.rc == 0
       failed_when: >-
-        calicoctl.rc != 0 and
-        calicoctl.rc != 9
+        install_cli.rc != 0 and
+        install_cli.rc != 9
   any_errors_fatal: true
 
 - name: Apply supplemental RKE2 configuration
@@ -318,12 +318,12 @@
             name: rke2-coredns-rke2-coredns
             namespace: kube-system
           # https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_loops.html#retrying-a-task-until-a-condition-is-met
-          register: coredns_info
+          register: deploy_info
           until: >-
-            coredns_info.resources[0].status               is defined and
-            coredns_info.resources[0].status.readyReplicas is defined and
-            coredns_info.resources[0].status.readyReplicas ==
-            coredns_info.resources[0].status.replicas
+            deploy_info.resources[0].status               is defined and
+            deploy_info.resources[0].status.readyReplicas is defined and
+            deploy_info.resources[0].status.readyReplicas ==
+            deploy_info.resources[0].status.replicas
           retries: 30
           delay: 10
 
@@ -373,12 +373,12 @@
             kind: Deployment
             name: cattle-cluster-agent
             namespace: "{{ rancher_namespace }}"
-          register: agent_info
+          register: deploy_info
           until: >-
-            agent_info.resources[0].status               is defined and
-            agent_info.resources[0].status.readyReplicas is defined and
-            agent_info.resources[0].status.readyReplicas ==
-            agent_info.resources[0].status.replicas
+            deploy_info.resources[0].status               is defined and
+            deploy_info.resources[0].status.readyReplicas is defined and
+            deploy_info.resources[0].status.readyReplicas ==
+            deploy_info.resources[0].status.replicas
           retries: 30
           delay: 10
   # handlers:

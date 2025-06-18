@@ -171,11 +171,11 @@
         chmod +x mc
       args:
         executable: /bin/bash
-      register: install_mc
-      changed_when: install_mc.rc == 0
+      register: install_cli
+      changed_when: install_cli.rc == 0
       failed_when: >-
-        install_mc.rc != 0 and
-        install_mc.rc != 9
+        install_cli.rc != 0 and
+        install_cli.rc != 9
 
     - name: Configure mc CLI tool
       vars:

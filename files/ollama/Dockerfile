@@ -39,7 +39,7 @@ RUN <<'EOT'
   REL="https://github.com/ipex-llm/ipex-llm/releases/latest"
   VER=$(curl -Is $REL | sed -En 's/^location:.+\/tag\/v(.+)\r$/\1/p')
   curl -fsSL "$REL/download/ollama-ipex-llm-$VER-ubuntu.tgz" | \
-    tar -xz -C ollama-ipex-llm --no-same-owner --strip 1
+    tar -xz -C ollama-ipex-llm --no-same-owner --strip-components=1
 )
 EOT
 

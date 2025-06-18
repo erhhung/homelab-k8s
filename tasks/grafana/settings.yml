@@ -83,6 +83,8 @@
       register: apply_settings
       when: needs_apply is truthy
       changed_when: apply_settings.status == 200
+      retries: 5
+      delay: 2
 
     # Grafana has no API to get existing
     # values of help flags, so always set
@@ -97,4 +99,6 @@
         # no body needed
       loop: "{{ flags }}"
       changed_when: false
+      retries: 5
+      delay: 2
   any_errors_fatal: true

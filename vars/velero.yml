@@ -1,0 +1,136 @@
+# velero_repo_pass: {vault.yml}
+
+velero_namespace: velero
+
+velero_secrets:
+  minio: minio-credentials
+
+# https://github.com/vmware-tanzu/helm-charts/tree/main/charts/velero
+velero_chart_version: "10.0.4"
+velero_release_name: velero
+
+# https://github.com/vmware-tanzu/helm-charts/tree/main/charts/velero/values.yaml
+velero_chart_values:
+  upgradeCRDs: true
+  cleanUpCRDs: true
+
+  # this is how storage provider plugins get
+  # installed (at least one must be defined)
+  # NOTE: velero-plugin-for-csi is now part
+  # of Velero (as of v1.14), so must not be
+  # included here
+  initContainers:
+    # use the AWS plugin to connect to MinIO:
+    # https://github.com/vmware-tanzu/velero-plugin-for-aws
+    - name: aws-plugin
+      image: docker.io/velero/velero-plugin-for-aws
+      imagePullPolicy: IfNotPresent
+      volumeMounts:
+        - name: plugins
+          mountPath: /target
+
+  podSecurityContext:
+    fsGroup: 2000
+  containerSecurityContext:
+    capabilities:
+      drop: ["ALL"]
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    runAsNonRoot: true
+    runAsUser: 1000
+
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+
+  # define default backup location--
+  # create BackupStorageLocation CRD
+  backupsEnabled: true
+  # enable volume snapshots feature--
+  # create VolumeSnapshotLocation CRD
+  snapshotsEnabled: true
+  # disable Restic file-level backups
+  deployNodeAgent: false
+
+  # create Secret with MinIO credentials
+  # referenced by BackupStorageLocation
+  credentials:
+    useSecret: true
+    name: "{{ velero_secrets['minio'] }}"
+    secretContents:
+      cloud: |
+        [default]
+        aws_access_key_id = velero
+        aws_secret_access_key = {{ minio_client_pass }}
+
+  configuration:
+    # server-level settings passed as CLI args
+    # (run `velero server --help` for details)
+    # https://velero.io/docs/latest/csi
+    features: EnableCSI
+    logLevel: info # default=info
+    uploaderType: kopia # or restic
+    backupSyncPeriod: 5m # default=1m
+    storeValidationFrequency: 10m # default=1m
+
+    # "default" BackupStorageLocation:
+    # https://velero.io/docs/latest/api-types/backupstoragelocation
+    # https://github.com/vmware-tanzu/velero-plugin-for-aws/tree/main/backupstoragelocation.md
+    backupStorageLocation:
+      - name: default
+        default: true
+        provider: aws
+        bucket: backups
+        prefix: velero
+        caCert: "{{ ca_certificates[1] | b64encode }}"
+        credential:
+          name: "{{ velero_secrets['minio'] }}"
+          key: cloud
+        config:
+          region: "{{ minio_region }}"
+          s3Url: "{{ minio_service_url }}"
+          publicUrl: "{{ minio_public_url }}"
+          s3ForcePathStyle: "true"
+
+    # don't create VolumeSnapshotLocation because the "aws" provider
+    # is for taking EBS snapshots, not Longhorn, CSI-based snapshots
+    # https://velero.io/docs/latest/api-types/volumesnapshotlocation
+    volumeSnapshotLocation: []
+
+  metrics:
+    enabled: true
+    scrapeInterval: 30s
+    scrapeTimeout: 10s
+
+    serviceMonitor: &prometheus
+      enabled: "{{ prometheus_crds_installed }}"
+      additionalLabels:
+        release: "{{ monitoring_release_name }}"
+
+    prometheusRule:
+      <<: *prometheus
+      spec:
+        - alert: VeleroBackupFailures
+          labels:
+            severity: warning
+          annotations:
+            message: >-
+              {% raw -%}
+              Velero backup {{ $labels.schedule }} has {{ $value | humanizePercentage }} failed backups.
+              {%- endraw %}
+          expr: >-
+            velero_backup_failure_total{schedule!=""} / velero_backup_attempt_total{schedule!=""} > 0.25
+          for: 15m
+
+  extraObjects:
+    # this secret is created automatically by Velero (not part of Helm release)
+    # and uses the same "static-passw0rd", so let's explicitly set our own repo
+    # password for Kopia/Restic repository encryption (and add to Helm release)
+    - apiVersion: v1
+      kind: Secret
+      metadata:
+        name: velero-repo-credentials # expected
+      type: Opaque
+      data:
+        repository-password: "{{ velero_repo_pass | b64encode }}"
