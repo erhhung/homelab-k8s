@@ -192,5 +192,5 @@
       vars:
         dashboards: "{{ opensearch_grafana_dashboards }}"
       ansible.builtin.include_tasks: tasks/grafana/dashboards.yml
-      when: grafana_api_server_online | default(false)
+      when: grafana_api_server_online | default(true)
   any_errors_fatal: true

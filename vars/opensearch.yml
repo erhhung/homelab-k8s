@@ -411,7 +411,7 @@ opensearch_chart_values:
 
 # https://grafana.com/grafana/dashboards/?search=OpenSearch&dataSource=prometheus
 opensearch_grafana_dashboards:
-  # https://grafana.com/grafana/dashboards/23029-opensearch/
+  # https://grafana.com/grafana/dashboards/23029-opensearch
   - title: OpenSearch
     gnetId: 23029
     tags:

@@ -302,15 +302,17 @@ command -v crictl &> /dev/null && {
 }
 
 command -v istioctl &> /dev/null && {
-  alias i='istioctl'
   . <(istioctl completion bash 2> /dev/null)
-  complete -o default -F __start_istioctl i
 }
 
 command -v mc &> /dev/null && {
   complete -C "$(which mc)" mc
   export MC_CONFIG_DIR="$HOME/.config/minio"
   export MC_DISABLE_PAGER=1
+}
+
+command -v velero &> /dev/null && {
+  . <(velero completion bash 2> /dev/null)
 }
 
 # usage: rmevicted [args...]

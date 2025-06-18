@@ -134,3 +134,11 @@ velero_chart_values:
       type: Opaque
       data:
         repository-password: "{{ velero_repo_pass | b64encode }}"
+
+# https://grafana.com/grafana/dashboards/?search=Velero&dataSource=prometheus
+velero_grafana_dashboards:
+  # https://grafana.com/grafana/dashboards/16829-kubernetes-tanzu-velero
+  - title: Kubernetes / Tanzu / Velero
+    gnetId: 16829
+    tags:
+      - storage

@@ -71,7 +71,8 @@
       vars:
         # IMPORTANT: facts are not stored in ansible_facts
         # on localhost--they're simply top-level variables
-        needs_apply: "{{ lookup('vars', 'apply_'~ item.key) }}"
+        # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/vars_lookup.html
+        needs_apply: "{{ lookup('vars', 'apply_'~ item.key, default=false) }}"
       ansible.builtin.uri:
         url: "{{ item.url }}"
         <<: *uri_params

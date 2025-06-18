@@ -18,8 +18,17 @@
       ansible.builtin.include_tasks: tasks/monitoring/stackready.yml
       when: monitoring_stack_ready is not defined
   tasks:
-    - name: Create {{ metacontroller_namespace }} Namespace
+    - name: Install Metacontroller CRDs
+      vars:
+        tags_base_url: https://raw.githubusercontent.com/metacontroller/metacontroller/refs/tags
+        helm_base_url: "{{ tags_base_url }}/v{{ metacontroller_chart_version }}/deploy/helm/metacontroller"
       # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_module.html
+      kubernetes.core.k8s:
+        kubeconfig: "{{ kubeconfig }}"
+        src: "{{ helm_base_url }}/crds/metacontroller-crds-v1.yaml"
+        state: present
+
+    - name: Create {{ metacontroller_namespace }} Namespace
       kubernetes.core.k8s:
         kubeconfig: "{{ kubeconfig }}"
         api_version: v1

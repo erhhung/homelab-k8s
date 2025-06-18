@@ -132,7 +132,7 @@ valkey_chart_values:
 
 # https://grafana.com/grafana/dashboards/?search=Valkey&dataSource=prometheus
 valkey_grafana_dashboards:
-  # https://grafana.com/grafana/dashboards/763-redis-dashboard-for-prometheus-redis-exporter-1-x/
+  # https://grafana.com/grafana/dashboards/763-redis-dashboard-for-prometheus-redis-exporter-1-x
   - title: Redis Dashboard for Prometheus Redis Exporter 1.x
     gnetId: 763
     dsVar: DS_PROM
