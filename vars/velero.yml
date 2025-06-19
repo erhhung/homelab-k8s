@@ -135,6 +135,26 @@ velero_chart_values:
       data:
         repository-password: "{{ velero_repo_pass | b64encode }}"
 
+    # create schedule to backup entire cluster daily:
+    # https://velero.io/docs/main/api-types/schedule
+    - apiVersion: velero.io/v1
+      kind: Schedule
+      metadata:
+        name: cluster-daily
+      spec:
+        # use cron expression because "@every 24h" cannot indicate start hour
+        schedule: 0 12 * * * # in UTC time; run every day at 4am Pacific time
+        useOwnerReferencesInBackup: false
+        template:
+          metadata:
+            labels:
+              velero.io/schedule-name: cluster-daily
+          excludedNamespaces:
+            - vcluster-*
+          itemOperationTimeout: 10m
+          csiSnapshotTimeout: 30m
+          ttl: 168h0m0s # 1 week
+
 # https://grafana.com/grafana/dashboards/?search=Velero&dataSource=prometheus
 velero_grafana_dashboards:
   # https://grafana.com/grafana/dashboards/16829-kubernetes-tanzu-velero
