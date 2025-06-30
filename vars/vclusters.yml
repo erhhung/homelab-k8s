@@ -25,3 +25,11 @@ vc_domain: "{{ ['vcluster'] | product(search_domains) | map('join','.') | first 
 # pods in the namespace prior to vCluster deletion
 vc_pods: # regex matching <namespace>/<pod-name>
   - ^kube-system/coredns-.*$
+
+# https://github.com/loft-sh/vcluster/tree/main/chart
+vcluster_chart_version: "0.26.0"
+
+# https://github.com/loft-sh/vcluster/tree/main/chart/values.yaml
+# https://www.vcluster.com/docs/vcluster/configure/vcluster-yaml
+# vcluster_chart_values: {templates/vcluster.yaml.j2}
+# values are templated to support multiple vClusters

@@ -1,7 +1,8 @@
 # this Jinja2 template is values file for the vCluster Helm chart
-# https://www.vcluster.com/docs/vcluster/configure/vcluster-yaml/
+# https://github.com/loft-sh/vcluster/tree/main/chart/values.yaml
+# https://www.vcluster.com/docs/vcluster/configure/vcluster-yaml
 
-# https://www.vcluster.com/docs/vcluster/configure/vcluster-yaml/sync/
+# https://www.vcluster.com/docs/vcluster/configure/vcluster-yaml/sync
 sync:
   fromHost:
     # https://www.vcluster.com/docs/vcluster/configure/vcluster-yaml/sync/from-host/nodes
@@ -22,9 +23,11 @@ sync:
 
 # https://www.vcluster.com/docs/vcluster/category/components
 controlPlane:
-  # https://www.vcluster.com/docs/vcluster/configure/vcluster-yaml/control-plane/components/distro/
+  # https://www.vcluster.com/docs/vcluster/configure/vcluster-yaml/control-plane/components/distro
   distro:
-    k0s:
+    # vanilla Kubernetes is the recommended distro
+    # as K0s is deprecated and no longer supported
+    k8s:
       enabled: true
 
   # backingStore:
