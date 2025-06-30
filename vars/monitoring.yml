@@ -14,8 +14,9 @@ monitoring_passwords:
   grafana: "{{ monitoring_pass }}" # to Thanos Query
   erhhung: "{{ thanos_admin_pass }}"
 
-# send alerts by e-mail or just drop
+# send alerts or just drop
 email_alerts_enabled: false
+slack_alerts_enabled: true
 
 monitoring_namespace: monitoring
 # aliases of "homelab" and direct
@@ -97,7 +98,8 @@ thanos_metrics_auth:
 
 # https://prometheus.io/docs/alerting/latest/configuration/
 # https://github.com/prometheus/alertmanager/tree/main/doc/examples/simple.yml
-# https://fabianlee.org/2022/07/03/prometheus-external-template-for-alertmanager-html-email-with-kube-prometheus-stack/
+# https://prometheus-operator.dev/docs/developer/alerting/#using-alertmanagerconfig-resources
+# https://fabianlee.org/2022/07/03/prometheus-external-template-for-alertmanager-html-email-with-kube-prometheus-stack
 alertmanager_config:
   global:
     resolve_timeout: 5m
@@ -119,6 +121,12 @@ alertmanager_config:
       # https://prometheus.io/docs/alerting/latest/configuration/#email_config
       email_configs:
         - to: "{{ user_erhhung.email }}"
+    - name: homelab-slack
+      # https://prometheus.io/docs/alerting/latest/configuration/#slack_config
+      slack_configs:
+        - channel: "#alerts"
+          api_url: "{{ slack_webhook_url }}"
+          send_resolved: false
     # aka /dev/null
     - name: "null"
 
@@ -135,7 +143,8 @@ alertmanager_config:
         matchers:
           - alertname = Watchdog
       - receiver: "{{ 'erhhung-email' if email_alerts_enabled else 'null' }}"
-        continue: true
+        continue: true # send to Slack as well if enabled
+      - receiver: "{{ 'homelab-slack' if slack_alerts_enabled else 'null' }}"
 
   # https://prometheus.io/docs/alerting/latest/configuration/#inhibit_rule
   inhibit_rules:
@@ -165,12 +174,14 @@ alertmanager_config:
 monitoring_oidc_client_id:
   prometheus: prometheus
   alertmanager: alertmanager
+
 # monitoring_oidc_client_secret: {vault.yml}
 # sso.fourteeners.local is same host as keycloak.fourteeners.local
 monitoring_oidc_issuer_uri: https://sso.fourteeners.local/realms/homelab
 
 # https://github.com/oauth2-proxy/oauth2-proxy/releases
 monitoring_oauth2_proxy_version: "7.9.0"
+
 # https://oauth2-proxy.github.io/oauth2-proxy/configuration/overview/#general-provider-options
 # https://oauth2-proxy.github.io/oauth2-proxy/configuration/providers/keycloak_oidc
 # (references "redis_cluster_urls" var from vars/valkey.yml)
@@ -271,7 +282,7 @@ prometheus_stack_chart_values:
         memory: 24Mi
       limits:
         cpu: 50m
-        memory: 64Mi
+        memory: 96Mi
 
     serviceMonitor:
       selfMonitor: true
@@ -283,6 +294,8 @@ prometheus_stack_chart_values:
     enabled: true
     agentMode: false
 
+    # view prometheus.yaml:
+    # kubectl get secret -n monitoring prometheus-prometheus-stack-prometheus -o jsonpath='{.data.prometheus\.yaml\.gz}' | base64 -d | gunzip | yq
     # https://github.com/prometheus-operator/prometheus-operator/tree/main/Documentation/api-reference/api.md#prometheusspec
     prometheusSpec:
       # total pods = replicas * shards
@@ -307,7 +320,7 @@ prometheus_stack_chart_values:
             storageClassName: "{{ storage_classes['single'] }}"
             resources:
               requests:
-                storage: 6Gi
+                storage: 8Gi
 
       persistentVolumeClaimRetentionPolicy:
         whenScaled: Retain
@@ -321,11 +334,52 @@ prometheus_stack_chart_values:
         # there may be lag in a slow cluster
         outOfOrderTimeWindow: 5s
 
+      # default intervals
+      scrapeInterval: 30s
+      # see related setting for Thanos Ruler:
+      # thanos_chart_values.ruler.evalInterval
+      evaluationInterval: 1m
+
+      # https://prometheus-operator.dev/docs/developer/scrapeclass
+      scrapeClasses: []
+
+      # {} value selects all namespaces
+      serviceMonitorNamespaceSelector: {}
+      # by not providing serviceMonitorSelector and having
+      # serviceMonitorSelectorNilUsesHelmValues: true, the
+      # chart will use default selector that matches label:
+      # release: {{ monitoring_release_name }}
+      serviceMonitorSelectorNilUsesHelmValues: true
+      serviceMonitorSelector: {}
+      #   matchLabels:
+      #     prometheus: scrape
+      # exact same behavior as above
+      podMonitorNamespaceSelector: {}
+      podMonitorSelectorNilUsesHelmValues: true
+      podMonitorSelector: {}
+      ruleNamespaceSelector: {}
+      ruleSelectorNilUsesHelmValues: true
+      ruleSelector: {}
+      probeNamespaceSelector: {}
+      probeSelectorNilUsesHelmValues: true
+      probeSelector: {}
+      scrapeConfigNamespaceSelector: {}
+      scrapeConfigSelectorNilUsesHelmValues: true
+      scrapeConfigSelector: {}
+
       # https://github.com/prometheus-operator/prometheus-operator/tree/main/Documentation/api-reference/api.md#queryspec
       query: # QuerySpec
         maxConcurrency: 4
         maxSamples: 50000
         timeout: 30s
+
+      # https://prometheus.io/docs/prometheus/latest/feature_flags
+      enableFeatures:
+        # https://prometheus.io/docs/prometheus/latest/feature_flags/#concurrent-evaluation-of-independent-rules
+        - concurrent-rule-eval
+
+      # allow default "pull" model only
+      enableRemoteWriteReceiver: false
 
       externalUrl: https://{{ monitoring_fqdns['prometheus'] | first }}
 
@@ -597,6 +651,8 @@ prometheus_stack_chart_values:
   alertmanager:
     enabled: true
 
+    # view alertmanager.yaml:
+    # kubectl get secret -n monitoring alertmanager-prometheus-stack-alertmanager -o jsonpath='{.data.alertmanager\.yaml}' | base64 -d | yq
     # https://github.com/prometheus-operator/prometheus-operator/tree/main/Documentation/api-reference/api.md#alertmanagerspec
     alertmanagerSpec:
       replicas: 2
@@ -626,6 +682,13 @@ prometheus_stack_chart_values:
 
       # data retention period
       retention: 72h # 3 days
+
+      # {} value selects all namespaces
+      alertmanagerConfigNamespaceSelector: {}
+      #   matchLabels:
+      #     prometheus: config
+      # {} value selects all configs
+      alertmanagerConfigSelector: {}
 
       externalUrl: https://{{ monitoring_fqdns['alertmanager'] | first }}
       scheme: https
@@ -1030,7 +1093,7 @@ prometheus_stack_chart_values:
         memory: 16Mi
       limits:
         cpu: 50m
-        memory: 96Mi
+        memory: 128Mi
 
     extraVolumes:
       - name: tls-proxy
