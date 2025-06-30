@@ -284,7 +284,6 @@ venv() {
 
 command -v kubectl &> /dev/null && {
   alias k='kubectl'
-  # set up Bash completion for kubectl
   . <(kubectl completion bash 2> /dev/null)
   complete -o default -F __start_kubectl k
 }
@@ -301,8 +300,8 @@ command -v crictl &> /dev/null && {
   complete -o default -F _crictl c
 }
 
-command -v istioctl &> /dev/null && {
-  . <(istioctl completion bash 2> /dev/null)
+command -v harbor &> /dev/null && {
+  . <(harbor completion bash 2> /dev/null)
 }
 
 command -v mc &> /dev/null && {
@@ -315,6 +314,10 @@ command -v velero &> /dev/null && {
   . <(velero completion bash 2> /dev/null)
 }
 
+command -v istioctl &> /dev/null && {
+  . <(istioctl completion bash 2> /dev/null)
+}
+
 # usage: rmevicted [args...]
 # all args, including -A, are
 # passed to "kubectl get pods"
@@ -325,6 +328,10 @@ rmevicted() {
     | select(.status.reason | contains("Evicted"))
     | "kubectl delete pods \(.metadata.name) -n \(.metadata.namespace)"' \
     | xargs -n 1 -r bash -c
+}
+
+[ -f "$HOME/.bash_secrets" ] && {
+   . "$HOME/.bash_secrets"
 }
 
 # only installed on Rancher host

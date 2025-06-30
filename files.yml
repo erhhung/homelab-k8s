@@ -45,13 +45,14 @@
       ansible.builtin.shell: |
         # restart Bash and load .bash_aliases
         # in order to use my custom functions
-        exec /bin/bash -c '
-          ADMIN_PASS=none
-          . .bash_aliases
+        exec /bin/bash <<'EOT'
+        ADMIN_PASS=none
+        . .bash_aliases
 
-          # zeros out file time MM:ss
-          _touch -t 00 . .sudo_as_* .rancher_api
-          # now do the same again but recursively
-          touchall -t 00 {{ copy_files | map('quote') | join(' ') }}'
+        # zeros out file time MM:ss
+        _touch -t 00 . .sudo_as_* .rancher_api
+        # now do the same again but recursively
+        touchall -t 00 {{ copy_files | map('quote') | join(' ') }}
+        EOT
       changed_when: true
   any_errors_fatal: true

@@ -60,6 +60,67 @@
     #   # binary release not currently available
   any_errors_fatal: true
 
+# https://github.com/goharbor/harbor-cli#installation
+- name: Install Harbor CLI utility
+  hosts: k8s_all
+  gather_facts: false
+  vars_files:
+    - vars/harbor.yml
+  tasks:
+    - name: Install Harbor CLI utility
+      become: true
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/shell_module.html
+      ansible.builtin.shell: |
+        set -o pipefail
+
+        REL="https://github.com/goharbor/harbor-cli/releases/latest"
+        VER=$(curl -Is $REL | sed -En 's/^location:.+\/tag\/(.+)\r$/\1/p')
+
+        # check if latest version already installed
+        command -v harbor &> /dev/null && {
+          ver=$(harbor version | yq .Version)
+          [ "$ver" == "$VER" ] && exit 9 # no change
+        }
+        ARCH=$(uname -m | sed -e 's/aarch64/arm64/' \
+                              -e  's/x86_64/amd64/')
+        curl -fsSL "$REL/download/harbor_${VER#v}_linux_$ARCH.tar.gz" | \
+          tar -xz -C /usr/local/bin --no-same-owner harbor
+      args:
+        executable: /bin/bash
+      register: install_cli
+      changed_when: install_cli.rc == 0
+      failed_when: >-
+        install_cli.rc != 0 and
+        install_cli.rc != 9
+
+    # https://github.com/goharbor/harbor-cli/tree/main/doc/cli-config/_index.md
+    # https://github.com/goharbor/harbor-cli/tree/main/doc/cli-encryption/_index.md
+    - name: Configure Harbor CLI login
+      ansible.builtin.shell: |
+        # restart Bash and load .bash_aliases and .bash_secrets
+        exec /bin/bash -l <<'EOT'
+        . .bash_aliases
+        set -o pipefail
+
+        harbor context list -o yaml | \
+          grep -q admin && exit 9 # no change
+
+        [ "$HARBOR_ENCRYPTION_KEY" ] || {
+          export HARBOR_ENCRYPTION_KEY=$(openssl rand -base64 32)
+          cat <<EOF >> .bash_secrets
+        export HARBOR_ENCRYPTION_KEY="$HARBOR_ENCRYPTION_KEY"
+        EOF
+        }
+        harbor login https://{{ harbor_fqdn }} \
+          -u admin -p '{{ harbor_admin_pass }}'
+        EOT
+      register: config_cli
+      changed_when: config_cli.rc == 0
+      failed_when: >-
+        config_cli.rc != 0 and
+        config_cli.rc != 9
+  any_errors_fatal: true
+
 - name: Configure Harbor registry
   hosts: "{{ k3s_control_plane_host }}"
   gather_facts: false
@@ -99,8 +160,8 @@
         not auto_scan
       changed_when: true
 
+    # could also be done using the CLI
     - name: Add non-admin Harbor users
-      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/shell_module.html
       ansible.builtin.shell: |
         set -o pipefail
 
