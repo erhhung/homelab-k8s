@@ -25,6 +25,7 @@ rke2_service_cidr: ["10.43.0.0/16"]
 # https://docs.rke2.io/reference/server_config
 # - "option: value"
 rke2_server_options:
+  - "write-kubeconfig-mode: 0644"
   # enable Prometheus scraping
   - "etcd-expose-metrics: true"
   - |-

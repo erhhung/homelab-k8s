@@ -170,7 +170,38 @@
     - vars/kubernetes.yml
     - vars/lablabs.rke2.yml
     - vars/rancher.yml
+  vars:
+    rke2_svc: "rke2-{{ 'server' if inventory_hostname
+      in groups[rke_control_plane_group] else 'agent' }}"
   tasks:
+    # https://github.com/containerd/cri/tree/master/docs/config.md
+    # search "base_runtime_spec" setting with "cri-base.json" (note that
+    # "io.containerd.grpc.v1.cri" is now "io.containerd.cri.v1.runtime")
+    - name: Set containerd RLIMIT_NOFILE
+      become: true
+      vars:
+        containerd_config_dir: "{{ containerd_config | dirname }}"
+      block:
+        - name: Write containerd/config.toml.tmpl
+          # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/template_module.html
+          ansible.builtin.template:
+            src: "{{ template_dir }}/rke2/containerd/config.toml.tmpl.j2"
+            # https://docs.rke2.io/advanced#configuring-containerd
+            dest: "{{ containerd_config_dir }}/config-v3.toml.tmpl"
+            mode: "0644"
+          register: containerd_toml
+
+        # generate base OCI spec JSON by installing
+        # containerd package; running: ctr oci spec
+        - name: Write containerd/cri-base.json
+          vars:
+            nofile_limit: "{{ pam_limits[0].value }}"
+          ansible.builtin.template:
+            src: "{{ template_dir }}/rke2/containerd/cri-base.json.j2"
+            dest: "{{ containerd_config_dir }}/cri-base.json"
+            mode: "0644"
+          register: cri_base_json
+
     # increase kube-proxy livenessProbe failureThreshold
     # since it's causing frequent unhealthy pod restarts.
     # turns out not necessary as it's a Linux kernel bug:
@@ -234,7 +265,6 @@
     # https://docs.rke2.io/advanced#auto-deploying-manifests
     - name: Write HelmChartConfig manifests
       become: true
-      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/template_module.html
       ansible.builtin.template:
         src: "{{ template_dir }}/{{ item.src }}"
         dest: "{{ rke_manifests_dir }}/{{ item.dest }}"
@@ -253,19 +283,21 @@
     # and manually restarting the rke2-server service also
     # often doesn't work, but rebooting the node does work,
     # followed by continuing from the rancher.yml playbook
-    - name: Restart rke2-server service
+    - name: Restart {{ rke2_svc }} service
       # noqa no-handler
       when: >-
+        containerd_toml.changed   or
+        cri_base_json.changed     or
         kube_proxy_cr is defined and
-        kube_proxy_cr.changed    or
+        kube_proxy_cr.changed     or
         chart_configs is defined and
         chart_configs.results  | map(attribute='changed') is any
       become: true
       block:
-        - name: Stop rke2-server service
+        - name: Stop {{ rke2_svc }} service
           # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/systemd_service_module.html
           ansible.builtin.systemd_service:
-            name: rke2-server
+            name: "{{ rke2_svc }}"
             state: stopped
 
         - name: Wait until processes exit
@@ -273,19 +305,21 @@
           ansible.builtin.pause:
             seconds: 60
 
-        - name: Start rke2-server service
+        - name: Start {{ rke2_svc }} service
           ansible.builtin.systemd_service:
-            name: rke2-server
+            name: "{{ rke2_svc }}"
             state: started
           timeout: 300
           register: restart_rke
-          until: restart_rke.state == 'started'
+          until: >-
+            restart_rke.state is  defined and
+            restart_rke.state == 'started'
           retries: 3
           delay: 10
 
-        - name: Check rke2-server status
+        - name: Check {{ rke2_svc }} status
           # noqa command-instead-of-module
-          ansible.builtin.command: systemctl is-active rke2-server
+          ansible.builtin.command: systemctl is-active {{ rke2_svc }}
           changed_when: false
           register: is_active
           until: is_active.stdout | trim == 'active'

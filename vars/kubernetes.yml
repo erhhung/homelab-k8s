@@ -34,6 +34,7 @@ rke_tls_dir: /var/lib/rancher/rke2/server/tls
 rke_bin_dir: /var/lib/rancher/rke2/bin
 
 container_runtime: containerd
+containerd_config: /var/lib/rancher/rke2/agent/etc/containerd/config.toml
 # location exported by CONTAINER_RUNTIME_ENDPOINT variable
 containerd_socket: /run/k3s/containerd/containerd.sock
 

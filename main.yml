@@ -15,9 +15,10 @@
   ansible.builtin.import_playbook: rancher.yml
   tags: rancher
 
-# if initial cluster installation failed, restart from
-# rancher.yml playbook to obtain registration manifest
-# URL, else Rancher cluster agents will never be ready
+# NOTE: if initial cluster installation fails, restart
+# from rancher.yml playbook to obtain the registration
+# manifest URL, or else cluster.yml playbook will just
+# spin waiting for Rancher cluster agents to be ready
 - name: Include Rancher RKE cluster playbook
   ansible.builtin.import_playbook: cluster.yml
   tags: cluster
