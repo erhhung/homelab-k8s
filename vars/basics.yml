@@ -14,15 +14,18 @@ sysctl:
 # adjust system resource limits:
 # https://www.man7.org/linux/man-pages/man5/limits.conf.5.html
 # https://docs.ansible.com/ansible/latest/collections/community/general/pam_limits_module.html
-# run "ulimit -a" to see current values
+# run "ulimit -a" to see current limits
 pam_limits:
+  # keep at index 0
   - domain: "*"
     item: nofile
     type: "-"
-    value: 65536
+    value: 1048576
 
 # only necessary if hosts are not rebooted after
 # drivers get installed by packages.yml playbook
+# run "lsmod | grep <driver>" to check if driver
+# is loaded
 modprobe:
   - i915
 
