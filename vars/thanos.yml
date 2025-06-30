@@ -272,6 +272,9 @@ thanos_chart_values:
     revisionHistoryLimit: 2
 
     # default interval
+    # see related setting for Prometheus:
+    # prometheus_stack_chart_values.prometheus
+    #   .prometheusSpec.evaluationInterval
     evalInterval: 1m
 
     # https://thanos.io/tip/components/rule.md/#configuring-rules
