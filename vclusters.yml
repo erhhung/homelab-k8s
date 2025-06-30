@@ -14,8 +14,8 @@
         keep: "{{ vclusters | map(attribute='name') | to_json }}"
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/shell_module.html
       ansible.builtin.shell: |
-        # run Bash to load /etc/profile.d/kubernetes.sh
-        # so kubectl is in $PATH and KUBECONFIG is set
+        # run Bash and source /etc/profile.d
+        # scripts so that kubectl is in PATH
         exec /bin/bash -l <<'EOT'
         set -o pipefail
 

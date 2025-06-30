@@ -153,6 +153,7 @@ ansible-vault view   $VAULTFILE
 | `monitoring_pass`                 |
 | `monitoring_oidc_client_secret.*` |
 | `alertmanager_smtp_pass`          |
+| `slack_webhook_url`               |
 | `oauth2_proxy_cookie_secret`      |
 | `kiali_oidc_client_secret`        |
 | `argocd_signing_key`              |
@@ -353,7 +354,7 @@ however, all privileged operations using `sudo` will require the password stored
     ```
 </details>
 
-21. <details><summary>Create <strong>virtual clusters</strong> in RKE running <strong>K0s</strong></summary><br/>
+21. <details><summary>Create <strong>virtual Kubernetes clusters</strong> in RKE</summary><br/>
 
     ```bash
     ./play.sh vclusters

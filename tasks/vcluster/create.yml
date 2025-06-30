@@ -84,7 +84,7 @@
             kubeconfig: "{{ rke_kubeconfig }}"
             chart_repo_url: https://charts.loft.sh
             chart_ref: vcluster
-            release_state: present
+            chart_version: "{{ vcluster_chart_version }}"
             release_name: "{{ vcluster.name }}"
             release_values: "{{ values | from_yaml }}"
             release_namespace: vcluster-{{ vcluster.name }}
