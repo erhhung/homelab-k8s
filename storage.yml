@@ -60,6 +60,20 @@
         state: stopped
         enabled: false
 
+    # for some reason, multipathd service keeps getting
+    # started despite being disabled, so also add iSCSI
+    # to its blacklist to avoid Longhorn mount failures
+    - name: iSCSI in multipath blacklist
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/blockinfile_module.html
+      ansible.builtin.blockinfile:
+        path: /etc/multipath.conf
+        block: |
+          blacklist {
+              device {
+                  vendor "IET" # iSCSI Enterprise Target
+              }
+          }
+
     - name: Run Longhorn environment check
       # run once in each cluster if
       # Longhorn not installed yet
