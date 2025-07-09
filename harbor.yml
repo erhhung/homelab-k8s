@@ -2,6 +2,7 @@
 # https://goharbor.io/docs/latest/install-config/harbor-ha-helm/
 ---
 - name: Install Harbor on K3s cluster
+  tags: install
   hosts: "{{ k3s_control_plane_host }}"
   gather_facts: false
   vars_files: &vars_files
@@ -62,6 +63,7 @@
 
 # https://github.com/goharbor/harbor-cli#installation
 - name: Install Harbor CLI utility
+  tags: cli
   hosts: k8s_all
   gather_facts: false
   vars_files:
@@ -71,6 +73,7 @@
       become: true
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/shell_module.html
       ansible.builtin.shell: |
+        cd /usr/local/bin
         set -o pipefail
 
         REL="https://github.com/goharbor/harbor-cli/releases/latest"
@@ -83,8 +86,9 @@
         }
         ARCH=$(uname -m | sed -e 's/aarch64/arm64/' \
                               -e  's/x86_64/amd64/')
-        curl -fsSL "$REL/download/harbor_${VER#v}_linux_$ARCH.tar.gz" | \
-          tar -xz -C /usr/local/bin --no-same-owner harbor
+        curl -fsSL "$REL/download/harbor-cli_${VER#v}_linux_$ARCH.tar.gz" | \
+          tar -xz --no-same-owner harbor-cli
+        mv -f harbor-cli harbor
       args:
         executable: /bin/bash
       register: install_cli
@@ -122,6 +126,7 @@
   any_errors_fatal: true
 
 - name: Configure Harbor registry
+  tags: config
   hosts: "{{ k3s_control_plane_host }}"
   gather_facts: false
   vars_files: *vars_files
