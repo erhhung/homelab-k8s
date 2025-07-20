@@ -916,7 +916,7 @@ prometheus_stack_chart_values:
           # https://grafana.com/docs/grafana/latest/administration/provisioning/#custom-http-headers-for-data-sources
           httpHeaderName1: Authorization
         secureJsonData:
-          tlsCACert: "{{ ca_certs }}"
+          tlsCACert: "{{ ca_certificates | join('\n') }}"
           basicAuthPassword: "{{ monitoring_passwords['grafana'] }}"
           httpHeaderValue1: Basic {{ ('grafana:'~ monitoring_passwords['grafana']) | b64encode }}
         isDefault: true
@@ -931,7 +931,7 @@ prometheus_stack_chart_values:
           implementation: prometheus
           handleGrafanaManagedAlerts: false
         secureJsonData:
-          tlsCACert: "{{ ca_certs }}"
+          tlsCACert: "{{ ca_certificates | join('\n') }}"
 
     extraSecretMounts:
       - name: tls-server

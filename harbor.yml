@@ -32,11 +32,11 @@
   tasks:
     - name: Create Harbor ingress secret
       vars:
-        cert_desc: Harbor
-        cert_file: harbor
         secret_name: "{{ harbor_secrets['ingress'] }}"
         secret_ns: "{{ release_ns }}"
-      ansible.builtin.include_tasks: tasks/k8s/secrets/tls.pki.yml
+        cert_name: harbor-ingress
+        sans: "{{ [harbor_fqdn] }}"
+      ansible.builtin.include_tasks: tasks/k8s/secrets/tls.step.yml
 
     # https://github.com/goharbor/harbor-helm/tree/main
     - name: Install Harbor Helm chart
@@ -53,12 +53,9 @@
         release_namespace: "{{ release_ns }}"
         release_values: "{{ harbor_chart_values }}"
         atomic: true
-      when: needs_upgrade
+        wait: true
       timeout: 300
-
-    # - name: Install Harbor CLI utility
-    #   # https://github.com/goharbor/harbor-cli
-    #   # binary release not currently available
+      when: needs_upgrade
   any_errors_fatal: true
 
 # https://github.com/goharbor/harbor-cli#installation
@@ -126,7 +123,7 @@
   any_errors_fatal: true
 
 - name: Configure Harbor registry
-  tags: config
+  tags: configure
   hosts: "{{ k3s_control_plane_host }}"
   gather_facts: false
   vars_files: *vars_files

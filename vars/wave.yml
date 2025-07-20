@@ -1,0 +1,46 @@
+wave_namespace: wave
+
+# https://github.com/wave-k8s/wave#deploying-with-helm
+wave_chart_version: "4.4.1"
+wave_release_name: wave
+
+# https://github.com/wave-k8s/wave/tree/master/charts/wave/values.yaml
+wave_chart_values:
+  # enable leader election
+  replicas: 2
+
+  # run on different nodes
+  topologySpreadConstraints:
+    - maxSkew: 1
+      topologyKey: kubernetes.io/hostname
+      whenUnsatisfiable: DoNotSchedule
+      labelSelector:
+        matchLabels:
+          app: wave
+
+  # make sure replicas don't
+  # restart at the same time
+  pdb:
+    enabled: true
+
+  # enable faster updates:
+  # https://github.com/wave-k8s/wave#webhooks
+  webhooks:
+    enabled: true
+
+  # reconcile every hour:
+  # https://github.com/wave-k8s/wave#sync-period
+  syncPeriod: 1h
+
+  resources:
+    requests:
+      cpu: 10m
+      memory: 64Mi
+    limits:
+      memory: 256Mi
+
+# annotation to add to Deployments, StatefulSets,
+# and DaemonSets to trigger rolling pod restarts
+# whenever mounted ConfigMaps and Secrets change
+wave_optin_annotation:
+  wave.pusher.com/update-on-config-change: "true"

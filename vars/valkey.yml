@@ -1,20 +1,30 @@
 # valkey_pass: {vault.yml}
 
 valkey_namespace: valkey
-valkey_host_names: # 192.168.0.222-227
-  - valkey
-  - redis
+
+# total nodes = primaries + replicas * primaries
+# 6 nodes = 3 primaries + 1 replica per primary
+# must have 3+ primaries or cluster init fails
+valkey_node_count: 6
+
+# valkey, valkey{1..6}
+#  redis,  redis{1..6}
+# 192.168.0.22{2..7}
+valkey_host_names: |
+  {% set hosts = ['valkey', 'redis']   %}
+  {% for i in range(valkey_node_count) %}
+  {%   set _ = hosts.append('valkey' ~ (i+1)) %}
+  {% endfor %}
+  {% for i in range(valkey_node_count) %}
+  {%   set _ = hosts.append('redis' ~ (i+1)) %}
+  {% endfor %}
+  {{ hosts  }}
 
 # remember to add valkey1.fourteeners.local thru valkey6.
 # (valkey. = <all-vIPs> plus aliases redis1. thru redis6.)
 # to pfSense DNS using kube virtual IPs: 192.168.0.222-227
 # https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_filters.html#products
 valkey_fqdns: "{{ valkey_host_names | product(search_domains) | map('join','.') }}"
-
-# total nodes = primaries + replicas * primaries
-# 6 nodes = 3 primaries + 1 replica per primary
-# must have 3+ primaries or cluster init fails
-valkey_node_count: 6
 
 # https://docs.ansible.com/ansible/latest/collections/ansible/utils/ipmath_filter.html
 # (requires Python package "netaddr" on Ansible controller)

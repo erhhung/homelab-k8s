@@ -32,12 +32,15 @@
   tasks:
     - name: Create Ollama ingress secret
       vars:
-        cert_desc: Ollama
-        cert_file: ollama
         secret_name: "{{ ollama_secrets['ingress'] }}"
         secret_ns: "{{ ollama_namespace }}"
         release: "{{ ollama_release_name }}"
-      ansible.builtin.include_tasks: tasks/k8s/secrets/tls.pki.yml
+        cert_name: ollama-ingress
+        sans:
+          - "{{ ollama_fqdn }}"
+          - "*.{{ ollama_namespace }}.svc.cluster.local"
+          - "*.{{ ollama_namespace }}.svc"
+      ansible.builtin.include_tasks: tasks/k8s/secrets/tls.step.yml
 
     - name: Install Ollama Helm chart
       # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/helm_module.html

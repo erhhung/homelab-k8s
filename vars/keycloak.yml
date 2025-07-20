@@ -26,13 +26,13 @@ keycloak_db_user: keycloak
 # use {{ pgpool_db_pass }}
 
 # Java requires key file to be in PKCS#8 / DER format:
-# openssl pkcs8 -topk8 -inform PEM -outform DER -in tls.key -nocrypt | sponge tls.key
+# openssl pkcs8 -topk8 -inform PEM -outform DER -in tls.key -nocrypt -out key.der
 keycloak_jdbc_params:
   ssl: "true"
   sslmode: verify-full
   # mounted volume: /opt/keycloak/tls/database
   sslcert: /opt/keycloak/tls/database/tls.crt
-  sslkey: /opt/keycloak/tls/database/tls.key
+  sslkey: /opt/keycloak/tls/database/key.der
   sslrootcert: /opt/keycloak/tls/database/ca.crt
 
 # file is in "keycloakx-dbsql" ConfigMap

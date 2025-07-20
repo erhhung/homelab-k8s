@@ -14,8 +14,7 @@
   pre_tasks:
     - name: Include vars/lablabs.rke2ha.yml
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_vars_module.html
-      ansible.builtin.include_vars:
-        file: vars/lablabs.rke2ha.yml
+      ansible.builtin.include_vars: vars/lablabs.rke2ha.yml
       when: rke_ha_mode
 
     - name: Ensure odd control plane nodes
@@ -381,7 +380,6 @@
               metadata:
                 labels: "{{ labels_by_node[item] }}"
             state: patched
-            wait: true
           loop: "{{ groups['cluster'] }}"
           when: item in labels_by_node
 

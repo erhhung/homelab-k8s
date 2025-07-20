@@ -15,43 +15,48 @@
     ansible_python_interpreter: "{{ venv_python_interpreter }}"
     kubeconfig: "{{ rke_kubeconfig }}"
   pre_tasks:
-    - name: Is the monitoring stack ready?
+    - name: Get CA certificates from PKI
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
+      ansible.builtin.include_tasks: tasks/pki/cacerts.yml
+      when: ca_certificates is not defined
+
+    - name: Is the monitoring stack ready?
       ansible.builtin.include_tasks: tasks/monitoring/stackready.yml
       when: monitoring_stack_ready is not defined
   tasks:
     - name: Create MinIO ingress secret
       vars:
-        cert_desc: MinIO {{ item.desc }} ingress
-        cert_file: "{{ item.file }}"
         secret_name: "{{ item.name }}"
         secret_ns: "{{ minio_tenant_namespace }}"
+        create_ns: "{{ i == 0 }}"
         release: "{{ minio_tenant_release_name }}"
-      ansible.builtin.include_tasks: tasks/k8s/secrets/tls.pki.yml
+        cert_name: minio-{{ item.cert }}-ingress
+        sans: "{{ item.sans }}"
+      ansible.builtin.include_tasks: tasks/k8s/secrets/tls.step.yml
       loop:
         - name: "{{ minio_secrets['console'] }}"
-          desc: console
-          file: minio
+          cert: console
+          sans:
+            - "{{ minio_console_fqdn }}"
         - name: "{{ minio_secrets['s3api'] }}"
-          desc: S3
-          file: s3
+          cert: s3
+          sans:
+            - "{{ minio_s3api_fqdn }}"
+            - "*.{{ minio_s3api_fqdn }}"
+            - "*.{{ minio_tenant_name }}-hl.{{ minio_tenant_namespace }}.svc.cluster.local"
+            - "*.{{ minio_tenant_namespace }}.svc.cluster.local"
+            - "*.{{ minio_tenant_namespace }}.svc"
       loop_control:
-        label: "{{ item.desc }}"
-      # sets pem_chain fact
-
-    - name: Set ca_certs fact from pem_chain
-      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/set_fact_module.html
-      ansible.builtin.set_fact:
-        # pem_chain fact set by tasks/k8s/secrets/tls.pki.yml
-        # above contains both intermediate and root CA certs
-        ca_certs: "{{ pem_chain[1:] | join('\n') }}"
+        label: "{{ item.cert }}"
+        index_var: i
 
     - name: Create MinIO CA certs secret
       vars:
+        ca_chain: "{{ ca_certificates | join('\n') }}"
         secret_name: "{{ item.name }}"
         secret_data:
           # must use name "public.crt"
-          public.crt: "{{ ca_certs }}"
+          public.crt: "{{ ca_chain }}"
         secret_ns: "{{ item.namespace }}"
         create_ns: "{{ item.namespace != minio_tenant_namespace }}"
         release: "{{ item.release }}"
@@ -98,6 +103,7 @@
         release_namespace: "{{ minio_operator_namespace }}"
         release_values: "{{ minio_operator_chart_values }}"
         atomic: true
+        wait: true
       timeout: 300
 
     # https://min.io/docs/minio/kubernetes/upstream/operations/install-deploy-manage/deploy-minio-tenant.html
@@ -112,6 +118,7 @@
         release_namespace: "{{ minio_tenant_namespace }}"
         release_values: "{{ minio_tenant_chart_values }}"
         atomic: true
+        wait: false
       timeout: 300
 
     - name: Wait until MinIO tenant ready
@@ -267,6 +274,7 @@
             jobs: |
               {% set jobs = [] %}
               {% for type in minio_collect_metrics_for %}
+              {#   https://docs.ansible.com/ansible/latest/collections/ansible/builtin/combine_filter.html #}
               {%   set _ = jobs.append(job | ansible.builtin.combine({
                      'job_name':     name_prefix ~ type ~'-job',
                      'metrics_path': path_prefix ~ type,

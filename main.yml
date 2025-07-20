@@ -27,6 +27,10 @@
   ansible.builtin.import_playbook: certmanager.yml
   tags: certmanager
 
+- name: Include Wave config monitor playbook
+  ansible.builtin.import_playbook: wave.yml
+  tags: wave
+
 - name: Include storage provisioners playbook
   ansible.builtin.import_playbook: storage.yml
   tags: storage

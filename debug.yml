@@ -251,6 +251,55 @@
            text: {{ text }}
           found: {{ found }}
 
+    - name: Debug certificate SANs
+      vars:
+        fqdns:
+          - foo1.fourteeners.local
+          - foo2.fourteeners.local
+        sans_:
+          - foo
+          - "{{ fqdns }}"
+          - "*.foo.svc.cluster.local"
+          - "*.foo.svc"
+          - admin@fourteeners.local
+          - 192.168.0.222
+          - 192.168.0.223
+        sans: "{{ sans_ | flatten }}"
+        cn: "{{ sans | first }}"
+        ips: "{{ sans | select('search', '^[0-9]+\\.') }}"
+        emails: "{{ sans | select('search', '@') }}"
+        # too bad ansible.builtin.difference filter
+        # does not maintain the original list order
+        dns: |
+          {% set dns = [] %}
+          {% for san in sans %}
+          {%   if san not in ips and san not in emails
+                                 and san is search('\\.') %}
+          {%     set _ = dns.append(san) %}
+          {%   endif %}
+          {% endfor %}
+          {% if dns | length > 0 and cn != dns[0] %}
+          {%   set _ = dns.insert(0, cn) %}
+          {% endif %}
+          {{ dns   }}
+        usages: |
+          {% set usages = ['digital signature'] %}
+          {% if dns is truthy or ips is truthy  %}
+          {%   set _ = usages.append('key encipherment') %}
+          {%   set _ = usages.append('server auth')      %}
+          {% endif %}
+          {% if emails is truthy %}
+          {%   set _ = usages.append('client auth') %}
+          {% endif  %}
+          {{ usages }}
+      ansible.builtin.debug:
+        msg: |2-
+              commonName: {{ cn  }}
+                dnsNames: {{ dns }}
+             ipAddresses: {{ ips }}
+          emailAddresses: {{ emails }}
+                  usages: {{ usages }}
+
     - name: Debug create query string
       vars:
         query_params:
@@ -377,6 +426,36 @@
           } }}"
       ansible.builtin.debug:
         var: policies
+
+- name: Ansible quirks and behaviors
+  tags: quirks
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Modify loaded variable
+      block:
+        - name: Include vars/wave.yml
+          # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_vars_module.html
+          ansible.builtin.include_vars: vars/wave.yml
+
+        - name: Add extra annotations
+          vars:
+            extras:
+              extra-secrets: another-secret
+            annotations: |
+              {% set annos = wave_optin_annotation %}
+              {% for anno, value in extras.items() %}
+              {%   set _ = annos.update({
+                     'wave.pusher.com/' ~ anno: value
+                   })   %}
+              {% endfor %}
+              {{ annos  }}
+          ansible.builtin.debug:
+            var: annotations
+
+        - name: wave_optin_annotation
+          ansible.builtin.debug:
+            var: wave_optin_annotation
 
 - name: Useful collection of tasks
   tags: tasks

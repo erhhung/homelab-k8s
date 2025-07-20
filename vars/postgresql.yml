@@ -18,11 +18,15 @@ postgresql_host_names: # 192.168.0.222
 # and pg.) to pfSense DNS using kube virtual IP 192.168.0.222
 # https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_filters.html#products
 postgresql_fqdns: "{{ postgresql_host_names | product(search_domains) | map('join','.') }}"
+
+# https://docs.ansible.com/ansible/latest/collections/ansible/utils/ipmath_filter.html
+# (requires Python package "netaddr" on Ansible controller)
+postgresql_lb_ip: "{{ rke_lb_vip | ansible.utils.ipmath(1) }}"
+
 pgpool_cluster_host: postgresql-pgpool.{{ postgresql_namespace }}.svc.cluster.local
 
 postgresql_secrets:
   node-tls: postgresql-tls
-  scraper-tls: pgpool-scraper-tls
 
 # https://github.com/bitnami/charts/tree/main/bitnami/postgresql-ha
 postgresql_chart_version: "16.0.5"
@@ -143,18 +147,14 @@ postgresql_chart_values:
     extraVolumes:
       - name: scraper-tls
         secret:
-          # pgpool-scraper-tls Secret
-          # will be created by Ansible
-          secretName: "{{ postgresql_secrets['scraper-tls'] }}"
+          secretName: "{{ monitoring_secrets['scraper'] }}"
 
   service: # port 5432
     # since PostgreSQL does not talk HTTP, we do not create
     # an Ingress; instead, we create a LoadBalancer service:
     # https://github.com/bitnami/charts/tree/main/bitnami/postgresql-ha#configure-the-way-how-to-expose-postgresql
     type: LoadBalancer
-    # https://docs.ansible.com/ansible/latest/collections/ansible/utils/ipmath_filter.html
-    # (requires Python package "netaddr" on Ansible controller)
-    loadBalancerIP: "{{ rke_lb_vip | ansible.utils.ipmath(1) }}"
+    loadBalancerIP: "{{ postgresql_lb_ip }}"
 
   metrics:
     # adds postgres-exporter sidecar container:

@@ -138,6 +138,10 @@
     kubeconfig: "{{ rke_kubeconfig }}"
     secret_ns: "{{ kiali_namespace }}"
     create_ns: false
+  pre_tasks:
+    - name: Get CA certificates from PKI
+      ansible.builtin.include_tasks: tasks/pki/cacerts.yml
+      when: ca_certificates is not defined
   tasks:
     # https://kiali.io/docs/installation/installation-guide/install-with-helm/#operator-only-install
     - name: Install Kiali Operator Helm chart
@@ -151,14 +155,7 @@
         release_namespace: "{{ kiali_operator_namespace }}"
         create_namespace: true
         atomic: true
-
-    - name: Create Kiali ingress secret
-      vars:
-        cert_desc: Kiali
-        cert_file: kiali
-        secret_name: "{{ kiali_secrets['ingress'] }}"
-      ansible.builtin.include_tasks: tasks/k8s/secrets/tls.pki.yml
-      # sets pem_chain fact
+        wait: true
 
     # https://kiali.io/docs/configuration/authentication/openid/#set-up-with-no-namespace-access-control-support
     - name: Create Kiali OpenID secret
@@ -167,6 +164,13 @@
         secret_data:
           oidc-secret: "{{ kiali_oidc_client_secret }}"
       ansible.builtin.include_tasks: tasks/k8s/secrets/generic.yml
+
+    - name: Create Kiali ingress secret
+      vars:
+        secret_name: "{{ kiali_secrets['ingress'] }}"
+        cert_name: kiali-ingress
+        sans: "{{ kiali_fqdns }}"
+      ansible.builtin.include_tasks: tasks/k8s/secrets/tls.step.yml
 
     # https://kiali.io/docs/configuration/authentication/openid/#using-an-openid-provider-with-a-self-signed-certificate
     - name: Create kiali-cabundle ConfigMap
@@ -179,9 +183,7 @@
             name: kiali-cabundle # expected
             namespace: "{{ kiali_namespace }}"
           data:
-            # pem_chain fact set by tasks/k8s/secrets/tls.pki.yml
-            # above contains both intermediate and root CA certs
-            openid-server-ca.crt: "{{ pem_chain[1:] | join('\n') }}"
+            openid-server-ca.crt: "{{ ca_certificates | join('\n') }}"
         validate:
           fail_on_error: false
         state: present
@@ -229,12 +231,12 @@
       vars:
         # required kubernetes>=24.2 package only in user virtualenv
         ansible_python_interpreter: "{{ venv_python_interpreter }}"
-        definitions: |-
-          {{ lookup('ansible.builtin.template', template_dir ~ '/istio/monitoring.yaml.j2') }}
+        # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/template_lookup.html
+        definitions: "{{ lookup('ansible.builtin.template',
+          template_dir ~ '/istio/monitoring.yaml.j2') }}"
       kubernetes.core.k8s:
         kubeconfig: "{{ rke_kubeconfig }}"
         namespace: "{{ istio_namespace }}"
-        # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/template_lookup.html
         definition: "{{ definitions }}"
         state: present
         apply: true

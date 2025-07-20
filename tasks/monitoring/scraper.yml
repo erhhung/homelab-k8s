@@ -1,0 +1,26 @@
+# create client TLS secret "monitoring-scraper-tls"
+# (monitoring_secrets['scraper']) in the specified
+# namespace for Prometheus scrape jobs
+#
+# pass the following vars:
+#   kubeconfig <required> path to kubeconfig
+#   secret_ns  <required> namespace of Secret
+#   create_ns  [optional] default=true
+#   release    [optional] release name: add Helm
+#                         labels and annotations
+---
+- name: Include vars/monitoring.yml
+  # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_vars_module.html
+  ansible.builtin.include_vars: vars/monitoring.yml
+  when: monitoring_secrets is not defined
+
+- name: Create monitoring scraper secret
+  vars:
+    secret_name: "{{ monitoring_secrets['scraper'] }}"
+    cert_name: monitoring-scraper
+    days: 365
+    sans:
+      - scraper
+      - scraper@fourteeners.local
+  # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
+  ansible.builtin.include_tasks: tasks/k8s/secrets/tls.step.yml

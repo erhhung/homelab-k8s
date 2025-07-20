@@ -39,6 +39,39 @@
         wait: true
   any_errors_fatal: true
 
+# https://cert-manager.io/docs/reference/cmctl/#manual-installation
+- name: Install cert-manager CLI tool
+  tags: cli
+  hosts: k8s_all
+  gather_facts: false
+  become: true
+  tasks:
+    - name: Install cert-manager CLI tool
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/shell_module.html
+      ansible.builtin.shell: |
+        set -o pipefail
+
+        REL="https://github.com/cert-manager/cmctl/releases/latest"
+        VER=$(curl -Is $REL | sed -En 's/^location:.+\/tag\/(.+)\r$/\1/p')
+
+        # check if latest version already installed
+        command -v cmctl &> /dev/null && {
+          ver=($(cmctl version --client --short))
+          [ "${ver[-1]}" == "$VER" ] && exit 9 # no change
+        }
+        ARCH=$(uname -m | sed -e 's/aarch64/arm64/' \
+                              -e  's/x86_64/amd64/')
+        curl -fsSL "$REL/download/cmctl_linux_$ARCH.tar.gz" | \
+          tar -xz -C /usr/local/bin --no-same-owner cmctl
+      args:
+        executable: /bin/bash
+      register: install_cli
+      changed_when: install_cli.rc == 0
+      failed_when: >-
+        install_cli.rc != 0 and
+        install_cli.rc != 9
+  any_errors_fatal: true
+
 # https://smallstep.com/docs/certificate-manager/kubernetes-step-issuer
 # https://github.com/smallstep/step-issuer
 - name: Configure Step CA as ClusterIssuer
@@ -59,7 +92,6 @@
           delegate_to: "{{ pki_host }}"
           vars:
             ansible_python_interpreter: "{{ default_python_interpreter }}"
-          # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/shell_module.html
           ansible.builtin.shell: |
             exec /bin/bash -l <<'EOT'
             export XDG_CONFIG_HOME="$HOME/.config"

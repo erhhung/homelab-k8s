@@ -1,0 +1,56 @@
+# opt-in to Wave monitoring of Deployment, StatefulSet,
+# or DaemonSet by adding "update-on-config-change" and,
+# optionally, additional annotations:
+# https://github.com/wave-k8s/wave#project-concepts
+#
+# pass the following vars:
+#   kubeconfig <required> path to kubeconfig
+#   res_kind   <required> Deployment|StatefulSet|DaemonSet
+#   res_name   <required> name      of resource
+#   res_ns     <required> namespace of resource
+#   additional [optional] additional annotations without
+#                         "wave.pusher.com/" name prefix
+#   wait_secs  [optional] seconds (default=0) to wait after
+#                         adding to allow restarts to begin
+---
+- name: Include vars/wave.yml
+  # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_vars_module.html
+  ansible.builtin.include_vars: vars/wave.yml
+  when: wave_optin_annotation is not defined
+
+- name: Opt-in to Wave monitoring
+  become: false
+  vars:
+    # required kubernetes>=24.2 package only in user virtualenv
+    ansible_python_interpreter: "{{ venv_python_interpreter }}"
+    resource: "{{ res_kind }}/{{ res_name }}"
+  block:
+    - name: Add Wave annotations to {{ resource }}
+      # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_module.html
+      kubernetes.core.k8s:
+        kubeconfig: "{{ kubeconfig }}"
+        api_version: apps/v1
+        kind: "{{ res_kind }}"
+        name: "{{ res_name }}"
+        namespace: "{{ res_ns }}"
+        definition:
+          metadata:
+            annotations: |
+              {% set annos = wave_optin_annotation %}
+              {% if additional is defined and
+                    additional is truthy  %}
+              {%   for anno, value in additional.items() %}
+              {%     set _ = annos.update({
+                       'wave.pusher.com/' ~ anno: value
+                     })   %}
+              {%   endfor %}
+              {% endif %}
+              {{ annos }}
+        state: patched
+
+    - name: Wait for {{ resource }} to restart
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/pause_module.html
+      ansible.builtin.pause:
+        seconds: "{{ wait_secs }}"
+      when: wait_secs | default(0) > 0
+  any_errors_fatal: true

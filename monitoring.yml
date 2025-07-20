@@ -18,6 +18,7 @@
     kubeconfig: "{{ rke_kubeconfig }}"
     secret_ns: "{{ monitoring_namespace }}"
     create_ns: false
+    release: "{{ monitoring_release_name }}"
   pre_tasks:
     - name: Hash monitoring user passwords
       vars:
@@ -25,6 +26,12 @@
         fact_name: monitoring_passwords_hashed
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
       ansible.builtin.include_tasks: tasks/hashpwds.yml
+
+    # CA certs to be stored inline with Grafana data
+    # source configs for Prometheus and Alertmanager
+    - name: Get CA certificates from PKI
+      ansible.builtin.include_tasks: tasks/pki/cacerts.yml
+      when: ca_certificates is not defined
 
     # determine whether to create the node exporter
     # RBAC config before installing the Helm chart
@@ -34,8 +41,7 @@
         kubeconfig: "{{ kubeconfig }}"
         release_name: "{{ monitoring_release_name }}"
         release_namespace: "{{ monitoring_namespace }}"
-        release_state:
-          - deployed
+        release_state: ["deployed"]
       register: helm_info
 
     # add CORS headers to Grafana responses
@@ -62,41 +68,45 @@
 
     - name: Create monitoring ingress secret
       vars:
-        cert_desc: "{{ item.desc }} ingress"
-        cert_file: "{{ item.file }}"
+        sans_:
+          - "*.{{ monitoring_namespace }}.svc.cluster.local"
+          - "*.{{ monitoring_namespace }}.svc"
         secret_name: "{{ monitoring_secrets[item.name] }}"
-      ansible.builtin.include_tasks: tasks/k8s/secrets/tls.pki.yml
+        cert_name: "{{ item.cert }}-ingress"
+        sans: "{{ item.sans | flatten }}"
+      ansible.builtin.include_tasks: tasks/k8s/secrets/tls.step.yml
       loop:
         - name: prometheus
-          desc: Prometheus
-          file: prometheus
+          cert: monitoring-prometheus
+          sans:
+            - prometheus
+            - "{{ monitoring_fqdns['prometheus'] }}"
+            - "{{ sans_ }}"
+            - 127.0.0.1
         - name: thanos-tls
-          desc: Thanos sidecar
-          file: thanos_sidecar
+          cert: thanos-sidecar
+          sans:
+            - thanos
+            - "{{ monitoring_fqdns['thanos'] | first }}"
+            - "{{ sans_ }}"
         - name: alertmanager
-          desc: Alertmanager
-          file: alertmanager
+          cert: monitoring-alertmanager
+          sans:
+            - alertmanager
+            - "{{ monitoring_fqdns['alertmanager'] }}"
+            - "{{ sans_ }}"
+            - 127.0.0.1
         - name: grafana
-          desc: Grafana
-          file: grafana
+          cert: monitoring-grafana
+          sans:
+            - "{{ monitoring_fqdns['grafana'] }}"
+            - "{{ sans_ }}"
+            - localhost
       loop_control:
-        label: "{{ item.file }}"
+        label: "{{ item.name }}"
 
     - name: Create monitoring scraper secret
-      vars:
-        cert_desc: scraping client
-        cert_file: scraper
-        secret_name: "{{ monitoring_secrets['scraper'] }}"
-      ansible.builtin.include_tasks: tasks/k8s/secrets/tls.pki.yml
-      # sets pem_chain fact
-
-    # CA certs to be stored inline with Grafana data
-    # source configs for Prometheus and Alertmanager
-    - name: Set ca_certs fact from pem_chain
-      ansible.builtin.set_fact:
-        # pem_chain fact set by tasks/k8s/secrets/tls.pki.yml
-        # above contains both intermediate and root CA certs
-        ca_certs: "{{ pem_chain[1:] | join('\n') }}"
+      ansible.builtin.include_tasks: tasks/monitoring/scraper.yml
 
     - name: Create Thanos HTTP config secret
       vars:
@@ -181,7 +191,21 @@
         release_namespace: "{{ monitoring_namespace }}"
         release_values: "{{ prometheus_stack_chart_values }}"
         atomic: true
+        wait: true
       timeout: 600
+
+    # oauth2-proxy doesn't currently support auto-reloading
+    # TLS certs, so make Wave watch TLS Secrets and trigger
+    # rolling pod restarts whenever mounted Secrets change
+    - name: Add Wave annotations to StatefulSet
+      vars:
+        res_kind: StatefulSet
+        res_name: "{{ item ~'-'~ monitoring_release_name ~'-'~ item }}"
+        res_ns: "{{ monitoring_namespace }}"
+      ansible.builtin.include_tasks: tasks/k8s/wave.yml
+      loop:
+        - prometheus
+        - alertmanager
 
     # Helm chart doesn't currently allow specifying
     # basicAuth in .prometheus.thanosServiceMonitor
@@ -200,7 +224,7 @@
   any_errors_fatal: true
 
 - name: Configure monitoring applications
-  tags: config
+  tags: configure
   hosts: localhost
   gather_facts: false
   vars_files:

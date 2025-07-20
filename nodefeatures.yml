@@ -95,8 +95,9 @@
         release_values: "{{ intel_dp_operator_chart_values }}"
         release_namespace: "{{ intel_device_plugins_namespace }}"
         create_namespace: true
-        # do not wait because probes must
-        # be patched to pass health checks
+        # do not wait because probes must be
+        # patched ASAP to pass health checks
+        wait: false
 
     # default 1s timeout for readiness and liveness
     # probes are too optimistic for our environment

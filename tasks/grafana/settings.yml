@@ -13,6 +13,11 @@
   ansible.builtin.include_tasks: tasks/localfacts.yml
   when: local_python_interpreter is not defined
 
+- name: Include vars/monitoring.yml
+  # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_vars_module.html
+  ansible.builtin.include_vars: vars/monitoring.yml
+  when: monitoring_fqdns is not defined
+
 - name: Apply Grafana user settings
   delegate_to: localhost
   become: false

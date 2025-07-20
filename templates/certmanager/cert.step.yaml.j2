@@ -1,0 +1,71 @@
+# https://cert-manager.io/docs/usage/certificate/#creating-certificate-resources
+# https://cert-manager.io/docs/usage/ingress/#supported-annotations
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ cert_name }}
+{% if release is defined and
+      release is truthy %}
+  labels: &labels
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/instance: {{ release }}
+  annotations: &annotations
+    meta.helm.sh/release-name: {{ release }}
+    meta.helm.sh/release-namespace: {{ secret_ns }}
+{% endif %}
+spec:
+  secretName: {{ secret_name }}
+{% if release is defined and
+      release is truthy %}
+  secretTemplate:
+    labels: *labels
+    annotations: *annotations
+{% endif %}
+
+  issuerRef:
+    name: {{ step_issuer_release_name }}
+    kind: StepClusterIssuer
+    group: certmanager.step.sm
+
+  # https://cert-manager.io/docs/usage/certificate/#issuance-triggers
+  duration: {{ days | default(30) * 24 }}h
+  renewBeforePercentage: 10
+
+  privateKey:
+    # supported algorithms: RSA, ECDSA, Ed25519
+    algorithm: {{ algorithm | default('ECDSA') }}
+    # valid values: PKCS1, PKCS8
+    encoding: {{ encoding | default('PKCS8') }}
+    # valid RSA   sizes: 2048, 3072, 4096
+    # valid ECDSA sizes: 256,  384,  521
+    size: {{ key_size | default(256)  if algorithm | default('ECDSA') == 'ECDSA'
+      else   key_size | default(2048) if algorithm                    == 'RSA'
+      else   omit }}
+    # https://cert-manager.io/docs/usage/certificate/#issuance-behavior-rotation-of-the-private-key
+    rotationPolicy: Always
+
+{% if der_key is defined and
+      der_key is truthy %}
+  additionalOutputFormats:
+    - type: DER
+{% endif %}
+
+  isCA: false
+  # https://cert-manager.io/docs/usage/certificate/#x509-key-usages-and-extended-key-usages
+  # https://cert-manager.io/docs/reference/api-docs/#cert-manager.io/v1.KeyUsage
+  usages: {{ usages }}
+
+  commonName: {{ cn }}
+  subject:
+    # these values should match the default template
+    # defined at pki:.step/templates/x509/default.tpl
+    organizationalUnits: ["Homelab"]
+    organizations: ["Fourteeners"]
+    localities: ["Home"]
+    provinces: ["California"]
+    countries: ["US"]
+
+  dnsNames: {{ dns }}
+  ipAddresses: {{ ips }}
+  emailAddresses: {{ emails }}

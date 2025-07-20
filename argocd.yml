@@ -21,10 +21,14 @@
     # https://argo-cd.readthedocs.io/en/stable/operator-manual/tls/#tls-certificates-used-by-argocd-server
     - name: Create Argo CD ingress secret
       vars:
-        cert_desc: Argo CD
-        cert_file: argocd
         secret_name: "{{ argocd_secrets['server'] }}"
-      ansible.builtin.include_tasks: tasks/k8s/secrets/tls.pki.yml
+        cert_name: argocd-server-ingress
+        sans:
+          - "{{ argocd_host_name }}"
+          - "{{ argocd_fqdn }}"
+          - "*.{{ argocd_namespace }}.svc.cluster.local"
+          - "*.{{ argocd_namespace }}.svc"
+      ansible.builtin.include_tasks: tasks/k8s/secrets/tls.step.yml
 
     - name: Create Valkey password secret
       vars:
@@ -49,6 +53,7 @@
         release_namespace: "{{ argocd_namespace }}"
         release_values: "{{ argocd_chart_values }}"
         atomic: true
+        wait: true
       timeout: 300
 
     - name: >-
