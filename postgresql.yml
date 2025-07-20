@@ -12,6 +12,7 @@
   vars:
     kubeconfig: "{{ rke_kubeconfig }}"
     secret_ns: "{{ postgresql_namespace }}"
+    create_ns: false
     release: "{{ postgresql_release_name }}"
   pre_tasks:
     - name: Is the monitoring stack ready?
@@ -21,18 +22,19 @@
   tasks:
     - name: Create PostgreSQL node secret
       vars:
-        cert_desc: PostgreSQL
-        cert_file: postgresql
         secret_name: "{{ postgresql_secrets['node-tls'] }}"
-      ansible.builtin.include_tasks: tasks/k8s/secrets/tls.pki.yml
+        create_ns: true
+        cert_name: postgresql-node
+        sans_:
+          - "{{ postgresql_fqdns }}"
+          - "*.{{ postgresql_namespace }}.svc.cluster.local"
+          - "*.{{ postgresql_namespace }}.svc"
+          - "{{ postgresql_lb_ip }}"
+        sans: "{{ sans_ | flatten }}"
+      ansible.builtin.include_tasks: tasks/k8s/secrets/tls.step.yml
 
-    - name: Create Pgpool scraper secret
-      vars:
-        cert_desc: Pgpool scraper
-        cert_file: scraper
-        secret_name: "{{ postgresql_secrets['scraper-tls'] }}"
-        create_ns: false
-      ansible.builtin.include_tasks: tasks/k8s/secrets/tls.pki.yml
+    - name: Create Pgpool exporter secret
+      ansible.builtin.include_tasks: tasks/monitoring/scraper.yml
 
     # https://github.com/bitnami/charts/tree/main/bitnami/postgresql-ha
     - name: Install PostgreSQL HA Helm chart

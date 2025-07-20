@@ -46,20 +46,30 @@
       vars:
         # Java requires key file to
         # be in PKCS#8 / PEM format
-        cert_desc: OpenSearch node
-        cert_file: opensearch
         secret_name: "{{ opensearch_secrets['node-tls'] }}"
         create_ns: true
-      ansible.builtin.include_tasks: tasks/k8s/secrets/tls.pki.yml
+        cert_name: opensearch-node
+        algorithm: RSA
+        sans_:
+          - node.{{ opensearch_namespace }}.svc.cluster.local
+          - "{{ opensearch_fqdns }}"
+          - "*.{{ opensearch_namespace }}.svc.cluster.local"
+          - "*.{{ opensearch_namespace }}.svc"
+        sans: "{{ sans_ | flatten }}"
+      ansible.builtin.include_tasks: tasks/k8s/secrets/tls.step.yml
 
     - name: Create OpenSearch admin secret
       vars:
         # Java requires key file to
         # be in PKCS#8 / PEM format
-        cert_desc: OpenSearch admin
-        cert_file: opensearch_admin
         secret_name: "{{ opensearch_secrets['admin-tls'] }}"
-      ansible.builtin.include_tasks: tasks/k8s/secrets/tls.pki.yml
+        cert_name: opensearch-admin
+        algorithm: RSA
+        days: 365
+        sans:
+          - erhhung
+          - "{{ user_erhhung.email }}"
+      ansible.builtin.include_tasks: tasks/k8s/secrets/tls.step.yml
 
     - name: Create OpenSearch passwords secret
       vars:
@@ -88,11 +98,7 @@
       ansible.builtin.include_tasks: tasks/k8s/secrets/generic.yml
 
     - name: Create monitoring scraper secret
-      vars:
-        cert_desc: scraping client
-        cert_file: scraper
-        secret_name: "{{ monitoring_secrets['scraper'] }}"
-      ansible.builtin.include_tasks: tasks/k8s/secrets/tls.pki.yml
+      ansible.builtin.include_tasks: tasks/monitoring/scraper.yml
 
     # https://github.com/opensearch-project/helm-charts/tree/main/charts/opensearch
     - name: Install OpenSearch Helm chart
@@ -143,17 +149,18 @@
   hosts: "{{ rke_control_plane_host }}"
   gather_facts: false
   vars_files: *vars_files
+  vars:
+    kubeconfig: "{{ rke_kubeconfig }}"
   tasks:
     - name: Create Dashboards ingress secret
       vars:
-        cert_desc: Dashboards ingress
-        cert_file: kibana
-        kubeconfig: "{{ rke_kubeconfig }}"
         secret_name: "{{ kibana_secrets['ingress'] }}"
         secret_ns: "{{ kibana_namespace }}"
         create_ns: false
         release: "{{ dashboards_release_name }}"
-      ansible.builtin.include_tasks: tasks/k8s/secrets/tls.pki.yml
+        cert_name: dashboards-ingress
+        sans: "{{ [kibana_fqdn] }}"
+      ansible.builtin.include_tasks: tasks/k8s/secrets/tls.step.yml
 
     # https://github.com/opensearch-project/helm-charts/tree/main/charts/opensearch-dashboards
     - name: Install Dashboards Helm chart
@@ -161,7 +168,7 @@
         # required kubernetes>=24.2 package only in user virtualenv
         ansible_python_interpreter: "{{ venv_python_interpreter }}"
       kubernetes.core.helm:
-        kubeconfig: "{{ rke_kubeconfig }}"
+        kubeconfig: "{{ kubeconfig }}"
         chart_repo_url: https://opensearch-project.github.io/helm-charts
         chart_ref: opensearch-dashboards
         chart_version: "{{ dashboards_chart_version }}"
@@ -169,7 +176,16 @@
         release_namespace: "{{ kibana_namespace }}"
         release_values: "{{ dashboards_chart_values }}"
         atomic: true
+        wait: false
       timeout: 300
+
+    - name: Add Wave annotations to Deployment
+      vars:
+        res_kind: Deployment
+        res_name: "{{ dashboards_release_name }}"
+        res_ns: "{{ kibana_namespace }}"
+        wait_secs: 3
+      ansible.builtin.include_tasks: tasks/k8s/wave.yml
 
     - name: Wait until Dashboards is ready
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/uri_module.html

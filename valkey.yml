@@ -13,6 +13,7 @@
   vars:
     kubeconfig: "{{ rke_kubeconfig }}"
     secret_ns: "{{ valkey_namespace }}"
+    create_ns: false
     release: "{{ valkey_release_name }}"
   pre_tasks:
     - name: Is the monitoring stack ready?
@@ -22,17 +23,22 @@
   tasks:
     - name: Create Valkey node secret
       vars:
-        cert_desc: Valkey
-        cert_file: valkey
         secret_name: "{{ valkey_secrets['node-tls'] }}"
-      ansible.builtin.include_tasks: tasks/k8s/secrets/tls.pki.yml
+        create_ns: true
+        cert_name: valkey-node
+        sans_:
+          - "{{ valkey_fqdns }}"
+          - "*.{{ valkey_namespace }}.svc.cluster.local"
+          - "*.{{ valkey_namespace }}.svc"
+          - "{{ valkey_lb_ips }}"
+        sans: "{{ sans_ | flatten }}"
+      ansible.builtin.include_tasks: tasks/k8s/secrets/tls.step.yml
 
     - name: Create Valkey password secret
       vars:
         key: "{{ valkey_chart_values.existingSecretPasswordKey }}"
         secret_name: "{{ valkey_secrets['password'] }}"
         secret_data: "{{ { key: valkey_pass } }}"
-        create_ns: false
       ansible.builtin.include_tasks: tasks/k8s/secrets/generic.yml
 
     # https://github.com/bitnami/charts/tree/main/bitnami/valkey-cluster

@@ -211,6 +211,7 @@
         release_namespace: "{{ longhorn_namespace }}"
         release_values: "{{ longhorn_chart_values }}"
         atomic: true
+        wait: true
       timeout: 300
 
     - name: Get default "longhorn" storage class
@@ -289,6 +290,7 @@
         release_namespace: nfs-provisioner
         create_namespace: true
         atomic: true
+        wait: true
       loop: "{{ provisioners }}"
       loop_control:
         label: "{{ item.name }}"

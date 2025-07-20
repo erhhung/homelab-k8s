@@ -161,7 +161,7 @@ EOT
 }
 
 # show details of certificate chain from
-# stdin or from PEM file or from website
+# stdin, PEM file, website or K8s secret
 cert() {
   local stdin host port args
   if [ -p /dev/stdin ]; then
@@ -171,50 +171,62 @@ cert() {
       cat <<EOT
 
 Show details of certificate chain from
-stdin or from PEM file or from website
+stdin, PEM file, website or K8s secret
 
 Usage: cert [file | host=. [port=443]]
+       cert -k [namespace/]<tls-secret>
 All args ignored if stdin is available
 
-cert < website.pem      # standard input
-cert   website.pem      # local PEM file
-cert   website.com      # website.com:443
-cert   website.com:8443 # website.com:8443
-cert   8443             # localhost:8443
-cert   .                # localhost:443
-
+cert < website.pem       # standard input
+cert   website.pem       # local PEM file
+cert   website.com       # website.com:443
+cert   website.com:8443  # website.com:8443
+cert   8443              # localhost:8443
+cert   .                 # localhost:443
+cert -k namespace/secret # K8s "tls.crt"
 EOT
-      return 0
+      echo; return 0
     }
-    host=${1:-localhost}
-    [ "$host" == . ] && host=localhost
-    # strip scheme & path if is an URL
-    host=${host#*://}; host=${host%%/*}
-    port=${2:-443}
+    # certs from K8s secret
+    if [ "$1" == -k ]; then
+      local secret=$2
+      [[ "$secret" == */* ]] && {
+        args+=(-n ${secret%/*})
+        secret=${secret#*/}
+      }
+      stdin=$(kubectl get secret $secret "${args[@]}" \
+        -o jsonpath='{ .data.tls\.crt }' | base64 -d)
+    else
+      host=${1:-localhost}
+      [ "$host" == . ] && host=localhost
+      # strip scheme & path if is an URL
+      host=${host#*://}; host=${host%%/*}
+      port=${2:-443}
 
-    # handle host:port syntax
-    [[ "$host" == *:* ]] && {
-      port=${host#*:}
-      host=${host%%:*}
-    }
-    # handle if only port number given
-    if [ "${host-0}" -eq "${host-1}" ] 2> /dev/null; then
-      port=$host
-      host=localhost
+      # handle host:port syntax
+      [[ "$host" == *:* ]] && {
+        port=${host#*:}
+        host=${host%%:*}
+      }
+      # handle if only port number given
+      if [ "${host-0}" -eq "${host-1}" ] 2> /dev/null; then
+        port=$host
+        host=localhost
+      fi
+      # use proxy for s_client if needed
+      [ "$http_proxy" ] && args+=(-proxy
+        $(cut -d/ -f3- <<< "$http_proxy")
+      )
     fi
-    # use proxy for s_client if needed
-    [ "$http_proxy" ] && args+=(-proxy
-      $(cut -d/ -f3- <<< "$http_proxy")
-    )
   fi
 
-  local cert="" line
+  local cert="" line out
   while read -r line; do
     # concatenate lines in each cert block
     # until ";" delimiter from awk command
     if [ "$line" == ';' ]; then
-      echo; echo -n "$cert" | \
-        openssl x509 -text -inform pem -noout
+      out=$(openssl x509 -text -inform pem -noout <<< "$cert")
+      [ "$out" ] && echo -e "\n$out"
       cert=""
     else
       cert+="$line"$'\n'
@@ -257,7 +269,7 @@ EOT
           cert=cert"\n"$0
         }'
   )
-  echo
+  [ "$out" ] && echo
 }
 
 # show system information
@@ -298,6 +310,10 @@ command -v crictl &> /dev/null && {
   alias c='crictl'
   . <(crictl completion bash 2> /dev/null)
   complete -o default -F _crictl c
+}
+
+command -v cmctl &> /dev/null && {
+  . <(cmctl completion bash 2> /dev/null)
 }
 
 command -v harbor &> /dev/null && {

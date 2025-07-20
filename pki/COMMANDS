@@ -107,6 +107,7 @@ cd "$HOME"
   \*.monitoring.svc \
   127.0.0.1
 
+# localhost used by sidecars
 ./cert.sh --exp=365 \
         grafana.fourteeners.local \
      monitoring.fourteeners.local \

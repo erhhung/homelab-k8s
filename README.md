@@ -61,6 +61,8 @@ All cluster services will be provisioned with TLS certificates from Erhhung's pr
     * Install on K3s and RKE clusters using the [`cert-manager`](https://cert-manager.io/docs/installation/helm) Helm chart
     * [X] Connect to Step CA `pki.fourteeners.local` using the [`step-issuer`](https://github.com/smallstep/helm-charts/tree/master/step-issuer) Helm chart
     * [ ] Connect to Step CA `pki.fourteeners.local` as an [ACME](https://cert-manager.io/docs/configuration/acme) `ClusterIssuer`
+- [X] [Wave Config Monitor](https://github.com/wave-k8s/wave) — ensure pods run with up-to-date `ConfigMaps` and `Secrets`
+    * Install on K3s and RKE clusters using the [`wave`](https://github.com/wave-k8s/wave#deploying-with-helm) Helm chart
 - [X] [Longhorn Block Storage](https://longhorn.io/docs/latest/what-is-longhorn) — distributed block storage for Kubernetes
     * Install on main RKE cluster using the [`longhorn`](https://longhorn.io/docs/latest/deploy/install/install-with-helm) Helm chart
 - [X] [NFS Dynamic Provisioner](https://computingforgeeks.com/configure-nfs-as-kubernetes-persistent-volume-storage) — create persistent volumes on NFS shares
@@ -113,7 +115,7 @@ All cluster services will be provisioned with TLS certificates from Erhhung's pr
 
 ## To-Do Tasks
 
-- [ ] Migrate manually provisioned certificates and secrets to ones issued by `cert-manager` with auto-rotation
+- [X] Migrate manually provisioned certificates and secrets to ones issued by `cert-manager` with auto-rotation
 - [ ] Automate creation of DNS records in pfSense via custom Ansible module that invokes pfSense REST APIs
 
 ## Ansible Vault
@@ -222,34 +224,41 @@ however, all privileged operations using `sudo` will require the password stored
 
 6. <details><summary>Install <strong><code>cert-manager</code></strong> to automate certificate issuing</summary><br/>
 
-    6.1. Connect to **Step CA** `pki.fourteeners.local` as a `ClusterIssuer`
+    6.1. Connect to **Step CA** `pki.fourteeners.local` as a `StepClusterIssuer`
 
     ```bash
     ./play.sh certmanager
     ```
 </details>
 
-7. <details><summary>Install <strong>Longhorn</strong> dynamic PV provisioner<br/> &nbsp; &nbsp; Install <strong>MinIO</strong> object storage in <em><strong>HA</strong></em> mode<br/> &nbsp; &nbsp; Install <strong>Velero</strong> backup and restore tools</summary><br/>
+7. <details><summary>Install <strong>Wave</strong> to monitor <code>ConfigMaps</code> and <code>Secrets</code></summary><br/>
 
-    7.1. Create a pool of LVM logical volumes  
-    7.2. Install Longhorn storage components  
-    7.3. Install NFS dynamic PV provisioner  
-    7.4. Install MinIO tenant using NFS PVs  
-    7.5. Install Velero using MinIO as target
+    ```bash
+    ./play.sh wave
+    ```
+</details>
+
+8. <details><summary>Install <strong>Longhorn</strong> dynamic PV provisioner<br/> &nbsp; &nbsp; Install <strong>MinIO</strong> object storage in <em><strong>HA</strong></em> mode<br/> &nbsp; &nbsp; Install <strong>Velero</strong> backup and restore tools</summary><br/>
+
+    8.1. Create a pool of LVM logical volumes  
+    8.2. Install Longhorn storage components  
+    8.3. Install NFS dynamic PV provisioner  
+    8.4. Install MinIO tenant using NFS PVs  
+    8.5. Install Velero using MinIO as target
 
     ```bash
     ./play.sh storage minio velero
     ```
 </details>
 
-8. <details><summary>Install <strong>Harbor</strong> OCI & Helm registry</summary><br/>
+9. <details><summary>Install <strong>Harbor</strong> OCI & Helm registry</summary><br/>
 
     ```bash
     ./play.sh harbor
     ```
 </details>
 
-9. <details><summary>Create resources from manifest files</summary><br/>
+10. <details><summary>Create resources from manifest files</summary><br/>
 
     **IMPORTANT**: Resource manifests must specify the namespaces they wished to be installed  
     into because the playbook simply applies each one without targeting a specific namespace
@@ -259,102 +268,102 @@ however, all privileged operations using `sudo` will require the password stored
     ```
 </details>
 
-10. <details><summary>Install <strong>Node Feature Discovery</strong> to identify GPU nodes</summary><br/>
+11. <details><summary>Install <strong>Node Feature Discovery</strong> to identify GPU nodes</summary><br/>
 
-    10.1. Install Intel Device Plugins and `GpuDevicePlugin`
+    11.1. Install Intel Device Plugins and `GpuDevicePlugin`
 
     ```bash
     ./play.sh nodefeatures
     ```
 </details>
 
-11. <details><summary>Install <strong>OpenSearch</strong> cluster in <em><strong>HA</strong></em> mode</summary><br/>
+12. <details><summary>Install <strong>OpenSearch</strong> cluster in <em><strong>HA</strong></em> mode</summary><br/>
 
-    11.1. Configure the OpenSearch security plugin (users and roles) for downstream applications  
-    11.2. Install **OpenSearch Dashboards** UI
+    12.1. Configure the OpenSearch security plugin (users and roles) for downstream applications  
+    12.2. Install **OpenSearch Dashboards** UI
 
     ```bash
     ./play.sh opensearch
     ```
 </details>
 
-12. <details><summary>Install <strong>Fluent Bit</strong> to ingest logs into OpenSearch</summary><br/>
+13. <details><summary>Install <strong>Fluent Bit</strong> to ingest logs into OpenSearch</summary><br/>
 
     ```bash
     ./play.sh logging
     ```
 </details>
 
-13. <details><summary>Install <strong>PostgreSQL</strong> database in <em><strong>HA</strong></em> mode</summary><br/>
+14. <details><summary>Install <strong>PostgreSQL</strong> database in <em><strong>HA</strong></em> mode</summary><br/>
 
-    13.1. Run initialization SQL script to create roles and databases for downstream applications  
-    13.2. Create users in both PostgreSQL and **Pgpool**
+    14.1. Run initialization SQL script to create roles and databases for downstream applications  
+    14.2. Create users in both PostgreSQL and **Pgpool**
 
     ```bash
     ./play.sh postgresql
     ```
 </details>
 
-14. <details><summary>Install <strong>Keycloak</strong> IAM & OIDC provider</summary><br/>
+15. <details><summary>Install <strong>Keycloak</strong> IAM & OIDC provider</summary><br/>
 
-    14.1. Bootstrap **PostgreSQL** database with realm `homelab`, user `erhhung`, and OIDC clients
+    15.1. Bootstrap **PostgreSQL** database with realm `homelab`, user `erhhung`, and OIDC clients
 
     ```bash
     ./play.sh keycloak
     ```
 </details>
 
-15. <details><summary>Install <strong>Valkey</strong> key-value store in <em><strong>HA</strong></em> mode</summary><br/>
+16. <details><summary>Install <strong>Valkey</strong> key-value store in <em><strong>HA</strong></em> mode</summary><br/>
 
-    15.1. Deploy 6 nodes in total: 3 primaries and 3 replicas
+    16.1. Deploy 6 nodes in total: 3 primaries and 3 replicas
 
     ```bash
     ./play.sh valkey
     ```
 </details>
 
-16. <details><summary>Install <strong>Prometheus</strong>, <strong>Thanos</strong>, and <strong>Grafana</strong> in <em><strong>HA</strong></em> mode</summary><br/>
+17. <details><summary>Install <strong>Prometheus</strong>, <strong>Thanos</strong>, and <strong>Grafana</strong> in <em><strong>HA</strong></em> mode</summary><br/>
 
-    16.1. Expose Prometheus & Alertmanager UIs via `oauth2-proxy` integration with **Keycloak**  
-    16.2. Connect Thanos sidecars to **MinIO** to store scraped metrics in the `metrics` bucket  
-    16.3. Deploy and integrate other Thanos components with Prometheus and Alertmanager
+    17.1. Expose Prometheus & Alertmanager UIs via `oauth2-proxy` integration with **Keycloak**  
+    17.2. Connect Thanos sidecars to **MinIO** to store scraped metrics in the `metrics` bucket  
+    17.3. Deploy and integrate other Thanos components with Prometheus and Alertmanager
 
     ```bash
     ./play.sh monitoring thanos
     ```
 </details>
 
-17. <details><summary>Install <strong>Istio</strong> service mesh in <em><strong>ambient</strong></em> mode</summary><br/>
+18. <details><summary>Install <strong>Istio</strong> service mesh in <em><strong>ambient</strong></em> mode</summary><br/>
 
     ```bash
     ./play.sh istio
     ```
 </details>
 
-18. <details><summary>Install <strong>Argo CD</strong> GitOps delivery in <em><strong>HA</strong></em> mode</summary><br/>
+19. <details><summary>Install <strong>Argo CD</strong> GitOps delivery in <em><strong>HA</strong></em> mode</summary><br/>
 
-    18.1. Configure Argo CD components to use the **Valkey** cluster for their caching needs
+    19.1. Configure Argo CD components to use the **Valkey** cluster for their caching needs
 
     ```bash
     ./play.sh argocd
     ```
 </details>
 
-19. <details><summary>Install <strong>Metacontroller</strong> to create Operators</summary><br/>
+20. <details><summary>Install <strong>Metacontroller</strong> to create Operators</summary><br/>
 
     ```bash
     ./play.sh metacontroller
     ```
 </details>
 
-20. <details><summary>Install <strong>Ollama</strong> LLM server with models</summary><br/>
+21. <details><summary>Install <strong>Ollama</strong> LLM server with models</summary><br/>
 
     ```bash
     ./play.sh ollama
     ```
 </details>
 
-21. <details><summary>Create <strong>virtual Kubernetes clusters</strong> in RKE</summary><br/>
+22. <details><summary>Create <strong>virtual Kubernetes clusters</strong> in RKE</summary><br/>
 
     ```bash
     ./play.sh vclusters

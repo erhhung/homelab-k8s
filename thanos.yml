@@ -21,29 +21,27 @@
   tasks:
     - name: Create Thanos ingress secret
       vars:
-        cert_desc: Thanos {{ item.desc }} ingress
-        cert_file: thanos_{{ item.file }}
         secret_name: "{{ thanos_secrets[item.name] }}"
+        cert_name: thanos-{{ item.name }}-ingress
+        sans_:
+          - thanos
+          - "{{ item.sans | default([]) }}"
+          - "{{ thanos_fqdns[item.name] }}"
+          - "*.{{ monitoring_namespace }}.svc.cluster.local"
+          - "*.{{ monitoring_namespace }}.svc"
+        sans: "{{ sans_ | flatten }}"
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
-      ansible.builtin.include_tasks: tasks/k8s/secrets/tls.pki.yml
+      ansible.builtin.include_tasks: tasks/k8s/secrets/tls.step.yml
       loop:
         - name: query
-          desc: Query
-          file: query
+          sans: # thanos.fourteeners.local is for Query
+            - "{{ monitoring_fqdns['thanos'] | last }}"
         - name: rule
-          desc: Ruler
-          file: rule
         - name: store
-          desc: Store Gateway
-          file: store
         - name: bucket
-          desc: Bucket Web
-          file: bucket
         - name: compact
-          desc: Compactor
-          file: compact
       loop_control:
-        label: thanos_{{ item.file }}
+        label: "{{ item.name }}"
 
     # ConfigMap for Thanos Query Frontend
     - name: Create Thanos tripper ConfigMap
@@ -74,5 +72,6 @@
         release_namespace: "{{ monitoring_namespace }}"
         release_values: "{{ thanos_chart_values }}"
         atomic: true
+        wait: true
       timeout: 300
   any_errors_fatal: true

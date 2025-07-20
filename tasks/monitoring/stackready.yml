@@ -9,6 +9,11 @@
 #   grafana_api_server_online: true/false
 #   monitoring_stack_ready:    true/false
 ---
+- name: Include vars/monitoring.yml
+  # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_vars_module.html
+  ansible.builtin.include_vars: vars/monitoring.yml
+  when: monitoring_fqdns is not defined
+
 - name: Is the monitoring stack ready?
   become: false
   vars:

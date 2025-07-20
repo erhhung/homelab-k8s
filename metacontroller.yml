@@ -113,9 +113,9 @@
 
     - name: Create Metacontroller ServiceMonitor
       vars:
-        definition: |-
-          {{ lookup('ansible.builtin.template', template_dir ~
-                    '/monitoring/smons/metacontroller.yaml.j2') }}
+        # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/template_lookup.html
+        definition: "{{ lookup('ansible.builtin.template',
+          template_dir ~ '/monitoring/smons/metacontroller.yaml.j2') }}"
       kubernetes.core.k8s:
         kubeconfig: "{{ kubeconfig }}"
         namespace: "{{ metacontroller_namespace }}"

@@ -37,6 +37,7 @@
         release_namespace: "{{ velero_namespace }}"
         create_namespace: true
         atomic: true
+        wait: true
       timeout: 300
   any_errors_fatal: true
 

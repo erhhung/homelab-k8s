@@ -35,11 +35,15 @@
     # https://docs.fluentbit.io/manual/administration/transport-security
     - name: Create Fluent plugin secret
       vars:
-        cert_desc: Fluent plugin
-        cert_file: fluent
         secret_name: "{{ logging_secrets['plugin'] }}"
         create_ns: false
-      ansible.builtin.include_tasks: tasks/k8s/secrets/tls.pki.yml
+        cert_name: fluent-plugin
+        algorithm: RSA
+        days: 365
+        sans:
+          - fluent
+          - fluent@fourteeners.local
+      ansible.builtin.include_tasks: tasks/k8s/secrets/tls.step.yml
 
     # https://github.com/fluent/helm-charts/tree/main/charts/fluent-operator
     - name: Install Fluent Operator Helm chart
@@ -53,6 +57,7 @@
         release_namespace: "{{ logging_namespace }}"
         release_values: "{{ fluent_operator_chart_values }}"
         atomic: true
+        wait: true
       timeout: 300
 
     - name: Examine existing ClusterFilter spec
@@ -106,9 +111,9 @@
 
     - name: Configure Fluent logs ISM policy
       vars:
-        policy: |
-          {{ lookup('ansible.builtin.template', template_dir ~
-                    '/logging/ismpolicy.yaml.j2') | from_yaml }}
+        # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/template_lookup.html
+        policy: "{{ lookup('ansible.builtin.template',
+          template_dir ~ '/logging/ismpolicy.yaml.j2') | from_yaml }}"
       ansible.builtin.include_tasks: tasks/opensearch/ismpolicy.yml
   any_errors_fatal: true
 
