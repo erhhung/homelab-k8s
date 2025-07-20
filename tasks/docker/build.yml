@@ -56,7 +56,7 @@
       # https://docs.ansible.com/ansible/latest/collections/community/docker/docker_image_push_module.html
       community.docker.docker_image_push:
         name: "{{ remote_name }}"
-      timeout: 300
+      timeout: 600
   always:
     - name: Untag "{{ remote_image }}"
       # https://docs.ansible.com/ansible/latest/collections/community/docker/docker_image_remove_module.html

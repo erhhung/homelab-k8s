@@ -38,6 +38,8 @@ containerd_config: /var/lib/rancher/rke2/agent/etc/containerd/config.toml
 # location exported by CONTAINER_RUNTIME_ENDPOINT variable
 containerd_socket: /run/k3s/containerd/containerd.sock
 
+# https://docs.k3s.io/installation/packaged-components
+k3s_manifests_dir: /var/lib/rancher/k3s/server/manifests
 # https://docs.rke2.io/advanced#auto-deploying-manifests
 rke_manifests_dir: /var/lib/rancher/rke2/server/manifests
 

@@ -23,6 +23,11 @@ harbor_chart_values:
   externalURL: https://{{ harbor_fqdn }}
 
   expose:
+    # IMPORTANT! if using Traefik (K3s default) as ingress
+    # controller, be sure to configure entrypoint settings
+    # respondingTimeouts to avoid layer push failures (see
+    # templates/k3s/traefik.yaml.j2 and
+    # https://github.com/goharbor/harbor/issues/20472)
     type: ingress
     ingress:
       hosts:

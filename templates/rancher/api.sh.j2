@@ -3,9 +3,25 @@
 
 export RANCHER_URL="https://{{ k3s_fqdn }}"
 
+is_api_ready() {
+  local reply=$(curl -sk "$RANCHER_URL/ping" 2> /dev/null)
+  [ "$reply" == pong ]
+}
+
+wait_api_ready() {
+  echo -n "Waiting until Rancher is ready.."
+  until is_api_ready; do
+    echo -n .
+    sleep 3
+  done
+  echo OK
+}
+
 # rancher_login <admin-pass>
 # returns token if successful
 rancher_login() {
+  is_api_ready || wait_api_ready >&2
+
   curl -sk "$RANCHER_URL/v3-public/localProviders/local?action=login" \
     -H "Content-Type: application/json" \
     --data-binary '{
@@ -34,11 +50,15 @@ get_init_pass() {
 
 BOOTSTRAP_PASS=$(get_init_pass)
 if [ ! "$BOOTSTRAP_PASS" ]; then
-  echo -e "\nRancher bootstrap secret not found!"
-  echo "Waiting until Rancher is ready..."
-  until [ "$(get_init_pass)" ]; do sleep 1; done
+  echo "Rancher bootstrap secret not found!"
+  echo -n "Waiting until Rancher is ready.."
+  until [ "$(get_init_pass)" ]; do
+    echo -n .
+    sleep 1
+  done
+  echo OK
   BOOTSTRAP_PASS=$(get_init_pass)
-fi
+fi >&2
 
 LOGIN_TOKEN=($(rancher_login "$BOOTSTRAP_PASS"))
 [ "$LOGIN_TOKEN" ]  && echo || {
@@ -71,7 +91,7 @@ export LOGIN_TOKEN
 
 rancher_logout() {
   curl -sk -X POST "$RANCHER_URL/v3/tokens?action=logout" \
-    -H "Authorization: Bearer $LOGIN_TOKEN"
+    -H "Authorization: Bearer $LOGIN_TOKEN" || true
 }
 trap rancher_logout EXIT
 

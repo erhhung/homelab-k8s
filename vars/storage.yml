@@ -49,7 +49,10 @@ longhorn_chart_values:
     # on the same node should space be limited
     replicaSoftAntiAffinity: true
     defaultReplicaCount: 2
-    snapshotMaxCount: 2
+    # Velero is configured to perform daily
+    # backups with volume snapshot TTL of 1
+    # week, so set snapshotMaxCount to >= 7
+    snapshotMaxCount: 8
 
   defaultBackupStore:
     # user "longhorn" and "backups"

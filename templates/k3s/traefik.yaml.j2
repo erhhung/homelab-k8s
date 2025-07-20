@@ -1,0 +1,27 @@
+# save rendered config as /var/lib/rancher/k3s/server/manifests/traefik-config.yaml
+# on a K3s server node, after which the k3s service on that node must be restarted:
+# https://docs.k3s.io/helm#customizing-packaged-components-with-helmchartconfig
+---
+# https://docs.k3s.io/networking/networking-services#traefik-ingress-controller
+# https://github.com/traefik/traefik-helm-chart/tree/master/traefik/values.yaml
+
+apiVersion: helm.cattle.io/v1
+kind: HelmChartConfig
+metadata:
+  name: traefik
+  namespace: kube-system
+spec:
+  valuesContent: |-
+    ports:
+      websecure:
+        # https://doc.traefik.io/traefik/routing/entrypoints/#transport
+        transport:
+          # these timeout settings are critical when proxying requests
+          # to the Harbor registry as large layer transfers could fail
+          # otherwise with msg="client disconnected during blob PATCH"
+          # and error="unexpected EOF" in logs of harbor-registry pod:
+          # https://github.com/goharbor/harbor/issues/20472
+          respondingTimeouts:
+            readTimeout: 10m
+            writeTimeout: 10m
+            idleTimeout: 10m
