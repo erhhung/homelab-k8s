@@ -36,32 +36,6 @@
         name: k3s
         state: started
 
-    - name: Apply additional node labels
-      become: false
-      vars:
-        # required kubernetes>=24.2 package only in user virtualenv
-        ansible_python_interpreter: "{{ venv_python_interpreter }}"
-        labels: |
-          {% set labels = {} %}
-          {% for label in additional_node_labels %}
-          {%   if 'rancher' in label.nodes %}
-          {%     set _ = labels.update({label.label: label.value}) %}
-          {%   endif %}
-          {% endfor  %}
-          {{ labels  }}
-      # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_module.html
-      kubernetes.core.k8s:
-        kubeconfig: "{{ k3s_kubeconfig }}"
-        api_version: v1
-        kind: Node
-        name: rancher
-        definition:
-          metadata:
-            labels: "{{ labels }}"
-        state: patched
-        wait: true
-      when: labels is truthy
-
     - name: Create /etc/profile.d/kubernetes.sh
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/copy_module.html
       ansible.builtin.copy:
@@ -90,6 +64,110 @@
         context: "{{ k3s_cluster_name }}"
         server: https://{{ k3s_fqdn }}:6443
       ansible.builtin.include_tasks: tasks/k8s/kubeconfig.yml
+  any_errors_fatal: true
+
+- name: Apply supplemental K3s configuration
+  tags: configure
+  hosts: "{{ k3s_control_plane_host }}"
+  gather_facts: false
+  vars_files:
+    - vars/basics.yml
+    - vars/kubernetes.yml
+  vars:
+    # required kubernetes>=24.2 package only in user virtualenv
+    ansible_python_interpreter: "{{ venv_python_interpreter }}"
+  tasks:
+    # https://docs.k3s.io/installation/packaged-components
+    - name: Write HelmChartConfig manifests
+      become: true
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/template_module.html
+      ansible.builtin.template:
+        src: "{{ template_dir }}/{{ item.src }}"
+        dest: "{{ k3s_manifests_dir }}/{{ item.dest }}"
+        mode: "0664"
+      loop:
+        - src: k3s/traefik.yaml.j2
+          dest: traefik-config.yaml
+      loop_control:
+        label: "{{ item.dest }}"
+      register: chart_configs
+
+    - name: Restart k3s service
+      # noqa no-handler
+      when: >-
+        chart_configs is defined and
+        chart_configs.results  | map(attribute='changed') is any
+      become: true
+      block:
+        - name: Stop k3s service
+          ansible.builtin.systemd_service:
+            name: k3s
+            state: stopped
+
+        - name: Let processes exit
+          # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/pause_module.html
+          ansible.builtin.pause:
+            seconds: 30
+
+        - name: Start k3s service
+          ansible.builtin.systemd_service:
+            name: k3s
+            state: started
+
+        - name: Check k3s status
+          # noqa command-instead-of-module
+          ansible.builtin.command: systemctl is-active k3s
+          changed_when: false
+          register: is_active
+          until: is_active.stdout | trim == 'active'
+          retries: 20
+          delay: 3
+
+    - name: Apply additional node labels
+      vars:
+        labels: |
+          {% set labels = {} %}
+          {% for label in additional_node_labels %}
+          {%   if 'rancher' in label.nodes %}
+          {%     set _ = labels.update({label.label: label.value}) %}
+          {%   endif %}
+          {% endfor  %}
+          {{ labels  }}
+      # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_module.html
+      kubernetes.core.k8s:
+        kubeconfig: "{{ k3s_kubeconfig }}"
+        api_version: v1
+        kind: Node
+        name: rancher
+        definition:
+          metadata:
+            labels: "{{ labels }}"
+        state: patched
+      when: labels is truthy
+
+    - name: Apply CoreDNS customizations
+      vars:
+        # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/template_lookup.html
+        definition: "{{ lookup('ansible.builtin.template',
+          template_dir ~ '/k3s/coredns.yaml.j2') }}"
+      kubernetes.core.k8s:
+        kubeconfig: "{{ k3s_kubeconfig }}"
+        definition: "{{ definition }}"
+        state: present
+        apply: true
+      notify: Restart coredns Deployment
+  handlers:
+    - name: Restart coredns Deployment
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/command_module.html
+      ansible.builtin.command:
+        argv:
+          - kubectl
+          - --kubeconfig={{ k3s_kubeconfig }}
+          - --namespace=kube-system
+          - rollout
+          - restart
+          - deployment/coredns
+      changed_when: true
   any_errors_fatal: true
 
 # https://ranchermanager.docs.rancher.com/getting-started/installation-and-upgrade
@@ -141,6 +219,7 @@
         release_namespace: "{{ rancher_namespace }}"
         release_values: "{{ rancher_chart_values }}"
         atomic: true
+        wait: true
       timeout: 600
 
     - name: Set Rancher Server settings
@@ -200,12 +279,14 @@
 
         TOKEN_DESC="Ansible session"
         ADMIN_PASS="{{ rancher_admin_pass }}"
-        . .bash_aliases # loads .rancher_api
+        # .bash_aliases sources .rancher_api
+        . .bash_aliases || exit $?
 
         if [ "$ADMIN_PASS" ]; then
-          # if .rancher_api logged in with ADMIN_PASS instead of
-          # BOOTSTRAP_PASS, ADMIN_PASS would have been unset, so
+          # if .rancher_api logged in with $ADMIN_PASS instead of
+          # $BOOTSTRAP_PASS, ADMIN_PASS would have been unset, so
           # change the default password so user won`t be prompted
+          echo >&2 "Changing default password..."
           rancher_api post "users?action=changepassword" @- <<EOT
         {
           "currentPassword": "$BOOTSTRAP_PASS",
@@ -227,7 +308,9 @@
             jq -r '.state // empty'
         }
         if [ ! "$cluster_id" ]; then
-          # RKE cluster not imported yet: import it using the Rancher API
+          # RKE cluster not imported yet
+          # import using the Rancher API
+          echo >&2 "Importing RKE cluster..."
           cluster_id=$(rancher_api post clusters @- <<'EOT' | jq -r '.id // empty'
         {
           "import":      true,
@@ -242,16 +325,23 @@
             exit 1
           }
           echo "_CHANGED_ cluster imported."
-
-          echo "Waiting for cluster state to be \"pending\"..."
-          until [ "$(get_state)" == pending ]; do sleep 1; done
+          {
+          echo -n "Waiting for cluster state to be pending.."
+          until [ "$(get_state)" == pending ]; do
+            echo -n .
+            sleep 1
+          done
+          echo OK
+          }   >&2
           export_variables
         fi
         # output ID for extraction
         echo "CLUSTER=$cluster_id"
 
         if [ "$(get_state)" != active ]; then
-          # output registration manifest URL so it can be applied on control plane node
+          # get cluster registration manifest URL so
+          # it can be applied  on control plane node
+          echo >&2 "Getting registration manifest URL..."
           reg_url=$(rancher_api get "clusters/$cluster_id/clusterregistrationtokens" | \
             \
             jq --arg baseUrl "$RANCHER_URL" -r '.data[] |
@@ -268,8 +358,9 @@
         fi
 
         # customize cluster appearance in the Rancher UI
+        echo >&2 "Applying Rancher UI customizations..."
         rancher_api put "clusters/$cluster_id" @- <<'EOT' | \
-          jq -cM '.annotations | with_entries(select(.key | startswith("ui.rancher")))'
+          jq -cM '.annotations | with_entries(select(.key | startswith("ui.rancher")))' >&2
         {
           "name": "{{ rke_cluster_name }}",
           "annotations": {
@@ -286,9 +377,11 @@
           [ "$(jq -r '.Servers[.CurrentServer].tokenKey // empty' $config)" ] || {
 
           # request a long-lived token
+          echo >&2 "Requesting Rancher CLI token..."
           token=$(get_token "CLI token")
           id_var="${cluster^^}_DEFAULT_ID"
 
+          echo >&2 "Performing Rancher CLI login..."
           rancher login "$RANCHER_URL" \
             --skip-verify      \
             --token   "$token" \
@@ -298,7 +391,7 @@
         }
         rancher_logout # delete $LOGIN_TOKEN
         EOF
-      timeout: 300
+      timeout: 600
       register: import_rke
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/search_test.html
       changed_when: import_rke.stdout is search('_CHANGED_')

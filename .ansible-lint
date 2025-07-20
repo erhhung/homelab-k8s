@@ -7,6 +7,7 @@ exclude_paths:
 # https://ansible.readthedocs.io/projects/lint/rules/
 skip_list:
   - var-naming[pattern] # var not snake_case
+  - name[casing] # start names in upper case
   - name[template] # {{ ... }} in task name
   - yaml[line-length] # line over 160 chars
   - yaml[colons] # >= 2 spaces after colon

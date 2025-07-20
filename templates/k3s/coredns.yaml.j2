@@ -1,0 +1,19 @@
+# https://docs.digitalocean.com/products/kubernetes/how-to/customize-coredns
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  # coredns-custom is the name expected by the CoreDNS
+  # Helm deployment. it's an optional volume mount in
+  # the coredns container under /etc/coredns/custom/
+  name: coredns-custom
+  namespace: kube-system
+data:
+  custom.server: |
+{% for zone in search_domains %}
+    {{ zone }}:53 {
+        errors
+        forward . {{ name_servers[0] }}
+        cache 30
+    }
+{% endfor %}
