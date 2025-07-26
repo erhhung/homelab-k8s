@@ -54,6 +54,27 @@
         locale_language != system_language
       changed_when: true
 
+    # https://errantminds.net/servers-it/optimising-xcp-ng-performance-on-older-servers-domu-clock-source
+    - name: Change VM clock source to "tsc"
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/shell_module.html
+      ansible.builtin.shell: |
+        set -o pipefail
+
+        GRUB=/etc/default/grub
+        PARAMS=(clocksource=tsc tsc=reliable)
+        grep -q "$PARAMS" "$GRUB" && exit 9 # no change
+
+        echo tsc > /sys/devices/system/clocksource/clocksource0/current_clocksource
+        params=($(sed -En 's/^GRUB_CMDLINE_LINUX="([^"]+)"/\1/p' "$GRUB") ${PARAMS[@]})
+        sed -Ei 's/^(GRUB_CMDLINE_LINUX=)".*"/\1"'"${params[*]}"'"/' "$GRUB" && update-grub
+      args:
+        executable: /bin/bash
+      register: update_grub
+      changed_when: update_grub.rc == 0
+      failed_when: >-
+        update_grub.rc != 0 and
+        update_grub.rc != 9
+
     - name: Adjust Linux kernel parameters
       # https://docs.ansible.com/ansible/latest/collections/ansible/posix/sysctl_module.html
       ansible.posix.sysctl:
@@ -139,7 +160,6 @@
       register: cloud_init_yaml
   tasks:
     - name: Comment out 127.0.1.1 /etc/hosts
-      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/shell_module.html
       ansible.builtin.shell: |
         [ -f /etc/hosts.bak ] && exit 9
 
@@ -165,7 +185,7 @@
           {%   set _ = hosts.append(rke_cluster_name) %}
           {% endif %}
           {{ hosts }}
-        host_ip: "{{ hostvars[host]['ansible_host'] }}"
+        host_ip: "{{ hostvars[host].ansible_host }}"
         host_regex: ^{{ host_ip | regex_escape }}\s
         # if HA mode, the host "homelab" (cluster name) has its own virtual IP
         # if not HA mode, homelab is an alias for the first control plane node
