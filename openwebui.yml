@@ -1,0 +1,173 @@
+# https://docs.openwebui.com/
+# https://docs.openwebui.com/getting-started/quick-start
+# https://docs.openwebui.com/features/evaluation
+# https://docs.openwebui.com/features/rag
+---
+- name: Install Open WebUI on RKE cluster
+  tags: install
+  hosts: "{{ rke_control_plane_host }}"
+  gather_facts: false
+  vars_files:
+    - vars/kubernetes.yml
+    - vars/postgresql.yml
+    - vars/valkey.yml
+    - vars/storage.yml
+    - vars/ollama.yml
+    - vars/openwebui.yml
+  vars:
+    # required kubernetes>=24.2 package only in user virtualenv
+    ansible_python_interpreter: "{{ venv_python_interpreter }}"
+    kubeconfig: "{{ rke_kubeconfig }}"
+    secret_ns: "{{ openwebui_namespace }}"
+    create_ns: false
+    release: "{{ openwebui_release_name }}"
+  pre_tasks:
+    - name: Get the PostgreSQL image used
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
+      ansible.builtin.include_tasks: tasks/postgresql/image.yml
+      when: postgresql_image is not defined
+  tasks:
+    # https://docs.openwebui.com/getting-started/env-configuration
+    - name: Create Open WebUI secrets secret
+      vars:
+        pipelines: "{{ openwebui_chart_values.pipelines }}"
+        secret_name: "{{ openwebui_secrets['secrets'] }}"
+        secret_data:
+          # secret key used to sign JWTs:
+          # https://docs.openwebui.com/getting-started/env-configuration/#webui_secret_key
+          WEBUI_SECRET_KEY: "{{ openwebui_secret_key }}"
+
+          # Pipelines key must be first:
+          # https://docs.openwebui.com/getting-started/env-configuration/#openai_api_keys
+          # https://docs.openwebui.com/pipelines/#-quick-start-with-docker
+          OPENAI_API_KEYS: >-
+            {% set keys = [openai_api_key] -%}
+            {% if pipelines.enabled -%}
+            {%   set _ = keys.insert(0, pipelines_api_key) -%}
+            {% endif -%}
+            {{ keys | join(';') }}
+        create_ns: true
+      ansible.builtin.include_tasks: tasks/k8s/secrets/generic.yml
+
+    - name: Create Open WebUI database secret
+      vars:
+        secret_name: "{{ openwebui_secrets['database'] }}"
+        cert_name: open-webui-database
+        days: 365
+        sans:
+          - "{{ openwebui_db_user }}"
+          - "{{ openwebui_db_user }}@{{ homelab_domain }}"
+      ansible.builtin.include_tasks: tasks/k8s/secrets/tls.step.yml
+
+    - name: Create Open WebUI ingress secret
+      vars:
+        secret_name: "{{ openwebui_secrets['ingress'] }}"
+        cert_name: open-webui-ingress
+        sans: "{{ openwebui_fqdns }}"
+      ansible.builtin.include_tasks: tasks/k8s/secrets/tls.step.yml
+
+    - name: Install Open WebUI Helm chart
+      # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/helm_module.html
+      kubernetes.core.helm:
+        kubeconfig: "{{ kubeconfig }}"
+        chart_repo_url: https://helm.openwebui.com
+        chart_ref: open-webui
+        chart_version: "{{ openwebui_chart_version }}"
+        release_name: "{{ openwebui_release_name }}"
+        release_values: "{{ openwebui_chart_values }}"
+        release_namespace: "{{ openwebui_namespace }}"
+        atomic: true
+        wait: true
+      timeout: 300
+      register: helm_install
+
+    # scope of registered variable in
+    # Ansible is limited to this play
+    - name: Share helm_install across plays
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/set_fact_module.html
+      ansible.builtin.set_fact:
+        helm_install: "{{ helm_install }}"
+  any_errors_fatal: true
+
+# https://openwebui.fourteeners.local/docs
+- name: Configure Open WebUI installation
+  tags: configure
+  hosts: localhost
+  gather_facts: false
+  vars_files:
+    - vars/kubernetes.yml
+    - vars/openwebui.yml
+    - vars/ollama.yml
+  vars:
+    vars_file: vars/ollama.{{ use_ollama_chart_by }}.yml
+    api_base: https://{{ openwebui_fqdns | first }}/api
+  pre_tasks:
+    - name: Include {{ vars_file }}
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_vars_module.html
+      ansible.builtin.include_vars: "{{ vars_file }}"
+
+    - name: Wait until Open WebUI is ready
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/uri_module.html
+      ansible.builtin.uri:
+        url: "{{ api_base }}/version"
+        return_content: true
+      # https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_loops.html#retrying-a-task-until-a-condition-is-met
+      register: ui_version
+      until: ui_version.status == 200
+      retries: 20
+      delay: 3
+
+    - name: Wait for Open WebUI init tasks
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/pause_module.html
+      ansible.builtin.pause:
+        seconds: 30
+      when: >-
+        helm_install is defined and
+        helm_install.changed
+
+    - name: Authenticate as the admin user
+      ansible.builtin.uri:
+        method: POST
+        url: "{{ api_base }}/v1/auths/signin"
+        body_format: json
+        body:
+          email: "{{ openwebui_admin_user.email }}"
+          password: "{{ openwebui_admin_user.password }}"
+        status_code: [200, 400]
+        return_content: true
+      register: admin_signin
+  tasks:
+    - name: Configure Open WebUI installation
+      # assume server is configured
+      # if the admin user can login
+      when: admin_signin.status != 200
+      block:
+        # first user created has admin rights:
+        # https://docs.openwebui.com/features/workspace/roles
+        - name: Create Open WebUI admin user
+          ansible.builtin.uri:
+            method: POST
+            url: "{{ api_base }}/v1/auths/signup"
+            body_format: json
+            body: "{{ openwebui_admin_user }}"
+            # retrieve auth token
+            return_content: true
+          register: admin_signup
+
+        - name: Set admin_auth_headers fact
+          ansible.builtin.set_fact:
+            admin_auth_headers:
+              Authorization: Bearer {{ admin_signup.json.token }}
+
+        - name: Set user default chat model
+          ansible.builtin.uri:
+            method: POST
+            url: "{{ api_base }}/v1/users/user/settings/update"
+            headers: "{{ admin_auth_headers }}"
+            body_format: json
+            body:
+              ui:
+                version: "{{ ui_version.json.version }}"
+                models: "{{ [ollama_models | first] }}"
+                params: {}
+  any_errors_fatal: true

@@ -1,9 +1,8 @@
 # https://github.com/ollama/ollama
+---
 # https://github.com/intel/ipex-llm
 # https://github.com/intel/ipex-llm/tree/main/docs/mddocs/Quickstart/ollama_portable_zip_quickstart.md
-# https://github.com/cowboysysop/charts/tree/master/charts/ollama
----
-- name: Build Ollama Docker image
+- name: Build Ollama image with IPEX-LLM
   tags: build
   hosts: localhost
   gather_facts: false
@@ -12,12 +11,19 @@
     - vars/storage.yml
     - vars/ollama.yml
   tasks:
-    - name: Build and push to Harbor
-      vars:
-        context_dir: files/ollama
-        image_name: "{{ ollama_chart_values.image.repository }}"
-      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
-      ansible.builtin.include_tasks: tasks/docker/build.yml
+    - name: Build Ollama image with IPEX-LLM
+      when: use_ollama_chart_by == 'cowboysysop'
+      block:
+        - name: Include vars/ollama.cowboysysop.yml
+          # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_vars_module.html
+          ansible.builtin.include_vars: vars/ollama.cowboysysop.yml
+
+        - name: Build image and push to Harbor
+          vars:
+            context_dir: files/ollama
+            image_name: "{{ ollama_chart_values.image.repository }}"
+          # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
+          ansible.builtin.include_tasks: tasks/docker/build.yml
   any_errors_fatal: true
 
 - name: Install Ollama on RKE cluster
@@ -28,7 +34,11 @@
   vars:
     # required kubernetes>=24.2 package only in user virtualenv
     ansible_python_interpreter: "{{ venv_python_interpreter }}"
+    vars_file: vars/ollama.{{ use_ollama_chart_by }}.yml
     kubeconfig: "{{ rke_kubeconfig }}"
+  pre_tasks:
+    - name: Include {{ vars_file }}
+      ansible.builtin.include_vars: "{{ vars_file }}"
   tasks:
     - name: Create Ollama ingress secret
       vars:
@@ -36,17 +46,14 @@
         secret_ns: "{{ ollama_namespace }}"
         release: "{{ ollama_release_name }}"
         cert_name: ollama-ingress
-        sans:
-          - "{{ ollama_fqdn }}"
-          - "*.{{ ollama_namespace }}.svc.cluster.local"
-          - "*.{{ ollama_namespace }}.svc"
+        sans: "{{ [ollama_fqdn] }}"
       ansible.builtin.include_tasks: tasks/k8s/secrets/tls.step.yml
 
     - name: Install Ollama Helm chart
       # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/helm_module.html
       kubernetes.core.helm:
         kubeconfig: "{{ kubeconfig }}"
-        chart_repo_url: https://cowboysysop.github.io/charts
+        chart_repo_url: "{{ ollama_chart_repo }}"
         chart_ref: ollama
         chart_version: "{{ ollama_chart_version }}"
         release_name: "{{ ollama_release_name }}"

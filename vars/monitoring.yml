@@ -47,10 +47,12 @@ monitoring_fqdns: |
   {% endfor %}
   {{ fqdns  }}
 
-prometheus_service_host: "{{ monitoring_release_name }}-prometheus.{{ monitoring_namespace }}.svc.cluster.local"
+prometheus_service_host: "{{ monitoring_release_name }}-prometheus.{{
+  monitoring_namespace }}.svc.{{ cluster_domain }}"
 prometheus_service_port: 9090
 prometheus_service_url: https://{{ prometheus_service_host }}:{{ prometheus_service_port }}
-alertmanager_service_host: "{{ monitoring_release_name }}-alertmanager.{{ monitoring_namespace }}.svc.cluster.local"
+alertmanager_service_host: "{{ monitoring_release_name }}-alertmanager.{{
+  monitoring_namespace }}.svc.{{ cluster_domain }}"
 alertmanager_service_port: 9093
 alertmanager_service_url: https://{{ alertmanager_service_host }}:{{ alertmanager_service_port }}
 
@@ -177,7 +179,7 @@ monitoring_oidc_client_id:
 
 # monitoring_oidc_client_secret: {vault.yml}
 # sso.fourteeners.local is same host as keycloak.fourteeners.local
-monitoring_oidc_issuer_uri: https://sso.fourteeners.local/realms/homelab
+monitoring_oidc_issuer_uri: https://sso.{{ homelab_domain }}/realms/homelab
 
 # https://github.com/oauth2-proxy/oauth2-proxy/releases
 monitoring_oauth2_proxy_version: "7.9.0"
@@ -898,9 +900,10 @@ prometheus_stack_chart_values:
       - name: Prometheus
         type: prometheus
         uid: prometheus
-        # url: https://{{ monitoring_release_name }}-prometheus.{{ monitoring_namespace }}.svc.cluster.local:9090
+        # url: https://{{ monitoring_release_name }}-prometheus.{{
+        #   monitoring_namespace }}.svc.{{ cluster_domain }}:9090
         # Thanos Query Frontend requires downstream Tripper config with tls_config settings!
-        url: https://thanos-query-frontend.{{ monitoring_namespace }}.svc.cluster.local:9090
+        url: https://thanos-query-frontend.{{ monitoring_namespace }}.svc.{{ cluster_domain }}:9090
         access: proxy
         # apparently Grafana ignores basic auth settings if data source access is proxy:
         # https://github.com/grafana/grafana/tree/main/pkg/api/frontendsettings.go#L515
@@ -924,7 +927,8 @@ prometheus_stack_chart_values:
       - name: Alertmanager
         type: alertmanager
         uid: alertmanager
-        url: https://{{ monitoring_release_name }}-alertmanager.{{ monitoring_namespace }}.svc.cluster.local:9093
+        url: https://{{ monitoring_release_name }}-alertmanager.{{
+          monitoring_namespace }}.svc.{{ cluster_domain }}:9093
         access: proxy
         jsonData:
           tlsAuthWithCACert: true

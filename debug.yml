@@ -43,7 +43,6 @@
 
     - name: Generate cluster FQDNs
       vars:
-        search_domains: ["fourteeners.local"]
         rke_cluster_name: homelab
         rke_fqdns: >
           {{ ([rke_cluster_name] + groups['control_plane']) |
@@ -55,7 +54,6 @@
 
     - name: Generate subdomain FQDNs
       vars:
-        search_domains: ["fourteeners.local"]
         subdomain: thanos
         thanos_hosts:
           - query
@@ -69,7 +67,7 @@
     - name: Generate hosts entries
       vars:
         search_domains:
-          - fourteeners.local
+          - "{{ homelab_domain }}"
           - erhhungyuan.com
         rke_cluster_name: homelab
         rke_ha_mode: true
@@ -79,7 +77,7 @@
           {%   set _ = hosts.append(rke_cluster_name) %}
           {% endif %}
           {{ hosts }}
-        host_ip: "{{ hostvars[host]['ansible_host'] }}"
+        host_ip: "{{ hostvars[host].ansible_host }}"
         # if HA mode, the host "homelab" (cluster name) has its own virtual IP
         # if not HA mode, homelab is an alias for the first control plane node
         host_names: |
@@ -254,16 +252,15 @@
     - name: Debug certificate SANs
       vars:
         fqdns:
-          - foo1.fourteeners.local
-          - foo2.fourteeners.local
+          - foo1.{{ homelab_domain }}
+          - foo2.{{ homelab_domain }}
         sans_:
           - foo
           - "{{ fqdns }}"
           - "*.foo.svc.cluster.local"
           - "*.foo.svc"
-          - admin@fourteeners.local
-          - 192.168.0.222
-          - 192.168.0.223
+          - admin@{{ homelab_domain }}
+          - "{{ cluster_node_ips }}"
         sans: "{{ sans_ | flatten }}"
         cn: "{{ sans | first }}"
         ips: "{{ sans | select('search', '^[0-9]+\\.') }}"

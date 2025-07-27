@@ -113,9 +113,9 @@
           livenessProbe: *probe
       ansible.builtin.include_tasks: tasks/k8s/probes.yml
 
-    - name: Deploy Intel Device Plugin custom resources
+    - name: Deploy Intel Device Plugin CRs
       block:
-        - name: Wait for IDP webhook service to be available
+        - name: Wait for IDP webhook to be ready
           # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_info_module.html
           kubernetes.core.k8s_info:
             kubeconfig: "{{ kubeconfig }}"
@@ -133,7 +133,7 @@
           retries: 20
           delay: 3
 
-        - name: Deploy Intel Device Plugin custom resources
+        - name: Deploy Intel Device Plugin CRs
           vars:
             # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/dict2items_filter.html
             plugins: "{{ intel_device_plugin_crs | ansible.builtin.dict2items(

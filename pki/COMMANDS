@@ -212,4 +212,13 @@ cd "$HOME"
 ./cert.sh --exp=365 \
   ollama.fourteeners.local
 
+./cert.sh --exp=365 \
+          --out=openwebui_db \
+  openwebui openwebui@fourteeners.local
+
+./cert.sh --exp=365 \
+  openwebui.fourteeners.local \
+    chatgpt.fourteeners.local \
+       chat.fourteeners.local
+
 rsync certs cosmos:.

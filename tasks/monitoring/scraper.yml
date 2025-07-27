@@ -21,6 +21,6 @@
     days: 365
     sans:
       - scraper
-      - scraper@fourteeners.local
+      - scraper@{{ homelab_domain }}
   # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
   ansible.builtin.include_tasks: tasks/k8s/secrets/tls.step.yml

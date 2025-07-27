@@ -1,0 +1,35 @@
+# get the OCI image used by
+# the PostgreSQL deployment
+#
+# pass the following vars:
+#   kubeconfig  [optional] default=<RKE>
+# sets the following facts:
+#   postgresql_image
+---
+- name: Include vars/postgresql.yml
+  # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_vars_module.html
+  ansible.builtin.include_vars: vars/postgresql.yml
+  when: postgresql_release_name is not defined
+
+- name: Get the PostgreSQL image used
+  become: false
+  block:
+    - name: Get PostgreSQL image used
+      # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_info_module.html
+      kubernetes.core.k8s_info:
+        kubeconfig: "{{ kubeconfig | default(rke_kubeconfig) }}"
+        api_version: apps/v1
+        kind: StatefulSet
+        name: "{{ postgresql_release_name }}-postgresql"
+        namespace: "{{ postgresql_namespace }}"
+      register: postgresql_sts
+
+    - name: Set postgresql_image fact
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/set_fact_module.html
+      ansible.builtin.set_fact:
+        postgresql_image: >-
+          {{ postgresql_sts.resources[0].spec.template.spec.containers |
+              selectattr('name', '==', 'postgresql') |
+              map(attribute='image') | first }}
+      when: postgresql_sts.resources is truthy
+  any_errors_fatal: true

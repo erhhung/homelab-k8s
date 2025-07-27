@@ -109,6 +109,11 @@
   ansible.builtin.import_playbook: ollama.yml
   tags: ollama
 
+# Open WebUI depends on Ollama and PostgreSQL
+- name: Include Open WebUI platform playbook
+  ansible.builtin.import_playbook: openwebui.yml
+  tags: openwebui
+
 - name: Include virtual clusters playbook
   ansible.builtin.import_playbook: vclusters.yml
   tags: vclusters

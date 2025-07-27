@@ -27,13 +27,23 @@ keycloak_db_user: keycloak
 
 # Java requires key file to be in PKCS#8 / DER format:
 # openssl pkcs8 -topk8 -inform PEM -outform DER -in tls.key -nocrypt -out key.der
-keycloak_jdbc_params:
-  ssl: "true"
-  sslmode: verify-full
-  # mounted volume: /opt/keycloak/tls/database
-  sslcert: /opt/keycloak/tls/database/tls.crt
-  sslkey: /opt/keycloak/tls/database/key.der
-  sslrootcert: /opt/keycloak/tls/database/ca.crt
+# https://www.postgresql.org/docs/current/libpq-connect.html#LIBPQ-CONNSTRING-URIS
+# NOTE: don't include "user:pass@" in the URL as
+# that gets interpreted as part of the host name
+keycloak_jdbc_url: >-
+  {% set params = {
+    'ssl':         'true',
+    'sslmode':     'verify-full',
+    'sslcert':     '/opt/keycloak/tls/database/tls.crt',
+    'sslkey':      '/opt/keycloak/tls/database/key.der',
+    'sslrootcert': '/opt/keycloak/tls/database/ca.crt'
+  } -%}
+  {% set items = params | dict2items -%}
+  {% set params = items | map(attribute='key')    |
+              zip(items | map(attribute='value')) |
+                    map('join','=') -%}
+  {% set query = params | join('&') -%}
+  jdbc:postgresql://{{ pgpool_service_host }}:5432/{{ keycloak_db_name }}?{{ query }}
 
 # file is in "keycloakx-dbsql" ConfigMap
 keycloak_sql_gz_b64: keycloak.sql.gz.b64
@@ -86,19 +96,12 @@ keycloakx_chart_values:
 
     # https://stackoverflow.com/questions/55741524/keycloak-cant-connect-to-postgres-ssl-connection-is-required#77645265
     - name: KC_DB_URL
-      {% set  items = keycloak_jdbc_params | dict2items -%}
-      {% set params = items | map(attribute='key')    |
-                  zip(items | map(attribute='value')) |
-                        map('join','=') -%}
-      {% set query = params | join('&') -%}
-      value: jdbc:postgresql://{{ pgpool_cluster_host }}:5432/{{ keycloak_db_name }}?{{ query }}
+      value: {{ keycloak_jdbc_url }}
 
   # https://github.com/codecentric/helm-charts/tree/master/charts/keycloakx#using-an-external-database
-  # most of these values are irrelevant given
-  # that KC_DB_URL is set for mTLS-based auth
   database:
     vendor: postgres
-    hostname: "{{ pgpool_cluster_host }}"
+    hostname: "{{ pgpool_service_host }}"
     port: 5432
     database: "{{ keycloak_db_name }}"
     username: "{{ keycloak_db_user }}"
@@ -110,13 +113,10 @@ keycloakx_chart_values:
   extraVolumes: |
     - name: database-tls
       secret:
-        # keycloakx-database-tls Secret
-        # will be created by Ansible
         secretName: {{ keycloak_secrets['database'] }}
+        defaultMode: 0640
     - name: ingress-tls
       secret:
-        # keycloakx-ingress-tls Secret
-        # will be created by Ansible
         secretName: {{ keycloak_secrets['ingress'] }}
     - name: keycloak-sql
       configMap:
@@ -142,7 +142,7 @@ keycloakx_chart_values:
   # https://github.com/codecentric/helm-charts/tree/master/charts/keycloakx#providing-a-custom-theme
   extraInitContainers: |
     - name: bootstrap
-      image: {{ postgresql_image }} # from set_fact task
+      image: {{ postgresql_image }}
       imagePullPolicy: IfNotPresent
       command:
         - bash
@@ -153,12 +153,9 @@ keycloakx_chart_values:
 
           # uses connection params added
           # by PG* environment variables
-          cp /tls/tls.key /tmp
-          chmod 0600 $PGSSLKEY
-
           db_found=$(psql -d postgres -tAc "
             SELECT COUNT(*) FROM pg_catalog.pg_database WHERE datname = '{{ keycloak_db_name }}'
-          ")
+          ") || exit $?
           echo "db_found=$db_found"
 
           [ "$db_found" -eq 0 ] && num_tbls=-1 || \
@@ -173,12 +170,12 @@ keycloakx_chart_values:
           }
           [ "$num_tbls" -eq -1 ] && {
             echo -e "\nCreating '{{ keycloak_db_name }}' database..."
-            psql -d postgres <<'EOF'
+            psql -d postgres <<'EOT'
               -- https://www.postgresql.org/docs/current/sql-createdatabase.html
               CREATE DATABASE {{ keycloak_db_name }} WITH OWNER {{ keycloak_db_user }};
               REVOKE ALL ON DATABASE {{ keycloak_db_name }} FROM PUBLIC;
               GRANT  ALL ON DATABASE {{ keycloak_db_name }} TO {{ keycloak_db_user }};
-          EOF
+          EOT
           }
           echo -e "\nImporting database from keycloak.sql..."
           base64 -d /sql/{{ keycloak_sql_gz_b64 }} | gzip -dq | \
@@ -187,7 +184,7 @@ keycloakx_chart_values:
           echo -e "\nDatabase bootstrapping completed ✓"
       env:
         - name: PGHOST
-          value: {{ pgpool_cluster_host }}
+          value: {{ pgpool_service_host }}
         - name: PGUSER
           value: {{ keycloak_db_user }}
         - name: PGSSLMODE
@@ -195,7 +192,7 @@ keycloakx_chart_values:
         - name: PGSSLCERT
           value: /tls/tls.crt
         - name: PGSSLKEY
-          value: /tmp/tls.key
+          value: /tls/tls.key
         - name: PGSSLROOTCERT
           value: /tls/ca.crt
       volumeMounts:
@@ -226,8 +223,6 @@ keycloakx_chart_values:
   ingress:
     enabled: true
     tls:
-      # keycloakx-ingress-tls Secret
-      # will be created by Ansible
       - secretName: "{{ keycloak_secrets['ingress'] }}"
         hosts: "{{ keycloak_fqdns }}"
     ingressClassName: "{{ rke_ingress_class }}"

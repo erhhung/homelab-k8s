@@ -28,7 +28,7 @@
         cert_name: valkey-node
         sans_:
           - "{{ valkey_fqdns }}"
-          - "*.{{ valkey_namespace }}.svc.cluster.local"
+          - "*.{{ valkey_namespace }}.svc.{{ cluster_domain }}"
           - "*.{{ valkey_namespace }}.svc"
           - "{{ valkey_lb_ips }}"
         sans: "{{ sans_ | flatten }}"

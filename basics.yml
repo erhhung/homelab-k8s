@@ -58,8 +58,6 @@
     - name: Change VM clock source to "tsc"
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/shell_module.html
       ansible.builtin.shell: |
-        set -o pipefail
-
         GRUB=/etc/default/grub
         PARAMS=(clocksource=tsc tsc=reliable)
         grep -q "$PARAMS" "$GRUB" && exit 9 # no change

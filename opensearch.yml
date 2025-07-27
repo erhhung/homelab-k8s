@@ -51,9 +51,9 @@
         cert_name: opensearch-node
         algorithm: RSA
         sans_:
-          - node.{{ opensearch_namespace }}.svc.cluster.local
+          - node.{{ opensearch_namespace }}.svc.{{ cluster_domain }}
           - "{{ opensearch_fqdns }}"
-          - "*.{{ opensearch_namespace }}.svc.cluster.local"
+          - "*.{{ opensearch_namespace }}.svc.{{ cluster_domain }}"
           - "*.{{ opensearch_namespace }}.svc"
         sans: "{{ sans_ | flatten }}"
       ansible.builtin.include_tasks: tasks/k8s/secrets/tls.step.yml
