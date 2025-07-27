@@ -7,6 +7,7 @@ postgresql_users:
   - erhhung
   - scraper
   - "{{ keycloak_db_user }}"
+  - "{{ openwebui_db_user }}"
 
 postgresql_namespace: postgresql
 postgresql_host_names: # 192.168.0.222
@@ -23,7 +24,7 @@ postgresql_fqdns: "{{ postgresql_host_names | product(search_domains) | map('joi
 # (requires Python package "netaddr" on Ansible controller)
 postgresql_lb_ip: "{{ rke_lb_vip | ansible.utils.ipmath(1) }}"
 
-pgpool_cluster_host: postgresql-pgpool.{{ postgresql_namespace }}.svc.cluster.local
+pgpool_service_host: postgresql-pgpool.{{ postgresql_namespace }}.svc.{{ cluster_domain }}
 
 postgresql_secrets:
   node-tls: postgresql-tls

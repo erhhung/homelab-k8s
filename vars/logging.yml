@@ -6,6 +6,8 @@ logging_secrets:
   credentials: fluent-credentials
   plugin: fluent-plugin-tls
 
+fluent_os_user: fluent
+
 # https://github.com/fluent/helm-charts/tree/main/charts/fluent-operator
 fluent_operator_chart_version: "3.3.0"
 fluent_operator_release_name: fluent-operator
@@ -27,7 +29,7 @@ fluent_operator_chart_values:
     crdsEnable: true
 
     # https://doc.crds.dev/github.com/fluent/fluent-operator/fluentbit.fluent.io/FluentBit/v1alpha2#spec-secrets
-    secrets: ["{{ logging_secrets['plugin'] }}"]
+    secrets: "{{ [logging_secrets['plugin']] }}"
 
     input:
       tail:
@@ -106,6 +108,7 @@ saved_log_search:
     - kubernetes.container_name
     - log
 
+# ISM policy settings:
 # roll over if too big
 log_index_max_size: 1gb
 # delete after a week

@@ -48,7 +48,8 @@
     - name: Set grafana_ingress_snippet fact
       vars:
         location_regex: ^/api
-        backend_url: https://{{ monitoring_release_name }}-grafana.{{ monitoring_namespace }}.svc.cluster.local
+        backend_url: https://{{ monitoring_release_name }}-grafana.{{
+          monitoring_namespace }}.svc.{{ cluster_domain }}
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/set_fact_module.html
       ansible.builtin.set_fact:
         # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/template_lookup.html
@@ -69,7 +70,7 @@
     - name: Create monitoring ingress secret
       vars:
         sans_:
-          - "*.{{ monitoring_namespace }}.svc.cluster.local"
+          - "*.{{ monitoring_namespace }}.svc.{{ cluster_domain }}"
           - "*.{{ monitoring_namespace }}.svc"
         secret_name: "{{ monitoring_secrets[item.name] }}"
         cert_name: "{{ item.cert }}-ingress"

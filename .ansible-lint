@@ -9,6 +9,7 @@ skip_list:
   - var-naming[pattern] # var not snake_case
   - name[casing] # start names in upper case
   - name[template] # {{ ... }} in task name
+  - yaml[octal-values] # octals not strings
   - yaml[line-length] # line over 160 chars
   - yaml[colons] # >= 2 spaces after colon
   - yaml[comments] # no space after # char

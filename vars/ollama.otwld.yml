@@ -1,0 +1,79 @@
+# https://github.com/otwld/ollama-helm
+ollama_chart_repo: https://helm.otwld.com
+ollama_chart_version: "1.24.0"
+
+# https://github.com/otwld/ollama-helm/tree/main/values.yaml
+ollama_chart_values:
+  replicaCount: 1
+
+  ollama:
+    port: "{{ ollama_service_port }}"
+
+    gpu:
+      enabled: false
+      type: nvidia
+      # type: amd
+
+    # models to pull on startup
+    models:
+      pull: "{{ ollama_models }}"
+      run: [] # run automatically
+
+  affinity: "{{ ollama_common_values['affinity'] }}"
+  resources: "{{ ollama_common_values['resources'] }}"
+  persistentVolume: "{{ ollama_common_values['storage'] }}"
+
+  # Environment variables: ollama serve --help
+  # https://github.com/ollama/ollama/tree/main/envconfig/config.go
+  # https://github.com/ollama/ollama/issues/2941#issuecomment-2322778733
+  extraEnv:
+    # limit to 1 request at a time so
+    # cluster doesn't grind to a halt!
+    - name: OLLAMA_NUM_PARALLEL
+      value: "1"
+    # memory limit only holds 1 model
+    - name: OLLAMA_MAX_LOADED_MODELS
+      value: "1"
+    # fail model loading after
+    - name: OLLAMA_LOAD_TIMEOUT
+      value: 15m
+    # keep model in memory for
+    - name: OLLAMA_KEEP_ALIVE
+      value: 30m
+    # increase Ollama default
+    # 2048-token context size
+    - name: OLLAMA_CONTEXT_LENGTH
+      value: "8192"
+
+  podSecurityContext: "{{ ollama_common_values['podSecurityContext'] }}"
+  securityContext: "{{ ollama_common_values['securityContext'] }}"
+
+  readinessProbe: "{{ ollama_common_values['readinessProbe'] }}"
+  livenessProbe: "{{ ollama_common_values['livenessProbe'] }}"
+
+  service:
+    type: ClusterIP
+    port: "{{ ollama_service_port }}"
+
+  ingress:
+    enabled: true
+    className: "{{ rke_ingress_class }}"
+    annotations: "{{ ollama_common_values['ingress'].annotations }}"
+    tls: "{{ ollama_common_values['ingress'].tls }}"
+    hosts:
+      - host: "{{ ollama_fqdn }}"
+        paths:
+          - path: /
+            pathType: Prefix
+
+  extraObjects:
+    - "{{ ollama_common_values['externalService'] }}"
+
+# models to pull on startup
+# https://ollama.com/search
+ollama_models:
+  - qwen3:1.7b # 1.4GB
+  - deepseek-r1:1.5b # 1.1GB
+  - gemma3:1b # 815 MB
+  - gemma2:2b # 1.6GB
+  - llama3.2:3b # 2.0GB

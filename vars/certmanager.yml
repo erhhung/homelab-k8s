@@ -101,8 +101,6 @@ step_issuer_chart_values:
       name: "{{ stepca_provisioner.name }}"
       kid: "{{ stepca_provisioner.key.kid }}"
       passwordRef:
-        # step-ca-provisioners Secret
-        # will be created by Ansible
         name: "{{ step_issuer_secrets['provisioners'] }}"
         namespace: "{{ step_issuer_namespace }}"
         key: jwk-provisioner-password

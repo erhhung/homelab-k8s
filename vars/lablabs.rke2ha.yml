@@ -3,11 +3,18 @@
 
 rke2_ha_mode: "{{ rke_ha_mode }}" # HA control plane
 rke2_ha_mode_keepalived: false # disable Keepalived
-rke2_ha_mode_kubevip: true # install kube-vip LB + VIP
-rke2_api_ip: "{{ hostvars[rke_cluster_name]['ansible_host'] }}"
+rke2_ha_mode_kubevip: true # install kube-vip LB+VIP
+
+# https://github.com/kube-vip/kube-vip/pkgs/container/kube-vip
+rke2_kubevip_image: ghcr.io/kube-vip/kube-vip:v0.9.2
+# https://github.com/kube-vip/kube-vip-cloud-provider/pkgs/container/kube-vip-cloud-provider
+rke2_kubevip_cloud_provider_image: ghcr.io/kube-vip/kube-vip-cloud-provider:v0.0.12
+
+rke2_api_ip: "{{ hostvars[rke_cluster_name].ansible_host }}"
 rke2_interface: "{{ host_pif }}"
 rke2_loadbalancer_ip_range:
   range-global: "{{ lb_vip_range.start }}-{{ lb_vip_range.end }}"
+
 # https://kube-vip.io/docs/usage/kubernetes-services/
 rke2_kubevip_svc_enable: true # watch LoadBalancer
 rke2_kubevip_ipvs_lb_enable: true # LB control plane

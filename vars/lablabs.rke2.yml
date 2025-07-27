@@ -30,7 +30,7 @@ rke2_server_options:
   - "etcd-expose-metrics: true"
   - |-
     etcd-arg:
-      - listen-metrics-urls=http://127.0.0.1:2381,http://{{ hostvars[inventory_hostname]['ansible_host'] }}:2381
+      - listen-metrics-urls=http://127.0.0.1:2381,http://{{ hostvars[inventory_hostname].ansible_host }}:2381
 
 # additional RKE2 agent configuration options
 # https://docs.rke2.io/reference/linux_agent_config

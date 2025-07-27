@@ -22,7 +22,7 @@ opensearch_fqdns: "{{ opensearch_host_names | product(search_domains) | map('joi
 
 opensearch_cluster_name: opensearch
 opensearch_master_service: "{{ opensearch_cluster_name }}-master"
-opensearch_service_host: "{{ opensearch_master_service }}.{{ opensearch_namespace }}.svc.cluster.local"
+opensearch_service_host: "{{ opensearch_master_service }}.{{ opensearch_namespace }}.svc.{{ cluster_domain }}"
 opensearch_service_port: 9200
 opensearch_service_url: https://{{ opensearch_service_host }}:{{ opensearch_service_port }}
 opensearch_url: https://{{ opensearch_fqdns | first }}:{{ opensearch_service_port }}
@@ -248,19 +248,17 @@ opensearch_chart_values:
     # no need for storage level replicas when
     # the cluster stores indices with replicas
     storageClass: "{{ storage_classes['single'] }}"
-    size: 5Gi # allocate enough for logging
+    size: 8Gi # allocate enough for logging
 
   extraVolumes:
     - name: node-tls
       secret:
-        # opensearch-node-tls Secret
-        # will be created by Ansible
         secretName: "{{ opensearch_secrets['node-tls'] }}"
+        defaultMode: 0640
     - name: admin-tls
       secret:
-        # opensearch-admin-tls Secret
-        # will be created by Ansible
         secretName: "{{ opensearch_secrets['admin-tls'] }}"
+        defaultMode: 0640
     - name: extras
       emptyDir: {}
 

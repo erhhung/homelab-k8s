@@ -1,0 +1,288 @@
+# openwebui_secret_key: {vault.yml}
+# openwebui_admin_pass: {vault.yml}
+# pipelines_api_key:    {vault.yml}
+# openai_api_key:       {vault.yml}
+
+# API request body for
+# /api/v1/auths/signup
+openwebui_admin_user:
+  name: "{{ user_erhhung.fullname }}"
+  email: "{{ user_erhhung.email }}"
+  password: "{{ openwebui_admin_pass }}"
+  profile_image_url: "{{ user_erhhung.gravatar }}"
+
+openwebui_namespace: open-webui
+openwebui_host_names: # aliases of "homelab"
+  - openwebui
+  - chatgpt
+  - chat
+
+# remember to add openwebui.fourteeners.local (also chatgpt. and chat.)
+# to pfSense DNS as aliases of homelab.fourteeners.local: 192.168.0.221
+# https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_filters.html#products
+openwebui_fqdns: "{{ openwebui_host_names | product(search_domains) | map('join','.') }}"
+
+openwebui_secrets:
+  secrets: open-webui-secrets
+  database: open-webui-database-tls
+  ingress: open-webui-ingress-tls
+
+openwebui_db_name: openwebui
+openwebui_db_user: openwebui
+
+# https://docs.sqlalchemy.org/en/20/core/engines.html#database-urls
+# https://docs.sqlalchemy.org/en/20/dialects/postgresql.html#ssl-connections
+# https://www.postgresql.org/docs/current/libpq-connect.html#LIBPQ-CONNSTRING-URIS
+openwebui_postgresql_url: >-
+  {% set params = {
+    'sslmode':     'verify-full',
+    'sslcert':     '/tls/database/tls.crt',
+    'sslkey':      '/tls/database/tls.key',
+    'sslrootcert': '/tls/database/ca.crt'
+  } -%}
+  {% set items = params | dict2items -%}
+  {% set params = items | map(attribute='key')    |
+              zip(items | map(attribute='value')) |
+                    map('join','=') -%}
+  {% set query = params | join('&') -%}
+  postgresql://{{ openwebui_db_user }}:{{ pgpool_db_pass }}@{{
+    pgpool_service_host }}:5432/{{ openwebui_db_name }}?{{ query }}
+
+# https://redis.readthedocs.io/en/stable/connections.html
+# https://redis.readthedocs.io/en/stable/examples/ssl_connection_examples.html
+# ssl_cert_reqs: none|optional|required
+openwebui_redis_url: >-
+  {% set params = {
+    'ssl_cert_reqs': 'required',
+    'ssl_certfile':  '/tls/database/tls.crt',
+    'ssl_keyfile':   '/tls/database/tls.key',
+    'ssl_ca_certs':  '/tls/database/ca.crt'
+  } -%}
+  {% set items = params | dict2items -%}
+  {% set params = items | map(attribute='key')    |
+              zip(items | map(attribute='value')) |
+                    map('join','=') -%}
+  {% set query = params | join('&') -%}
+  rediss://:{{ valkey_pass }}@{{ valkey_node_eps | first }}/0?{{ query }}
+
+# https://github.com/open-webui/helm-charts/tree/main/charts/open-webui
+openwebui_chart_version: "6.28.0"
+openwebui_release_name: open-webui
+
+# Pipelines is open-webui subchart:
+# https://github.com/open-webui/helm-charts/tree/main/charts/pipelines/values.yaml
+pipelines_chart_values: &pipelines
+  replicaCount: 1
+
+  persistence:
+    enabled: true
+    storageClass: "{{ storage_classes['default'] }}"
+    # use ReadWriteMany if replicaCount > 1
+    accessModes: ["ReadWriteOnce"]
+    # min XFS volume size is 300Mi
+    size: 384Mi
+
+# https://github.com/open-webui/helm-charts/tree/main/charts/open-webui/values.yaml
+openwebui_chart_values:
+  replicaCount: 1
+  revisionHistoryLimit: 2
+
+  ollama:
+    # don't install another Ollama as we
+    # already have it running separately
+    enabled: false
+  ollamaUrls: "{{ [ollama_service_url] }}"
+
+  enableOpenaiApi: true
+  # if Pipelines is enabled, its endpoint
+  # will be first in OPENAI_API_BASE_URLS
+  openaiBaseApiUrl: https://api.openai.com/v1
+
+  # use my own image with Redis Cluster
+  # support (REDIS_CLUSTER_MODE="True")
+  image:
+    pullPolicy: Always
+    # repository: ghcr.io/open-webui/open-webui
+    repository: "{{ harbor_container_registry }}/library/open-webui"
+    tag: latest
+
+  # https://docs.openwebui.com/getting-started/env-configuration
+  commonEnvVars:
+    # https://docs.openwebui.com/getting-started/env-configuration/#important-note-on-persistentconfig-environment-variables
+    - name: ENABLE_PERSISTENT_CONFIG
+      value: "False"
+    - name: USER_AGENT
+      value: Open WebUI
+    # enable API /docs
+    # https://docs.openwebui.com/getting-started/api-endpoints/#swagger-documentation-links
+    - name: ENV
+      value: dev
+
+  extraEnvVars:
+    - name: WEBUI_URL
+      value: https://{{ openwebui_fqdns | first }}
+    # https://docs.openwebui.com/getting-started/env-configuration/#cors_allow_origin
+    - name: CORS_ALLOW_ORIGIN
+      value: https://{{ openwebui_fqdns | first }}
+    # https://docs.openwebui.com/getting-started/env-configuration/#jwt_expires_in
+    - name: JWT_EXPIRES_IN
+      value: 1h
+    - name: REDIS_URL
+      value: "{{ openwebui_redis_url }}"
+    # setting added in my fork and image to
+    # use redis.cluster.RedisCluster client
+    - name: REDIS_CLUSTER_MODE
+      value: "True"
+    - name: REDIS_KEY_PREFIX
+      value: "{open-webui}"
+
+  extraEnvFrom:
+    - secretRef:
+        name: "{{ openwebui_secrets['secrets'] }}"
+
+  pipelines:
+    # install Pipelines subchart:
+    # https://github.com/open-webui/pipelines
+    enabled: true
+    <<: *pipelines
+
+  # Apache Tika is a content analysis toolkit
+  # that can detect and extract metadata and
+  # text from over 1000 different file types:
+  # https://tika.apache.org/
+  tika:
+    enabled: false
+
+  postgresql:
+    # don't install PostgreSQL as we already
+    # have a PostgreSQL HA cluster deployed
+    enabled: false
+  databaseUrl: "{{ openwebui_postgresql_url }}"
+
+  websocket:
+    enabled: true
+    manager: redis
+    redis:
+      # use dedicated Redis since there
+      # is no support for cluster mode
+      # enabled: true
+      # don't install Redis as we already
+      # have a multi-node Valkey cluster
+      enabled: false
+    # define WEBSOCKET_REDIS_URL
+    url: "{{ openwebui_redis_url }}"
+
+  persistence:
+    enabled: true
+    provider: local # as opposed to s3/gcs/azure
+    storageClass: "{{ storage_classes['default'] }}"
+    # use ReadWriteMany if replicaCount > 1
+    accessModes: ["ReadWriteOnce"]
+    # cache takes a lot of space!
+    size: 4Gi
+
+  resources:
+    requests:
+      cpu: 50m
+      memory: 768Mi
+
+  podSecurityContext:
+    fsGroup: 2000
+  containerSecurityContext:
+    capabilities:
+      drop: ["ALL"]
+    readOnlyRootFilesystem: false
+    runAsNonRoot: true
+    runAsUser: 1000
+
+  volumes:
+    - name: database-tls
+      secret:
+        secretName: "{{ openwebui_secrets['database'] }}"
+        defaultMode: 0640
+
+  volumeMounts:
+    container:
+      - name: database-tls
+        mountPath: /tls/database
+        readOnly: true
+
+  extraInitContainers:
+    # create PostgreSQL database
+    # openwebui if doesn't exist
+    - name: init-database
+      image: "{{ postgresql_image }}"
+      imagePullPolicy: IfNotPresent
+      command:
+        - bash
+      args:
+        - -c
+        - |
+          # uses connection params added
+          # by PG* environment variables
+          db_found=$(psql -d postgres -tAc "
+            SELECT COUNT(*) FROM pg_catalog.pg_database WHERE datname = '{{ openwebui_db_name }}'
+          ") || exit $?
+          echo "db_found=$db_found"
+
+          [ "$db_found" -eq 1 ] || {
+            echo -e "\nCreating '{{ openwebui_db_name }}' database..."
+            psql -d postgres <<'EOT'
+              -- https://www.postgresql.org/docs/current/sql-createdatabase.html
+              CREATE DATABASE {{ openwebui_db_name }} WITH OWNER {{ openwebui_db_user }};
+              REVOKE ALL ON DATABASE {{ openwebui_db_name }} FROM PUBLIC;
+              GRANT  ALL ON DATABASE {{ openwebui_db_name }} TO {{ openwebui_db_user }};
+          EOT
+          }
+          echo -e "\nDatabase initialization completed ✓"
+      env:
+        - name: PGHOST
+          value: "{{ pgpool_service_host }}"
+        - name: PGUSER
+          value: "{{ openwebui_db_user }}"
+        - name: PGSSLMODE
+          value: verify-full
+        - name: PGSSLCERT
+          value: /tls/tls.crt
+        - name: PGSSLKEY
+          value: /tls/tls.key
+        - name: PGSSLROOTCERT
+          value: /tls/ca.crt
+      volumeMounts:
+        - name: database-tls
+          mountPath: /tls
+          readOnly: true
+
+  readinessProbe:
+    httpGet:
+      path: /health/db
+      port: http
+    initialDelaySeconds: 30
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 6
+
+  livenessProbe:
+    httpGet:
+      path: /health
+      port: http
+    initialDelaySeconds: 30
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 6
+
+  managedCertificate:
+    # create our own ingress
+    # TLS secret via Ansible
+    enabled: false
+
+  ingress:
+    enabled: true
+    tls: true
+    existingSecret: "{{ openwebui_secrets['ingress'] }}"
+    class: "{{ rke_ingress_class }}"
+    annotations:
+      nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+      nginx.ingress.kubernetes.io/backend-protocol: HTTP
+    host: "{{ openwebui_fqdns[0] }}"
+    additionalHosts: "{{ openwebui_fqdns[1:] }}"

@@ -47,7 +47,8 @@ All cluster services will be provisioned with TLS certificates from Erhhung's pr
 |  https://rule.thanos.fourteeners.local <br/> https://store.thanos.fourteeners.local <br/> https://bucket.thanos.fourteeners.local <br/> https://compact.thanos.fourteeners.local | Thanos component status UIs
 |        https://kiali.fourteeners.local | Kiali console _(Keycloak SSO)_
 |       https://argocd.fourteeners.local | Argo CD console
-|  http://ollama.fourteeners.local:11434 | Ollama LLM server
+|       https://ollama.fourteeners.local | Ollama API server
+|    https://openwebui.fourteeners.local | Open WebUI portal
 
 ## Installation Sources
 
@@ -72,7 +73,8 @@ All cluster services will be provisioned with TLS certificates from Erhhung's pr
 - [X] [MinIO Object Storage](https://github.com/minio/minio) — S3-compatible object storage with console
     * Install on main RKE cluster using the [MinIO Operator](https://min.io/docs/minio/kubernetes/upstream/operations/install-deploy-manage/deploy-operator-helm.html) and [MinIO Tenant](https://min.io/docs/minio/kubernetes/upstream/operations/install-deploy-manage/deploy-minio-tenant-helm.html) Helm charts
 - [X] [Velero Backup & Restore](https://velero.io/docs/latest/basic-install) — back up and restore persistent volumes
-    * Install on main RKE cluster using the [Velero](https://github.com/vmware-tanzu/helm-charts/tree/main/charts/velero) Helm chart
+    * Install on main RKE cluster using the [`velero`](https://github.com/vmware-tanzu/helm-charts/tree/main/charts/velero) Helm chart
+    * [ ] Install [Velero UI](https://github.com/otwld/velero-ui) dashboard using the [`velero-ui`](https://github.com/otwld/helm-charts/tree/main/charts/velero-ui) Helm chart
 - [X] [Node Feature Discovery](https://kubernetes-sigs.github.io/node-feature-discovery) — label nodes with available hardware features, like GPUs
     * Install on K3s and RKE clusters using the [`node-feature-discovery`](https://kubernetes-sigs.github.io/node-feature-discovery/stable/deployment/helm.html) Helm chart
     * [X] Install [Intel Device Plugins](https://intel.github.io/intel-device-plugins-for-kubernetes) using the [`intel-device-plugins-operator`](https://github.com/intel/helm-charts/tree/main/charts/device-plugin-operator) Helm chart
@@ -104,6 +106,8 @@ All cluster services will be provisioned with TLS certificates from Erhhung's pr
     * Install on main RKE cluster using the [`metacontroller`](https://metacontroller.github.io/metacontroller/guide/helm-install.html) Helm chart
 - [X] [Ollama LLM Server](https://github.com/ollama/ollama) with [Ollama CLI](https://github.com/masgari/ollama-cli) — run LLMs on Kubernetes cluster
     * Install on an Intel GPU node using the [`ollama`](https://github.com/cowboysysop/charts/tree/master/charts/ollama) Helm chart and [IPEX-LLM Ollama portable zip](https://github.com/intel/ipex-llm/blob/main/docs/mddocs/Quickstart/ollama_portable_zip_quickstart.md)
+- [X] [Open WebUI AI Platform](https://github.com/open-webui/open-webui) — extensible AI platform with Ollama integration and local RAG support
+    * Install on main RKE cluster using the [`open-webui`](https://github.com/open-webui/helm-charts/tree/main/charts/open-webui) Helm chart
 - [ ] [Flowise Agentic Workflows](https://flowiseai.com/) — build AI agents using visual workflows
     * Install on main RKE cluster using the [`flowise`](https://github.com/cowboysysop/charts/tree/master/charts/flowise) Helm chart
 - [ ] [OpenTelemetry Collector](https://opentelemetry.io/docs/collector) with [Jaeger UI](https://www.jaegertracing.io/) -- telemetry collector agent and distributed tracing backend
@@ -145,7 +149,7 @@ ansible-vault view   $VAULTFILE
 | `stepca_provisioner_pass`         | `thanos_admin_pass`
 | `minio_client_pass`               | `grafana_admin_pass`
 | `velero_repo_pass`                | `argocd_admin_pass`
-| `harbor_secret`                   |
+| `harbor_secret`                   | `openwebui_admin_pass`
 | `dashboards_os_pass`              |
 | `fluent_os_pass`                  |
 | `valkey_pass`                     |
@@ -159,6 +163,10 @@ ansible-vault view   $VAULTFILE
 | `oauth2_proxy_cookie_secret`      |
 | `kiali_oidc_client_secret`        |
 | `argocd_signing_key`              |
+| `hass_access_token`               |
+| `openwebui_secret_key`            |
+| `pipelines_api_key`               |
+| `openai_api_key`                  |
 </details>
 
 ## Connections
@@ -356,10 +364,10 @@ however, all privileged operations using `sudo` will require the password stored
     ```
 </details>
 
-21. <details><summary>Install <strong>Ollama</strong> LLM server with models</summary><br/>
+21. <details><summary>Install <strong>Ollama</strong> LLM server with common models<br/> &nbsp; &nbsp; Install <strong>Open WebUI</strong> AI platform with <strong>Pipelines</strong></summary><br/>
 
     ```bash
-    ./play.sh ollama
+    ./play.sh ollama openwebui
     ```
 </details>
 
@@ -401,14 +409,15 @@ Due to the dependency chain of the **Prometheus monitoring stack** (Keycloak and
 
 2. Create/revert/delete VM snapshots
 
-    2.1. Create new snaphots
+    <details><summary>2.1. Create new snaphots</summary><br/>
 
     ```bash
     ansible-playbook snapshotvms.yml [-e targets={group|host|,...}] \
                                       -e '{"desc":"text description"}'
     ```
+    </details>
 
-    2.2. Revert to snapshots
+    <details><summary>2.2. Revert to snapshots</summary><br/>
 
     ```bash
     ansible-playbook snapshotvms.yml  -e do=revert \
@@ -416,8 +425,9 @@ Due to the dependency chain of the **Prometheus monitoring stack** (Keycloak and
                                       -e '{"desc":"text to search"}' \
                                      [-e '{"date":"YYYY-mm-dd prefix"}']
     ```
+    </details>
 
-    2.3. Delete old snaphots
+    <details><summary>2.3. Delete old snaphots</summary><br/>
 
     ```bash
     ansible-playbook snapshotvms.yml  -e do=delete \
@@ -425,8 +435,9 @@ Due to the dependency chain of the **Prometheus monitoring stack** (Keycloak and
                                       -e '{"desc":"text to search"}' \
                                       -e '{"date":"YYYY-mm-dd prefix"}'
     ```
+    </details>
 
-3. Restart all/specific VMs
+3. Start all/specific VMs
 
     ```bash
     ansible-playbook startvms.yml [-e targets={group|host|,...}]
@@ -544,7 +555,7 @@ Ansible's [ad-hoc commands](https://docs.ansible.com/ansible/latest/command_guid
     ip6tables-restore v1.8.9 (nf_tables): unknown option "--xor-mark"
     ```
 
-    <details><summary>Current workaround is to downgrade to an earlier kernel.</summary><br/>
+    <details><summary>Current workaround is to <strong>downgrade</strong> to an earlier kernel.</summary><br/>
 
     ```bash
     # list installed kernel images
@@ -583,3 +594,28 @@ Ansible's [ad-hoc commands](https://docs.ansible.com/ansible/latest/command_guid
     ansible -v k8s_all -b -a 'apt-get autoremove -y --purge'
     ```
     </details>
+
+3. StatefulSet pod stuck on `ContainerCreating` due to `MountDevice failed`
+
+    Pod lifecycle events show an error like:
+
+    ```
+    MountVolume.MountDevice failed for volume "pvc-4151d201-437b-4ceb-bbf6-c227ea49e285" : kubernetes.io/csi: attacher.MountDevice failed to create dir "/var/lib/kubelet/plugins/kubernetes.io/csi/driver.longhorn.io/0bb8a8bc36ca16f14a425e5eaf35ed51af6096bf0302129a05394ce51393cecd/globalmount": mkdir /var/lib/kubelet/.../globalmount: file exists
+    ```
+
+    Problem is described by this [GitHub issue](https://github.com/longhorn/longhorn/issues/3502), which _may_ be caused by restarting the node while a Longhorn volume backup is in-progress.
+
+    <details><summary>An effective workaround is to <strong>unmount</strong> that volume.</summary><br/>
+
+    ```bash
+    $ ssh k8s1
+
+    $ mount | grep pvc-4151d201-437b-4ceb-bbf6-c227ea49e285
+    /dev/longhorn/pvc-4151d201-437b-4ceb-bbf6-c227ea49e285 on /var/lib/kubelet/plugins/kubernetes.io/csi/driver.longhorn.io/0bb8a8bc36ca16f14a425e5eaf35ed51af6096bf0302129a05394ce51393cecd/globalmount type xfs (rw,relatime,nouuid,attr2,inode64,logbufs=8,logbsize=32k,noquota)
+    /dev/longhorn/pvc-4151d201-437b-4ceb-bbf6-c227ea49e285 on /var/lib/kubelet/pods/06fc67d7-833f-4ecd-810f-77787fd703e6/volumes/kubernetes.io~csi/pvc-4151d201-437b-4ceb-bbf6-c227ea49e285/mount type xfs (rw,relatime,nouuid,attr2,inode64,logbufs=8,logbsize=32k,noquota)
+
+    $ sudo umount /var/lib/kubelet/plugins/kubernetes.io/csi/driver.longhorn.io/0bb8a8bc36ca16f14a425e5eaf35ed51af6096bf0302129a05394ce51393cecd/globalmount
+    ```
+    </details>
+
+    Then restart the pod, and it should run successfully.

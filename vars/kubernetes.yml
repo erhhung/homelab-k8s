@@ -6,6 +6,8 @@ rke_workers_group: "{{ 'workers_ha' if rke_ha_mode else 'workers' }}"
 k3s_control_plane_host: rancher
 rke_control_plane_host: "{{ groups[rke_control_plane_group] | first }}"
 
+cluster_domain: cluster.local
+
 # K3s and RKE clusters
 additional_node_labels:
   # all cluster nodes, including control plane node(s),

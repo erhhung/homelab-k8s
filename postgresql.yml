@@ -8,6 +8,7 @@
     - vars/storage.yml
     - vars/monitoring.yml
     - vars/keycloak.yml
+    - vars/openwebui.yml
     - vars/postgresql.yml
   vars:
     kubeconfig: "{{ rke_kubeconfig }}"
@@ -27,7 +28,7 @@
         cert_name: postgresql-node
         sans_:
           - "{{ postgresql_fqdns }}"
-          - "*.{{ postgresql_namespace }}.svc.cluster.local"
+          - "*.{{ postgresql_namespace }}.svc.{{ cluster_domain }}"
           - "*.{{ postgresql_namespace }}.svc"
           - "{{ postgresql_lb_ip }}"
         sans: "{{ sans_ | flatten }}"

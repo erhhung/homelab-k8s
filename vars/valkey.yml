@@ -41,7 +41,7 @@ valkey_node_fqdns: |
   {% set fqdns = [] %}
   {% for i in range(valkey_node_count) %}
   {%   set _ = fqdns.append(valkey_release_name ~'-'~ i ~'-svc.'~
-                            valkey_namespace ~'.svc.cluster.local') %}
+                 valkey_namespace ~'.svc.'~ cluster_domain) %}
   {% endfor %}
   {{ fqdns  }}
 
@@ -52,7 +52,7 @@ redis_cluster_urls: "{{ ['rediss://'] | product(valkey_node_eps) | map('join') }
 # ["valkeys://{node-endpoint}", ...]
 valkey_cluster_urls: "{{ ['valkeys://'] | product(valkey_node_eps) | map('join') }}"
 
-valkey_service_host: "{{ valkey_release_name }}.{{ valkey_namespace }}.svc.cluster.local"
+valkey_service_host: "{{ valkey_release_name }}.{{ valkey_namespace }}.svc.{{ cluster_domain }}"
 valkey_service_port: 6379
 
 valkey_secrets:

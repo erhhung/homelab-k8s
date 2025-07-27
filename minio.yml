@@ -43,8 +43,8 @@
           sans:
             - "{{ minio_s3api_fqdn }}"
             - "*.{{ minio_s3api_fqdn }}"
-            - "*.{{ minio_tenant_name }}-hl.{{ minio_tenant_namespace }}.svc.cluster.local"
-            - "*.{{ minio_tenant_namespace }}.svc.cluster.local"
+            - "*.{{ minio_tenant_name }}-hl.{{ minio_tenant_namespace }}.svc.{{ cluster_domain }}"
+            - "*.{{ minio_tenant_namespace }}.svc.{{ cluster_domain }}"
             - "*.{{ minio_tenant_namespace }}.svc"
       loop_control:
         label: "{{ item.cert }}"

@@ -5,7 +5,7 @@
   block:
     - name: Define MinIO scrape configs
       vars:
-        target: metrics.{{ minio_tenant_namespace }}.svc.cluster.local
+        target: metrics.{{ minio_tenant_namespace }}.svc.{{ cluster_domain }}
         types: "{{ minio_collect_metrics_for | join(' ') }}"
         name_prefix: minio-{{ minio_tenant_name }}-
         path_prefix: /minio/v2/metrics/

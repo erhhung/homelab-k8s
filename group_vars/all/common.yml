@@ -15,15 +15,26 @@ venv_python_interpreter: "{{ ansible_user_virtualenv }}/bin/python3"
 # "playbook_dir" is an Ansible built-in var
 template_dir: "{{ playbook_dir }}/templates"
 
+homelab_domain: fourteeners.local
 search_domains:
-  - fourteeners.local
-# virtual IP address range reserved for kube-vip
+  - "{{ homelab_domain }}"
+
+# virtual IP address range reserved
+# for use by kube-vip on RKE cluster
 lb_vip_range:
   start: 192.168.0.221
   end: 192.168.0.240
 
+# IP addresses of RKE cluster nodes
+cluster_node_ips: |
+  {% set ips = [] %}
+  {% for host in groups['cluster'] %}
+  {%   set _ = ips.append(hostvars[host].ansible_host) %}
+  {% endfor %}
+  {{ ips }}
+
 # available only after running harbor.yml playbook!
-harbor_container_registry: harbor.fourteeners.local
+harbor_container_registry: harbor.{{ homelab_domain }}
 harbor_admin_user: admin
 
 # bcrypt settings used for ansible.builtin.password_hash filter:

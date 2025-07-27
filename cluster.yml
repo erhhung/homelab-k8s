@@ -398,7 +398,7 @@
           timeout: 1800
           when: manifest_url
 
-        - name: Wait for cluster agent be ready
+        - name: Wait for agent to be ready
           kubernetes.core.k8s_info:
             kubeconfig: "{{ rke_kubeconfig }}"
             api_version: apps/v1

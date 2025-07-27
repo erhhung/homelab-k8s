@@ -28,7 +28,7 @@
       vars:
         secret_name: "{{ logging_secrets['credentials'] }}"
         secret_data:
-          opensearch-username: fluent
+          opensearch-username: "{{ fluent_os_user }}"
           opensearch-password: "{{ fluent_os_pass }}"
       ansible.builtin.include_tasks: tasks/k8s/secrets/generic.yml
 
@@ -41,8 +41,8 @@
         algorithm: RSA
         days: 365
         sans:
-          - fluent
-          - fluent@fourteeners.local
+          - "{{ fluent_os_user }}"
+          - "{{ fluent_os_user }}@{{ homelab_domain }}"
       ansible.builtin.include_tasks: tasks/k8s/secrets/tls.step.yml
 
     # https://github.com/fluent/helm-charts/tree/main/charts/fluent-operator

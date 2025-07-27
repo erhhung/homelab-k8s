@@ -24,9 +24,9 @@
         secret_name: "{{ argocd_secrets['server'] }}"
         cert_name: argocd-server-ingress
         sans:
-          - "{{ argocd_host_name }}"
+          - argocd
           - "{{ argocd_fqdn }}"
-          - "*.{{ argocd_namespace }}.svc.cluster.local"
+          - "*.{{ argocd_namespace }}.svc.{{ cluster_domain }}"
           - "*.{{ argocd_namespace }}.svc"
       ansible.builtin.include_tasks: tasks/k8s/secrets/tls.step.yml
 

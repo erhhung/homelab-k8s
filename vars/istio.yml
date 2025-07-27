@@ -31,7 +31,7 @@ kiali_operator_chart_version: "2.10.0"
 kiali_oidc_client_id: kiali
 # kiali_oidc_client_secret: {vault.yml}
 # sso.fourteeners.local is same host as keycloak.fourteeners.local
-kiali_oidc_issuer_uri: https://sso.fourteeners.local/realms/homelab
+kiali_oidc_issuer_uri: https://sso.{{ homelab_domain }}/realms/homelab
 
 # https://kiali.io/docs/configuration/kialis.kiali.io/
 kiali_cr_spec:
@@ -147,7 +147,8 @@ kiali_cr_spec:
       is_core: true
       thanos_proxy:
         enabled: false
-      url: https://{{ monitoring_release_name }}-prometheus.{{ monitoring_namespace }}.svc.cluster.local:9090
+      url: https://{{ monitoring_release_name }}-prometheus.{{
+        monitoring_namespace }}.svc.{{ cluster_domain }}:9090
       auth:
         # CA cert to verify TLS connection to Prometheus from Kiali pod
         # /tls/ingress is already mounted by .deployment.custom_secrets
@@ -159,7 +160,8 @@ kiali_cr_spec:
       enabled: true
       is_core: false
       external_url: https://{{ monitoring_fqdns['grafana'][0] }}
-      internal_url: https://{{ monitoring_release_name }}-grafana.{{ monitoring_namespace }}.svc.cluster.local
+      internal_url: https://{{ monitoring_release_name }}-grafana.{{
+        monitoring_namespace }}.svc.{{ cluster_domain }}
       auth:
         # CA cert to verify TLS connection to Grafana from Kiali pod
         # /tls/ingress already mounted by .deployment.custom_secrets
