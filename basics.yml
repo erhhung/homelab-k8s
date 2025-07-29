@@ -281,7 +281,9 @@
 
 - name: Add CA certs to trust store
   tags: certs
-  hosts: k8s_all
+  hosts:
+    - k8s_all
+    - cosmos
   gather_facts: false
   become: true
   pre_tasks:

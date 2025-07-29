@@ -28,6 +28,7 @@ keycloak_db_user: keycloak
 # Java requires key file to be in PKCS#8 / DER format:
 # openssl pkcs8 -topk8 -inform PEM -outform DER -in tls.key -nocrypt -out key.der
 # https://www.postgresql.org/docs/current/libpq-connect.html#LIBPQ-CONNSTRING-URIS
+# (references "pgpool_service_url" var from vars/postgresql.yml)
 # NOTE: don't include "user:pass@" in the URL as
 # that gets interpreted as part of the host name
 keycloak_jdbc_url: >-
@@ -43,7 +44,7 @@ keycloak_jdbc_url: >-
               zip(items | map(attribute='value')) |
                     map('join','=') -%}
   {% set query = params | join('&') -%}
-  jdbc:postgresql://{{ pgpool_service_host }}:5432/{{ keycloak_db_name }}?{{ query }}
+  jdbc:{{ pgpool_service_url }}/{{ keycloak_db_name }}?{{ query }}
 
 # file is in "keycloakx-dbsql" ConfigMap
 keycloak_sql_gz_b64: keycloak.sql.gz.b64
@@ -102,7 +103,7 @@ keycloakx_chart_values:
   database:
     vendor: postgres
     hostname: "{{ pgpool_service_host }}"
-    port: 5432
+    port: "{{ pgpool_service_port }}"
     database: "{{ keycloak_db_name }}"
     username: "{{ keycloak_db_user }}"
     password: "{{ pgpool_db_pass }}"
@@ -114,7 +115,7 @@ keycloakx_chart_values:
     - name: database-tls
       secret:
         secretName: {{ keycloak_secrets['database'] }}
-        defaultMode: 0640
+        defaultMode: 416 # "0640"
     - name: ingress-tls
       secret:
         secretName: {{ keycloak_secrets['ingress'] }}

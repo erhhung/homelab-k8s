@@ -186,7 +186,7 @@ monitoring_oauth2_proxy_version: "7.9.0"
 
 # https://oauth2-proxy.github.io/oauth2-proxy/configuration/overview/#general-provider-options
 # https://oauth2-proxy.github.io/oauth2-proxy/configuration/providers/keycloak_oidc
-# (references "redis_cluster_urls" var from vars/valkey.yml)
+# (references "valkey_service_url" var from vars/valkey.yml)
 monitoring_oauth2_proxy_config: |
   {% set configs = {} %}
   {% for app in [
@@ -211,11 +211,11 @@ monitoring_oauth2_proxy_config: |
                  'tls_key_file':  '/tls/server/tls.key',
          'metrics_tls_cert_file': '/tls/server/tls.crt',
          'metrics_tls_key_file':  '/tls/server/tls.key',
-         'session_store_type':            'redis',
-         'redis_use_cluster':              true,
-         'redis_insecure_skip_tls_verify': true,
-         'redis_cluster_connection_urls':  redis_cluster_urls,
-         'redis_password':                 valkey_pass
+         'session_store_type':             'redis',
+         'redis_use_cluster':               true,
+         'redis_insecure_skip_tls_verify':  true,
+         'redis_cluster_connection_urls':  [valkey_service_url],
+         'redis_password':                  valkey_pass
        } %}
   {#   to_toml: filter_plugins/filters.py #}
   {%   set _ = configs.update({

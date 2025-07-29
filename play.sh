@@ -10,6 +10,7 @@
 # shellcheck disable=SC2164 # Use cd ... || exit if cd fails
 # shellcheck disable=SC2207 # Prefer mapfile to split output
 # shellcheck disable=SC2016 # Expr won't expand in '' quotes
+# shellcheck disable=SC2030 # Modification is subshell only
 # shellcheck disable=SC2046 # Quote to avoid word splitting
 # shellcheck disable=SC2128 # Expanding array without index
 
@@ -80,4 +81,42 @@ trap "rm -f temp.yml" EXIT
     args+=("main.yml")
   fi
 }
-ansible-playbook "${args[@]}" 2>&1 | tee ansible.log
+
+# get playbooks that will be run
+get_playbooks() {
+  local str list=($(
+    for arg in "$@"; do
+      if [[ $arg == main.yml || \
+            $arg == temp.yml ]]; then
+        yq 'map(.tags)[]' "$arg"
+      elif [[ $arg == *.yml ]]; then
+        echo "${arg%.yml}"
+      fi
+    done
+  ))
+  str="${list[*]}"
+  echo "${str// /,}"
+}
+
+# get tags specified by -t|--tags
+get_tags() {
+  local str list=($(
+    for i in $(seq $#); do
+      if [[ ${!i} == -t || \
+            ${!i} == --tags ]]; then
+        ((++i)); echo "${!i}"
+      elif [[ ${!i} == -t=* || \
+              ${!i} == --tags=* ]]; then
+        echo "${!i#*=}"
+      fi
+    done
+  ))
+  str="${list[*]}"
+  echo "${str// /,}"
+}
+
+# inject global vars to indicate playbooks that will
+# be run and tags on which to filter plays and tasks
+ansible-playbook                "${args[@]}"   \
+  -e PLAYBOOKS="$(get_playbooks "${args[@]}")" \
+  -e      TAGS="$(get_tags      "${args[@]}")" 2>&1 | tee ansible.log

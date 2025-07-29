@@ -8,6 +8,9 @@ ollama_chart_values:
 
   ollama:
     port: "{{ ollama_service_port }}"
+    # container runs as non-root, so
+    # cannot write to /root/.ollama
+    mountPath: /home/ubuntu/.ollama
 
     gpu:
       enabled: false
@@ -27,6 +30,9 @@ ollama_chart_values:
   # https://github.com/ollama/ollama/tree/main/envconfig/config.go
   # https://github.com/ollama/ollama/issues/2941#issuecomment-2322778733
   extraEnv:
+    # store models on NFS
+    - name: OLLAMA_MODELS
+      value: /models
     # limit to 1 request at a time so
     # cluster doesn't grind to a halt!
     - name: OLLAMA_NUM_PARALLEL
@@ -43,13 +49,20 @@ ollama_chart_values:
     # increase Ollama default
     # 2048-token context size
     - name: OLLAMA_CONTEXT_LENGTH
-      value: "8192"
+      value: "{{ ollama_context_size }}"
 
   podSecurityContext: "{{ ollama_common_values['podSecurityContext'] }}"
   securityContext: "{{ ollama_common_values['securityContext'] }}"
 
   readinessProbe: "{{ ollama_common_values['readinessProbe'] }}"
   livenessProbe: "{{ ollama_common_values['livenessProbe'] }}"
+
+  volumes: "{{ ollama_common_values['extraVolumes'] }}"
+  volumeMounts:
+    - name: ollama-nfs
+      subPath: models
+      # OLLAMA_MODELS
+      mountPath: /models
 
   service:
     type: ClusterIP

@@ -25,6 +25,8 @@ postgresql_fqdns: "{{ postgresql_host_names | product(search_domains) | map('joi
 postgresql_lb_ip: "{{ rke_lb_vip | ansible.utils.ipmath(1) }}"
 
 pgpool_service_host: postgresql-pgpool.{{ postgresql_namespace }}.svc.{{ cluster_domain }}
+pgpool_service_port: 5432
+pgpool_service_url: postgresql://{{ pgpool_service_host }}:{{ pgpool_service_port }}
 
 postgresql_secrets:
   node-tls: postgresql-tls
@@ -128,7 +130,7 @@ postgresql_chart_values:
       #     - name: PGPOOL_SERVICE
       #       value: localhost
       #     - name: PGPOOL_SERVICE_PORT
-      #       value: "5432"
+      #       value: "{{ pgpool_service_port }}"
       #     - name: SSLMODE
       #       value: verify-full
       #   ports:

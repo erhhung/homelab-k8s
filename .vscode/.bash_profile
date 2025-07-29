@@ -13,9 +13,7 @@ alias vv='ansible-vault view $VAULTFILE'
 alias ap='ansible-playbook'
 alias al='ansible-lint'
 
-# run play.sh from any project subdirectory
-# and allow tab completion of playbook tags
-play() {
+git_root() {
   local root
   root=$(git rev-parse --show-toplevel 2> /dev/null)
 
@@ -23,6 +21,20 @@ play() {
     echo >&2 "Not in a Git repository!"
     return 128
   }
+  echo "$root"
+}
+
+gzage() {
+  local root
+  root=$(git_root) || return $?
+  "$root/gzage.sh" "$@"
+}
+
+# run play.sh from any project subdirectory
+# and allow tab completion of playbook tags
+play() {
+  local root
+  root=$(git_root) || return $?
   "$root/play.sh" "$@"
 }
 
@@ -49,5 +61,3 @@ command -v yq &> /dev/null && {
   }
   complete -F _complete_play play
 }
-
-export OLLAMA_HOST="ollama.fourteeners.local:11434"

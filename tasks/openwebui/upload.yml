@@ -1,0 +1,142 @@
+# upload file to Open WebUI knowledge base,
+# replacing existing file if it has changed
+#
+# pass the following vars:
+#   auth_token <required> user auth token
+#   knowledge: <required> knowledge object
+#     {id,files}          from API response
+#   file_info: <required> file  to upload
+#     total:    number of files to upload
+#     index:    current index in the list
+#     abs_path: absolute path to file
+#     rel_path: relative path to file
+#     sha1:     40-digit SHA1 hash
+#     size:     file size in bytes
+#     mtime:    "%Y-%m-%d %H:%M:%S"
+---
+- name: 'Upload "{{ file.rel_path | basename }}"'
+  become: false
+  vars:
+    counter: "{{ file_info.index }}/{{ file_info.total }}"
+    filename: "{{ file_info.abs_path | basename }}"
+    files: "{{ knowledge.files }}"
+    know_id: "{{ knowledge.id }}"
+    headers:
+      Authorization: Bearer {{ auth_token }}
+    api_base: https://{{ openwebui_fqdns[0] }}/api/v1
+  block:
+    - name: "{{ counter }}: \"{{ filename }}\"?"
+      vars:
+        # NOTE: meta.data.* properties are only added by Ansible, not by UI upload
+        file: "{{ files | selectattr('meta.data.path','==',file_info.rel_path) }}"
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/set_fact_module.html
+      ansible.builtin.set_fact:
+        existing: "{{ file[0] if file is truthy else None }}"
+        needs_upload: >-
+          {{ file is not truthy                    or
+             file[0].meta.data.sha1 is not defined or
+             file[0].meta.data.sha1 != file_info.sha1 }}
+
+    - name: Delete existing file before upload
+      when: existing is truthy and needs_upload
+      block:
+        - name: Remove file from knowledge
+          # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/uri_module.html
+          ansible.builtin.uri:
+            method: POST
+            url: "{{ api_base }}/knowledge/{{ know_id }}/file/remove"
+            headers: "{{ headers }}"
+            body_format: json
+            body:
+              file_id: "{{ existing.id }}"
+          register: remove_file
+          changed_when: remove_file.status == 200
+
+        - name: Remove file from Open WebUI
+          ansible.builtin.uri:
+            method: DELETE
+            url: "{{ api_base }}/files/{{ existing.id }}"
+            headers: "{{ headers }}"
+          register: remove_file
+          changed_when: remove_file.status == 200
+
+    - name: 'Upload "{{ filename }}"'
+      when: needs_upload
+      vars:
+        # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/splitext_filter.html
+        file_ext: "{{ file_info.rel_path | ansible.builtin.splitext | last }}"
+        mime_type: >-
+          {{ 'text/plain'         if file_ext in ['.txt',  '.md'] else
+             'application/msword' if file_ext in ['.doc','.docx'] else
+             'application/pdf'    if file_ext in ['.pdf']         else
+             'application/octet-stream'  }}
+      block:
+        - name: Get file content to upload
+          # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/slurp_module.html
+          ansible.builtin.slurp:
+            src: "{{ file_info.abs_path }}"
+          when: mime_type == 'text/plain'
+          register: file_data
+
+        - name: Upload file to Open WebUI
+          ansible.builtin.uri:
+            method: POST
+            url: "{{ api_base }}/files/"
+            headers: "{{ headers }}"
+            body_format: form-multipart
+            body:
+              # API expects form data
+              # "file" and "metadata"
+              file:
+                mime_type: "{{ mime_type }}"
+                filename: "{{ file_info.abs_path }}"
+                # if "filename" is provided but not "content",
+                # the module will base64-encode the form data,
+                # which we only want to do if file isn't text
+                content: "{{ file_data.content | b64decode
+                  if mime_type == 'text/plain' else omit }}"
+              metadata:
+                mime_type: application/json
+                content: "{{ {
+                  'path':  file_info.rel_path,
+                  'sha1':  file_info.sha1,
+                  'size':  file_info.size,
+                  'mtime': file_info.mtime,
+                  } | to_json }}"
+            remote_src: true
+            validate_certs: false
+            return_content: true
+          register: upload_file
+          changed_when: upload_file.status == 200
+          until: upload_file.status == 200
+          retries: 1
+          delay: 5
+
+        - name: Add new file to knowledge
+          ansible.builtin.uri:
+            method: POST
+            url: "{{ api_base }}/knowledge/{{ know_id }}/file/add"
+            headers: "{{ headers }}"
+            body_format: json
+            body:
+              file_id: "{{ upload_file.json.id }}"
+          register: add_file
+          changed_when: add_file.status == 200
+          until: add_file.status == 200
+          retries: 1
+          delay: 5
+      rescue:
+        # delete uploaded file if it
+        # failed to add to knowledge,
+        # but don't stop update loop
+        - name: Remove failed file upload
+          ansible.builtin.uri:
+            method: DELETE
+            url: "{{ api_base }}/files/{{ upload_file.json.id }}"
+            headers: "{{ headers }}"
+            status_code: [200, 400]
+          when: >-
+            upload_file         is defined and
+            upload_file.json    is defined and
+            upload_file.json.id is defined
+  any_errors_fatal: true

@@ -154,6 +154,42 @@
         label: "{{ item.dest }}"
       changed_when: true
 
+- name: Get list of files on remote host
+  tags: files
+  hosts: cosmos
+  gather_facts: true
+  tasks:
+    - name: Find ~/accounts/*.txt files
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/find_module.html
+      ansible.builtin.find:
+        paths: ~/accounts/
+        follow: true
+        recurse: true
+        patterns: "*.txt"
+        get_checksum: true
+      register: find_files
+
+    # filter out irrelevant file stats
+    - name: Show list of matched files
+      vars:
+        # ansible_user_dir requires gather_facts
+        path: "{{ ansible_user_dir }}/accounts/"
+        # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/strftime_filter.html
+        files: |
+          {% set files = [] %}
+          {% set n     = path | length    %}
+          {% for file in find_files.files %}
+          {%   set _ = files.append({
+                 'path':  file.path[n:],
+                 'sha1':  file.checksum,
+                 'size':  file.size,
+                 'mtime': '%Y-%m-%d %H:%M:%S' | strftime(file.mtime),
+               })   %}
+          {% endfor %}
+          {{ files  }}
+      ansible.builtin.debug:
+        var: files
+
 - name: Debug basic Ansible/Jinja syntax
   tags: syntax
   hosts: localhost
