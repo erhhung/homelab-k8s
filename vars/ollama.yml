@@ -20,6 +20,10 @@ ollama_secrets:
 use_ollama_chart_by: otwld
 ollama_release_name: ollama
 
+# increase Ollama default
+# 2048-token context size
+ollama_context_size: "{{ 32 * 1024 }}"
+
 # Helm chart values used by both
 # cowboysysop and otwld versions
 ollama_common_values:
@@ -52,10 +56,18 @@ ollama_common_values:
       gpu.intel.com/i915: "1"
 
   storage:
-    enabled: true
+    # use emptyDir instead of PVC because
+    # we'll use NFS mount to store models
+    enabled: false
     # don't need replicas of huge model files!
     storageClass: "{{ storage_classes['single'] }}"
-    size: 6Gi # should be enough for one model
+    size: 4Gi # should be enough for two models
+
+  extraVolumes:
+    - name: ollama-nfs
+      nfs:
+        server: qnap.{{ homelab_domain }}
+        path: /k8s_data/ollama
 
   podSecurityContext:
     fsGroup: 2000

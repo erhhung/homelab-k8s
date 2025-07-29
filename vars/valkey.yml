@@ -46,7 +46,7 @@ valkey_node_fqdns: |
   {{ fqdns  }}
 
 # node endpoints: ["{FQDN}:6379"]
-valkey_node_eps: "{{ valkey_node_fqdns | product(['6379']) | map('join',':') }}"
+valkey_node_eps: "{{ valkey_node_fqdns | product([valkey_service_port | string]) | map('join',':') }}"
 # ["rediss://{node-endpoint}", ...]
 redis_cluster_urls: "{{ ['rediss://'] | product(valkey_node_eps) | map('join') }}"
 # ["valkeys://{node-endpoint}", ...]
@@ -54,6 +54,7 @@ valkey_cluster_urls: "{{ ['valkeys://'] | product(valkey_node_eps) | map('join')
 
 valkey_service_host: "{{ valkey_release_name }}.{{ valkey_namespace }}.svc.{{ cluster_domain }}"
 valkey_service_port: 6379
+valkey_service_url: rediss://{{ valkey_service_host }}:{{ valkey_service_port }}
 
 valkey_secrets:
   node-tls: valkey-tls

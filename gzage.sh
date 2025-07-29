@@ -11,12 +11,14 @@
 # and then gunzipped into its original file without
 # the .gz.age extension
 
+set -euo pipefail
+
 [ "$1" ] || {
   echo "Usage: $0 <file>"
   exit 0
 }
 [ -f "$1" ] || {
-  echo "File not found: $1"
+  echo >&2 "File not found: $1"
   exit 1
 }
 
@@ -31,12 +33,8 @@ reqcmds() {
     return 1
   done
 }
-
 # ensure required tools installed
 reqcmds ansible-vault age || exit
-
-set -euo pipefail
-cd "$(dirname "$0")"
 
      file="$1"
 orig_file="$1"
@@ -45,8 +43,9 @@ orig_file="${orig_file%.gz}"
   gz_file="${orig_file}.gz"
  age_file="${gz_file}.age"
 
-export ANSIBLE_CONFIG=./ansible.cfg
-VAULTFILE="group_vars/all/vault.yml"
+root="$(dirname "$0")"
+export ANSIBLE_CONFIG="$root/ansible.cfg"
+VAULTFILE="$root/group_vars/all/vault.yml"
 
 AGE_KEY=$(ansible-vault view "$VAULTFILE" | \
   grep age_secret_key | awk '{print $2}')

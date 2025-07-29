@@ -133,8 +133,7 @@ argocd_chart_values:
 
   externalRedis:
     port: "{{ valkey_service_port }}"
-    host: "{{ valkey_service_host |
-      regex_replace('(?=\\.'~ valkey_namespace ~')', '-0-svc') }}"
+    host: "{{ valkey_service_host }}"
     # secret must contain "redis-password" key
     existingSecret: "{{ argocd_secrets['valkey'] }}"
 

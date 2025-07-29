@@ -33,6 +33,7 @@ openwebui_db_user: openwebui
 # https://docs.sqlalchemy.org/en/20/core/engines.html#database-urls
 # https://docs.sqlalchemy.org/en/20/dialects/postgresql.html#ssl-connections
 # https://www.postgresql.org/docs/current/libpq-connect.html#LIBPQ-CONNSTRING-URIS
+# (references "pgpool_service_url" var from vars/postgresql.yml)
 openwebui_postgresql_url: >-
   {% set params = {
     'sslmode':     'verify-full',
@@ -45,11 +46,13 @@ openwebui_postgresql_url: >-
               zip(items | map(attribute='value')) |
                     map('join','=') -%}
   {% set query = params | join('&') -%}
-  postgresql://{{ openwebui_db_user }}:{{ pgpool_db_pass }}@{{
-    pgpool_service_host }}:5432/{{ openwebui_db_name }}?{{ query }}
+  {{ pgpool_service_url | regex_replace('//',
+     '//'~ openwebui_db_user ~':'~ pgpool_db_pass ~'@')
+     }}/{{ openwebui_db_name }}?{{ query }}
 
 # https://redis.readthedocs.io/en/stable/connections.html
 # https://redis.readthedocs.io/en/stable/examples/ssl_connection_examples.html
+# (references "valkey_service_url" var from vars/valkey.yml)
 # ssl_cert_reqs: none|optional|required
 openwebui_redis_url: >-
   {% set params = {
@@ -63,7 +66,8 @@ openwebui_redis_url: >-
               zip(items | map(attribute='value')) |
                     map('join','=') -%}
   {% set query = params | join('&') -%}
-  rediss://:{{ valkey_pass }}@{{ valkey_node_eps | first }}/0?{{ query }}
+  {{ valkey_service_url | regex_replace('//',
+     '//:'~ valkey_pass ~'@') }}/0?{{ query }}
 
 # https://github.com/open-webui/helm-charts/tree/main/charts/open-webui
 openwebui_chart_version: "6.28.0"
@@ -126,7 +130,7 @@ openwebui_chart_values:
       value: https://{{ openwebui_fqdns | first }}
     # https://docs.openwebui.com/getting-started/env-configuration/#jwt_expires_in
     - name: JWT_EXPIRES_IN
-      value: 1h
+      value: 8h
     - name: REDIS_URL
       value: "{{ openwebui_redis_url }}"
     # setting added in my fork and image to
@@ -185,6 +189,8 @@ openwebui_chart_values:
     requests:
       cpu: 50m
       memory: 768Mi
+    limits:
+      cpu: 500m
 
   podSecurityContext:
     fsGroup: 2000
@@ -199,7 +205,7 @@ openwebui_chart_values:
     - name: database-tls
       secret:
         secretName: "{{ openwebui_secrets['database'] }}"
-        defaultMode: 0640
+        defaultMode: 416 # "0640"
 
   volumeMounts:
     container:

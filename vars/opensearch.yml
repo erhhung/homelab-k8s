@@ -254,11 +254,11 @@ opensearch_chart_values:
     - name: node-tls
       secret:
         secretName: "{{ opensearch_secrets['node-tls'] }}"
-        defaultMode: 0640
+        defaultMode: 416 # "0640"
     - name: admin-tls
       secret:
         secretName: "{{ opensearch_secrets['admin-tls'] }}"
-        defaultMode: 0640
+        defaultMode: 416 # "0640"
     - name: extras
       emptyDir: {}
 
