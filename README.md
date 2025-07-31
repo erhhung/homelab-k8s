@@ -108,14 +108,14 @@ All cluster services will be provisioned with TLS certificates from Erhhung's pr
     * Install on an Intel GPU node using the [`ollama`](https://github.com/cowboysysop/charts/tree/master/charts/ollama) Helm chart and [IPEX-LLM Ollama portable zip](https://github.com/intel/ipex-llm/blob/main/docs/mddocs/Quickstart/ollama_portable_zip_quickstart.md)
 - [X] [Open WebUI AI Platform](https://github.com/open-webui/open-webui) — extensible AI platform with Ollama integration and local RAG support
     * Install on main RKE cluster using the [`open-webui`](https://github.com/open-webui/helm-charts/tree/main/charts/open-webui) Helm chart
+    * [ ] Replace the default Chroma vector DB with [Qdrant](https://github.com/qdrant/qdrant) — install using the [`qdrant`](https://github.com/qdrant/qdrant-helm) Helm chart
 - [ ] [Flowise Agentic Workflows](https://flowiseai.com/) — build AI agents using visual workflows
     * Install on main RKE cluster using the [`flowise`](https://github.com/cowboysysop/charts/tree/master/charts/flowise) Helm chart
-- [ ] [OpenTelemetry Collector](https://opentelemetry.io/docs/collector) with [Jaeger UI](https://www.jaegertracing.io/) -- telemetry collector agent and distributed tracing backend
+- [ ] [OpenTelemetry Collector](https://opentelemetry.io/docs/collector) with [Jaeger UI](https://www.jaegertracing.io/) — telemetry collector agent and distributed tracing backend
     * Install on main RKE cluster using the [OpenTelemetry Collector](https://opentelemetry.io/docs/platforms/kubernetes/helm/collector) Helm chart
     * Install Jaeger using the [Jaeger](https://github.com/jaegertracing/helm-charts/tree/main/charts/jaeger) Helm chart
 - [ ] [Backstage Developer Portal](https://backstage.io/) — software catalog and developer portal
 - [ ] [NATS](https://docs.nats.io/) — high performance message queues (Kafka alternative) with [JetStream](https://docs.nats.io/nats-concepts/jetstream) for persistence
-- [ ] [KEDA](https://keda.sh/) — Kubernetes Event Driven Autoscaler
 
 ## To-Do Tasks
 

@@ -76,6 +76,7 @@
           ansible.builtin.slurp:
             src: "{{ file_info.abs_path }}"
           when: mime_type == 'text/plain'
+          # file_data.content will be base64-encoded!
           register: file_data
 
         - name: Upload file to Open WebUI
