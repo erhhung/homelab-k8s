@@ -164,6 +164,7 @@
             body:
               ui:
                 version: "{{ ui_version.json.version }}"
+                system: "{{ openwebui_system_prompt }}"
                 models: "{{ [ollama_models | first] }}"
                 params: {}
           register: update_settings
