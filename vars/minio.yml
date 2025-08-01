@@ -5,25 +5,27 @@
 minio_region: homelab
 
 minio_buckets:
-  # bucket for Thanos to store metrics
-  metrics: {}
-    # https://min.io/docs/minio/linux/reference/minio-mc/mc-mb.html#parameters
-    # options: ["--with-versioning"]
   # bucket for Velero to store backups
   backups: {}
+    # https://min.io/docs/minio/linux/reference/minio-mc/mc-mb.html#parameters
+    # options: ["--with-versioning"]
+  # bucket for Thanos to store metrics
+  metrics: {}
+  # bucket for Open WebUI
+  # to store user uploads
+  openwebui: {}
 
 minio_policies:
   # IAM-compatible policies for users and groups
   # only (there is no support for bucket policy)
   # NOTE: rendered JSON doc cannot exceed 20 KiB
   # https://min.io/docs/minio/linux/administration/identity-access-management/policy-based-access-control.html#policy-document-structure
-  # see: lookup_plugins/one_bucket_iam_policy.py
-  metrics-rw: "{{ lookup('one_bucket_iam_policy', 'metrics') }}"
-
-  # one_bucket_iam_policy lookup creates a broad policy.
-  # ideally, the allowed actions should be more limited:
+  # lookup_plugins/one_bucket_iam_policy.py creates a broad
+  # policy. ideally, allowed actions should be more limited:
   # https://github.com/vmware-tanzu/velero-plugin-for-aws#option-1-set-permissions-with-an-iam-user
   backups-rw: "{{ lookup('one_bucket_iam_policy', 'backups') }}"
+  metrics-rw: "{{ lookup('one_bucket_iam_policy', 'metrics') }}"
+  openwebui-rw: "{{ lookup('one_bucket_iam_policy', 'openwebui') }}"
 
 minio_users: # non-root
   # name = access_key
@@ -43,21 +45,25 @@ minio_users: # non-root
   thanos:
     # policies managed by "metrics" group
     secret_key: "{{ minio_client_pass }}"
+  openwebui:
+    # policies managed by "openwebui" group
+    secret_key: "{{ minio_client_pass }}"
 
 minio_groups:
   admins:
+    members: ["erhhung"]
     policies: ["consoleAdmin"]
-    members: # at least one user required
-      - erhhung
   backups:
-    policies: ["backups-rw"]
     members:
       - longhorn
       - velero
+    policies: ["backups-rw"]
   metrics:
+    members: ["thanos"]
     policies: ["metrics-rw"]
-    members:
-      - thanos
+  openwebui:
+    members: ["openwebui"]
+    policies: ["openwebui-rw"]
 
 minio_host_names: # aliases of "homelab"
   - minio # console

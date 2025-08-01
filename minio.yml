@@ -102,6 +102,7 @@
         release_name: "{{ minio_operator_release_name }}"
         release_namespace: "{{ minio_operator_namespace }}"
         release_values: "{{ minio_operator_chart_values }}"
+        history_max: "{{ helm_max_history }}"
         atomic: true
         wait: true
       timeout: 300
@@ -117,6 +118,7 @@
         release_name: "{{ minio_tenant_release_name }}"
         release_namespace: "{{ minio_tenant_namespace }}"
         release_values: "{{ minio_tenant_chart_values }}"
+        history_max: "{{ helm_max_history }}"
         atomic: true
         wait: false
       timeout: 300

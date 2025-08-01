@@ -38,9 +38,10 @@
         chart_ref: node-feature-discovery
         chart_version: "{{ nfd_chart_version }}"
         release_name: "{{ nfd_release_name }}"
-        release_values: "{{ nfd_chart_values }}"
         release_namespace: "{{ nfd_namespace }}"
         create_namespace: true
+        release_values: "{{ nfd_chart_values }}"
+        history_max: "{{ helm_max_history }}"
         atomic: true
         wait: true
 
@@ -92,9 +93,10 @@
         chart_ref: intel-device-plugins-operator
         chart_version: "{{ intel_dp_operator_chart_version }}"
         release_name: "{{ intel_dp_operator_release_name }}"
-        release_values: "{{ intel_dp_operator_chart_values }}"
         release_namespace: "{{ intel_device_plugins_namespace }}"
         create_namespace: true
+        release_values: "{{ intel_dp_operator_chart_values }}"
+        history_max: "{{ helm_max_history }}"
         # do not wait because probes must be
         # patched ASAP to pass health checks
         wait: false

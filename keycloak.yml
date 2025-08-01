@@ -150,6 +150,7 @@
         release_name: "{{ keycloakx_release_name }}"
         release_namespace: "{{ keycloak_namespace }}"
         release_values: "{{ keycloakx_chart_values }}"
+        history_max: "{{ helm_max_history }}"
         atomic: true
         wait: true
         wait_timeout: 10m0s # requires wait=true

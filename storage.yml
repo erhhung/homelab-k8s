@@ -210,6 +210,7 @@
         release_name: "{{ longhorn_release_name }}"
         release_namespace: "{{ longhorn_namespace }}"
         release_values: "{{ longhorn_chart_values }}"
+        history_max: "{{ helm_max_history }}"
         atomic: true
         wait: true
       timeout: 300
@@ -280,6 +281,8 @@
         chart_repo_url: https://kubernetes-sigs.github.io/nfs-subdir-external-provisioner
         chart_ref: nfs-subdir-external-provisioner
         release_name: "{{ item.name }}"
+        release_namespace: nfs-provisioner
+        create_namespace: "{{ i == 0 }}"
         # https://github.com/kubernetes-sigs/nfs-subdir-external-provisioner/tree/master/charts/nfs-subdir-external-provisioner/values.yaml
         release_values:
           nfs:
@@ -287,13 +290,13 @@
             path: "{{ item.path }}"
             mountOptions: "{{ mount_options }}"
           storageClass: "{{ storage_class }}"
-        release_namespace: nfs-provisioner
-        create_namespace: true
+        history_max: "{{ helm_max_history }}"
         atomic: true
         wait: true
       loop: "{{ provisioners }}"
       loop_control:
         label: "{{ item.name }}"
+        index_var: i
   any_errors_fatal: true
 
 - name: Configure storage dashboards

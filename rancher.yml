@@ -218,6 +218,7 @@
         release_name: "{{ rancher_release_name }}"
         release_namespace: "{{ rancher_namespace }}"
         release_values: "{{ rancher_chart_values }}"
+        history_max: "{{ helm_max_history }}"
         atomic: true
         wait: true
       timeout: 600

@@ -148,6 +148,15 @@
     #       resolvectl_dns: "{{ resolvectl_dns | join(',') }}"
     #       resolvectl_domain: "{{ resolvectl_domain | join(',') }}"
 
+    - name: Is {{ homelab_domain }} DNS working?
+      vars:
+        domain: "pki.{{ homelab_domain }}."
+        # https://docs.ansible.com/ansible/latest/collections/community/dns/lookup_lookup.html
+        # (requires Python package "dnspython" on Ansible controller)
+        result: "{{ query('community.dns.lookup', domain) }}"
+      ansible.builtin.set_fact:
+        homelab_dns_working: "{{ result is truthy }}"
+
     - name: Cloud-init Netplan config enabled?
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/stat_module.html
       ansible.builtin.stat:
@@ -214,7 +223,7 @@
       when: >-
         cloud_init_yaml.results[0].stat.exists and
         not cloud_init_yaml.results[1].stat.exists
-      register: cloud_init_netplan_disabled
+      register: disabled_netplan
       changed_when: true
 
     - name: Create customized Netplan config
@@ -226,10 +235,17 @@
         dest: /etc/netplan/50-ansible-init.yaml
         mode: "0600"
       when: >-
-        resolvectl_dns    != name_servers   or
+        resolvectl_dns    !=   name_servers or
         resolvectl_domain != search_domains or
-        cloud_init_netplan_disabled.changed
+        disabled_netplan  is changed
       notify: Apply updated Netplan config
+
+    - name: Restart systemd-resolved service
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/systemd_service_module.html
+      ansible.builtin.systemd_service:
+        name: systemd-resolved
+        state: restarted
+      when: not homelab_dns_working
   handlers:
     - name: Apply updated Netplan config
       ansible.builtin.command: netplan apply

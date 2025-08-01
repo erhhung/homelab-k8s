@@ -52,6 +52,7 @@
         release_name: "{{ release }}"
         release_namespace: "{{ release_ns }}"
         release_values: "{{ harbor_chart_values }}"
+        history_max: "{{ helm_max_history }}"
         atomic: true
         wait: true
       timeout: 300

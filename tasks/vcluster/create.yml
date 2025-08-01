@@ -86,9 +86,10 @@
             chart_ref: vcluster
             chart_version: "{{ vcluster_chart_version }}"
             release_name: "{{ vcluster.name }}"
-            release_values: "{{ values | from_yaml }}"
             release_namespace: vcluster-{{ vcluster.name }}
             create_namespace: true
+            release_values: "{{ values | from_yaml }}"
+            history_max: "{{ helm_max_history }}"
             atomic: true
             wait: true
           timeout: 300

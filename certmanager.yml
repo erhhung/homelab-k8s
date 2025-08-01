@@ -32,9 +32,10 @@
         chart_ref: cert-manager
         chart_version: "{{ certmanager_chart_version }}"
         release_name: "{{ certmanager_release_name }}"
-        release_values: "{{ certmanager_chart_values }}"
         release_namespace: "{{ certmanager_namespace }}"
         create_namespace: true
+        release_values: "{{ certmanager_chart_values }}"
+        history_max: "{{ helm_max_history }}"
         atomic: true
         wait: true
   any_errors_fatal: true
@@ -128,8 +129,9 @@
         chart_ref: step-issuer
         chart_version: "{{ step_issuer_chart_version }}"
         release_name: "{{ step_issuer_release_name }}"
-        release_values: "{{ step_issuer_chart_values }}"
         release_namespace: "{{ step_issuer_namespace }}"
+        release_values: "{{ step_issuer_chart_values }}"
+        history_max: "{{ helm_max_history }}"
         atomic: true
         wait: true
   any_errors_fatal: true

@@ -51,6 +51,7 @@
         release_name: "{{ postgresql_release_name }}"
         release_namespace: "{{ postgresql_namespace }}"
         release_values: "{{ postgresql_chart_values }}"
+        history_max: "{{ helm_max_history }}"
         atomic: true
         wait: true
         wait_timeout: 10m0s # requires wait=true
