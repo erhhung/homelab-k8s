@@ -12,6 +12,7 @@
     - vars/postgresql.yml
     - vars/valkey.yml
     - vars/storage.yml
+    - vars/minio.yml
     - vars/ollama.yml
     - vars/openwebui.yml
   vars:
@@ -28,14 +29,16 @@
       when: postgresql_image is not defined
   tasks:
     # https://docs.openwebui.com/getting-started/env-configuration
-    - name: Create Open WebUI secrets secret
+    - name: Create Open WebUI extraEnv secret
       vars:
         pipelines: "{{ openwebui_chart_values.pipelines }}"
-        secret_name: "{{ openwebui_secrets['secrets'] }}"
+        secret_name: "{{ openwebui_secrets['env-vars'] }}"
         secret_data:
           # secret key used to sign JWTs:
           # https://docs.openwebui.com/getting-started/env-configuration/#webui_secret_key
           WEBUI_SECRET_KEY: "{{ openwebui_secret_key }}"
+          # https://docs.openwebui.com/getting-started/env-configuration/#s3_secret_access_key
+          S3_SECRET_ACCESS_KEY: "{{ minio_client_pass }}"
 
           # Pipelines key must be first:
           # https://docs.openwebui.com/getting-started/env-configuration/#openai_api_keys
@@ -74,8 +77,9 @@
         chart_ref: open-webui
         chart_version: "{{ openwebui_chart_version }}"
         release_name: "{{ openwebui_release_name }}"
-        release_values: "{{ openwebui_chart_values }}"
         release_namespace: "{{ openwebui_namespace }}"
+        release_values: "{{ openwebui_chart_values }}"
+        history_max: "{{ helm_max_history }}"
         atomic: true
         wait: true
       timeout: 300
@@ -91,7 +95,9 @@
 
 # https://openwebui.fourteeners.local/docs
 - name: Configure Open WebUI installation
-  tags: configure
+  tags:
+    - configure
+    - knowledge
   hosts: localhost
   gather_facts: false
   vars_files:
@@ -151,6 +157,9 @@
             return_content: true
           register: admin_signup
           changed_when: admin_signup.status == 200
+          until: admin_signup.status == 200
+          retries: 2
+          delay: 5
 
         - name: Set user default chat model
           vars:
@@ -328,12 +337,12 @@
 # NOTE: this play takes a long time to run because it loops through hundreds of files
 # and, for each, checks with Open WebUI whether it exists or has changed, and uploads
 # and processes the file if necessary; thus, this play will only run if it's the only
-# play specified to run and the "configure" tag is also specified on the command line
+# play specified to run and the "knowledge" tag is also specified on the command line
 
 - name: Update Accounts knowledge base
   # must run after previous play to
   # get auth token and knowledge ID
-  tags: configure
+  tags: knowledge
   hosts: cosmos
   gather_facts: false
   vars_files:
@@ -348,7 +357,7 @@
     run_play: >-
       {{  playbooks | length == 1 and
          'openwebui' in playbooks and
-         'configure' in tags_ }}
+         'knowledge' in tags_ }}
   pre_tasks:
     - name: Gather facts about user_dir
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/setup_module.html

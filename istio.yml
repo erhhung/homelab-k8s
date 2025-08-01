@@ -154,6 +154,8 @@
         release_name: kiali-operator
         release_namespace: "{{ kiali_operator_namespace }}"
         create_namespace: true
+        # no custom chart values necessary
+        history_max: "{{ helm_max_history }}"
         atomic: true
         wait: true
 

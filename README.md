@@ -366,6 +366,8 @@ however, all privileged operations using `sudo` will require the password stored
 
 21. <details><summary>Install <strong>Ollama</strong> LLM server with common models<br/> &nbsp; &nbsp; Install <strong>Open WebUI</strong> AI platform with <strong>Pipelines</strong></summary><br/>
 
+    21.1. **NOTE**: Populate "Accounts" knowledge base by running `./play.sh openwebui -t knowledge` separately
+
     ```bash
     ./play.sh ollama openwebui
     ```

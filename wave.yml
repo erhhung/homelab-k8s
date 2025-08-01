@@ -20,8 +20,9 @@
         chart_version: "{{ wave_chart_version }}"
         release_name: "{{ wave_release_name }}"
         release_namespace: "{{ wave_namespace }}"
-        release_values: "{{ wave_chart_values }}"
         create_namespace: true
+        release_values: "{{ wave_chart_values }}"
+        history_max: "{{ helm_max_history }}"
         atomic: true
         wait: true
   any_errors_fatal: true

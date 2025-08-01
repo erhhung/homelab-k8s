@@ -56,6 +56,7 @@
         release_name: "{{ fluent_operator_release_name }}"
         release_namespace: "{{ logging_namespace }}"
         release_values: "{{ fluent_operator_chart_values }}"
+        history_max: "{{ helm_max_history }}"
         atomic: true
         wait: true
       timeout: 300

@@ -57,8 +57,9 @@
         chart_ref: ollama
         chart_version: "{{ ollama_chart_version }}"
         release_name: "{{ ollama_release_name }}"
-        release_values: "{{ ollama_chart_values }}"
         release_namespace: "{{ ollama_namespace }}"
+        release_values: "{{ ollama_chart_values }}"
+        history_max: "{{ helm_max_history }}"
         atomic: true
         wait: true
   any_errors_fatal: true

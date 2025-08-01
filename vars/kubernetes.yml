@@ -82,3 +82,7 @@ nginx_default_tls_secret: rke2-ingress-nginx-default-tls
 
 # virtual IP assigned by RKE2 kube-vip
 rke_lb_vip: "{{ lb_vip_range.start }}"
+
+# maximum number of revisions saved per release:
+# https://docs.ansible.com/ansible/latest/collections/kubernetes/core/helm_module.html
+helm_max_history: 3

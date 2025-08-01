@@ -1,7 +1,7 @@
-# openwebui_secret_key: {vault.yml}
 # openwebui_admin_pass: {vault.yml}
-# pipelines_api_key:    {vault.yml}
-# openai_api_key:       {vault.yml}
+# openwebui_secret_key: {vault.yml}
+#    pipelines_api_key: {vault.yml}
+#       openai_api_key: {vault.yml}
 
 # API request body for
 # /api/v1/auths/signup
@@ -23,7 +23,7 @@ openwebui_host_names: # aliases of "homelab"
 openwebui_fqdns: "{{ openwebui_host_names | product(search_domains) | map('join','.') }}"
 
 openwebui_secrets:
-  secrets: open-webui-secrets
+  env-vars: open-webui-env-variables
   database: open-webui-database-tls
   ingress: open-webui-ingress-tls
 
@@ -69,6 +69,87 @@ openwebui_redis_url: >-
   {{ valkey_service_url | regex_replace('//',
      '//:'~ valkey_pass ~'@') }}/0?{{ query }}
 
+# PVC specs for "openwebui_pvcs"
+openwebui_pvc_specs:
+  vector-db:
+    name: open-webui-vector-db
+    class: default
+    size: 2Gi
+    mount: /app/backend/data/vector_db
+  # even though storage provider is S3, Open WebUI
+  # still keeps uploaded files in local filesystem:
+  # https://github.com/open-webui/open-webui/discussions/15286
+  uploads:
+    name: open-webui-uploads
+    class: single
+    size: 2Gi
+    mount: /app/backend/data/uploads
+  cache:
+    name: open-webui-cache
+    class: single
+    size: 4Gi
+    mount: /app/backend/data/cache
+
+# added to "openwebui_extras"
+openwebui_pvcs: |
+  {% set pvcs = [] %}
+  {% for spec in openwebui_pvc_specs.values() %}
+  {%   set _  = pvcs.append({
+         'apiVersion': 'v1',
+         'kind':       'PersistentVolumeClaim',
+         'metadata': {
+           'name': spec.name
+         },
+         'spec': {
+           'storageClassName': storage_classes[spec.class],
+           'accessModes': [
+             'ReadWriteMany' if openwebui_replicas > 1 else 'ReadWriteOnce'
+           ],
+           'resources': {
+             'requests': {
+               'storage': spec.size
+             }
+           }
+         }
+       })   %}
+  {% endfor %}
+  {{ pvcs   }}
+
+openwebui_volumes:
+  - name: database-tls
+    secret:
+      secretName: "{{ openwebui_secrets['database'] }}"
+      defaultMode: 416 # "0640"
+  - |
+    {% set vols = [] %}
+    {% for name, spec in openwebui_pvc_specs.items() %}
+    {%   set _  = vols.append({
+           'name': name,
+           'persistentVolumeClaim': {
+             'claimName': spec.name
+           }
+         })   %}
+    {% endfor %}
+    {{ vols   }}
+
+openwebui_mounts:
+  - name: database-tls
+    mountPath: /tls/database
+    readOnly: true
+  - |
+    {% set mounts = [] %}
+    {% for name, spec in openwebui_pvc_specs.items() %}
+    {%   set _  = mounts.append({
+           'name':      name,
+           'mountPath': spec.mount
+         })   %}
+    {% endfor %}
+    {{ mounts }}
+
+openwebui_replicas: 1
+openwebui_extras:
+  - "{{ openwebui_pvcs }}"
+
 # https://github.com/open-webui/helm-charts/tree/main/charts/open-webui
 openwebui_chart_version: "6.28.0"
 openwebui_release_name: open-webui
@@ -80,6 +161,7 @@ pipelines_chart_values: &pipelines
 
   persistence:
     enabled: true
+
     storageClass: "{{ storage_classes['default'] }}"
     # use ReadWriteMany if replicaCount > 1
     accessModes: ["ReadWriteOnce"]
@@ -88,7 +170,7 @@ pipelines_chart_values: &pipelines
 
 # https://github.com/open-webui/helm-charts/tree/main/charts/open-webui/values.yaml
 openwebui_chart_values:
-  replicaCount: 1
+  replicaCount: "{{ openwebui_replicas }}"
   revisionHistoryLimit: 2
 
   ollama:
@@ -139,10 +221,14 @@ openwebui_chart_values:
       value: "True"
     - name: REDIS_KEY_PREFIX
       value: "{open-webui}"
+    # MinIO TLS certificate validation:
+    # https://docs.aws.amazon.com/sdkref/latest/guide/feature-gen-config.html
+    - name: AWS_CA_BUNDLE
+      value: /tls/database/ca.crt
 
   extraEnvFrom:
     - secretRef:
-        name: "{{ openwebui_secrets['secrets'] }}"
+        name: "{{ openwebui_secrets['env-vars'] }}"
 
   pipelines:
     # install Pipelines subchart:
@@ -180,13 +266,21 @@ openwebui_chart_values:
 
   persistence:
     enabled: true
-    provider: local # as opposed to s3/gcs/azure
-    storageClass: "{{ storage_classes['default'] }}"
-    # use ReadWriteMany if replicaCount > 1
-    accessModes: ["ReadWriteOnce"]
-    # /app/backend/data/{cache,uploads,vector_db}/
-    # cache can take a lot of space, like 2+ GBs!
-    size: 5Gi
+
+    # storage provider for uploaded files
+    # if local: /app/backend/data/uploads
+    provider: s3 # local/s3/gcs/azure
+    # https://docs.openwebui.com/getting-started/env-configuration/#amazon-s3-storage
+    s3:
+      bucket: openwebui
+      keyPrefix: uploads/
+      accessKey: openwebui
+      secretKeyExistingSecret: "{{ openwebui_secrets['env-vars'] }}"
+      secretKeyExistingSecretKey: S3_SECRET_ACCESS_KEY
+      # IMPORTANT: since Helm chart provides no method to specify
+      # TLS config, environment var AWS_CA_BUNDLE must be defined
+      endpointUrl: "{{ minio_service_url }}"
+      region: "{{ minio_region }}"
 
   resources:
     requests:
@@ -204,17 +298,11 @@ openwebui_chart_values:
     runAsNonRoot: true
     runAsUser: 1000
 
-  volumes:
-    - name: database-tls
-      secret:
-        secretName: "{{ openwebui_secrets['database'] }}"
-        defaultMode: 416 # "0640"
-
+  # mount database TLS secret and
+  # PVCs for vector DB and cache
+  volumes: "{{ openwebui_volumes | flatten }}"
   volumeMounts:
-    container:
-      - name: database-tls
-        mountPath: /tls/database
-        readOnly: true
+    container: "{{ openwebui_mounts | flatten }}"
 
   extraInitContainers:
     # create PostgreSQL database
@@ -302,6 +390,8 @@ openwebui_chart_values:
       nginx.ingress.kubernetes.io/proxy-body-size: 10m
     host: "{{ openwebui_fqdns[0] }}"
     additionalHosts: "{{ openwebui_fqdns[1:] }}"
+
+  extraResources: "{{ openwebui_extras | flatten }}"
 
 # user Settings > General > System prompt
 # https://docs.openwebui.com/features/workspace/prompts/#prompt-variables

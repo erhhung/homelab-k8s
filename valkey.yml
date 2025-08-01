@@ -55,6 +55,7 @@
         release_name: "{{ valkey_release_name }}"
         release_namespace: "{{ valkey_namespace }}"
         release_values: "{{ valkey_chart_values }}"
+        history_max: "{{ helm_max_history }}"
         atomic: true
         wait: true
       timeout: 600

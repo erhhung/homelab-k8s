@@ -71,6 +71,7 @@
         release_name: "{{ thanos_release_name }}"
         release_namespace: "{{ monitoring_namespace }}"
         release_values: "{{ thanos_chart_values }}"
+        history_max: "{{ helm_max_history }}"
         atomic: true
         wait: true
       timeout: 300

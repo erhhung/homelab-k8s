@@ -23,9 +23,9 @@
   vars:
     # required kubernetes>=24.2 package only in user virtualenv
     ansible_python_interpreter: "{{ venv_python_interpreter }}"
-    resource: "{{ res_kind }}/{{ res_name }}"
+    kind_name: "{{ res_kind }}/{{ res_name }}"
   block:
-    - name: Add Wave annotations to {{ resource }}
+    - name: Add Wave annotations to {{ kind_name }}
       # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_module.html
       kubernetes.core.k8s:
         kubeconfig: "{{ kubeconfig }}"
@@ -48,7 +48,7 @@
               {{ annos }}
         state: patched
 
-    - name: Wait for {{ resource }} to restart
+    - name: Wait for {{ kind_name }} to restart
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/pause_module.html
       ansible.builtin.pause:
         seconds: "{{ wait_secs }}"

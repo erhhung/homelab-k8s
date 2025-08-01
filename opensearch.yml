@@ -111,6 +111,7 @@
         release_name: "{{ opensearch_release_name }}"
         release_namespace: "{{ opensearch_namespace }}"
         release_values: "{{ opensearch_chart_values }}"
+        history_max: "{{ helm_max_history }}"
         atomic: true
         wait: true
         wait_timeout: 10m0s # requires wait=true
@@ -175,6 +176,7 @@
         release_name: "{{ dashboards_release_name }}"
         release_namespace: "{{ kibana_namespace }}"
         release_values: "{{ dashboards_chart_values }}"
+        history_max: "{{ helm_max_history }}"
         atomic: true
         wait: false
       timeout: 300

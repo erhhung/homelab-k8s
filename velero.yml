@@ -33,9 +33,10 @@
         chart_ref: velero
         chart_version: "{{ velero_chart_version }}"
         release_name: "{{ velero_release_name }}"
-        release_values: "{{ velero_chart_values }}"
         release_namespace: "{{ velero_namespace }}"
         create_namespace: true
+        release_values: "{{ velero_chart_values }}"
+        history_max: "{{ helm_max_history }}"
         atomic: true
         wait: true
       timeout: 300
