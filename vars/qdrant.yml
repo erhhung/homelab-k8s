@@ -1,0 +1,199 @@
+#           qdrant_api_key: {vault.yml}
+# qdrant_read_only_api_key: {vault.yml}
+
+qdrant_namespace: qdrant
+qdrant_host_name: qdrant # alias of "homelab"
+
+# remember to add qdrant.fourteeners.local to pfSense DNS
+# as an alias of homelab.fourteeners.local: 192.168.0.221
+# https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_filters.html#products
+qdrant_fqdn: "{{ [qdrant_host_name] | product(search_domains) | map('join','.') | first }}"
+
+qdrant_http_port: 6333
+qdrant_grpc_port: 6334
+qdrant_p2p_port: 6335
+
+qdrant_service_url: https://{{ qdrant_release_name }}.{{ qdrant_namespace }}.svc.{{
+  cluster_domain }}:{{ qdrant_http_port }}
+
+qdrant_secrets:
+  node-tls: qdrant-node-tls # inter-node and ingress
+
+# https://qdrant.tech/documentation/guides/configuration/#configuration-options
+qdrant_config:
+  # https://qdrant.tech/documentation/guides/telemetry
+  telemetry_disabled: true
+
+  # https://qdrant.tech/documentation/guides/distributed_deployment/#enabling-distributed-mode-in-self-hosted-qdrant
+  cluster:
+    enabled: true
+    p2p:
+      # IMPORTANT! if enabled_tls is true, then the TLS
+      # certificate must explicitly list every pod name
+      # in the StatefulSet as "qdrant-N.qdrant-headless"
+      # instead of using a single wildcard domain, else
+      # the pods will fail startup:
+      # https://github.com/qdrant/qdrant/issues/3272
+      enable_tls: true
+      port: "{{ qdrant_p2p_port }}"
+    consensus:
+      # how frequently peers should ping each other
+      # (default = 100ms but we're on weak cluster)
+      tick_period_ms: 250
+
+  service:
+    enable_tls: true
+    # must be false for now as container probes fail
+    # with "remote error: tls: certificate required"
+    verify_https_client_certificate: false
+    # use JWT for auth whereby API key is signing key:
+    # https://qdrant.tech/documentation/guides/security/#granular-access-control-with-jwt
+    jwt_rbac: true
+
+  tls:
+    # additionalVolumeMounts
+    cert: /tls/node/tls.crt
+    key: /tls/node/tls.key
+    ca_cert: /tls/node/ca.crt
+    # reload certs from disk every hour
+    # (HTTPS only; gRPC not supported!)
+    cert_ttl: 3600
+
+  storage:
+    # default settings for collections
+    collection:
+      # copies per shard
+      replication_factor: 2
+      # replicas that must acknowledge
+      # before operation is successful
+      write_consistency_factor: 1
+
+# https://github.com/qdrant/qdrant-helm/tree/main/charts/qdrant
+qdrant_chart_version: "1.15.1"
+qdrant_release_name: qdrant
+
+# https://github.com/qdrant/qdrant-helm/tree/main/charts/qdrant/values.yaml
+qdrant_chart_values:
+  # https://qdrant.tech/documentation/guides/distributed_deployment
+  replicaCount: 3
+
+  # settings under `config` will become config file named
+  # "production.yaml" (see RUN_MODE environment variable):
+  # https://qdrant.tech/documentation/guides/configuration
+  config: "{{ qdrant_config }}"
+
+  # chart will render API keys into secret:
+  # https://qdrant.tech/documentation/guides/security
+  apiKey: "{{ qdrant_api_key.read_write }}"
+  readOnlyApiKey: "{{ qdrant_api_key.read_only }}"
+
+  persistence:
+    storageVolumeName: qdrant-storage
+    # no need for storage level replicas when
+    # Qdrant stores collections with replicas
+    storageClassName: "{{ storage_classes['single'] }}"
+    accessModes: ["ReadWriteOnce"]
+    size: 2Gi
+
+  snapshotPersistence:
+    enabled: true
+    snapshotsVolumeName: qdrant-snapshots
+    storageClassName: "{{ storage_classes['nfs'] }}"
+    accessModes: ["ReadWriteOnce"]
+    size: 2Gi
+
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+
+  priorityClassName: "{{ priority_classes['database'] }}"
+
+  # chart discourages setting this to OrderedReady in
+  # cluster mode, saying it could cause deadlock where
+  # nodes wait for each other to become ready, but, in
+  # my experience, when set to Parallel, pods > 0 stay
+  # in CrashLoopBackOff until pod 0 is fully ready
+  podManagementPolicy: OrderedReady
+
+  podDisruptionBudget:
+    enabled: true
+    maxUnavailable: 1
+
+  readinessProbe: &probe
+    enabled: true
+    initialDelaySeconds: 30
+    periodSeconds: 10
+    timeoutSeconds: 5
+    successThreshold: 1
+    failureThreshold: 6
+  livenessProbe: *probe
+
+  additionalVolumes:
+    - name: node-tls
+      secret:
+        secretName: "{{ qdrant_secrets['node-tls'] }}"
+
+  additionalVolumeMounts:
+    - name: node-tls
+      mountPath: /tls/node
+      readOnly: true
+
+  service:
+    type: ClusterIP
+    ports:
+      - name: http
+        port: "{{ qdrant_http_port }}"
+        targetPort: "{{ qdrant_http_port }}"
+        protocol: TCP
+        appProtocol: http
+        checksEnabled: true
+      - name: grpc
+        port: "{{ qdrant_grpc_port }}"
+        targetPort: "{{ qdrant_grpc_port }}"
+        protocol: TCP
+        appProtocol: http2
+        checksEnabled: false
+      - name: p2p
+        port: "{{ qdrant_p2p_port }}"
+        targetPort: "{{ qdrant_p2p_port }}"
+        protocol: TCP
+        checksEnabled: false
+
+  ingress:
+    enabled: true
+    tls:
+      - secretName: "{{ qdrant_secrets['node-tls'] }}"
+        hosts: "{{ [qdrant_fqdn] }}"
+    ingressClassName: "{{ rke_ingress_class }}"
+    annotations:
+      # https://kubernetes.github.io/ingress-nginx/user-guide/nginx-configuration/annotations
+      nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+      # cannot use ssl-passthrough with server-snippet
+      # because ssl-passthrough works at OSI layer 4,
+      # and it will invalidate all other annotations
+      nginx.ingress.kubernetes.io/backend-protocol: HTTPS
+      # redirect root domain to UI at /dashboard
+      nginx.ingress.kubernetes.io/server-snippet: |
+        location = / {
+          return 302 $scheme://$host/dashboard;
+        }
+    hosts:
+      - host: "{{ qdrant_fqdn }}"
+        paths:
+          - path: /
+            pathType: Prefix
+            servicePort: "{{ qdrant_http_port }}"
+
+  metrics:
+    serviceMonitor:
+      enabled: true
+      additionalLabels:
+        release: "{{ monitoring_release_name }}"
+      targetPort: http
+      targetPath: /metrics
+      scrapeInterval: 30s
+      # scheme and tlsConfig will be patched in via task
+      # (monitoring-scraper-tls Secret must be recreated
+      # in the Qdrant namespace where the ServiceMonitor
+      # resides)

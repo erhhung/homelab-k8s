@@ -186,6 +186,8 @@
       when: monitoring_stack_ready is not defined
   tasks:
     # https://www.suse.com/c/rancher_blog/using-minio-as-backup-target-for-rancher-longhorn
+    # (MinIO hasn't been installed yet, but
+    # prepare the credentials secret first)
     - name: Create MinIO credentials secret
       vars:
         secret_name: "{{ longhorn_secrets['minio'] }}"
@@ -214,6 +216,27 @@
         atomic: true
         wait: true
       timeout: 300
+
+    # https://longhorn.io/docs/latest/snapshots-and-backups/scheduling-backups-and-snapshots/#set-up-recurring-jobs
+    # (this CR cannot be added to .extraObjects in chart
+    # values because Longhorn CRDs won't be created yet)
+    - name: Add recurring "delete-snapshots" job
+      kubernetes.core.k8s:
+        kubeconfig: "{{ rke_kubeconfig }}"
+        definition:
+          apiVersion: longhorn.io/v1beta2
+          kind: RecurringJob
+          metadata:
+            name: delete-snapshots
+            namespace: "{{ longhorn_namespace }}"
+          spec:
+            cron: 0 10 * * * # in UTC time; run every day at 2am Pacific time
+            task: snapshot-delete
+            groups: ["default"]
+            retain: 7
+            concurrency: 2
+        state: present
+        apply: true
 
     - name: Get default "longhorn" storage class
       kubernetes.core.k8s_info:

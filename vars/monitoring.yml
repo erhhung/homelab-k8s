@@ -182,11 +182,11 @@ monitoring_oidc_client_id:
 monitoring_oidc_issuer_uri: https://sso.{{ homelab_domain }}/realms/homelab
 
 # https://github.com/oauth2-proxy/oauth2-proxy/releases
-monitoring_oauth2_proxy_version: "7.9.0"
+monitoring_oauth2_proxy_version: "7.11.0"
 
 # https://oauth2-proxy.github.io/oauth2-proxy/configuration/overview/#general-provider-options
 # https://oauth2-proxy.github.io/oauth2-proxy/configuration/providers/keycloak_oidc
-# (references "valkey_service_url" var from vars/valkey.yml)
+# (references "redis_service_url" var from vars/valkey.yml)
 monitoring_oauth2_proxy_config: |
   {% set configs = {} %}
   {% for app in [
@@ -214,7 +214,7 @@ monitoring_oauth2_proxy_config: |
          'session_store_type':             'redis',
          'redis_use_cluster':               true,
          'redis_insecure_skip_tls_verify':  true,
-         'redis_cluster_connection_urls':  [valkey_service_url],
+         'redis_cluster_connection_urls':  [redis_service_url],
          'redis_password':                  valkey_pass
        } %}
   {#   to_toml: filter_plugins/filters.py #}
@@ -243,7 +243,7 @@ metric_scraper_tls_config:
   insecureSkipVerify: true
 
 # https://github.com/prometheus-community/helm-charts/tree/main/charts/kube-prometheus-stack
-prometheus_stack_chart_version: "72.6.2"
+prometheus_stack_chart_version: "75.15.2"
 monitoring_release_name: prometheus-stack
 
 # https://github.com/prometheus-community/helm-charts/tree/main/charts/kube-prometheus-stack/values.yaml

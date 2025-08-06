@@ -1,7 +1,7 @@
 certmanager_namespace: cert-manager
 
 # https://github.com/cert-manager/cert-manager/tree/master/deploy/charts/cert-manager
-certmanager_chart_version: "1.18.0"
+certmanager_chart_version: "1.18.2"
 certmanager_release_name: cert-manager
 
 # https://github.com/cert-manager/cert-manager/tree/master/deploy/charts/cert-manager/values.yaml

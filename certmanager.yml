@@ -41,6 +41,7 @@
   any_errors_fatal: true
 
 # https://cert-manager.io/docs/reference/cmctl/#manual-installation
+# TIP: to force a renewal: cmctl renew -n <namespace> <certificate>
 - name: Install cert-manager CLI tool
   tags: cli
   hosts: k8s_all

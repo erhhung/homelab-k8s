@@ -1,0 +1,9 @@
+---
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: database-priority
+description: Give higher priority to database pods that are critical to the functioning of other workloads.
+globalDefault: false
+value: 10000
+preemptionPolicy: PreemptLowerPriority

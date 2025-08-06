@@ -23,7 +23,7 @@ longhorn_secrets:
   minio: minio-credentials
 
 # https://github.com/longhorn/charts/tree/master/charts/longhorn
-longhorn_chart_version: "1.9.0"
+longhorn_chart_version: "1.9.1"
 longhorn_release_name: longhorn
 
 # https://github.com/longhorn/charts/tree/v1.9.x/charts/longhorn/values.yaml
@@ -102,20 +102,6 @@ longhorn_chart_values:
       parameters:
         type: bak
         backupMode: full
-
-    # create recurring job to purge outdated snapshots:
-    # https://longhorn.io/docs/latest/snapshots-and-backups/scheduling-backups-and-snapshots/#set-up-recurring-jobs
-    - apiVersion: longhorn.io/v1beta2
-      kind: RecurringJob
-      metadata:
-        name: delete-snapshots
-        namespace: "{{ longhorn_namespace }}"
-      spec:
-        cron: 0 10 * * * # in UTC time; run every day at 2am Pacific time
-        task: snapshot-delete
-        groups: ["default"]
-        retain: 7
-        concurrency: 2
 
 # https://computingforgeeks.com/configure-nfs-as-kubernetes-persistent-volume-storage/
 nfs_mount_opts: rw,nosuid,nodev,noexec,hard,timeo=600,retrans=3,rsize=32768,wsize=32768

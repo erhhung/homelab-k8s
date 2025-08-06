@@ -1,5 +1,5 @@
 # https://github.com/istio/istio/releases/latest
-istio_version: "1.26.0"
+istio_version: "1.26.3"
 istio_bin_dir: /opt/istio/bin
 
 # https://istio.io/latest/docs/ambient/install/istioctl/#install-or-upgrade-the-kubernetes-gateway-api-crds
@@ -26,7 +26,7 @@ kiali_secrets:
 
 # https://kiali.io/docs/installation/installation-guide/install-with-helm/#install-with-operator
 kiali_operator_namespace: kiali-operator
-kiali_operator_chart_version: "2.10.0"
+kiali_operator_chart_version: "2.13.0"
 
 kiali_oidc_client_id: kiali
 # kiali_oidc_client_secret: {vault.yml}
@@ -82,7 +82,7 @@ kiali_cr_spec:
       override_yaml:
         metadata:
           annotations:
-            # https://kubernetes.github.io/ingress-nginx/user-guide/nginx-configuration/annotations/
+            # https://kubernetes.github.io/ingress-nginx/user-guide/nginx-configuration/annotations
             nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
             # cannot use ssl-passthrough with server-snippet
             # because ssl-passthrough works at OSI layer 4,

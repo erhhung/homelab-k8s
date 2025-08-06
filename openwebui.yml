@@ -14,6 +14,7 @@
     - vars/storage.yml
     - vars/minio.yml
     - vars/ollama.yml
+    - vars/qdrant.yml
     - vars/openwebui.yml
   vars:
     # required kubernetes>=24.2 package only in user virtualenv
@@ -37,9 +38,14 @@
           # secret key used to sign JWTs:
           # https://docs.openwebui.com/getting-started/env-configuration/#webui_secret_key
           WEBUI_SECRET_KEY: "{{ openwebui_secret_key }}"
+          # https://docs.openwebui.com/getting-started/env-configuration/#database-pool
+          DATABASE_URL: "{{ openwebui_postgresql_url }}"
+          # https://docs.openwebui.com/getting-started/env-configuration/#redis
+          REDIS_URL: "{{ openwebui_redis_url }}"
+          # https://docs.openwebui.com/getting-started/env-configuration/#qdrant
+          QDRANT_API_KEY: "{{ qdrant_api_key.read_write }}"
           # https://docs.openwebui.com/getting-started/env-configuration/#s3_secret_access_key
           S3_SECRET_ACCESS_KEY: "{{ minio_client_pass }}"
-
           # Pipelines key must be first:
           # https://docs.openwebui.com/getting-started/env-configuration/#openai_api_keys
           # https://docs.openwebui.com/pipelines/#-quick-start-with-docker
@@ -83,14 +89,6 @@
         atomic: true
         wait: true
       timeout: 300
-      register: helm_install
-
-    # scope of registered variable in
-    # Ansible is limited to this play
-    - name: Share helm_install across plays
-      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/set_fact_module.html
-      ansible.builtin.set_fact:
-        helm_install: "{{ helm_install }}"
   any_errors_fatal: true
 
 # https://openwebui.fourteeners.local/docs
@@ -105,6 +103,7 @@
     - vars/openwebui.yml
     - vars/ollama.yml
   vars:
+    facts: "{{ hostvars['localhost'] }}"
     vars_file: vars/ollama.{{ use_ollama_chart_by }}.yml
     api_base: https://{{ openwebui_fqdns | first }}/api
   pre_tasks:
@@ -122,14 +121,6 @@
       until: ui_version.status == 200
       retries: 20
       delay: 3
-
-    - name: Wait for Open WebUI init tasks
-      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/pause_module.html
-      ansible.builtin.pause:
-        seconds: 30
-      when: >-
-        helm_install is defined and
-        helm_install.changed
   tasks:
     - name: Authenticate as the admin user
       ansible.builtin.uri:
@@ -332,6 +323,56 @@
     - name: Set accounts_knowledge fact
       ansible.builtin.set_fact:
         accounts_knowledge: "{{ get_knowledge.json }}"
+
+    - name: Get Open WebUI custom models
+      ansible.builtin.uri:
+        url: "{{ api_base }}/v1/models/"
+        headers: "{{ auth_headers }}"
+        return_content: true
+      register: list_models
+
+    - name: Create Accounts custom model
+      vars:
+        model: "{{ list_models.json | selectattr('name','==','Accounts') }}"
+        base_model: "{{ ollama_models | select('search','^qwen3') | first }}"
+        # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/file_lookup.html
+        png_b64: "{{ lookup('ansible.builtin.file', 'files/openwebui/ai-assistant.png') | b64encode }}"
+        image_url: data:image/png;base64,{{ png_b64 }}
+      ansible.builtin.uri:
+        method: POST
+        url: "{{ api_base }}/v1/models/create"
+        headers: "{{ auth_headers }}"
+        body_format: json
+        body:
+          id: accounts
+          name: Accounts
+          meta:
+            description: Qwen3 base model RAG-enhanced with Accounts knowledge base
+            tags:
+              - name: private
+            profile_image_url: "{{ image_url }}"
+            capabilities:
+              citations: true
+              file_upload: true
+              web_search: false
+              code_interpreter: false
+              image_generation: false
+              vision: false
+            knowledge:
+              # must provide entire object
+              - "{{ accounts_knowledge }}"
+          base_model_id: "{{ base_model }}"
+          # no params needed for now but
+          # must still be in the payload
+          params: {}
+          access_control:
+            read:
+              group_ids: "{{ [family_group_id] }}"
+            write:
+              user_ids: "{{ [admin_user_id] }}"
+      register: create_model
+      when: model is not truthy
+      changed_when: create_model.status == 200
   any_errors_fatal: true
 
 # NOTE: this play takes a long time to run because it loops through hundreds of files
@@ -349,6 +390,7 @@
     - vars/kubernetes.yml
     - vars/openwebui.yml
   vars:
+    facts: "{{ hostvars['localhost'] }}"
     # PLAYBOOKS and TAGS are global vars
     # injected by play.sh wrapper script
     playbooks: |
@@ -379,7 +421,6 @@
     # order by most recently modified
     - name: Add file to knowledge base
       vars:
-        facts: "{{ hostvars['localhost'] }}"
         auth_token: "{{ facts['admin_token'] }}"
         knowledge: "{{ facts['accounts_knowledge'] }}"
         accts_dir: "{{ ansible_user_dir }}/accounts/"

@@ -50,8 +50,10 @@
         create_ns: true
         cert_name: opensearch-node
         algorithm: RSA
+        # IMPORTANT! first SAN will be CN, and must match
+        # value of `opensearch_security_plugin.nodes_dn`
         sans_:
-          - node.{{ opensearch_namespace }}.svc.{{ cluster_domain }}
+          - opensearch-node
           - "{{ opensearch_fqdns }}"
           - "*.{{ opensearch_namespace }}.svc.{{ cluster_domain }}"
           - "*.{{ opensearch_namespace }}.svc"
@@ -94,7 +96,7 @@
       vars:
         secret_name: "{{ opensearch_secrets['security'] }}"
         secret_data: "{{ opensearch_security_config }}"
-        if_changed: Apply updated security config
+        if_changed: Apply (updated) security config
       ansible.builtin.include_tasks: tasks/k8s/secrets/generic.yml
 
     - name: Create monitoring scraper secret
@@ -122,7 +124,7 @@
 
     # https://github.com/opensearch-project/helm-charts/issues/673
     # https://github.com/opensearch-project/helm-charts/pull/674
-    - name: Patch ServiceMonitor selector
+    - name: Patch OpenSearch ServiceMonitor
       # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_module.html
       kubernetes.core.k8s:
         kubeconfig: "{{ kubeconfig }}"
@@ -137,8 +139,23 @@
                 prometheus.io/scrape: "true"
         state: patched
       when: prometheus_crds_installed | default(false)
+
+    - name: Initialize OpenSearch Security?
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/uri_module.html
+      ansible.builtin.uri:
+        url: "{{ opensearch_url }}"
+        # status would be 503 (Service Unavailable) with
+        # response "OpenSearch Security not initialized";
+        # otherwise, 401 (Unauthorized) would be expected
+        status_code: [401, 503]
+        return_content: true
+      register: init_check
+      changed_when: >-
+        init_check.status  == 503 and
+        init_check.content is search('OpenSearch Security not initialized')
+      notify: Apply (updated) security config
   handlers:
-    - name: Apply updated security config
+    - name: Apply (updated) security config
       # a handler cannot have block of subtasks, so the
       # tasks have been refactored into a separate file
       ansible.builtin.include_tasks: tasks/opensearch/security.yml
@@ -190,7 +207,6 @@
       ansible.builtin.include_tasks: tasks/k8s/wave.yml
 
     - name: Wait until Dashboards is ready
-      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/uri_module.html
       ansible.builtin.uri:
         url: https://{{ kibana_fqdn }}/
       # https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_loops.html#retrying-a-task-until-a-condition-is-met

@@ -32,7 +32,7 @@ postgresql_secrets:
   node-tls: postgresql-tls
 
 # https://github.com/bitnami/charts/tree/main/bitnami/postgresql-ha
-postgresql_chart_version: "16.0.5"
+postgresql_chart_version: "16.1.0"
 postgresql_release_name: postgresql
 
 # https://github.com/bitnami/charts/tree/main/bitnami/postgresql-ha/values.yaml
@@ -53,6 +53,8 @@ postgresql_chart_values:
     mountPath: /postgresql
 
   postgresql:
+    replicaCount: 3
+
     # duplicate global settings or
     # else helm diff upgrade fails
     <<: *global_postgresql
@@ -73,22 +75,21 @@ postgresql_chart_values:
     resourcesPreset: micro
     # resources: ~
 
+    priorityClassName: "{{ priority_classes['database'] }}"
+
     # https://github.com/bitnami/charts/tree/main/bitnami/postgresql-ha#initialize-a-fresh-instance
     initdbScripts:
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/template_lookup.html
       init.sql: "{{ lookup('ansible.builtin.template', template_dir ~ '/postgresql/init.sql.j2') }}"
 
   pgpool:
+    replicaCount: 1
+
     # duplicate global settings or
     # else helm diff upgrade fails
     <<: *global_pgpool
 
     # use same certificate as postgresql:
-    # SANs: postgresql.fourteeners.local
-    #         postgres.fourteeners.local
-    #               pg.fourteeners.local
-    #     *.postgresql.svc.cluster.local
-    #     *.postgresql.svc
     # https://github.com/bitnami/charts/tree/main/bitnami/postgresql-ha#securing-traffic-using-tls
     tls: *node_tls
 
@@ -96,6 +97,14 @@ postgresql_chart_values:
     # none, nano, micro, small, medium, large, xlarge, 2xlarge
     resourcesPreset: micro
     # resources: ~
+
+    priorityClassName: "{{ priority_classes['database'] }}"
+
+    # the exec probes cause more load
+    # and restarts than being helpful
+    readinessProbe: &probe
+      enabled: false
+    livenessProbe: *probe
 
     customUsers:
       # semicolon-separated list of usernames & passwords

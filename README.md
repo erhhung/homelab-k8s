@@ -1,6 +1,6 @@
 # Erhhung's Home Kubernetes Cluster
 
-This Ansible-based project provisions Erhhung's high-availability Kubernetes cluster `homelab` using Rancher, and installs services to monitor IoT appliances and to deploy other personal projects.
+This Ansible-based project provisions Erhhung's high-availability Kubernetes cluster at home named `homelab`, and deploys services for monitoring various IoT appliances, as well as for deploying other personal projects, including self-hosted LLMs and RAG pipelines that enable multi-source hybrid searches and agentic automations using local knowledge base containing vast amounts of personal and sensor data.
 
 The approach taken on all service deployments is to treat the clusters as a **production** environment _(to the extent possible with limited resources and scaling capacity across a few mini PCs)_. That means TLS everywhere and requiring authenticated user access, scraping metrics, and configuring dashboards and alerts.
 
@@ -47,6 +47,7 @@ All cluster services will be provisioned with TLS certificates from Erhhung's pr
 |  https://rule.thanos.fourteeners.local <br/> https://store.thanos.fourteeners.local <br/> https://bucket.thanos.fourteeners.local <br/> https://compact.thanos.fourteeners.local | Thanos component status UIs
 |        https://kiali.fourteeners.local | Kiali console _(Keycloak SSO)_
 |       https://argocd.fourteeners.local | Argo CD console
+|       https://qdrant.fourteeners.local | Qdrant dashboard
 |       https://ollama.fourteeners.local | Ollama API server
 |    https://openwebui.fourteeners.local | Open WebUI portal
 
@@ -108,7 +109,7 @@ All cluster services will be provisioned with TLS certificates from Erhhung's pr
     * Install on an Intel GPU node using the [`ollama`](https://github.com/cowboysysop/charts/tree/master/charts/ollama) Helm chart and [IPEX-LLM Ollama portable zip](https://github.com/intel/ipex-llm/blob/main/docs/mddocs/Quickstart/ollama_portable_zip_quickstart.md)
 - [X] [Open WebUI AI Platform](https://github.com/open-webui/open-webui) — extensible AI platform with Ollama integration and local RAG support
     * Install on main RKE cluster using the [`open-webui`](https://github.com/open-webui/helm-charts/tree/main/charts/open-webui) Helm chart
-    * [ ] Replace the default Chroma vector DB with [Qdrant](https://github.com/qdrant/qdrant) — install using the [`qdrant`](https://github.com/qdrant/qdrant-helm) Helm chart
+    * [X] Replace the default Chroma vector DB with [Qdrant](https://github.com/qdrant/qdrant) — install using the [`qdrant`](https://github.com/qdrant/qdrant-helm) Helm chart
 - [ ] [Flowise Agentic Workflows](https://flowiseai.com/) — build AI agents using visual workflows
     * Install on main RKE cluster using the [`flowise`](https://github.com/cowboysysop/charts/tree/master/charts/flowise) Helm chart
 - [ ] [OpenTelemetry Collector](https://opentelemetry.io/docs/collector) with [Jaeger UI](https://www.jaegertracing.io/) — telemetry collector agent and distributed tracing backend
@@ -120,6 +121,7 @@ All cluster services will be provisioned with TLS certificates from Erhhung's pr
 ## To-Do Tasks
 
 - [X] Migrate manually provisioned certificates and secrets to ones issued by `cert-manager` with auto-rotation
+- [ ] Identify and upload additional sources of personal documents into Open WebUI knowledge base collections
 - [ ] Automate creation of DNS records in pfSense via custom Ansible module that invokes pfSense REST APIs
 
 ## Ansible Vault
@@ -164,6 +166,7 @@ ansible-vault view   $VAULTFILE
 | `kiali_oidc_client_secret`        |
 | `argocd_signing_key`              |
 | `hass_access_token`               |
+| `qdrant_api_key.*`                |
 | `openwebui_secret_key`            |
 | `pipelines_api_key`               |
 | `openai_api_key`                  |
@@ -364,16 +367,24 @@ however, all privileged operations using `sudo` will require the password stored
     ```
 </details>
 
-21. <details><summary>Install <strong>Ollama</strong> LLM server with common models<br/> &nbsp; &nbsp; Install <strong>Open WebUI</strong> AI platform with <strong>Pipelines</strong></summary><br/>
+21. <details><summary>Install <strong>Qdrant</strong> vector database in <em><strong>HA</strong></em> mode</summary><br/>
 
-    21.1. **NOTE**: Populate "Accounts" knowledge base by running `./play.sh openwebui -t knowledge` separately
+    ```bash
+    ./play.sh qdrant
+    ```
+</details>
+
+22. <details><summary>Install <strong>Ollama</strong> LLM server with common models<br/> &nbsp; &nbsp; Install <strong>Open WebUI</strong> AI platform with <strong>Pipelines</strong></summary><br/>
+
+    22.1. Create `Accounts` knowledge base, and then `Accounts` custom model that embeds that knowledge base  
+    22.2. **NOTE**: Populate `Accounts` knowledge base by running `./play.sh openwebui -t knowledge` separately
 
     ```bash
     ./play.sh ollama openwebui
     ```
 </details>
 
-22. <details><summary>Create <strong>virtual Kubernetes clusters</strong> in RKE</summary><br/>
+23. <details><summary>Create <strong>virtual Kubernetes clusters</strong> in RKE</summary><br/>
 
     ```bash
     ./play.sh vclusters

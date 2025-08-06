@@ -54,14 +54,20 @@ valkey_cluster_urls: "{{ ['valkeys://'] | product(valkey_node_eps) | map('join')
 
 valkey_service_host: "{{ valkey_release_name }}.{{ valkey_namespace }}.svc.{{ cluster_domain }}"
 valkey_service_port: 6379
-valkey_service_url: rediss://{{ valkey_service_host }}:{{ valkey_service_port }}
+
+# IMPORTANT! client should NOT connect using the Kubernetes
+# service endpoint because it load balances each connection,
+# lacks strong consistency guarantee due to replication lag
+# redis_service_url: rediss://{{ valkey_service_host }}:{{ valkey_service_port }}
+redis_service_url: "{{ redis_cluster_urls | first }}"
+valkey_service_url: "{{ valkey_cluster_urls | first }}"
 
 valkey_secrets:
   node-tls: valkey-tls
   password: valkey-password
 
 # https://github.com/bitnami/charts/tree/main/bitnami/valkey-cluster
-valkey_chart_version: "3.0.3"
+valkey_chart_version: "3.0.18"
 valkey_release_name: valkey
 
 # https://github.com/bitnami/charts/tree/main/bitnami/valkey-cluster/values.yaml
@@ -104,6 +110,8 @@ valkey_chart_values:
     resourcesPreset: micro
     # resources: ~
 
+    priorityClassName: "{{ priority_classes['database'] }}"
+
     # required for cluster joins
     podManagementPolicy: Parallel
     podAntiAffinityPreset: soft
@@ -144,6 +152,6 @@ valkey_chart_values:
 # https://grafana.com/grafana/dashboards/?search=Valkey&dataSource=prometheus
 valkey_grafana_dashboards:
   # https://grafana.com/grafana/dashboards/763-redis-dashboard-for-prometheus-redis-exporter-1-x
-  - title: Redis Dashboard for Prometheus Redis Exporter 1.x
+  - title: Valkey Dashboard
     gnetId: 763
     dsVar: DS_PROM

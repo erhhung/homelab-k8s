@@ -96,12 +96,12 @@ minio_secrets:
 
 # https://min.io/docs/minio/kubernetes/upstream/operations/install-deploy-manage/deploy-operator-helm.html
 # https://github.com/minio/operator/tree/master/helm/operator
-minio_operator_chart_version: "7.1.0"
+minio_operator_chart_version: "7.1.1"
 minio_operator_release_name: operator
 
 # https://min.io/docs/minio/kubernetes/upstream/operations/install-deploy-manage/deploy-minio-tenant-helm.html
 # https://github.com/minio/operator/tree/master/helm/tenant
-minio_tenant_chart_version: "7.1.0"
+minio_tenant_chart_version: "7.1.1"
 minio_tenant_release_name: tenant
 
 # https://min.io/docs/minio/kubernetes/upstream/reference/operator-chart-values.html

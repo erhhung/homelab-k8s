@@ -74,7 +74,7 @@ thanos_tripper_config:
       ca_file:   /tls/thanos/ca.crt
 
 # https://github.com/bitnami/charts/tree/main/bitnami/thanos
-thanos_chart_version: "16.0.7"
+thanos_chart_version: "17.0.3"
 thanos_release_name: thanos
 
 # https://github.com/bitnami/charts/tree/main/bitnami/thanos/values.yaml

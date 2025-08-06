@@ -1,4 +1,4 @@
-rke_ha_mode: true
+rke_ha_mode: true # deploy 3 control plane nodes with kube-vip
 rke_control_plane_group: "{{ 'control_plane_ha' if rke_ha_mode else 'control_plane' }}"
 rke_workers_group: "{{ 'workers_ha' if rke_ha_mode else 'workers' }}"
 
@@ -49,10 +49,6 @@ k3s_cluster_name: rancher
 rke_cluster_name: homelab
 rke_cluster_desc: Erhhung's Kubernetes Cluster at Home
 
-ui_badge_color: "#5a2050"
-ui_badge_icon: LAB
-ui_badge_text: ""
-
 # remember to add rancher.fourteeners.local to pfSense DNS!
 # https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_filters.html#products
 k3s_fqdn: "{{ [k3s_cluster_name] | product(search_domains) | map('join','.') | first }}"
@@ -82,6 +78,11 @@ nginx_default_tls_secret: rke2-ingress-nginx-default-tls
 
 # virtual IP assigned by RKE2 kube-vip
 rke_lb_vip: "{{ lb_vip_range.start }}"
+
+# ensure names match those defined
+# in manifests/priorityclasses.yaml
+priority_classes:
+  database: database-priority # 10000
 
 # maximum number of revisions saved per release:
 # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/helm_module.html

@@ -39,7 +39,9 @@
       -cert   {{ tls_dir }}/tls.crt
       -key    {{ tls_dir }}/tls.key
       -cacert {{ tls_dir }}/ca.crt
-      -nhnv -icl
+      --disable-host-name-verification
+      --ignore-clustername
+      --accept-red-cluster
   # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_exec_module.html
   kubernetes.core.k8s_exec:
     kubeconfig: "{{ kubeconfig }}"
@@ -47,3 +49,4 @@
     pod: "{{ opensearch_master_service }}-0"
     container: opensearch
     command: "{{ command }}"
+  timeout: 300

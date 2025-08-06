@@ -27,6 +27,12 @@ openwebui_secrets:
   database: open-webui-database-tls
   ingress: open-webui-ingress-tls
 
+openwebui_replicas: 1
+# use our own image with Redis Cluster support
+# (REDIS_CLUSTER_MODE="True") and UID+GID=1000
+openwebui_image: "{{ harbor_container_registry }}/library/open-webui"
+# openwebui_image: ghcr.io/open-webui/open-webui
+
 openwebui_db_name: openwebui
 openwebui_db_user: openwebui
 
@@ -52,7 +58,7 @@ openwebui_postgresql_url: >-
 
 # https://redis.readthedocs.io/en/stable/connections.html
 # https://redis.readthedocs.io/en/stable/examples/ssl_connection_examples.html
-# (references "valkey_service_url" var from vars/valkey.yml)
+# (references "redis_service_url" var from vars/valkey.yml)
 # ssl_cert_reqs: none|optional|required
 openwebui_redis_url: >-
   {% set params = {
@@ -66,16 +72,18 @@ openwebui_redis_url: >-
               zip(items | map(attribute='value')) |
                     map('join','=') -%}
   {% set query = params | join('&') -%}
-  {{ valkey_service_url | regex_replace('//',
+  {{ redis_service_url  | regex_replace('//',
      '//:'~ valkey_pass ~'@') }}/0?{{ query }}
 
 # PVC specs for "openwebui_pvcs"
 openwebui_pvc_specs:
-  vector-db:
-    name: open-webui-vector-db
-    class: default
-    size: 2Gi
-    mount: /app/backend/data/vector_db
+  # no need for local Chroma DB storage
+  # because we connect to Qdrant cluster
+  # vector-db:
+  #   name: open-webui-vector-db
+  #   class: default
+  #   size: 2Gi
+  #   mount: /app/backend/data/vector_db
   # even though storage provider is S3, Open WebUI
   # still keeps uploaded files in local filesystem:
   # https://github.com/open-webui/open-webui/discussions/15286
@@ -120,6 +128,9 @@ openwebui_volumes:
     secret:
       secretName: "{{ openwebui_secrets['database'] }}"
       defaultMode: 416 # "0640"
+  # init container stores updated CA bundle
+  - name: trust-store
+    emptyDir: {}
   - |
     {% set vols = [] %}
     {% for name, spec in openwebui_pvc_specs.items() %}
@@ -133,8 +144,15 @@ openwebui_volumes:
     {{ vols   }}
 
 openwebui_mounts:
+  # client TLS cert to connect to PostgreSQL
   - name: database-tls
     mountPath: /tls/database
+    readOnly: true
+  # replace system trust store with updated
+  # CA bundle created by the init container
+  - name: trust-store
+    mountPath: /etc/ssl/certs/ca-certificates.crt
+    subPath: ca-certificates.crt
     readOnly: true
   - |
     {% set mounts = [] %}
@@ -146,7 +164,7 @@ openwebui_mounts:
     {% endfor %}
     {{ mounts }}
 
-openwebui_replicas: 1
+# extra resources for Helm install
 openwebui_extras:
   - "{{ openwebui_pvcs }}"
 
@@ -173,6 +191,35 @@ openwebui_chart_values:
   replicaCount: "{{ openwebui_replicas }}"
   revisionHistoryLimit: 2
 
+  # https://docs.openwebui.com/getting-started/advanced-topics/logging
+  # (notset/debug/info/warning/error/critical)
+  logging:
+    # global level
+    level: debug
+    components:
+      # Config Management
+      config: ""
+      # Model Management
+      models: ""
+      # Authentication Webhook
+      webhook: ""
+      # Main App Execution
+      main: ""
+      # Database Operations
+      db: ""
+      # RAG Operations
+      rag: ""
+      # Ollama Integration
+      ollama: ""
+      # OpenAI Integration
+      openai: ""
+      # Audio Processing
+      audio: ""
+      # Image Generation
+      images: ""
+      # ComfyUI Integration
+      comfyui: ""
+
   ollama:
     # don't install another Ollama as we
     # already have it running separately
@@ -184,12 +231,9 @@ openwebui_chart_values:
   # will be first in OPENAI_API_BASE_URLS
   openaiBaseApiUrl: https://api.openai.com/v1
 
-  # use my own image with Redis Cluster
-  # support (REDIS_CLUSTER_MODE="True")
   image:
-    pullPolicy: Always
-    # repository: ghcr.io/open-webui/open-webui
-    repository: "{{ harbor_container_registry }}/library/open-webui"
+    pullPolicy: IfNotPresent
+    repository: "{{ openwebui_image }}"
     tag: latest
 
   # https://docs.openwebui.com/getting-started/env-configuration
@@ -197,34 +241,63 @@ openwebui_chart_values:
     # https://docs.openwebui.com/getting-started/env-configuration/#important-note-on-persistentconfig-environment-variables
     - name: ENABLE_PERSISTENT_CONFIG
       value: "False"
-    - name: USER_AGENT
-      value: Open WebUI
     # enable API /docs
     # https://docs.openwebui.com/getting-started/api-endpoints/#swagger-documentation-links
     - name: ENV
       value: dev
+    - name: USER_AGENT
+      value: Open WebUI
+    # https://docs.openwebui.com/getting-started/env-configuration/#jwt_expires_in
+    - name: JWT_EXPIRES_IN
+      value: 8h
+    # Qdrant TLS certificate validation:
+    # https://grpc.github.io/grpc/core/md_doc_environment_variables.html
+    - name: GRPC_DEFAULT_SSL_ROOTS_FILE_PATH
+      value: /tls/database/ca.crt
+    # MinIO TLS certificate validation:
+    # https://docs.aws.amazon.com/sdkref/latest/guide/feature-gen-config.html
+    - name: AWS_CA_BUNDLE
+      value: /tls/database/ca.crt
 
   extraEnvVars:
+    # must be defined in extraEnvVars!
     - name: WEBUI_URL
       value: https://{{ openwebui_fqdns | first }}
     # https://docs.openwebui.com/getting-started/env-configuration/#cors_allow_origin
     - name: CORS_ALLOW_ORIGIN
       value: https://{{ openwebui_fqdns | first }}
-    # https://docs.openwebui.com/getting-started/env-configuration/#jwt_expires_in
-    - name: JWT_EXPIRES_IN
-      value: 8h
-    - name: REDIS_URL
-      value: "{{ openwebui_redis_url }}"
+    # the two websocket vars below would have been automatically added
+    # by the chart if .websocket.enabled is true, but that would force
+    # the inclusion of WEBSOCKET_REDIS_URL as a literal value directly
+    # in the pod template--we want to inject using a secretRef instead
+    - name: ENABLE_WEBSOCKET_SUPPORT
+      value: "True"
+    - name: WEBSOCKET_MANAGER
+      value: redis
     # setting added in my fork and image to
     # use redis.cluster.RedisCluster client
     - name: REDIS_CLUSTER_MODE
       value: "True"
     - name: REDIS_KEY_PREFIX
       value: "{open-webui}"
-    # MinIO TLS certificate validation:
-    # https://docs.aws.amazon.com/sdkref/latest/guide/feature-gen-config.html
-    - name: AWS_CA_BUNDLE
-      value: /tls/database/ca.crt
+    # https://docs.openwebui.com/getting-started/env-configuration#vector_db
+    - name: VECTOR_DB
+      value: qdrant
+    # https://docs.openwebui.com/getting-started/env-configuration#qdrant
+    - name: QDRANT_URI
+      value: "{{ qdrant_service_url }}"
+    - name: QDRANT_PREFER_GRPC
+      value: "True"
+    - name: QDRANT_GRPC_PORT
+      value: "{{ qdrant_grpc_port | string }}"
+    # https://qdrant.tech/documentation/concepts/storage/#vector-storage
+    - name: QDRANT_ON_DISK
+      value: "True"
+    # https://qdrant.tech/documentation/concepts/collections
+    - name: ENABLE_QDRANT_MULTITENANCY_MODE
+      value: "True"
+    - name: QDRANT_COLLECTION_PREFIX
+      value: openwebui
 
   extraEnvFrom:
     - secretRef:
@@ -249,20 +322,22 @@ openwebui_chart_values:
     # don't install PostgreSQL as we already
     # have a PostgreSQL HA cluster deployed
     enabled: false
-  databaseUrl: "{{ openwebui_postgresql_url }}"
 
   websocket:
-    enabled: true
+    # enable via .extraEnvVars instead so
+    # that REDIS_URL (WEBSOCKET_REDIS_URL
+    # fallback) can be defined in secret
+    enabled: false
     manager: redis
     redis:
-      # use dedicated Redis since there
+      # use Redis subchart since there
       # is no support for cluster mode
       # enabled: true
       # don't install Redis as we already
       # have a multi-node Valkey cluster
       enabled: false
     # define WEBSOCKET_REDIS_URL
-    url: "{{ openwebui_redis_url }}"
+    # url: "{{ openwebui_redis_url }}"
 
   persistence:
     enabled: true
@@ -294,9 +369,12 @@ openwebui_chart_values:
   containerSecurityContext:
     capabilities:
       drop: ["ALL"]
-    readOnlyRootFilesystem: false
-    runAsNonRoot: true
+    # NOTE: the Open WebUI custom image must be built with proper UID+GID args:
+    # docker build --build-arg UID=1000 --build-arg GID=1000 --tag open-webui .
     runAsUser: 1000
+    runAsGroup: 1000
+    runAsNonRoot: true
+    readOnlyRootFilesystem: false
 
   # mount database TLS secret and
   # PVCs for vector DB and cache
@@ -307,7 +385,7 @@ openwebui_chart_values:
   extraInitContainers:
     # create PostgreSQL database
     # openwebui if doesn't exist
-    - name: init-database
+    - name: create-database
       image: "{{ postgresql_image }}"
       imagePullPolicy: IfNotPresent
       command:
@@ -349,6 +427,39 @@ openwebui_chart_values:
         - name: database-tls
           mountPath: /tls
           readOnly: true
+
+    # add our private CA cert
+    # into system trust store
+    - name: update-ca-bundle
+      image: "{{ openwebui_image }}"
+      imagePullPolicy: Always
+      command:
+        - bash
+      args:
+        - -c
+        - |
+          set -xe
+          # copy our CA certs to standard extra certs dir
+          cp /tls/ca.crt /usr/local/share/ca-certificates
+          update-ca-certificates 2> /dev/null
+
+          # copy updated CA bundle containing extra certs
+          # from /usr/local/share/ca-certificates and all
+          # already in trust store under /etc/ssl/certs.
+          # the new ca-certificates.crt will be mounted
+          # into main container to replace existing one.
+          cp /etc/ssl/certs/ca-certificates.crt /ssl
+      securityContext:
+        runAsUser: 0
+        runAsGroup: 0
+        readOnlyRootFilesystem: false
+      volumeMounts:
+        - name: database-tls
+          mountPath: /tls/ca.crt
+          subPath: ca.crt
+          readOnly: true
+        - name: trust-store
+          mountPath: /ssl
 
   readinessProbe:
     httpGet:

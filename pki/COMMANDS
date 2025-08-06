@@ -8,7 +8,8 @@
 
 cd "$HOME"
 
-./cert.sh --exp=365 --out=admin \
+./cert.sh --exp=365 \
+          --out=admin \
   erhhung erhhung@fourteeners.local
 
 ./cert.sh --exp=365 \
@@ -20,7 +21,8 @@ cd "$HOME"
    pfsense.fourteeners.local \
     router.fourteeners.local
 
-./cert.sh --kty=RSA --exp=365 \
+./cert.sh --kty=RSA \
+          --exp=365 \
   pacific.fourteeners.local \
      qnap.fourteeners.local \
       nas.fourteeners.local
@@ -31,18 +33,21 @@ cd "$HOME"
            home.fourteeners.local \
          yellow.fourteeners.local
 
-./cert.sh --kty=RSA --exp=365 \
+./cert.sh --kty=RSA \
+          --exp=365 \
    xo.fourteeners.local \
   xoa.fourteeners.local
 
-./cert.sh --kty=RSA --p12 --exp=365 \
+./cert.sh --kty=RSA --p12 \
+          --exp=365 \
   duplicati.fourteeners.local
 
 ./cert.sh --exp=365 \
   rancher.fourteeners.local
 
 # rke2-ingress-nginx-controller default-ssl-certificate
-./cert.sh --exp=365 --out=nginx \
+./cert.sh --exp=365 \
+          --out=nginx \
       homelab.fourteeners.local homelab 192.168.0.221 \
          k8s1.fourteeners.local k8s1    192.168.0.171 \
          k8s2.fourteeners.local k8s2    192.168.0.172 \
@@ -69,16 +74,18 @@ cd "$HOME"
             \*.minio.svc.cluster.local \
             \*.minio.svc
 
-./cert.sh --kty=RSA --exp=365 \
+./cert.sh --kty=RSA \
+          --exp=365 \
           --pk8="-v1 PBE-SHA1-3DES" \
           --out=opensearch \
-  node.opensearch.svc.cluster.local \
+       opensearch-node \
        opensearch.fourteeners.local \
                es.fourteeners.local \
     \*.opensearch.svc.cluster.local \
     \*.opensearch.svc
 
-./cert.sh --kty=RSA --exp=365 \
+./cert.sh --kty=RSA \
+          --exp=365 \
           --pk8="-v1 PBE-SHA1-3DES" \
           --out=opensearch_admin \
   erhhung erhhung@gmail.com
@@ -87,9 +94,47 @@ cd "$HOME"
   kibana.fourteeners.local
 
 # OpenSearch client
-./cert.sh --kty=RSA --exp=365 \
+./cert.sh --kty=RSA \
+          --exp=365 \
           --pk8="-v1 PBE-SHA1-3DES" \
   fluent fluent@fourteeners.local
+
+./cert.sh --exp=365 \
+          --out=postgresql \
+     postgresql-node \
+     postgresql.fourteeners.local \
+       postgres.fourteeners.local \
+             pg.fourteeners.local \
+  \*.postgresql.svc.cluster.local \
+  \*.postgresql.svc \
+  192.168.0.222
+
+./cert.sh --exp=365 \
+  erhhung erhhung@gmail.com
+
+# .key file is binary
+./cert.sh --exp=365 \
+          --pk8="-outform DER" \
+          --out=keycloak_db \
+  keycloak keycloak@fourteeners.local
+
+./cert.sh --exp=365 \
+     keycloak.fourteeners.local \
+          iam.fourteeners.local \
+          sso.fourteeners.local \
+  \*.keycloak.svc.cluster.local \
+  \*.keycloak.svc
+
+./cert.sh --exp=365 \
+          --out=valkey \
+        valkey-node \
+        valkey.fourteeners.local \
+         redis.fourteeners.local \
+  valkey{1..6}.fourteeners.local \
+   redis{1..6}.fourteeners.local \
+     \*.valkey.svc.cluster.local \
+     \*.valkey.svc \
+     192.168.0.22{2..7}
 
 ./cert.sh --exp=365 \
      prometheus \
@@ -167,39 +212,6 @@ cd "$HOME"
    \*.monitoring.svc
 
 ./cert.sh --exp=365 \
-        valkey.fourteeners.local \
-         redis.fourteeners.local \
-  valkey{1..6}.fourteeners.local \
-   redis{1..6}.fourteeners.local \
-     \*.valkey.svc.cluster.local \
-     \*.valkey.svc \
-     192.168.0.22{2..7}
-
-./cert.sh --exp=365 \
-     postgresql.fourteeners.local \
-       postgres.fourteeners.local \
-             pg.fourteeners.local \
-  \*.postgresql.svc.cluster.local \
-  \*.postgresql.svc \
-  192.168.0.222
-
-./cert.sh --exp=365 \
-  erhhung erhhung@gmail.com
-
-# .key file is binary
-./cert.sh --exp=365 \
-          --pk8="-outform DER" \
-          --out=keycloak_db \
-  keycloak keycloak@fourteeners.local
-
-./cert.sh --exp=365 \
-     keycloak.fourteeners.local \
-          iam.fourteeners.local \
-          sso.fourteeners.local \
-  \*.keycloak.svc.cluster.local \
-  \*.keycloak.svc
-
-./cert.sh --exp=365 \
   kiali.fourteeners.local \
   istio.fourteeners.local
 
@@ -208,6 +220,16 @@ cd "$HOME"
      argocd.fourteeners.local \
   \*.argocd.svc.cluster.local \
   \*.argocd.svc
+
+./cert.sh --exp=365 \
+          --out=qdrant \
+     qdrant-node \
+     qdrant.fourteeners.local \
+     qdrant-0.qdrant-headless \
+     qdrant-1.qdrant-headless \
+     qdrant-2.qdrant-headless \
+  \*.qdrant.svc.cluster.local \
+  \*.qdrant.svc
 
 ./cert.sh --exp=365 \
   ollama.fourteeners.local
