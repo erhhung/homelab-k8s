@@ -6,7 +6,7 @@ velero_secrets:
   minio: minio-credentials
 
 # https://github.com/vmware-tanzu/helm-charts/tree/main/charts/velero
-velero_chart_version: "10.0.4"
+velero_chart_version: "10.0.11"
 velero_release_name: velero
 
 # https://github.com/vmware-tanzu/helm-charts/tree/main/charts/velero/values.yaml
@@ -158,7 +158,7 @@ velero_chart_values:
 # https://grafana.com/grafana/dashboards/?search=Velero&dataSource=prometheus
 velero_grafana_dashboards:
   # https://grafana.com/grafana/dashboards/16829-kubernetes-tanzu-velero
-  - title: Kubernetes / Tanzu / Velero
+  - title: Velero Dashboard
     gnetId: 16829
     tags:
       - storage

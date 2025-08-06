@@ -14,7 +14,8 @@ sysctl:
 # adjust system resource limits:
 # https://www.man7.org/linux/man-pages/man5/limits.conf.5.html
 # https://docs.ansible.com/ansible/latest/collections/community/general/pam_limits_module.html
-# run "ulimit -a" to see current limits
+# run "ulimit -a" to see limits; run "sysctl fs.file-nr"
+# to see current usage (output values are used/free/max)
 pam_limits:
   # keep at index 0
   - domain: "*"

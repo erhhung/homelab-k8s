@@ -1,0 +1,84 @@
+# https://github.com/qdrant/qdrant
+# https://github.com/qdrant/qdrant-helm
+# https://qdrant.tech/documentation/overview
+---
+- name: Install Qdrant on RKE cluster
+  hosts: "{{ rke_control_plane_host }}"
+  gather_facts: false
+  vars_files:
+    - vars/kubernetes.yml
+    - vars/storage.yml
+    - vars/monitoring.yml
+    - vars/qdrant.yml
+  vars:
+    # required kubernetes>=24.2 package only in user virtualenv
+    ansible_python_interpreter: "{{ venv_python_interpreter }}"
+    kubeconfig: "{{ rke_kubeconfig }}"
+    secret_ns: "{{ qdrant_namespace }}"
+    create_ns: false
+    release: "{{ qdrant_release_name }}"
+  tasks:
+    - name: Create Qdrant node secret
+      vars:
+        secret_name: "{{ qdrant_secrets['node-tls'] }}"
+        create_ns: true
+        cert_name: qdrant-node
+        sans_:
+          - qdrant-node
+          - "{{ qdrant_fqdn }}"
+          - "*.{{ qdrant_namespace }}.svc.{{ cluster_domain }}"
+          - "*.{{ qdrant_namespace }}.svc"
+          # explicitly list every pod name in the StatefulSet as
+          # "qdrant-N.qdrant-headless" instead of using a single
+          # wildcard domain, else setting cluster.p2p.enable_tls
+          # to true causes pods to fail startup:
+          # https://github.com/qdrant/qdrant/issues/3272
+          - |
+            {% set sans = [] %}
+            {% for i in range(0, qdrant_chart_values.replicaCount) %}
+            {%   set _ = sans.append(release ~'-'~ i ~'.qdrant-headless') %}
+            {% endfor %}
+            {{ sans   }}
+        sans: "{{ sans_ | flatten }}"
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
+      ansible.builtin.include_tasks: tasks/k8s/secrets/tls.step.yml
+
+    - name: Create monitoring scraper secret
+      ansible.builtin.include_tasks: tasks/monitoring/scraper.yml
+
+    # https://github.com/qdrant/qdrant-helm/tree/main/charts/qdrant
+    - name: Install Qdrant Helm chart
+      # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/helm_module.html
+      kubernetes.core.helm:
+        kubeconfig: "{{ kubeconfig }}"
+        chart_repo_url: https://qdrant.github.io/qdrant-helm
+        chart_ref: qdrant
+        chart_version: "{{ qdrant_chart_version }}"
+        release_name: "{{ qdrant_release_name }}"
+        release_namespace: "{{ qdrant_namespace }}"
+        release_values: "{{ qdrant_chart_values }}"
+        history_max: "{{ helm_max_history }}"
+        atomic: true
+        wait: true
+      # normal OrderedReady startup takes ~5 minutes, but
+      # it can be longer if there's a snapshot to restore
+      timeout: 600
+
+    # Helm chart does not currently allow
+    # providing .serviceMonitor.tlsConfig
+    - name: Patch Qdrant ServiceMonitor
+      # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_json_patch_module.html
+      kubernetes.core.k8s_json_patch:
+        kubeconfig: "{{ kubeconfig }}"
+        api_version: monitoring.coreos.com/v1
+        kind: ServiceMonitor
+        name: "{{ qdrant_release_name }}"
+        namespace: "{{ qdrant_namespace }}"
+        patch:
+          - op: replace
+            path: /spec/endpoints/0/scheme
+            value: https
+          - op: add
+            path: /spec/endpoints/0/tlsConfig
+            value: "{{ metric_scraper_tls_config }}"
+  any_errors_fatal: true

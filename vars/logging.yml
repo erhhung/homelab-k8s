@@ -9,7 +9,7 @@ logging_secrets:
 fluent_os_user: fluent
 
 # https://github.com/fluent/helm-charts/tree/main/charts/fluent-operator
-fluent_operator_chart_version: "3.3.0"
+fluent_operator_chart_version: "3.4.2"
 fluent_operator_release_name: fluent-operator
 
 # https://github.com/fluent/helm-charts/tree/main/charts/fluent-operator/values.yaml

@@ -60,8 +60,9 @@ opensearch_security_plugin:
     admin_dn:
       - CN=erhhung,OU=Homelab,O=Fourteeners,L=Home,ST=California,C=US
   nodes_dn:
-    # openssl x509 -in opensearchnode.pem -subject -nameopt RFC2253 -noout | sed 's/^subject=//'
-    - CN=node.opensearch.svc.cluster.local,OU=Homelab,O=Fourteeners,L=Home,ST=California,C=US
+    # openssl x509 -in opensearchnode.pem -subject
+    # -nameopt RFC2253 -noout | sed 's/^subject=//'
+    - CN=opensearch-node,OU=Homelab,O=Fourteeners,L=Home,ST=California,C=US
 
   audit.type: noop
   enable_snapshot_restore_privilege: true
@@ -209,12 +210,12 @@ opensearch_security_config:
       users:
         - metrics
 
-opensearch_version: "2.19.2"
+opensearch_version: "2.19.3"
 # IMPORTANT! keep opensearch_version and opensearch_chart_version
 # in sync: helm show chart opensearch/opensearch --version 2.xx.x
 # opensearch_version will be used to select proper plugin version
 # https://github.com/opensearch-project/helm-charts/tree/main/charts/opensearch
-opensearch_chart_version: "2.34.0"
+opensearch_chart_version: "2.35.0"
 opensearch_release_name: opensearch
 
 # https://github.com/opensearch-project/helm-charts/tree/main/charts/opensearch/values.yaml
@@ -323,8 +324,20 @@ opensearch_chart_values:
       cpu: 200m
       memory: 128Mi
 
+  priorityClassName: "{{ priority_classes['database'] }}"
+
   # avoid CPU surge in weak cluster
   podManagementPolicy: OrderedReady
+
+  readinessProbe: &probe
+    tcpSocket:
+      port: "{{ opensearch_service_port }}"
+    initialDelaySeconds: 30
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 6
+  livenessProbe: *probe
+  startupProbe: {}
 
   service:
     labels:
@@ -352,15 +365,17 @@ opensearch_chart_values:
     # additional: https://github.com/opensearch-project/OpenSearch/tree/main/plugins
     # https://docs.opensearch.org/docs/latest/install-and-configure/plugins/
     installList:
-      # https://github.com/Aiven-Open/prometheus-exporter-plugin-for-opensearch
+      # - telemetry-otel
+      # - repository-s3
+      # - https://github.com/Aiven-Open/prometheus-exporter-plugin-for-opensearch/releases/download/{{
+      #   opensearch_version }}.0/prometheus-exporter-{{ opensearch_version }}.0.zip
+
       # since the "official" GitHub repo hasn't released new plugin versions
       # to match newer OpenSearch versions, including the version we install,
-      # I've recompiled the 2.17.1.0 source code as 2.19.2.0 and released it
+      # I've recompiled the 2.17.1.0 source code as 2.19.3.0 and released it
       # in my forked repo
       - https://github.com/erhhung/prometheus-exporter-plugin-for-opensearch/releases/download/{{
         opensearch_version }}.0/prometheus-exporter-{{ opensearch_version }}.0.zip
-      # - telemetry-otel
-      # - repository-s3
 
   extraObjects:
     # create LoadBalancer service to listen on port 9200

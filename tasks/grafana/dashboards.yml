@@ -68,11 +68,15 @@
         echo "Downloading $desc..."
         echo "URL: $revs_url/$rev/download"
         json="$(curl -fsSL "${retry_opts[@]}" "$revs_url/$rev/download")"
+        json="$(jq 'del(.id) | .title = "{{ item.title }}"' <<< "$json")"
 
         tags='{{ item.tags | default([]) | to_json }}'
         [ "$tags" == "[]" ] || \
-            json="$(jq ".tags += $tags" <<< "$json")"
-        echo >&2 "$json"
+          json="$(jq ".tags += $tags" <<< "$json")"
+
+        file="/tmp/dashboard-{{ item.gnetId }}-$rev"
+        echo "$revs_url/$rev/download" > "$file.url"
+        echo "$json" > "$file.json"
 
         echo -e "Importing $desc...\n"
         curl -X POST -fku {{ api_auth }} \
@@ -89,6 +93,8 @@
           }' \
           --no-progress-meter "${retry_opts[@]}" \
           {{ api_base }}/dashboards/import
+
+        rm -f $file.*
       args:
         executable: /bin/bash
       loop: "{{ dashboards }}"

@@ -27,6 +27,7 @@
         create_ns: true
         cert_name: postgresql-node
         sans_:
+          - postgresql-node
           - "{{ postgresql_fqdns }}"
           - "*.{{ postgresql_namespace }}.svc.{{ cluster_domain }}"
           - "*.{{ postgresql_namespace }}.svc"

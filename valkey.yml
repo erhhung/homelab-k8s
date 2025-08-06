@@ -27,6 +27,7 @@
         create_ns: true
         cert_name: valkey-node
         sans_:
+          - valkey-node
           - "{{ valkey_fqdns }}"
           - "*.{{ valkey_namespace }}.svc.{{ cluster_domain }}"
           - "*.{{ valkey_namespace }}.svc"
