@@ -179,7 +179,13 @@
         auth_headers:
           Authorization: Bearer {{ user.token }}
         admin_token: "{{ user.token }}"
-        admin_user_id: "{{ user.id }}"
+        admin_user: "{{ {
+          'id':    user.id,
+          'email': user.email,
+          'name':  user.name,
+          'role':  user.role,
+          'profile_image_url': user.profile_image_url,
+          } }}"
         api_base: "{{ api_base }}"
 
     - name: Get Open WebUI user groups
@@ -220,7 +226,7 @@
               # be specified at a minimum
               name: "{{ group.name }}"
               description: "{{ group.description }}"
-              user_ids: "{{ [admin_user_id] }}"
+              user_ids: "{{ [admin_user.id] }}"
           register: update_group
           changed_when: update_group.status == 200
 
@@ -241,7 +247,7 @@
 
     - name: Populate Erhhung's memories
       vars:
-        current: "{{ list_memories.json | selectattr('user_id','==',admin_user_id) }}"
+        current: "{{ list_memories.json | selectattr('user_id','==',admin_user.id) }}"
       when: current is not truthy
       block:
         - name: Read encrypted memories.yaml
@@ -298,7 +304,7 @@
             read:
               group_ids: "{{ [family_group_id] }}"
             write:
-              user_ids: "{{ [admin_user_id] }}"
+              user_ids: "{{ [admin_user.id] }}"
         return_content: true
       register: create_knowledge
       when: knowledge is not truthy
@@ -311,7 +317,7 @@
       vars:
         knowledge: "{{ list_knowledge.json | selectattr('name','==','Accounts') }}"
       ansible.builtin.set_fact:
-        accounts_knowledge: >-
+        accounts_knowledge: |
           {{ knowledge | first if knowledge is truthy else create_knowledge.json }}
 
     - name: Get Open WebUI custom models
@@ -328,6 +334,13 @@
         # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/file_lookup.html
         png_b64: "{{ lookup('ansible.builtin.file', 'files/openwebui/ai-assistant.png') | b64encode }}"
         image_url: data:image/png;base64,{{ png_b64 }}
+        knowledge: |
+          {% set know = accounts_knowledge %}
+          {% set _ = know.update({
+               'type': 'collection',
+               'user':  admin_user,
+             })   %}
+          {{ know }}
       ansible.builtin.uri:
         method: POST
         url: "{{ api_base }}/v1/models/create"
@@ -348,9 +361,7 @@
               code_interpreter: false
               image_generation: false
               vision: false
-            knowledge:
-              # must provide entire object
-              - "{{ accounts_knowledge }}"
+            knowledge: "{{ [knowledge] }}"
           base_model_id: "{{ base_model }}"
           params:
             system: >-
@@ -362,7 +373,7 @@
             read:
               group_ids: "{{ [family_group_id] }}"
             write:
-              user_ids: "{{ [admin_user_id] }}"
+              user_ids: "{{ [admin_user.id] }}"
         return_content: true
       register: create_model
       when: model is not truthy
@@ -372,7 +383,7 @@
       vars:
         model: "{{ list_models.json | selectattr('name','==','Accounts') }}"
       ansible.builtin.set_fact:
-        accounts_model: >-
+        accounts_model: |
           {{ model | first if model is truthy else create_model.json }}
   any_errors_fatal: true
 
@@ -397,16 +408,22 @@
     playbooks: |
       {{  PLAYBOOKS | split(',') if PLAYBOOKS is defined and PLAYBOOKS is truthy else [] }}
     tags_: "{{ TAGS | split(',') if      TAGS is defined and      TAGS is truthy else [] }}"
-    run_play: >-
-      {{  playbooks | length == 1 and
-         'openwebui' in playbooks and
-         'knowledge' in tags_ }}
   pre_tasks:
+    - name: Upload files or skip upload?
+      ansible.builtin.set_fact:
+        do_upload: >-
+          {{  playbooks | length == 1 and
+             'openwebui' in playbooks and
+             'knowledge' in tags_ }}
+      # this var can be set directly on
+      # the command line to skip upload
+      when: do_upload is not defined
+
     - name: Gather facts about user_dir
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/setup_module.html
       ansible.builtin.setup:
         gather_subset: user_dir
-      when: run_play
+      when: do_upload
 
     - name: Find ~/accounts/*.txt files
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/find_module.html
@@ -417,7 +434,7 @@
         patterns: "*.txt"
         get_checksum: true
       register: find_files
-      when: run_play
+      when: do_upload
   tasks:
     # order by recently modified
     - name: Add file to knowledge
@@ -450,26 +467,31 @@
       loop_control:
         label: "{{ item.rel_path }}"
       register: upload_files
-      when: run_play
+      when: do_upload
 
     - name: Were any files changed?
       ansible.builtin.set_fact:
         files_changed: >-
           {{ upload_files.results is defined and
              upload_files.results  | selectattr('changed') is truthy }}
+      # this allows forcing the next task
+      # to run if this var is set to true
+      # directly on the command line
+      when: files_changed is not defined
 
-    # this step is currently needed so that the custom model,
-    # which was created with an initially empty knowledge, is
-    # updated with all file references from updated knowledge:
+    # not sure if this step is needed so that the custom model,
+    # which was created initially with an empty knowledge, gets
+    # populated with new file references from updated knowledge:
     # https://github.com/open-webui/open-webui/issues/16318
     - name: Update Accounts model
       delegate_to: localhost
       when: files_changed
       vars:
-        api_base: "{{ facts['api_base'] }}/v1"
         model: "{{ facts['accounts_model'] }}"
         know_id: "{{ model.meta.knowledge[0].id }}"
         auth_headers: "{{ facts['auth_headers'] }}"
+        admin_user: "{{ facts['admin_user'] }}"
+        api_base: "{{ facts['api_base'] }}/v1"
       block:
         - name: Refresh Accounts knowledge
           ansible.builtin.uri:
@@ -479,6 +501,14 @@
           register: new_knowledge
 
         - name: Update Accounts model
+          vars:
+            knowledge: |
+              {% set know = new_knowledge.json %}
+              {% set _ = know.update({
+                  'type': 'collection',
+                  'user':  admin_user,
+                 })   %}
+              {{ know }}
           ansible.builtin.uri:
             method: POST
             url: "{{ api_base }}/models/model/update?id=accounts"
@@ -486,7 +516,7 @@
             body_format: json
             body: |
               {% set _ = model.meta.update({
-                   'knowledge': [new_knowledge.json]
+                   'knowledge': [knowledge]
                  }) %}
               {{ model }}
           register: update_model

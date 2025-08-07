@@ -274,9 +274,7 @@ openwebui_chart_values:
       value: "True"
     - name: WEBSOCKET_MANAGER
       value: redis
-    # setting added in my fork and image to
-    # use redis.cluster.RedisCluster client
-    - name: REDIS_CLUSTER_MODE
+    - name: REDIS_CLUSTER
       value: "True"
     - name: REDIS_KEY_PREFIX
       value: "{open-webui}"
