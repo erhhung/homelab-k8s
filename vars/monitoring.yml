@@ -51,10 +51,13 @@ prometheus_service_host: "{{ monitoring_release_name }}-prometheus.{{
   monitoring_namespace }}.svc.{{ cluster_domain }}"
 prometheus_service_port: 9090
 prometheus_service_url: https://{{ prometheus_service_host }}:{{ prometheus_service_port }}
+
 alertmanager_service_host: "{{ monitoring_release_name }}-alertmanager.{{
   monitoring_namespace }}.svc.{{ cluster_domain }}"
 alertmanager_service_port: 9093
 alertmanager_service_url: https://{{ alertmanager_service_host }}:{{ alertmanager_service_port }}
+
+grafana_url: https://{{ monitoring_fqdns['grafana'] | first }}
 
 monitoring_secrets:
   prometheus: monitoring-prometheus-tls

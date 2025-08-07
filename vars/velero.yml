@@ -1,13 +1,28 @@
-# velero_repo_pass: {vault.yml}
+# velero_repo_pass:  {vault.yml}
+# velero_admin_pass: {vault.yml}
+# velero_passphrase: {vault.yml}
 
 velero_namespace: velero
+velero_ui_namespace: velero
+velero_host_name: velero # alias of "homelab"
+
+# remember to add velero.fourteeners.local to pfSense DNS
+# as an alias of homelab.fourteeners.local: 192.168.0.221
+# https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_filters.html#products
+velero_fqdn: "{{ [velero_host_name] | product(search_domains) | map('join','.') | first }}"
 
 velero_secrets:
   minio: minio-credentials
+  creds: velero-ui-credentials
+  ingress: velero-ingress-tls
 
 # https://github.com/vmware-tanzu/helm-charts/tree/main/charts/velero
-velero_chart_version: "10.0.11"
+velero_chart_version: "10.0.12"
 velero_release_name: velero
+
+# https://github.com/otwld/helm-charts/tree/main/charts/velero-ui
+velero_ui_chart_version: "0.13.3"
+velero_ui_release_name: velero-ui
 
 # https://github.com/vmware-tanzu/helm-charts/tree/main/charts/velero/values.yaml
 velero_chart_values:
@@ -29,9 +44,9 @@ velero_chart_values:
         - name: plugins
           mountPath: /target
 
-  podSecurityContext:
+  podSecurityContext: &pod_security
     fsGroup: 2000
-  containerSecurityContext:
+  containerSecurityContext: &container_security
     capabilities:
       drop: ["ALL"]
     allowPrivilegeEscalation: false
@@ -130,7 +145,7 @@ velero_chart_values:
     - apiVersion: v1
       kind: Secret
       metadata:
-        name: velero-repo-credentials # expected
+        name: velero-repo-credentials # expected!
       type: Opaque
       data:
         repository-password: "{{ velero_repo_pass | b64encode }}"
@@ -154,6 +169,92 @@ velero_chart_values:
           itemOperationTimeout: 10m
           csiSnapshotTimeout: 30m
           ttl: 168h0m0s # 1 week
+
+# https://github.com/otwld/helm-charts/tree/main/charts/velero-ui/values.yaml
+velero_ui_chart_values:
+  replicaCount: 1
+
+  configuration:
+    general:
+      veleroNamespace: "{{ velero_namespace }}"
+      # "EbXSjT24k" is the installed uid of Velero Dashboard 16829
+      grafanaUrl: "{{ grafana_url }}/d/EbXSjT24k/velero-dashboard"
+
+      # passphrase used to sign JWT tokens
+      secretPassPhrase:
+        useSecret: true
+        existingSecret: "{{ velero_secrets['creds'] }}"
+        key: jwt-passphrase
+
+    # RBAC feature requires federated authentication:
+    # https://velero-ui.docs.otwld.com/sso-ldap/rbac
+    policies:
+      enabled: false
+
+  # https://velero-ui.docs.otwld.com/getting-started/environment-variables
+  env:
+    - name: DEFAULT_LANGUAGE
+      value: en
+    - name: DEFAULT_TIMEZONE
+      value: America/Los_Angeles
+    - name: NODE_ENV
+      value: production
+    - name: BASIC_AUTH_USERNAME
+      value: admin
+    - name: BASIC_AUTH_PASSWORD
+      valueFrom:
+        secretKeyRef:
+          name: "{{ velero_secrets['creds'] }}"
+          key: admin-password
+    - name: AUTH_SESSION_DURATION
+      value: 8h
+    # https://velero-ui.docs.otwld.com/certificate
+    - name: NODE_EXTRA_CA_CERTS
+      value: /certs/ca.crt
+
+  podSecurityContext: *pod_security
+  securityContext: *container_security
+
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+
+  readinessProbe: &probe
+    initialDelaySeconds: 30
+    periodSeconds: 10
+    timeoutSeconds: 5
+    successThreshold: 1
+    failureThreshold: 6
+  livenessProbe: *probe
+
+  volumes:
+    - name: certs
+      secret:
+        secretName: "{{ velero_secrets['ingress'] }}"
+
+  volumeMounts:
+    - name: certs
+      # environment variable
+      # NODE_EXTRA_CA_CERTS
+      mountPath: /certs/ca.crt
+      subPath: ca.crt
+      readOnly: true
+
+  ingress:
+    enabled: true
+    tls:
+      - secretName: "{{ velero_secrets['ingress'] }}"
+        hosts: "{{ [velero_fqdn] }}"
+    className: "{{ rke_ingress_class }}"
+    annotations:
+      nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+      nginx.ingress.kubernetes.io/backend-protocol: HTTP
+    hosts:
+      - host: "{{ velero_fqdn }}"
+        paths:
+          - path: /
+            pathType: Prefix
 
 # https://grafana.com/grafana/dashboards/?search=Velero&dataSource=prometheus
 velero_grafana_dashboards:

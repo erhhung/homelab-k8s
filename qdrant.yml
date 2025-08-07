@@ -18,6 +18,7 @@
     create_ns: false
     release: "{{ qdrant_release_name }}"
   tasks:
+    # cert also used by Qdrant ingress
     - name: Create Qdrant node secret
       vars:
         secret_name: "{{ qdrant_secrets['node-tls'] }}"

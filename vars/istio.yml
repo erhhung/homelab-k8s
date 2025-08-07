@@ -159,7 +159,7 @@ kiali_cr_spec:
     grafana:
       enabled: true
       is_core: false
-      external_url: https://{{ monitoring_fqdns['grafana'][0] }}
+      external_url: "{{ grafana_url }}"
       internal_url: https://{{ monitoring_release_name }}-grafana.{{
         monitoring_namespace }}.svc.{{ cluster_domain }}
       auth:

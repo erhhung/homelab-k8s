@@ -33,6 +33,7 @@ All cluster services will be provisioned with TLS certificates from Erhhung's pr
 |---------------------------------------:|:----------------------
 |      https://rancher.fourteeners.local | Rancher Server console
 |       https://harbor.fourteeners.local | Harbor OCI registry
+|       https://velero.fourteeners.local | Velero Dashboard
 |        https://minio.fourteeners.local | MinIO console
 |           https://s3.fourteeners.local | MinIO S3 API
 |      opensearch.fourteeners.local:9200 | OpenSearch _(HTTPS only)_
@@ -75,7 +76,7 @@ All cluster services will be provisioned with TLS certificates from Erhhung's pr
     * Install on main RKE cluster using the [MinIO Operator](https://min.io/docs/minio/kubernetes/upstream/operations/install-deploy-manage/deploy-operator-helm.html) and [MinIO Tenant](https://min.io/docs/minio/kubernetes/upstream/operations/install-deploy-manage/deploy-minio-tenant-helm.html) Helm charts
 - [X] [Velero Backup & Restore](https://velero.io/docs/latest/basic-install) — back up and restore persistent volumes
     * Install on main RKE cluster using the [`velero`](https://github.com/vmware-tanzu/helm-charts/tree/main/charts/velero) Helm chart
-    * [ ] Install [Velero UI](https://github.com/otwld/velero-ui) dashboard using the [`velero-ui`](https://github.com/otwld/helm-charts/tree/main/charts/velero-ui) Helm chart
+    * [X] Install [Velero Dashboard](https://github.com/otwld/velero-ui) using the [`velero-ui`](https://github.com/otwld/helm-charts/tree/main/charts/velero-ui) Helm chart
 - [X] [Node Feature Discovery](https://kubernetes-sigs.github.io/node-feature-discovery) — label nodes with available hardware features, like GPUs
     * Install on K3s and RKE clusters using the [`node-feature-discovery`](https://kubernetes-sigs.github.io/node-feature-discovery/stable/deployment/helm.html) Helm chart
     * [X] Install [Intel Device Plugins](https://intel.github.io/intel-device-plugins-for-kubernetes) using the [`intel-device-plugins-operator`](https://github.com/intel/helm-charts/tree/main/charts/device-plugin-operator) Helm chart
@@ -146,12 +147,13 @@ ansible-vault view   $VAULTFILE
 | `github_access_token`             | `harbor_admin_pass`
 | `age_secret_key`                  | `minio_root_pass`
 | `icloud_smtp.*`                   | `minio_admin_pass`
-| `k3s_token`                       | `opensearch_admin_pass`
-| `rke2_token`                      | `keycloak_admin_pass`
-| `stepca_provisioner_pass`         | `thanos_admin_pass`
+| `k3s_token`                       | `velero_admin_pass`
+| `rke2_token`                      | `opensearch_admin_pass`
+| `stepca_provisioner_pass`         | `keycloak_admin_pass`
+| `harbor_secret`                   | `thanos_admin_pass`
 | `minio_client_pass`               | `grafana_admin_pass`
 | `velero_repo_pass`                | `argocd_admin_pass`
-| `harbor_secret`                   | `openwebui_admin_pass`
+| `velero_passphrase`               | `openwebui_admin_pass`
 | `dashboards_os_pass`              |
 | `fluent_os_pass`                  |
 | `valkey_pass`                     |
@@ -255,7 +257,8 @@ however, all privileged operations using `sudo` will require the password stored
     8.2. Install Longhorn storage components  
     8.3. Install NFS dynamic PV provisioner  
     8.4. Install MinIO tenant using NFS PVs  
-    8.5. Install Velero using MinIO as target
+    8.5. Install Velero using MinIO as target  
+    8.6. Install Velero Dashboard
 
     ```bash
     ./play.sh storage minio velero
@@ -376,8 +379,8 @@ however, all privileged operations using `sudo` will require the password stored
 
 22. <details><summary>Install <strong>Ollama</strong> LLM server with common models<br/> &nbsp; &nbsp; Install <strong>Open WebUI</strong> AI platform with <strong>Pipelines</strong></summary><br/>
 
-    22.1. Create `Accounts` knowledge base, and then `Accounts` custom model that embeds that knowledge base  
-    22.2. **NOTE**: Populate `Accounts` knowledge base by running `./play.sh openwebui -t knowledge` separately
+    22.1. Create `Accounts` knowledge base, and then `Accounts` custom model that embeds that KB  
+    22.2. **NOTE**: Populate `Accounts` KB by running `./play.sh openwebui -t knowledge` separately
 
     ```bash
     ./play.sh ollama openwebui
