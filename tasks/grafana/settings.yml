@@ -16,14 +16,14 @@
 - name: Include vars/monitoring.yml
   # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_vars_module.html
   ansible.builtin.include_vars: vars/monitoring.yml
-  when: monitoring_fqdns is not defined
+  when: grafana_url is not defined
 
 - name: Apply Grafana user settings
   delegate_to: localhost
   become: false
   vars:
     ansible_python_interpreter: "{{ local_python_interpreter }}"
-    api_base: https://{{ monitoring_fqdns['grafana'] | first }}/api/user
+    api_base: "{{ grafana_url }}/api/user"
     api_urls:
       profile: "{{ api_base }}"
       preferences: "{{ api_base }}/preferences"

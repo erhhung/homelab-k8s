@@ -1,6 +1,6 @@
 # https://velero.io/docs/latest
+# https://velero-ui.docs.otwld.com/
 # https://longhorn.io/docs/latest/advanced-resources/system-backup-restore/restore-to-a-new-cluster-using-velero
-# https://github.com/vmware-tanzu/helm-charts/tree/main/charts/velero
 ---
 - name: Install Velero backup & restore
   tags: velero
@@ -15,6 +15,9 @@
     # required kubernetes>=24.2 package only in user virtualenv
     ansible_python_interpreter: "{{ venv_python_interpreter }}"
     kubeconfig: "{{ rke_kubeconfig }}"
+    secret_ns: "{{ velero_ui_namespace }}"
+    create_ns: false
+    release: "{{ velero_ui_release_name }}"
   pre_tasks:
     - name: Get CA certificates from PKI
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
@@ -25,6 +28,23 @@
       ansible.builtin.include_tasks: tasks/monitoring/stackready.yml
       when: monitoring_stack_ready is not defined
   tasks:
+    - name: Create Velero ingress secret
+      vars:
+        secret_name: "{{ velero_secrets['ingress'] }}"
+        create_ns: true
+        cert_name: velero-ingress
+        sans: "{{ [velero_fqdn] }}"
+      ansible.builtin.include_tasks: tasks/k8s/secrets/tls.step.yml
+
+    - name: Create Velero creds secret
+      vars:
+        secret_name: "{{ velero_secrets['creds'] }}"
+        secret_data:
+          jwt-passphrase: "{{ velero_passphrase }}"
+          admin-password: "{{ velero_admin_pass }}"
+      ansible.builtin.include_tasks: tasks/k8s/secrets/generic.yml
+
+    # https://github.com/vmware-tanzu/helm-charts/tree/main/charts/velero
     - name: Install Velero Helm chart
       # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/helm_module.html
       kubernetes.core.helm:
@@ -34,12 +54,25 @@
         chart_version: "{{ velero_chart_version }}"
         release_name: "{{ velero_release_name }}"
         release_namespace: "{{ velero_namespace }}"
-        create_namespace: true
         release_values: "{{ velero_chart_values }}"
         history_max: "{{ helm_max_history }}"
         atomic: true
         wait: true
       timeout: 300
+
+    # https://github.com/otwld/helm-charts/tree/main/charts/velero-ui
+    - name: Install Velero UI Helm chart
+      kubernetes.core.helm:
+        kubeconfig: "{{ kubeconfig }}"
+        chart_repo_url: https://helm.otwld.com
+        chart_ref: velero-ui
+        chart_version: "{{ velero_ui_chart_version }}"
+        release_name: "{{ velero_ui_release_name }}"
+        release_namespace: "{{ velero_ui_namespace }}"
+        release_values: "{{ velero_ui_chart_values }}"
+        history_max: "{{ helm_max_history }}"
+        atomic: true
+        wait: true
   any_errors_fatal: true
 
 # https://velero.io/docs/latest/basic-install/#install-the-cli

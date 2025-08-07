@@ -103,7 +103,6 @@
     - vars/openwebui.yml
     - vars/ollama.yml
   vars:
-    facts: "{{ hostvars['localhost'] }}"
     vars_file: vars/ollama.{{ use_ollama_chart_by }}.yml
     api_base: https://{{ openwebui_fqdns | first }}/api
   pre_tasks:
@@ -181,6 +180,7 @@
           Authorization: Bearer {{ user.token }}
         admin_token: "{{ user.token }}"
         admin_user_id: "{{ user.id }}"
+        api_base: "{{ api_base }}"
 
     - name: Get Open WebUI user groups
       ansible.builtin.uri:
@@ -276,14 +276,14 @@
           register: add_memory
           changed_when: add_memory.status == 200
 
-    - name: Get Open WebUI knowledge list
+    - name: Get Open WebUI knowledge base
       ansible.builtin.uri:
         url: "{{ api_base }}/v1/knowledge/"
         headers: "{{ auth_headers }}"
         return_content: true
       register: list_knowledge
 
-    - name: Create Accounts knowledge base
+    - name: Create Accounts knowledge
       vars:
         knowledge: "{{ list_knowledge.json | selectattr('name','==','Accounts') }}"
       ansible.builtin.uri:
@@ -304,25 +304,15 @@
       when: knowledge is not truthy
       changed_when: create_knowledge.status == 200
 
-    - name: Get Accounts knowledge base
-      vars:
-        know_id: >-
-          {{ create_knowledge.json.id if create_knowledge is defined and
-             create_knowledge.json                        is defined else
-               list_knowledge.json | selectattr('name','==','Accounts')
-                                   |   map(attribute='id') | first }}
-      ansible.builtin.uri:
-        url: "{{ api_base }}/v1/knowledge/{{ know_id }}"
-        headers: "{{ auth_headers }}"
-        return_content: true
-      register: get_knowledge
-
     # pass var to the next play since
     # scope of registered variable in
     # Ansible is limited to this play
     - name: Set accounts_knowledge fact
+      vars:
+        knowledge: "{{ list_knowledge.json | selectattr('name','==','Accounts') }}"
       ansible.builtin.set_fact:
-        accounts_knowledge: "{{ get_knowledge.json }}"
+        accounts_knowledge: >-
+          {{ knowledge | first if knowledge is truthy else create_knowledge.json }}
 
     - name: Get Open WebUI custom models
       ansible.builtin.uri:
@@ -362,17 +352,28 @@
               # must provide entire object
               - "{{ accounts_knowledge }}"
           base_model_id: "{{ base_model }}"
-          # no params needed for now but
-          # must still be in the payload
-          params: {}
+          params:
+            system: >-
+              You are a personal assistant that has intimate knowledge of all
+              personal information entrusted to you in the attached knowledge
+              base. When you answer questions, consult the personal knowledge
+              base before applying additional general knowledge.
           access_control:
             read:
               group_ids: "{{ [family_group_id] }}"
             write:
               user_ids: "{{ [admin_user_id] }}"
+        return_content: true
       register: create_model
       when: model is not truthy
       changed_when: create_model.status == 200
+
+    - name: Set accounts_model fact
+      vars:
+        model: "{{ list_models.json | selectattr('name','==','Accounts') }}"
+      ansible.builtin.set_fact:
+        accounts_model: >-
+          {{ model | first if model is truthy else create_model.json }}
   any_errors_fatal: true
 
 # NOTE: this play takes a long time to run because it loops through hundreds of files
@@ -380,7 +381,7 @@
 # and processes the file if necessary; thus, this play will only run if it's the only
 # play specified to run and the "knowledge" tag is also specified on the command line
 
-- name: Update Accounts knowledge base
+- name: Update Accounts knowledge
   # must run after previous play to
   # get auth token and knowledge ID
   tags: knowledge
@@ -418,8 +419,8 @@
       register: find_files
       when: run_play
   tasks:
-    # order by most recently modified
-    - name: Add file to knowledge base
+    # order by recently modified
+    - name: Add file to knowledge
       vars:
         auth_token: "{{ facts['admin_token'] }}"
         knowledge: "{{ facts['accounts_knowledge'] }}"
@@ -448,5 +449,46 @@
       loop: "{{ acct_files }}"
       loop_control:
         label: "{{ item.rel_path }}"
+      register: upload_files
       when: run_play
+
+    - name: Were any files changed?
+      ansible.builtin.set_fact:
+        files_changed: >-
+          {{ upload_files.results is defined and
+             upload_files.results  | selectattr('changed') is truthy }}
+
+    # this step is currently needed so that the custom model,
+    # which was created with an initially empty knowledge, is
+    # updated with all file references from updated knowledge:
+    # https://github.com/open-webui/open-webui/issues/16318
+    - name: Update Accounts model
+      delegate_to: localhost
+      when: files_changed
+      vars:
+        api_base: "{{ facts['api_base'] }}/v1"
+        model: "{{ facts['accounts_model'] }}"
+        know_id: "{{ model.meta.knowledge[0].id }}"
+        auth_headers: "{{ facts['auth_headers'] }}"
+      block:
+        - name: Refresh Accounts knowledge
+          ansible.builtin.uri:
+            url: "{{ api_base }}/knowledge/{{ know_id }}"
+            headers: "{{ auth_headers }}"
+            return_content: true
+          register: new_knowledge
+
+        - name: Update Accounts model
+          ansible.builtin.uri:
+            method: POST
+            url: "{{ api_base }}/models/model/update?id=accounts"
+            headers: "{{ auth_headers }}"
+            body_format: json
+            body: |
+              {% set _ = model.meta.update({
+                   'knowledge': [new_knowledge.json]
+                 }) %}
+              {{ model }}
+          register: update_model
+          changed_when: update_model.status == 200
   any_errors_fatal: true

@@ -12,14 +12,14 @@
 - name: Include vars/monitoring.yml
   # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_vars_module.html
   ansible.builtin.include_vars: vars/monitoring.yml
-  when: monitoring_fqdns is not defined
+  when: grafana_url is not defined
 
 - name: Is the monitoring stack ready?
   become: false
   vars:
     # if one CRD is installed, others should also be
     check_crd: servicemonitors.monitoring.coreos.com
-    api_base: https://{{ monitoring_fqdns['grafana'][0] }}/api
+    api_base: "{{ grafana_url }}/api"
   block:
     - name: Check crd/{{ check_crd }}
       vars:

@@ -74,6 +74,9 @@ cd "$HOME"
             \*.minio.svc.cluster.local \
             \*.minio.svc
 
+./cert.sh --exp=365 \
+  velero.fourteeners.local
+
 ./cert.sh --kty=RSA \
           --exp=365 \
           --pk8="-v1 PBE-SHA1-3DES" \
