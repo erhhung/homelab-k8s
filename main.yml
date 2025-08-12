@@ -120,6 +120,11 @@
   ansible.builtin.import_playbook: openwebui.yml
   tags: openwebui
 
+# Flowise depends on PostgreSQL and Valkey
+- name: Include Flowise AI platform playbook
+  ansible.builtin.import_playbook: flowise.yml
+  tags: flowise
+
 - name: Include virtual clusters playbook
   ansible.builtin.import_playbook: vclusters.yml
   tags: vclusters

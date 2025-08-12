@@ -1,5 +1,4 @@
 # keycloak_admin_pass: {vault.yml}
-#      pgpool_db_pass: {vault.yml}
 
 keycloak_namespace: keycloak
 keycloak_host_names: # aliases of "homelab"
@@ -23,7 +22,7 @@ keycloak_configmaps:
 
 keycloak_db_name: keycloak
 keycloak_db_user: keycloak
-# use {{ pgpool_db_pass }}
+# use {{ pgpool_pass }}
 
 # Java requires key file to be in PKCS#8 / DER format:
 # openssl pkcs8 -topk8 -inform PEM -outform DER -in tls.key -nocrypt -out key.der
@@ -106,7 +105,7 @@ keycloakx_chart_values:
     port: "{{ pgpool_service_port }}"
     database: "{{ keycloak_db_name }}"
     username: "{{ keycloak_db_user }}"
-    password: "{{ pgpool_db_pass }}"
+    password: "{{ pgpool_pass }}"
 
   dbchecker:
     enabled: true
@@ -184,6 +183,7 @@ keycloakx_chart_values:
 
           echo -e "\nDatabase bootstrapping completed ✓"
       env:
+        # https://www.postgresql.org/docs/current/libpq-envars.html
         - name: PGHOST
           value: {{ pgpool_service_host }}
         - name: PGUSER

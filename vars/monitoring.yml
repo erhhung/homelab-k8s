@@ -909,7 +909,7 @@ prometheus_stack_chart_values:
         url: https://thanos-query-frontend.{{ monitoring_namespace }}.svc.{{ cluster_domain }}:9090
         access: proxy
         # apparently Grafana ignores basic auth settings if data source access is proxy:
-        # https://github.com/grafana/grafana/tree/main/pkg/api/frontendsettings.go#L515
+        # https://github.com/grafana/grafana/tree/main/pkg/api/frontendsettings.go#L517
         basicAuth: true
         basicAuthUser: grafana
         withCredentials: true

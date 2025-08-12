@@ -2,6 +2,7 @@
 # https://argo-cd.readthedocs.io/en/stable/operator-manual/installation/
 ---
 - name: Install Argo CD on RKE cluster
+  tags: install
   hosts: "{{ rke_control_plane_host }}"
   vars_files:
     - vars/kubernetes.yml

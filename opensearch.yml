@@ -163,7 +163,9 @@
 
 # https://docs.opensearch.org/docs/latest/install-and-configure/install-dashboards/helm/
 - name: Install OpenSearch Dashboards
-  tags: kibana
+  tags:
+    - kibana
+    - dashboards
   hosts: "{{ rke_control_plane_host }}"
   gather_facts: false
   vars_files: *vars_files

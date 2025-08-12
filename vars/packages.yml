@@ -71,3 +71,4 @@ install_pip_packages:
 # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/helm_plugin_module.html
 install_helm_plugins:
   - path: https://github.com/databus23/helm-diff
+  - path: https://github.com/aslafy-z/helm-git

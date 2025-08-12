@@ -3,6 +3,7 @@
 # https://qdrant.tech/documentation/overview
 ---
 - name: Install Qdrant on RKE cluster
+  tags: install
   hosts: "{{ rke_control_plane_host }}"
   gather_facts: false
   vars_files:
