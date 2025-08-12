@@ -1,0 +1,295 @@
+# flowise_admin_pass:     {vault.yml}
+# flowise_encryption_key: {vault.yml}
+#      anthropic_api_key: {vault.yml}
+#         openai_api_key: {vault.yml}
+#           groq_api_key: {vault.yml}
+
+flowise_admin_user:
+  name: "{{ user_erhhung.fullname }}"
+  email: "{{ user_erhhung.email }}"
+  password: "{{ flowise_admin_pass }}"
+
+flowise_namespace: flowise
+flowise_host_name: flowise # alias of "homelab"
+
+# remember to add flowise.fourteeners.local to pfSense DNS
+# as an alias of  homelab.fourteeners.local: 192.168.0.221
+# https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_filters.html#products
+flowise_fqdn: "{{ [flowise_host_name] | product(search_domains) | map('join','.') | first }}"
+
+flowise_secrets:
+  encryption: flowise-encryption
+  credentials: flowise-credentials
+  database: flowise-database-tls
+  ingress: flowise-ingress-tls
+
+flowise_db_name: flowise
+flowise_db_user: flowise
+# use {{ pgpool_pass }}
+
+# https://github.com/cowboysysop/charts/tree/master/charts/flowise
+flowise_chart_version: "6.0.0"
+flowise_release_name: flowise
+
+# https://github.com/cowboysysop/charts/tree/master/charts/flowise/values.yaml
+flowise_chart_values:
+  # not sure why defaults say don't change
+  # replicaCount and updateStrategy values
+  replicaCount: 1
+  updateStrategy:
+    type: Recreate
+  revisionHistoryLimit: 2
+
+  # use our image with support for DATABASE_TLS
+  # and client certificate environment variables
+  image:
+    pullPolicy: Always
+    registry: "{{ harbor_container_registry }}"
+    repository: library/flowise
+    tag: latest
+
+  config:
+    # https://docs.flowiseai.com/configuration/running-in-production
+    # https://github.com/cowboysysop/charts/tree/master/charts/flowise#queue-mode
+    mode: queue
+
+  # https://docs.flowiseai.com/configuration/environment-variables#for-credentials
+  existingSecret: "{{ flowise_secrets['encryption'] }}"
+  existingSecretKeyEncryptionKey: encryption-key
+
+  externalPostgresql:
+    # mode=queue
+    enabled: true
+    host: "{{ pgpool_service_host }}"
+    port: "{{ pgpool_service_port }}"
+    database: "{{ flowise_db_name }}"
+    username: "{{ flowise_db_user }}"
+    existingSecret: "{{ flowise_secrets['credentials'] }}"
+    existingSecretKeyPassword: postgresql-password
+
+  # couldn't get cluster mode working, so
+  # just use a dedicated instance for now
+  redis:
+    enabled: true
+  externalRedis:
+    # mode=queue
+    enabled: false
+    host: "{{ valkey_service_host }}"
+    port: "{{ valkey_service_port }}"
+    # existingSecret: "{{ flowise_secrets['credentials'] }}"
+    # existingSecretKeyPassword: valkey-password
+    useTLS: true
+
+  persistence:
+    enabled: true
+    storageClass: "{{ storage_classes['default'] }}"
+    accessModes: ["ReadWriteOnce"]
+    size: 384Mi
+
+  # does container really need root privileges?
+  securityContext: &security
+    capabilities:
+      drop: []
+    allowPrivilegeEscalation: true
+    readOnlyRootFilesystem: false
+    runAsNonRoot: false
+    runAsUser: 0
+    runAsGroup: 0
+
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+
+  readinessProbe: &probe
+    initialDelaySeconds: 30
+    periodSeconds: 10
+    timeoutSeconds: 5
+    successThreshold: 1
+    failureThreshold: 6
+  livenessProbe: *probe
+
+  extraVolumes: &volumes
+    - name: database-tls
+      secret:
+        secretName: "{{ flowise_secrets['database'] }}"
+        defaultMode: 416 # "0640"
+    - name: dotenv
+      emptyDir: {}
+
+  extraVolumeMounts: &mounts
+    - name: database-tls
+      mountPath: /tls/database
+      readOnly: true
+    - name: dotenv
+      # app root dir in container is /usr/src
+      mountPath: /usr/src/packages/server/.env
+      subPath: .env
+      readOnly: true
+    - name: dotenv
+      mountPath: /usr/src/docker/worker/.env
+      subPath: .env
+      readOnly: true
+
+  # support for extra init containers is only available
+  # in my own forked repo on branch "flowise-redis-tls"
+  extraInitContainers: &containers
+    # the app wants environment variables for PEM-encoded certificates
+    # to be base64-encoded contents of those files, presumably because
+    # they're defined in .env file during development, but that's very
+    # non-Kubernetes practice, where the variables should be pathnames
+    - name: create-dotenv
+      image: busybox
+      imagePullPolicy: IfNotPresent
+      command:
+        - sh
+      args:
+        - -c
+        - |
+          echo "Creating .env file for Flowise..."
+          cert="$(base64 -w0 < /tls/tls.crt)"
+           key="$(base64 -w0 < /tls/tls.key)"
+            ca="$(base64 -w0 < /tls/ca.crt)"
+
+          cat <<EOF > /env/.env
+          # https://docs.flowiseai.com/configuration/databases#postgresql
+          DATABASE_TLS="true"
+          DATABASE_CERT="$cert"
+          DATABASE_KEY="$key"
+          DATABASE_CA="$ca"
+          EOF
+
+          # https://docs.flowiseai.com/configuration/running-flowise-using-queue#queue-mode
+          # couldn't get cluster mode working, so
+          # these settings are irrelevant for now
+          REDIS_CLUSTER="true"
+          REDIS_TLS="true"
+          REDIS_CERT="$cert"
+          REDIS_KEY="$key"
+          REDIS_CA="$ca"
+          echo ".env file successfully created ✓"
+      volumeMounts:
+        - name: dotenv
+          mountPath: /env
+        - name: database-tls
+          mountPath: /tls
+          readOnly: true
+
+  ingress:
+    enabled: true
+    tls:
+      - secretName: "{{ flowise_secrets['ingress'] }}"
+        hosts: "{{ [flowise_fqdn] }}"
+    ingressClassName: "{{ rke_ingress_class }}"
+    annotations:
+      nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+      nginx.ingress.kubernetes.io/backend-protocol: HTTP
+    hosts:
+      - host: "{{ flowise_fqdn }}"
+        paths: ["/"]
+    pathType: Prefix
+
+  worker:
+    # mode=queue
+    enabled: true
+    replicaCount: 1
+    revisionHistoryLimit: 2
+
+    # use our image with support for DATABASE_TLS
+    # and client certificate environment variables
+    image:
+      pullPolicy: Always
+      registry: "{{ harbor_container_registry }}"
+      repository: library/flowise-worker
+      tag: latest
+
+    resources:
+      requests:
+        cpu: 50m
+        memory: 64Mi
+
+    securityContext: *security
+    readinessProbe: *probe
+    livenessProbe: *probe
+
+    extraVolumes: *volumes
+    extraVolumeMounts: *mounts
+    extraInitContainers: *containers
+
+  # chart doesn't currently support defining extra init
+  # containers, so we define Job to create the database.
+  # Flowise pods have built-in initContainers that wait
+  # until the database connection is successful
+  extraDeploy:
+    - apiVersion: batch/v1
+      kind: Job
+      metadata:
+        name: "{{ flowise_release_name }}-init"
+      spec:
+        ttlSecondsAfterFinished: 300
+        template:
+          spec:
+            restartPolicy: OnFailure
+            volumes: *volumes
+            containers:
+              - name: create-database
+                image: "{{ postgresql_image }}"
+                imagePullPolicy: IfNotPresent
+                command:
+                  - bash
+                args:
+                  - -c
+                  - |
+                    # uses connection params added
+                    # by PG* environment variables
+                    db_found=$(psql -d postgres -tAc "
+                      SELECT COUNT(*) FROM pg_catalog.pg_database WHERE datname = '{{ flowise_db_name }}'
+                    ") || exit $?
+                    echo "db_found=$db_found"
+
+                    [ "$db_found" -eq 1 ] || {
+                      echo -e "\nCreating '{{ flowise_db_name }}' database..."
+                      psql -d postgres <<'EOT'
+                        -- https://www.postgresql.org/docs/current/sql-createdatabase.html
+                        CREATE DATABASE {{ flowise_db_name }} WITH OWNER {{ flowise_db_user }};
+                        REVOKE ALL ON DATABASE {{ flowise_db_name }} FROM PUBLIC;
+                        GRANT  ALL ON DATABASE {{ flowise_db_name }} TO {{ flowise_db_user }};
+                    EOT
+                    }
+                    echo -e "\nDatabase initialization completed ✓"
+                env:
+                  # https://www.postgresql.org/docs/current/libpq-envars.html
+                  - name: PGHOST
+                    value: "{{ pgpool_service_host }}"
+                  - name: PGUSER
+                    value: "{{ flowise_db_user }}"
+                  - name: PGSSLMODE
+                    value: verify-full
+                  - name: PGSSLCERT
+                    value: /tls/tls.crt
+                  - name: PGSSLKEY
+                    value: /tls/tls.key
+                  - name: PGSSLROOTCERT
+                    value: /tls/ca.crt
+                volumeMounts:
+                  - name: database-tls
+                    mountPath: /tls
+                    readOnly: true
+
+flowise_external_credentials:
+  - name: Qdrant Read/Write
+    type: qdrantApi
+    data:
+      qdrantApiKey: "{{ qdrant_api_key.read_write }}"
+  - name: Anthropic "Flowise"
+    type: anthropicApi
+    data:
+      anthropicApiKey: "{{ anthropic_api_key }}"
+  - name: OpenAI "Default"
+    type: openAIApi
+    data:
+      openAIApiKey: "{{ openai_api_key }}"
+  - name: Groq "Flowise"
+    type: groqApi
+    data:
+      groqApiKey: "{{ groq_api_key }}"

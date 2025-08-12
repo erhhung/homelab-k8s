@@ -1,0 +1,191 @@
+# https://docs.flowiseai.com/
+# https://docs.flowiseai.com/configuration
+---
+- name: Install Flowise on RKE cluster
+  tags: install
+  hosts: "{{ rke_control_plane_host }}"
+  gather_facts: false
+  vars_files:
+    - vars/kubernetes.yml
+    - vars/postgresql.yml
+    - vars/valkey.yml
+    - vars/storage.yml
+    - vars/flowise.yml
+  vars:
+    # required kubernetes>=24.2 package only in user virtualenv
+    ansible_python_interpreter: "{{ venv_python_interpreter }}"
+    kubeconfig: "{{ rke_kubeconfig }}"
+    secret_ns: "{{ flowise_namespace }}"
+    create_ns: false
+    release: "{{ flowise_release_name }}"
+  pre_tasks:
+    - name: Get the PostgreSQL image used
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
+      ansible.builtin.include_tasks: tasks/postgresql/image.yml
+      when: postgresql_image is not defined
+  tasks:
+    - name: Create Flowise encryption secret
+      vars:
+        secret_name: "{{ flowise_secrets['encryption'] }}"
+        secret_data:
+          encryption-key: "{{ flowise_encryption_key }}"
+        create_ns: true
+      ansible.builtin.include_tasks: tasks/k8s/secrets/generic.yml
+
+    - name: Create Flowise credentials secret
+      vars:
+        secret_name: "{{ flowise_secrets['credentials'] }}"
+        secret_data:
+          postgresql-password: "{{ pgpool_pass }}"
+          # valkey-password: "{{ valkey_pass }}"
+      ansible.builtin.include_tasks: tasks/k8s/secrets/generic.yml
+
+    - name: Create Flowise database secret
+      vars:
+        secret_name: "{{ flowise_secrets['database'] }}"
+        cert_name: flowise-database
+        days: 365
+        sans:
+          - "{{ flowise_db_user }}"
+          - "{{ flowise_db_user }}@{{ homelab_domain }}"
+      ansible.builtin.include_tasks: tasks/k8s/secrets/tls.step.yml
+
+    - name: Create Flowise ingress secret
+      vars:
+        secret_name: "{{ flowise_secrets['ingress'] }}"
+        cert_name: flowise-ingress
+        sans: "{{ [flowise_fqdn] }}"
+      ansible.builtin.include_tasks: tasks/k8s/secrets/tls.step.yml
+
+    - name: Install Flowise Helm chart
+      # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/helm_module.html
+      kubernetes.core.helm:
+        kubeconfig: "{{ kubeconfig }}"
+        # chart_repo_url: https://cowboysysop.github.io/charts
+        # use modified chart in our forked repo on branch "flowise-redis-tls"
+        # with support for TLS in wait-redis init containers as well as extra
+        # init containers (requires helm-git plugin)
+        chart_repo_url: git+https://github.com/erhhung/cowboysysop-charts@charts/flowise?ref=flowise-redis-tls
+        chart_ref: flowise
+        chart_version: "{{ flowise_chart_version }}"
+        release_name: "{{ flowise_release_name }}"
+        release_namespace: "{{ flowise_namespace }}"
+        release_values: "{{ flowise_chart_values }}"
+        history_max: "{{ helm_max_history }}"
+        atomic: true
+        wait: true
+      timeout: 600
+  any_errors_fatal: true
+
+- name: Configure Flowise installation
+  tags: configure
+  hosts: localhost
+  gather_facts: false
+  vars_files:
+    - vars/flowise.yml
+  vars:
+    api_base: https://{{ flowise_fqdn }}/api/v1
+  pre_tasks:
+    - name: Wait until Flowise is ready
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/uri_module.html
+      ansible.builtin.uri:
+        url: "{{ api_base }}/ping"
+        return_content: true
+      # https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_loops.html#retrying-a-task-until-a-condition-is-met
+      register: site_check
+      until: site_check.content == 'pong'
+      retries: 20
+      delay: 3
+  tasks:
+    - name: Authenticate as admin user
+      ansible.builtin.uri:
+        method: POST
+        url: "{{ api_base }}/auth/login"
+        body_format: json
+        body:
+          email: "{{ flowise_admin_user.email }}"
+          password: "{{ flowise_admin_user.password }}"
+        # if user doesn't exist, response will
+        # be 404 and .message="User Not Found"
+        status_code: [200, 404]
+      register: admin_login
+
+    - name: Create Flowise admin user
+      when: admin_login.status == 404
+      block:
+        - name: Create Flowise admin user
+          ansible.builtin.uri:
+            method: POST
+            url: "{{ api_base }}/account/register"
+            body_format: json
+            body:
+              user:
+                type: pro
+                name: "{{ flowise_admin_user.name }}"
+                email: "{{ flowise_admin_user.email }}"
+                credential: "{{ flowise_admin_user.password }}"
+          register: admin_reg
+          changed_when: admin_reg.status == 200
+
+    - name: Set admin auth_headers fact
+      vars:
+        reg: "{{     admin_reg.json if admin_reg   is defined and   admin_reg.json is defined else none }}"
+        login: "{{ admin_login.json if admin_login is defined and admin_login.json is defined else none }}"
+        # uri result: .cookies is a dictionary and .cookies_string is ;-delimited name=value pairs
+        cookies: "{{ admin_reg.cookies_string if reg else admin_login.cookies_string if login else none }}"
+        user: "{{ reg.user if reg else login }}"
+      ansible.builtin.set_fact:
+        auth_headers:
+          Cookie: "{{ cookies }}"
+          X-Request-From: internal
+        admin_user: "{{ {
+          'id':    user.id,
+          'name':  user.name,
+          'email': user.email,
+          } }}"
+        admin_role: "{{ {
+          'id':   reg.workspaceUser.role.id   if reg else login.roleId,
+          'name': reg.workspaceUser.role.name if reg else login.assignedWorkspaces[0].role,
+          } }}"
+        organization: "{{ {
+          'id':   reg.organization.id   if reg else login.activeOrganizationId,
+          'name': reg.organization.name if reg else 'Default Organization',
+          } }}"
+        workspace: "{{ {
+          'id':   reg.workspace.id   if reg else login.activeWorkspaceId,
+          'name': reg.workspace.name if reg else login.activeWorkspace,
+          } }}"
+
+    - name: Get third-party credentials
+      ansible.builtin.uri:
+        url: "{{ api_base }}/credentials"
+        headers: "{{ auth_headers }}"
+        return_content: true
+      register: get_creds
+
+    - name: Add third-party credentials
+      vars:
+        existing: "{{ get_creds.json | map(attribute='name') }}"
+        add_creds: |
+          {% set creds = [] %}
+          {% for cred in flowise_external_credentials %}
+          {%   if cred.name not in existing %}
+          {%     set _ = creds.append(cred) %}
+          {%   endif %}
+          {% endfor %}
+          {{ creds  }}
+      ansible.builtin.uri:
+        method: POST
+        url: "{{ api_base }}/credentials"
+        headers: "{{ auth_headers }}"
+        body_format: json
+        body:
+          name: "{{ item.name }}"
+          credentialName: "{{ item.type }}"
+          plainDataObj: "{{ item.data }}"
+      loop: "{{ add_creds }}"
+      loop_control:
+        label: "{{ item.name }}"
+      register: add_cred
+      changed_when: add_cred.status == 200
+  any_errors_fatal: true

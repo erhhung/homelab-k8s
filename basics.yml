@@ -150,12 +150,14 @@
 
     - name: Is {{ homelab_domain }} DNS working?
       vars:
-        domain: "pki.{{ homelab_domain }}."
-        # https://docs.ansible.com/ansible/latest/collections/community/dns/lookup_lookup.html
-        # (requires Python package "dnspython" on Ansible controller)
-        result: "{{ query('community.dns.lookup', domain) }}"
-      ansible.builtin.set_fact:
-        homelab_dns_working: "{{ result is truthy }}"
+        test_domain: pki.{{ homelab_domain }}.
+        expected_ip: "{{ hostvars['pki'].ansible_host }}"
+      ansible.builtin.shell: |
+        set -o pipefail
+        { dig +short {{ test_domain }} || true; } | grep -q {{ expected_ip }}
+      register: is_dns_working
+      changed_when: false
+      failed_when: false
 
     - name: Cloud-init Netplan config enabled?
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/stat_module.html
@@ -245,7 +247,7 @@
       ansible.builtin.systemd_service:
         name: systemd-resolved
         state: restarted
-      when: not homelab_dns_working
+      when: is_dns_working.rc != 0
   handlers:
     - name: Apply updated Netplan config
       ansible.builtin.command: netplan apply

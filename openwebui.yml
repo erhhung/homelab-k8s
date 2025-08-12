@@ -1,7 +1,8 @@
 # https://docs.openwebui.com/
 # https://docs.openwebui.com/getting-started/quick-start
-# https://docs.openwebui.com/features/evaluation
 # https://docs.openwebui.com/features/rag
+# https://docs.openwebui.com/features/plugin
+# https://openwebui.com/tools
 ---
 - name: Install Open WebUI on RKE cluster
   tags: install
@@ -99,7 +100,6 @@
   hosts: localhost
   gather_facts: false
   vars_files:
-    - vars/kubernetes.yml
     - vars/openwebui.yml
     - vars/ollama.yml
   vars:
@@ -147,9 +147,6 @@
             return_content: true
           register: admin_signup
           changed_when: admin_signup.status == 200
-          until: admin_signup.status == 200
-          retries: 2
-          delay: 5
 
         - name: Set user default chat model
           vars:
@@ -172,8 +169,8 @@
     - name: Set admin auth_headers fact
       vars:
         user: >-
-          {{ admin_signup.json if admin_signup is defined and
-             admin_signup.json                 is defined else
+          {{ admin_signup.json if admin_signup      is defined and
+                                  admin_signup.json is defined else
              admin_signin.json }}
       ansible.builtin.set_fact:
         auth_headers:
@@ -181,8 +178,8 @@
         admin_token: "{{ user.token }}"
         admin_user: "{{ {
           'id':    user.id,
-          'email': user.email,
           'name':  user.name,
+          'email': user.email,
           'role':  user.role,
           'profile_image_url': user.profile_image_url,
           } }}"
@@ -233,8 +230,8 @@
     - name: Set family_group_id fact
       ansible.builtin.set_fact:
         family_group_id: >-
-          {{ create_group.json.id if create_group is defined and
-             create_group.json                    is defined else
+          {{ create_group.json.id if create_group      is defined and
+                                     create_group.json is defined else
               list_groups.json | selectattr('name','==','Family')
                                |   map(attribute='id') | first }}
 
@@ -332,8 +329,8 @@
         model: "{{ list_models.json | selectattr('name','==','Accounts') }}"
         base_model: "{{ ollama_models | select('search','^qwen3') | first }}"
         # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/file_lookup.html
-        png_b64: "{{ lookup('ansible.builtin.file', 'files/openwebui/ai-assistant.png') | b64encode }}"
-        image_url: data:image/png;base64,{{ png_b64 }}
+        image_data: "{{ lookup('ansible.builtin.file', 'files/openwebui/ai-assistant.png') }}"
+        image_url: data:image/png;base64,{{ image_data | b64encode }}
         knowledge: |
           {% set know = accounts_knowledge %}
           {% set _ = know.update({

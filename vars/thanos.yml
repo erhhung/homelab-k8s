@@ -370,7 +370,7 @@ thanos_chart_values:
   bucketCacheConfig: |
     type: REDIS
     config:
-      addr: {{ valkey_service_host }}:{{ valkey_service_port }}
+      addr: {{ valkey_node_eps | first }}
       password: {{ valkey_pass }}
       tls_enabled: true
       tls_config:

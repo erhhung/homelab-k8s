@@ -52,13 +52,12 @@ redis_cluster_urls: "{{ ['rediss://'] | product(valkey_node_eps) | map('join') }
 # ["valkeys://{node-endpoint}", ...]
 valkey_cluster_urls: "{{ ['valkeys://'] | product(valkey_node_eps) | map('join') }}"
 
-valkey_service_host: "{{ valkey_release_name }}.{{ valkey_namespace }}.svc.{{ cluster_domain }}"
-valkey_service_port: 6379
-
 # IMPORTANT! client should NOT connect using the Kubernetes
 # service endpoint because it load balances each connection,
 # lacks strong consistency guarantee due to replication lag
-# redis_service_url: rediss://{{ valkey_service_host }}:{{ valkey_service_port }}
+valkey_service_host: "{{ valkey_node_fqdns | first }}"
+valkey_service_port: 6379
+
 redis_service_url: "{{ redis_cluster_urls | first }}"
 valkey_service_url: "{{ valkey_cluster_urls | first }}"
 

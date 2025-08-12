@@ -33,7 +33,7 @@ All cluster services will be provisioned with TLS certificates from Erhhung's pr
 |---------------------------------------:|:----------------------
 |      https://rancher.fourteeners.local | Rancher Server console
 |       https://harbor.fourteeners.local | Harbor OCI registry
-|       https://velero.fourteeners.local | Velero Dashboard
+|       https://velero.fourteeners.local | Velero dashboard
 |        https://minio.fourteeners.local | MinIO console
 |           https://s3.fourteeners.local | MinIO S3 API
 |      opensearch.fourteeners.local:9200 | OpenSearch _(HTTPS only)_
@@ -51,6 +51,7 @@ All cluster services will be provisioned with TLS certificates from Erhhung's pr
 |       https://qdrant.fourteeners.local | Qdrant dashboard
 |       https://ollama.fourteeners.local | Ollama API server
 |    https://openwebui.fourteeners.local | Open WebUI portal
+|      https://flowise.fourteeners.local | Flowise console
 
 ## Installation Sources
 
@@ -111,7 +112,7 @@ All cluster services will be provisioned with TLS certificates from Erhhung's pr
 - [X] [Open WebUI AI Platform](https://github.com/open-webui/open-webui) — extensible AI platform with Ollama integration and local RAG support
     * Install on main RKE cluster using the [`open-webui`](https://github.com/open-webui/helm-charts/tree/main/charts/open-webui) Helm chart
     * [X] Replace the default Chroma vector DB with [Qdrant](https://github.com/qdrant/qdrant) — install using the [`qdrant`](https://github.com/qdrant/qdrant-helm) Helm chart
-- [ ] [Flowise Agentic Workflows](https://flowiseai.com/) — build AI agents using visual workflows
+- [X] [Flowise Agentic Workflows](https://flowiseai.com/) — build AI agents using visual workflows
     * Install on main RKE cluster using the [`flowise`](https://github.com/cowboysysop/charts/tree/master/charts/flowise) Helm chart
 - [ ] [OpenTelemetry Collector](https://opentelemetry.io/docs/collector) with [Jaeger UI](https://www.jaegertracing.io/) — telemetry collector agent and distributed tracing backend
     * Install on main RKE cluster using the [OpenTelemetry Collector](https://opentelemetry.io/docs/platforms/kubernetes/helm/collector) Helm chart
@@ -154,7 +155,7 @@ ansible-vault view   $VAULTFILE
 | `minio_client_pass`               | `grafana_admin_pass`
 | `velero_repo_pass`                | `argocd_admin_pass`
 | `velero_passphrase`               | `openwebui_admin_pass`
-| `dashboards_os_pass`              |
+| `dashboards_os_pass`              | `flowise_admin_pass`
 | `fluent_os_pass`                  |
 | `valkey_pass`                     |
 | `postgresql_pass`                 |
@@ -171,7 +172,10 @@ ansible-vault view   $VAULTFILE
 | `qdrant_api_key.*`                |
 | `openwebui_secret_key`            |
 | `pipelines_api_key`               |
+| `flowise_encryption_key`          |
+| `anthropic_api_key`               |
 | `openai_api_key`                  |
+| `groq_api_key`                    |
 </details>
 
 ## Connections
@@ -387,7 +391,13 @@ however, all privileged operations using `sudo` will require the password stored
     ```
 </details>
 
-23. <details><summary>Create <strong>virtual Kubernetes clusters</strong> in RKE</summary><br/>
+23. <details><summary>Install <strong>Flowise</strong> AI platform and integrations</summary><br/>
+
+    ```bash
+    ./play.sh flowise
+    ```
+
+24. <details><summary>Create <strong>virtual Kubernetes clusters</strong> in RKE</summary><br/>
 
     ```bash
     ./play.sh vclusters

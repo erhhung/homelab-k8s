@@ -1,5 +1,4 @@
-#           qdrant_api_key: {vault.yml}
-# qdrant_read_only_api_key: {vault.yml}
+# qdrant_api_key.*: {vault.yml}
 
 qdrant_namespace: qdrant
 qdrant_host_name: qdrant # alias of "homelab"

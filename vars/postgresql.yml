@@ -1,5 +1,5 @@
 # postgresql_pass: {vault.yml}
-#  pgpool_db_pass: {vault.yml}
+#     pgpool_pass: {vault.yml}
 
 # in order to log in using client TLS cert, generate
 # a cert at pki.fourteeners.local using CN=<db_user>
@@ -8,6 +8,7 @@ postgresql_users:
   - scraper
   - "{{ keycloak_db_user }}"
   - "{{ openwebui_db_user }}"
+  - "{{ flowise_db_user }}"
 
 postgresql_namespace: postgresql
 postgresql_host_names: # 192.168.0.222
@@ -113,7 +114,7 @@ postgresql_chart_values:
       passwords: |-
         {% set pwds = [] -%}
         {% for _ in postgresql_users -%}
-        {%   set _ = pwds.append(pgpool_db_pass) -%}
+        {%   set _ = pwds.append(pgpool_pass) -%}
         {% endfor -%}
         {{ pwds | join(';') }}
 

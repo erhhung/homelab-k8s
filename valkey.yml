@@ -3,6 +3,7 @@
 # https://techdocs.broadcom.com/us/en/vmware-tanzu/application-catalog/tanzu-application-catalog/services/tac-doc/apps-apps-valkey-cluster-index.html
 ---
 - name: Install Valkey on RKE cluster
+  tags: install
   hosts: "{{ rke_control_plane_host }}"
   gather_facts: false
   vars_files:

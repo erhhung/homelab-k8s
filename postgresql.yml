@@ -1,15 +1,19 @@
 # https://github.com/bitnami/charts/tree/main/bitnami/postgresql-ha
 ---
 - name: Install PostgreSQL on RKE cluster
+  tags: install
   hosts: "{{ rke_control_plane_host }}"
   gather_facts: false
   vars_files:
     - vars/kubernetes.yml
     - vars/storage.yml
     - vars/monitoring.yml
+    - vars/postgresql.yml
+    # these are only needed for
+    # their *_db_user variables
     - vars/keycloak.yml
     - vars/openwebui.yml
-    - vars/postgresql.yml
+    - vars/flowise.yml
   vars:
     kubeconfig: "{{ rke_kubeconfig }}"
     secret_ns: "{{ postgresql_namespace }}"

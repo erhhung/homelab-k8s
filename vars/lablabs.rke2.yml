@@ -51,3 +51,7 @@ rke2_kube_scheduler_arg:
 rke2_kube_proxy_arg:
   - nodeport-addresses=primary
   - metrics-bind-address=0.0.0.0:10249
+
+# wait for all pods to be have a status of running or
+# succeeded after rke2-server service rolling restart
+rke2_wait_for_all_pods_to_be_ready: true

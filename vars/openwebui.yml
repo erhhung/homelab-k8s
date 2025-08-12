@@ -35,6 +35,7 @@ openwebui_image: "{{ harbor_container_registry }}/library/open-webui"
 
 openwebui_db_name: openwebui
 openwebui_db_user: openwebui
+# use {{ pgpool_pass }}
 
 # https://docs.sqlalchemy.org/en/20/core/engines.html#database-urls
 # https://docs.sqlalchemy.org/en/20/dialects/postgresql.html#ssl-connections
@@ -53,7 +54,7 @@ openwebui_postgresql_url: >-
                     map('join','=') -%}
   {% set query = params | join('&') -%}
   {{ pgpool_service_url | regex_replace('//',
-     '//'~ openwebui_db_user ~':'~ pgpool_db_pass ~'@')
+     '//'~ openwebui_db_user ~':'~ pgpool_pass ~'@')
      }}/{{ openwebui_db_name }}?{{ query }}
 
 # https://redis.readthedocs.io/en/stable/connections.html
@@ -355,13 +356,6 @@ openwebui_chart_values:
       endpointUrl: "{{ minio_service_url }}"
       region: "{{ minio_region }}"
 
-  resources:
-    requests:
-      cpu: 50m
-      memory: 768Mi
-    limits:
-      cpu: 1000m
-
   podSecurityContext:
     fsGroup: 2000
   containerSecurityContext:
@@ -373,6 +367,31 @@ openwebui_chart_values:
     runAsGroup: 1000
     runAsNonRoot: true
     readOnlyRootFilesystem: false
+
+  resources:
+    requests:
+      cpu: 50m
+      memory: 768Mi
+    limits:
+      cpu: 1000m
+
+  readinessProbe:
+    httpGet:
+      path: /health/db
+      port: http
+    initialDelaySeconds: 30
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 6
+
+  livenessProbe:
+    httpGet:
+      path: /health
+      port: http
+    initialDelaySeconds: 30
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 6
 
   # mount database TLS secret and
   # PVCs for vector DB and cache
@@ -409,6 +428,7 @@ openwebui_chart_values:
           }
           echo -e "\nDatabase initialization completed ✓"
       env:
+        # https://www.postgresql.org/docs/current/libpq-envars.html
         - name: PGHOST
           value: "{{ pgpool_service_host }}"
         - name: PGUSER
@@ -458,24 +478,6 @@ openwebui_chart_values:
           readOnly: true
         - name: trust-store
           mountPath: /ssl
-
-  readinessProbe:
-    httpGet:
-      path: /health/db
-      port: http
-    initialDelaySeconds: 30
-    periodSeconds: 10
-    timeoutSeconds: 5
-    failureThreshold: 6
-
-  livenessProbe:
-    httpGet:
-      path: /health
-      port: http
-    initialDelaySeconds: 30
-    periodSeconds: 10
-    timeoutSeconds: 5
-    failureThreshold: 6
 
   managedCertificate:
     # create our own ingress
