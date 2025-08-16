@@ -486,9 +486,27 @@
           ansible.builtin.debug:
             var: annotations
 
-        - name: wave_optin_annotation
+        - name: Show original variable
           ansible.builtin.debug:
             var: wave_optin_annotation
+
+    - name: Detect changes in subtasks
+      block:
+        - name: Reset loop_changes fact
+          ansible.builtin.set_fact:
+            loop_changes: []
+
+        - name: include_tasks iterations
+          vars:
+            debug_var: "{{ item }}"
+            change_if: bar
+          ansible.builtin.include_tasks: tasks/debug.yml
+          loop: ["foo", "bar", "baz"]
+
+        - name: Any changes in subtasks?
+          ansible.builtin.debug:
+            var: loop_changes
+          changed_when: loop_changes is any
 
 - name: Useful collection of tasks
   tags: tasks

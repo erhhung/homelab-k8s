@@ -62,7 +62,7 @@ redis_service_url: "{{ redis_cluster_urls | first }}"
 valkey_service_url: "{{ valkey_cluster_urls | first }}"
 
 valkey_secrets:
-  node-tls: valkey-tls
+  node-tls: valkey-node-tls
   password: valkey-password
 
 # https://github.com/bitnami/charts/tree/main/bitnami/valkey-cluster

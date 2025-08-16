@@ -54,3 +54,8 @@ spec:
         # and serve the proper SAN certificate for the
         # Kubernetes API server
         enable-ssl-passthrough: ""
+
+      resources:
+        requests:
+          cpu: 25m
+          memory: 256Mi

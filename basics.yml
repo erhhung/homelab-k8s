@@ -286,16 +286,31 @@
   vars_files:
     - vars/basics.yml
   tasks:
-    - name: Add users to Linux groups
+    - name: Add user to Linux groups
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/user_module.html
       ansible.builtin.user:
         name: "{{ item.user }}"
         groups: "{{ item.groups }}"
         append: true # IMPORTANT!
-      loop: "{{ add_users_to_groups }}"
+      loop: "{{ add_user_to_groups }}"
       loop_control:
         label: "{{ item.user ~'|'~ item.groups | join(',') }}"
       when: inventory_hostname in item.hosts
+
+    - name: Create sudoers rule file
+      # https://docs.ansible.com/ansible/latest/collections/community/general/sudoers_module.html
+      community.general.sudoers:
+        name: "{{ item.name }}"
+        state: present
+        user: "{{ item.user | default(omit) }}"
+        group: "{{ item.group | default(omit) }}"
+        runas: "{{ item.runas | default(omit) }}"
+        setenv: "{{ item.setenv | default(omit) }}"
+        commands: "{{ item.commands | default('ALL') }}"
+      loop: "{{ sudoers_rules }}"
+      loop_control:
+        label: "{{ item.name }}"
+  any_errors_fatal: true
 
 - name: Add CA certs to trust store
   tags: certs

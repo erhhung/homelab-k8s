@@ -626,7 +626,10 @@ Ansible's [ad-hoc commands](https://docs.ansible.com/ansible/latest/command_guid
     Pod lifecycle events show an error like:
 
     ```
-    MountVolume.MountDevice failed for volume "pvc-4151d201-437b-4ceb-bbf6-c227ea49e285" : kubernetes.io/csi: attacher.MountDevice failed to create dir "/var/lib/kubelet/plugins/kubernetes.io/csi/driver.longhorn.io/0bb8a8bc36ca16f14a425e5eaf35ed51af6096bf0302129a05394ce51393cecd/globalmount": mkdir /var/lib/kubelet/.../globalmount: file exists
+    MountVolume.MountDevice failed for volume "pvc-4151d201-437b-4ceb-bbf6-c227ea49e285":
+    kubernetes.io/csi: attacher.MountDevice failed to create dir "/var/lib/kubelet/plugins/kubernetes.io/
+    csi/driver.longhorn.io/0bb8a8bc36ca16f14a425e5eaf35ed51af6096bf0302129a05394ce51393cecd/globalmount":
+    mkdir /var/lib/kubelet/plugins/kubernetes.io/.../globalmount: file exists
     ```
 
     Problem is described by this [GitHub issue](https://github.com/longhorn/longhorn/issues/3502), which _may_ be caused by restarting the node while a Longhorn volume backup is in-progress.
@@ -637,10 +640,75 @@ Ansible's [ad-hoc commands](https://docs.ansible.com/ansible/latest/command_guid
     $ ssh k8s1
 
     $ mount | grep pvc-4151d201-437b-4ceb-bbf6-c227ea49e285
+
     /dev/longhorn/pvc-4151d201-437b-4ceb-bbf6-c227ea49e285 on /var/lib/kubelet/plugins/kubernetes.io/csi/driver.longhorn.io/0bb8a8bc36ca16f14a425e5eaf35ed51af6096bf0302129a05394ce51393cecd/globalmount type xfs (rw,relatime,nouuid,attr2,inode64,logbufs=8,logbsize=32k,noquota)
     /dev/longhorn/pvc-4151d201-437b-4ceb-bbf6-c227ea49e285 on /var/lib/kubelet/pods/06fc67d7-833f-4ecd-810f-77787fd703e6/volumes/kubernetes.io~csi/pvc-4151d201-437b-4ceb-bbf6-c227ea49e285/mount type xfs (rw,relatime,nouuid,attr2,inode64,logbufs=8,logbsize=32k,noquota)
 
     $ sudo umount /var/lib/kubelet/plugins/kubernetes.io/csi/driver.longhorn.io/0bb8a8bc36ca16f14a425e5eaf35ed51af6096bf0302129a05394ce51393cecd/globalmount
+    ```
+    </details>
+
+    Or if pod events show an error like:
+
+    ```
+    Output: mount: /var/lib/kubelet/plugins/kubernetes.io/csi/driver.longhorn.io/
+    1508f1bfa1a751aaa24514b7576847e7f7ac042c6d8295a6d07417fb4e0068f1/globalmount:
+    mount system call failed: Structure needs cleaning.
+    ```
+
+    Problem is likely caused by an abrupt node shutdown and file system was not unmounted cleanly.
+
+    <details><summary>An effective solution, albeit possibly with some data loss, is to <strong>repair</strong> that XFS volume.</summary><br/>
+
+    ```bash
+    $ ssh k8s4
+
+    $ mount | grep 1508f1bfa1a751aaa24514b7576847e7f7ac042c6d8295a6d07417fb4e0068f1
+
+    /dev/longhorn/pvc-7bc42f2c-4bb6-42f4-ad31-a9fa27185103 on /var/lib/kubelet/plugins/kubernetes.io/csi/driver.longhorn.io/
+    1508f1bfa1a751aaa24514b7576847e7f7ac042c6d8295a6d07417fb4e0068f1/globalmount type xfs (rw,relatime,nouuid,attr2,inode64,logbufs=8,logbsize=32k,noquota)
+
+    $ sudo xfs_repair -L /dev/longhorn/pvc-7bc42f2c-4bb6-42f4-ad31-a9fa27185103
+
+    Phase 1 - find and verify superblock...
+    Phase 2 - using internal log
+            - zero log...
+    ALERT: The filesystem has valuable metadata changes in a log which is being
+    destroyed because the -L option was used.
+            - scan filesystem freespace and inode maps...
+    clearing needsrepair flag and regenerating metadata
+    sb_fdblocks 1709737, counted 1762490
+            - found root inode chunk
+    Phase 3 - for each AG...
+            - scan and clear agi unlinked lists...
+            - process known inodes and perform inode discovery...
+            - agno = 0
+            - agno = 1
+            - agno = 2
+            - agno = 3
+            - process newly discovered inodes...
+    Phase 4 - check for duplicate blocks...
+            - setting up duplicate extent list...
+    unknown block state, ag 1, blocks 555-1031
+            - check for inodes claiming duplicate blocks...
+            - agno = 1
+            - agno = 2
+            - agno = 0
+    entry "thanos.shipper.json" in shortform directory 131 references free inode 137
+    junking entry "thanos.shipper.json" in directory inode 131
+            - agno = 3
+    Phase 5 - rebuild AG headers and trees...
+            - reset superblock...
+    Phase 6 - check inode connectivity...
+            - resetting contents of realtime bitmap and summary inodes
+            - traversing filesystem ...
+            - traversal finished ...
+            - moving disconnected inodes to lost+found ...
+    disconnected inode 134, moving to lost+found
+    Phase 7 - verify and correct link counts...
+    Maximum metadata LSN (6:55208) is ahead of log (1:8).
+    Format log to cycle 9.
+    done
     ```
     </details>
 

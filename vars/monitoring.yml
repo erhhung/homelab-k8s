@@ -314,7 +314,7 @@ prometheus_stack_chart_values:
       resources:
         requests:
           cpu: 250m
-          memory: 512Mi
+          memory: 1Gi
 
       # https://github.com/prometheus-operator/prometheus-operator/tree/main/Documentation/platform/storage.md
       storageSpec:
@@ -1004,7 +1004,7 @@ prometheus_stack_chart_values:
     resources:
       requests:
         cpu: 10m
-        memory: 16Mi
+        memory: 32Mi
       limits:
         cpu: 50m
         memory: 128Mi
@@ -1097,10 +1097,10 @@ prometheus_stack_chart_values:
     resources:
       requests:
         cpu: 10m
-        memory: 16Mi
+        memory: 128Mi
       limits:
         cpu: 50m
-        memory: 128Mi
+        memory: 256Mi
 
     extraVolumes:
       - name: tls-proxy

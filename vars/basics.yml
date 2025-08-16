@@ -38,9 +38,16 @@ name_servers:
   - 1.1.1.1
   - 1.0.0.1
 
-add_users_to_groups:
+add_user_to_groups:
   - user: "{{ ansible_user }}"
     groups:
       - render # access /dev/dri/ by clinfo
     # GPU passthrough enabled hosts
     hosts: ["k8s2", "k8s3", "k8s4"]
+
+# <name>,[user|group],[runas],
+# [setenv:bool],[commands=ALL]
+sudoers_rules:
+  - name: sudo-env-keep
+    group: sudo
+    setenv: true

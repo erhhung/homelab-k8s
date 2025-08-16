@@ -164,6 +164,11 @@ argocd_chart_values:
         mountPath: /tls/valkey
         readOnly: true
 
+    resources: &resources
+      requests:
+        cpu: 20m
+        memory: 128Mi
+
     readinessProbe: &probe
       # default 1s timeout for readiness and liveness
       # probes are too optimistic for our environment
@@ -203,6 +208,7 @@ argocd_chart_values:
 
     volumes: *volumes
     volumeMounts: *mounts
+    resources: *resources
     readinessProbe: *probe
     metrics: *metrics
 
@@ -212,6 +218,7 @@ argocd_chart_values:
     # enabling the allowAnyNamespace feature requires
     # allowed.scm.providers setting in configs.params
     allowAnyNamespace: true
+    resources: *resources
     metrics: *metrics
 
   repoServer:
@@ -225,12 +232,14 @@ argocd_chart_values:
 
     volumes: *volumes
     volumeMounts: *mounts
+    resources: *resources
     readinessProbe: *probe
     livenessProbe: *probe
     metrics: *metrics
 
   commitServer:
     enabled: true
+    resources: *resources
     readinessProbe: *probe
 
     metrics:
@@ -239,6 +248,7 @@ argocd_chart_values:
       # ServiceMonitor for commit server?
 
   notifications:
+    resources: *resources
     metrics: *metrics
 
   dex:

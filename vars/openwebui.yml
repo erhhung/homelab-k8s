@@ -30,8 +30,13 @@ openwebui_secrets:
 openwebui_replicas: 1
 # use our own image with Redis Cluster support
 # (REDIS_CLUSTER_MODE="True") and UID+GID=1000
-openwebui_image: "{{ harbor_container_registry }}/library/open-webui"
-# openwebui_image: ghcr.io/open-webui/open-webui
+openwebui_image:
+  pullPolicy: Always
+  repository: "{{ harbor_container_registry }}/library/open-webui"
+  tag: latest
+# openwebui_image:
+#   pullPolicy: IfNotPresent
+#   repository: ghcr.io/open-webui/open-webui
 
 openwebui_db_name: openwebui
 openwebui_db_user: openwebui
@@ -187,6 +192,11 @@ pipelines_chart_values: &pipelines
     # min XFS volume size is 300Mi
     size: 384Mi
 
+  resources:
+    requests:
+      cpu: 25m
+      memory: 96Mi
+
 # https://github.com/open-webui/helm-charts/tree/main/charts/open-webui/values.yaml
 openwebui_chart_values:
   replicaCount: "{{ openwebui_replicas }}"
@@ -232,10 +242,7 @@ openwebui_chart_values:
   # will be first in OPENAI_API_BASE_URLS
   openaiBaseApiUrl: https://api.openai.com/v1
 
-  image:
-    pullPolicy: IfNotPresent
-    repository: "{{ openwebui_image }}"
-    tag: latest
+  image: "{{ openwebui_image }}"
 
   # https://docs.openwebui.com/getting-started/env-configuration
   commonEnvVars:
@@ -285,6 +292,7 @@ openwebui_chart_values:
     # https://docs.openwebui.com/getting-started/env-configuration#qdrant
     - name: QDRANT_URI
       value: "{{ qdrant_service_url }}"
+    # must also set GRPC_DEFAULT_SSL_ROOTS_FILE_PATH!
     - name: QDRANT_PREFER_GRPC
       value: "True"
     - name: QDRANT_GRPC_PORT
@@ -420,10 +428,11 @@ openwebui_chart_values:
           [ "$db_found" -eq 1 ] || {
             echo -e "\nCreating '{{ openwebui_db_name }}' database..."
             psql -d postgres <<'EOT'
-              -- https://www.postgresql.org/docs/current/sql-createdatabase.html
-              CREATE DATABASE {{ openwebui_db_name }} WITH OWNER {{ openwebui_db_user }};
-              REVOKE ALL ON DATABASE {{ openwebui_db_name }} FROM PUBLIC;
-              GRANT  ALL ON DATABASE {{ openwebui_db_name }} TO {{ openwebui_db_user }};
+
+          -- https://www.postgresql.org/docs/current/sql-createdatabase.html
+          CREATE DATABASE {{ openwebui_db_name }} WITH OWNER {{ openwebui_db_user }};
+          REVOKE ALL ON DATABASE {{ openwebui_db_name }} FROM PUBLIC;
+          GRANT  ALL ON DATABASE {{ openwebui_db_name }} TO {{ openwebui_db_user }};
           EOT
           }
           echo -e "\nDatabase initialization completed ✓"
@@ -449,10 +458,10 @@ openwebui_chart_values:
     # add our private CA cert
     # into system trust store
     - name: update-ca-bundle
-      image: "{{ openwebui_image }}"
-      imagePullPolicy: Always
+      image: "{{ openwebui_image.repository }}:{{ openwebui_image.tag }}"
+      imagePullPolicy: IfNotPresent
       command:
-        - bash
+        - sh
       args:
         - -c
         - |

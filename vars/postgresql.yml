@@ -10,6 +10,8 @@ postgresql_users:
   - "{{ openwebui_db_user }}"
   - "{{ flowise_db_user }}"
 
+postgresql_superuser: erhhung
+
 postgresql_namespace: postgresql
 postgresql_host_names: # 192.168.0.222
   - postgresql
@@ -30,10 +32,15 @@ pgpool_service_port: 5432
 pgpool_service_url: postgresql://{{ pgpool_service_host }}:{{ pgpool_service_port }}
 
 postgresql_secrets:
-  node-tls: postgresql-tls
+  node-tls: postgresql-node-tls
+  # this secret isn't created in the PostgreSQL
+  # namespace--it's created in other namespaces
+  # to enable installation of custom extensions
+  # that require superuser privileges
+  superuser: database-superuser
 
 # https://github.com/bitnami/charts/tree/main/bitnami/postgresql-ha
-postgresql_chart_version: "16.1.0"
+postgresql_chart_version: "16.2.2"
 postgresql_release_name: postgresql
 
 # https://github.com/bitnami/charts/tree/main/bitnami/postgresql-ha/values.yaml

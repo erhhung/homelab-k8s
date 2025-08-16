@@ -89,7 +89,10 @@
         history_max: "{{ helm_max_history }}"
         atomic: true
         wait: true
-      timeout: 300
+        wait_timeout: 10m0s # requires wait=true
+      # pulling custom image from
+      # Harbor could take a while
+      timeout: 900
   any_errors_fatal: true
 
 # https://openwebui.fourteeners.local/docs
@@ -183,7 +186,10 @@
           'role':  user.role,
           'profile_image_url': user.profile_image_url,
           } }}"
-        api_base: "{{ api_base }}"
+        # use different (all caps) name for fact to prevent
+        # errors due to facts having higher precedence than
+        # vars with the same name at the play level
+        API_BASE: "{{ api_base }}"
 
     - name: Get Open WebUI user groups
       ansible.builtin.uri:
@@ -396,9 +402,13 @@
   hosts: cosmos
   gather_facts: false
   vars_files:
+    # needed by tasks/openwebui/upload.yml
     - vars/kubernetes.yml
     - vars/openwebui.yml
   vars:
+    # this var can be set on the command line
+    # to limit the number of files to process
+    limit: 0
     facts: "{{ hostvars['localhost'] }}"
     # PLAYBOOKS and TAGS are global vars
     # injected by play.sh wrapper script
@@ -416,22 +426,27 @@
       # the command line to skip upload
       when: do_upload is not defined
 
-    - name: Gather facts about user_dir
-      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/setup_module.html
-      ansible.builtin.setup:
-        gather_subset: user_dir
+    - name: Prepare for file uploads
       when: do_upload
+      block:
+        - name: Gather facts about user_dir
+          # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/setup_module.html
+          ansible.builtin.setup:
+            gather_subset: user_dir
 
-    - name: Find ~/accounts/*.txt files
-      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/find_module.html
-      ansible.builtin.find:
-        paths: ~/accounts/
-        follow: true
-        recurse: true
-        patterns: "*.txt"
-        get_checksum: true
-      register: find_files
-      when: do_upload
+        - name: Find ~/accounts/*.txt files
+          # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/find_module.html
+          ansible.builtin.find:
+            paths: ~/accounts/
+            follow: true
+            recurse: true
+            patterns: "*.txt"
+            get_checksum: true
+          register: find_files
+
+        - name: Reset loop_changes fact
+          ansible.builtin.set_fact:
+            loop_changes: []
   tasks:
     # order by recently modified
     - name: Add file to knowledge
@@ -442,14 +457,21 @@
         # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/strftime_filter.html
         acct_files: |
           {% set files  = [] %}
-          {% set sorted = find_files.files | sort(attribute='mtime', reverse=true) %}
-          {% set total  = sorted    | length %}
+          {# use namespace() to create a scoped object #}
+          {# https://jinja.palletsprojects.com/en/stable/templates/#assignments #}
+          {% set ns = namespace(
+               sorted=find_files.files | sort(attribute='mtime', reverse=true)) %}
+          {% if limit|int > 0 and limit|int < ns.sorted | length %}
+          {%   set ns.sorted = ns.sorted[:limit|int] %}
+          {% endif %}
+          {% set total  = ns.sorted | length %}
           {% set n      = accts_dir | length %}
-          {% for i  in range(total) %}
-          {%   set file = sorted[i] %}
+          {% for i  in range(total)    %}
+          {%   set file = ns.sorted[i] %}
           {%   set _    = files.append({
-                 'total':     total,
+                 'label':    (i + 1) ~'/'~ total ~'|'~ file.path[n:],
                  'index':     i + 1,
+                 'total':     total,
                  'abs_path':  file.path,
                  'rel_path':  file.path[n:],
                  'sha1':      file.checksum,
@@ -462,15 +484,14 @@
       ansible.builtin.include_tasks: tasks/openwebui/upload.yml
       loop: "{{ acct_files }}"
       loop_control:
-        label: "{{ item.rel_path }}"
+        label: "{{ item.label }}"
       register: upload_files
       when: do_upload
 
     - name: Were any files changed?
       ansible.builtin.set_fact:
-        files_changed: >-
-          {{ upload_files.results is defined and
-             upload_files.results  | selectattr('changed') is truthy }}
+        files_changed: |
+          {{ do_upload and loop_changes is any }}
       # this allows forcing the next task
       # to run if this var is set to true
       # directly on the command line
@@ -488,7 +509,7 @@
         know_id: "{{ model.meta.knowledge[0].id }}"
         auth_headers: "{{ facts['auth_headers'] }}"
         admin_user: "{{ facts['admin_user'] }}"
-        api_base: "{{ facts['api_base'] }}/v1"
+        api_base: "{{ facts['API_BASE'] }}/v1"
       block:
         - name: Refresh Accounts knowledge
           ansible.builtin.uri:

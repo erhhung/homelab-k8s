@@ -322,7 +322,7 @@ opensearch_chart_values:
   resources:
     requests:
       cpu: 200m
-      memory: 128Mi
+      memory: 1Gi
 
   priorityClassName: "{{ priority_classes['database'] }}"
 

@@ -313,6 +313,10 @@
             path: "{{ item.path }}"
             mountOptions: "{{ mount_options }}"
           storageClass: "{{ storage_class }}"
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
         history_max: "{{ helm_max_history }}"
         atomic: true
         wait: true
