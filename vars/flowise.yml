@@ -23,6 +23,17 @@ flowise_secrets:
   database: flowise-database-tls
   ingress: flowise-ingress-tls
 
+# use our image with support for DATABASE_TLS
+# and client certificate environment variables
+flowise_image:
+  pullPolicy: Always
+  registry: "{{ harbor_container_registry }}"
+  repository: library/flowise
+  tag: latest
+# flowise_image:
+#   pullPolicy: IfNotPresent
+#   repository: flowiseai/flowise
+
 flowise_db_name: flowise
 flowise_db_user: flowise
 # use {{ pgpool_pass }}
@@ -40,22 +51,27 @@ flowise_chart_values:
     type: Recreate
   revisionHistoryLimit: 2
 
-  # use our image with support for DATABASE_TLS
-  # and client certificate environment variables
-  image:
-    pullPolicy: Always
-    registry: "{{ harbor_container_registry }}"
-    repository: library/flowise
-    tag: latest
+  image: "{{ flowise_image }}"
+
+  extraEnvVars: &env # error|info|verbose|debug
+    - name: LOG_LEVEL
+      value: debug
+    # see logs from components
+    - name: DEBUG
+      value: "true"
+    # used by all external components to validate TLS certificates:
+    # https://nodejs.org/api/cli.html#cli_node_extra_ca_certs_file
+    - name: NODE_EXTRA_CA_CERTS
+      value: /tls/database/ca.crt
+
+  # https://docs.flowiseai.com/configuration/environment-variables#for-credentials
+  existingSecret: "{{ flowise_secrets['encryption'] }}"
+  existingSecretKeyEncryptionKey: encryption-key
 
   config:
     # https://docs.flowiseai.com/configuration/running-in-production
     # https://github.com/cowboysysop/charts/tree/master/charts/flowise#queue-mode
     mode: queue
-
-  # https://docs.flowiseai.com/configuration/environment-variables#for-credentials
-  existingSecret: "{{ flowise_secrets['encryption'] }}"
-  existingSecretKeyEncryptionKey: encryption-key
 
   externalPostgresql:
     # mode=queue
@@ -67,10 +83,24 @@ flowise_chart_values:
     existingSecret: "{{ flowise_secrets['credentials'] }}"
     existingSecretKeyPassword: postgresql-password
 
-  # couldn't get cluster mode working, so
-  # just use a dedicated instance for now
+  # couldn't get cluster mode working on external
+  # Redis, so just use dedicated instance for now
   redis:
     enabled: true
+    # values for cowboysysop/redis subchart:
+    # https://github.com/cowboysysop/charts/tree/master/charts/redis/values.yaml
+    master:
+      persistence:
+        enabled: true
+        storageClass: "{{ storage_classes['default'] }}"
+        accessModes: ["ReadWriteOnce"]
+        size: 512Mi
+
+      persistentVolumeClaimRetentionPolicy:
+        enabled: true
+        whenScaled: Retain
+        whenDeleted: Delete
+
   externalRedis:
     # mode=queue
     enabled: false
@@ -84,9 +114,9 @@ flowise_chart_values:
     enabled: true
     storageClass: "{{ storage_classes['default'] }}"
     accessModes: ["ReadWriteOnce"]
-    size: 384Mi
+    size: 512Mi
 
-  # does container really need root privileges?
+  # does container really need root privileges?!
   securityContext: &security
     capabilities:
       drop: []
@@ -99,7 +129,7 @@ flowise_chart_values:
   resources:
     requests:
       cpu: 50m
-      memory: 64Mi
+      memory: 512Mi
 
   readinessProbe: &probe
     initialDelaySeconds: 30
@@ -114,12 +144,21 @@ flowise_chart_values:
       secret:
         secretName: "{{ flowise_secrets['database'] }}"
         defaultMode: 416 # "0640"
+    # init container stores updated CA bundle
+    - name: trust-store
+      emptyDir: {}
     - name: dotenv
       emptyDir: {}
 
   extraVolumeMounts: &mounts
     - name: database-tls
       mountPath: /tls/database
+      readOnly: true
+    # replace system trust store with updated
+    # CA bundle created by the init container
+    - name: trust-store
+      mountPath: /etc/ssl/certs/ca-certificates.crt
+      subPath: ca-certificates.crt
       readOnly: true
     - name: dotenv
       # app root dir in container is /usr/src
@@ -134,6 +173,34 @@ flowise_chart_values:
   # support for extra init containers is only available
   # in my own forked repo on branch "flowise-redis-tls"
   extraInitContainers: &containers
+    # add our private CA cert
+    # into system trust store
+    - name: update-ca-bundle
+      image: "{{ flowise_image.registry }}/{{ flowise_image.repository }}:{{ flowise_image.tag }}"
+      imagePullPolicy: IfNotPresent
+      command:
+        - sh
+      args:
+        - -c
+        - |
+          set -xe
+          # append our CA certs to the system CA bundle.
+          # the new ca-certificates.crt will be mounted
+          # into main container to replace existing one.
+          cat /etc/ssl/certs/ca-certificates.crt /tls/ca.crt <(echo) \
+                      > /ssl/ca-certificates.crt
+      securityContext:
+        runAsUser: 0
+        runAsGroup: 0
+        readOnlyRootFilesystem: false
+      volumeMounts:
+        - name: database-tls
+          mountPath: /tls/ca.crt
+          subPath: ca.crt
+          readOnly: true
+        - name: trust-store
+          mountPath: /ssl
+
     # the app wants environment variables for PEM-encoded certificates
     # to be base64-encoded contents of those files, presumably because
     # they're defined in .env file during development, but that's very
@@ -184,6 +251,13 @@ flowise_chart_values:
     annotations:
       nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
       nginx.ingress.kubernetes.io/backend-protocol: HTTP
+      # https://kubernetes.github.io/ingress-nginx/user-guide/nginx-configuration/annotations/#custom-timeouts
+      nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+      nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+      # allow uploading large files and prevent 413 (Entity
+      # Too Large) errors; set to "0" to disable size limit:
+      # https://kubernetes.github.io/ingress-nginx/user-guide/nginx-configuration/annotations/#custom-max-body-size
+      nginx.ingress.kubernetes.io/proxy-body-size: 10m
     hosts:
       - host: "{{ flowise_fqdn }}"
         paths: ["/"]
@@ -195,42 +269,40 @@ flowise_chart_values:
     replicaCount: 1
     revisionHistoryLimit: 2
 
-    # use our image with support for DATABASE_TLS
-    # and client certificate environment variables
     image:
-      pullPolicy: Always
-      registry: "{{ harbor_container_registry }}"
-      repository: library/flowise-worker
-      tag: latest
+      pullPolicy: "{{ flowise_image.pullPolicy }}"
+      registry: "{{ flowise_image.registry }}"
+      repository: "{{ flowise_image.repository }}-worker"
+      tag: "{{ flowise_image.tag }}"
 
     resources:
       requests:
         cpu: 50m
-        memory: 64Mi
+        memory: 512Mi
 
     securityContext: *security
     readinessProbe: *probe
     livenessProbe: *probe
 
+    extraEnvVars: *env
     extraVolumes: *volumes
     extraVolumeMounts: *mounts
     extraInitContainers: *containers
 
-  # chart doesn't currently support defining extra init
-  # containers, so we define Job to create the database.
-  # Flowise pods have built-in initContainers that wait
-  # until the database connection is successful
+  # chart currently doesn't support adding extra init containers
+  # (that run BEFORE existing `wait-postgresql` container, which
+  # waits until a connection to "flowise" database succeeds), so
+  # we must define a Job to create the database if doesn't exist
   extraDeploy:
     - apiVersion: batch/v1
       kind: Job
       metadata:
-        name: "{{ flowise_release_name }}-init"
+        name: "{{ flowise_release_name }}-db-init"
       spec:
-        ttlSecondsAfterFinished: 300
+        ttlSecondsAfterFinished: 120
         template:
           spec:
             restartPolicy: OnFailure
-            volumes: *volumes
             containers:
               - name: create-database
                 image: "{{ postgresql_image }}"
@@ -250,10 +322,17 @@ flowise_chart_values:
                     [ "$db_found" -eq 1 ] || {
                       echo -e "\nCreating '{{ flowise_db_name }}' database..."
                       psql -d postgres <<'EOT'
-                        -- https://www.postgresql.org/docs/current/sql-createdatabase.html
-                        CREATE DATABASE {{ flowise_db_name }} WITH OWNER {{ flowise_db_user }};
-                        REVOKE ALL ON DATABASE {{ flowise_db_name }} FROM PUBLIC;
-                        GRANT  ALL ON DATABASE {{ flowise_db_name }} TO {{ flowise_db_user }};
+
+                    -- https://www.postgresql.org/docs/current/sql-createdatabase.html
+                    CREATE DATABASE {{ flowise_db_name }} WITH OWNER {{ flowise_db_user }};
+                    REVOKE ALL ON DATABASE {{ flowise_db_name }} FROM PUBLIC;
+                    GRANT  ALL ON DATABASE {{ flowise_db_name }} TO {{ flowise_db_user }};
+
+                    -- required extensions if using PostgreSQL as a vector store
+                    -- (superuser privileges are required to install extensions)
+                    -- https://www.postgresql.org/docs/current/sql-createextension.html
+                    CREATE EXTENSION IF NOT EXISTS "uuid-ossp" WITH SCHEMA public;
+                    CREATE EXTENSION IF NOT EXISTS  vector     WITH SCHEMA public;
                     EOT
                     }
                     echo -e "\nDatabase initialization completed ✓"
@@ -262,7 +341,7 @@ flowise_chart_values:
                   - name: PGHOST
                     value: "{{ pgpool_service_host }}"
                   - name: PGUSER
-                    value: "{{ flowise_db_user }}"
+                    value: "{{ postgresql_superuser }}"
                   - name: PGSSLMODE
                     value: verify-full
                   - name: PGSSLCERT
@@ -272,11 +351,21 @@ flowise_chart_values:
                   - name: PGSSLROOTCERT
                     value: /tls/ca.crt
                 volumeMounts:
-                  - name: database-tls
+                  - name: superuser-tls
                     mountPath: /tls
                     readOnly: true
+            volumes:
+              - name: superuser-tls
+                secret:
+                  secretName: "{{ postgresql_secrets['superuser'] }}"
+                  defaultMode: 416 # "0640"
 
 flowise_external_credentials:
+  - name: PostgreSQL API
+    type: PostgresApi
+    data:
+      user: "{{ flowise_db_user }}"
+      password: "{{ pgpool_pass }}"
   - name: Qdrant Read/Write
     type: qdrantApi
     data:

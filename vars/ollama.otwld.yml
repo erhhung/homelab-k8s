@@ -84,9 +84,12 @@ ollama_chart_values:
 
 # models to pull on startup
 # https://ollama.com/search
+# Massive Text Embedding Benchmark leaderboard:
+# https://huggingface.co/spaces/mteb/leaderboard
 ollama_models:
   - qwen3:1.7b # 1.4GB
   - deepseek-r1:1.5b # 1.1GB
-  - gemma3:1b # 815 MB
+  - gemma3:1b # 815MB
   - gemma2:2b # 1.6GB
   - llama3.2:3b # 2.0GB
+  - nomic-embed-text:v1.5 # 274MB

@@ -35,6 +35,16 @@ cd "$HOME"
 
 ./cert.sh --kty=RSA \
           --exp=365 \
+          --out=homeassistant_cups \
+        homeassistant.fourteeners.local \
+                 hass.fourteeners.local \
+                 home.fourteeners.local \
+  fe80::3e25:f1cb:b195:7c0a%wlan0.local \
+  fe80::3e25:f1cb:b195:7c0a%wlan0 \
+  localhost 192.168.0.4
+
+./cert.sh --kty=RSA \
+          --exp=365 \
    xo.fourteeners.local \
   xoa.fourteeners.local
 
@@ -245,5 +255,12 @@ cd "$HOME"
   openwebui.fourteeners.local \
     chatgpt.fourteeners.local \
        chat.fourteeners.local
+
+./cert.sh --exp=365 \
+  flowise.fourteeners.local
+
+./cert.sh --exp=365 \
+          --out=flowise_db \
+  flowise flowise@fourteeners.local
 
 rsync certs cosmos:.

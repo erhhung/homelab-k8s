@@ -101,9 +101,9 @@
       become: false
       # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/helm_plugin_module.html
       kubernetes.core.helm_plugin:
-        plugin_name: "{{ item.name if item.name is defined else omit }}"
-        plugin_path: "{{ item.path if item.path is defined else omit }}"
-        state: "{{ item.state if item.state is defined else 'present' }}"
+        plugin_name: "{{ item.name | default(omit) }}"
+        plugin_path: "{{ item.path | default(omit) }}"
+        state: "{{ item.state | default('present') }}"
       loop: "{{ install_helm_plugins }}"
   any_errors_fatal: true
 

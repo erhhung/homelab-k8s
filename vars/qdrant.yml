@@ -22,6 +22,7 @@ qdrant_secrets:
 qdrant_config:
   # https://qdrant.tech/documentation/guides/telemetry
   telemetry_disabled: true
+  log_level: DEBUG
 
   # https://qdrant.tech/documentation/guides/distributed_deployment/#enabling-distributed-mode-in-self-hosted-qdrant
   cluster:
@@ -68,7 +69,7 @@ qdrant_config:
       write_consistency_factor: 1
 
 # https://github.com/qdrant/qdrant-helm/tree/main/charts/qdrant
-qdrant_chart_version: "1.15.1"
+qdrant_chart_version: "1.15.2"
 qdrant_release_name: qdrant
 
 # https://github.com/qdrant/qdrant-helm/tree/main/charts/qdrant/values.yaml

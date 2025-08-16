@@ -171,10 +171,11 @@ keycloakx_chart_values:
           [ "$num_tbls" -eq -1 ] && {
             echo -e "\nCreating '{{ keycloak_db_name }}' database..."
             psql -d postgres <<'EOT'
-              -- https://www.postgresql.org/docs/current/sql-createdatabase.html
-              CREATE DATABASE {{ keycloak_db_name }} WITH OWNER {{ keycloak_db_user }};
-              REVOKE ALL ON DATABASE {{ keycloak_db_name }} FROM PUBLIC;
-              GRANT  ALL ON DATABASE {{ keycloak_db_name }} TO {{ keycloak_db_user }};
+
+          -- https://www.postgresql.org/docs/current/sql-createdatabase.html
+          CREATE DATABASE {{ keycloak_db_name }} WITH OWNER {{ keycloak_db_user }};
+          REVOKE ALL ON DATABASE {{ keycloak_db_name }} FROM PUBLIC;
+          GRANT  ALL ON DATABASE {{ keycloak_db_name }} TO {{ keycloak_db_user }};
           EOT
           }
           echo -e "\nImporting database from keycloak.sql..."
@@ -207,7 +208,7 @@ keycloakx_chart_values:
   resources:
     requests:
       cpu: 50m
-      memory: 256Mi
+      memory: 512Mi
 
   secrets:
     # creates "keycloakx-passwords" Secret

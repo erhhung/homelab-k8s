@@ -1,0 +1,30 @@
+# included by debug.yml for debugging
+#
+# pass the following vars:
+#   debug_var:str
+#   change_if:str
+#   loop_changes[]
+---
+- name: Make changes in subtasks
+  block:
+    - name: Show subtasks input vars
+      vars:
+        inputs: "{{ {
+          'debug_var': debug_var,
+          'change_if': change_if,
+          } }}"
+      ansible.builtin.debug:
+        var: inputs
+
+    - name: Changed if condition met
+      vars:
+        changed: "{{ debug_var == change_if }}"
+      ansible.builtin.set_fact:
+        iter_changed: "{{ changed }}"
+      changed_when: changed
+
+- name: Update loop_changes fact
+  vars:
+    changed: "{{ iter_changed }}"
+  ansible.builtin.set_fact:
+    loop_changes: "{{ loop_changes | default([]) + [changed] }}"

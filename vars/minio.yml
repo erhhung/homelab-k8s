@@ -120,7 +120,7 @@ minio_operator_chart_values:
 
     resources:
       requests:
-        cpu: 20m
+        cpu: 100m
         memory: 32Mi
         ephemeral-storage: 50Mi
       limits:
