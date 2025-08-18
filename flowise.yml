@@ -106,6 +106,7 @@
     - vars/ollama.yml
   vars:
     api_base: https://{{ flowise_fqdn }}/api/v1
+    doc_store_name: Accounts
   pre_tasks:
     - name: Wait until Flowise is ready
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/uri_module.html
@@ -250,18 +251,18 @@
 
     - name: Create Accounts document store
       vars:
-        store: "{{ get_stores.json | selectattr('name','==','Accounts') }}"
+        store: "{{ get_stores.json | selectattr('name', '==', doc_store_name) }}"
       ansible.builtin.uri:
         method: POST
         url: "{{ api_base }}/document-store/store"
         headers: "{{ auth_headers }}"
         body_format: json
         body:
-          name: Accounts
+          name: "{{ doc_store_name }}"
           description: Confidential information and notable events about various accounts
         return_content: true
-      register: create_store
       when: store is not truthy
+      register: create_store
       changed_when: create_store.status == 200
 
     # pass var to the next play since
@@ -269,7 +270,7 @@
     # Ansible is limited to this play
     - name: Set accounts_doc_store fact
       vars:
-        store: "{{ get_stores.json | selectattr('name','==','Accounts') }}"
+        store: "{{ get_stores.json | selectattr('name', '==', doc_store_name) }}"
       ansible.builtin.set_fact:
         accounts_doc_store: |
           {{ store | first if store is truthy else create_store.json }}
@@ -288,14 +289,13 @@
         namespace: "{{ flowise_namespace }}"
       register: db_secret
 
-    - name: Config embeddings/vector store
+    - name: Set vector_store_config fact
       vars:
         qdrant_cred_id: "{{   external_credentials |
-          selectattr('credentialName','==','qdrantApi')   | map(attribute='id') | first }}"
+          selectattr('credentialName', '==', 'qdrantApi')   | map(attribute='id') | first }}"
         postgres_cred_id: "{{ external_credentials |
-          selectattr('credentialName','==','PostgresApi') | map(attribute='id') | first }}"
+          selectattr('credentialName', '==', 'PostgresApi') | map(attribute='id') | first }}"
         secret_data: "{{ db_secret.resources[0].data }}"
-
         postgres_ssl_config:
           # these properties are options from the
           # DataSource class of `typeorm` package:
@@ -306,7 +306,6 @@
             cert: "{{ secret_data['tls.crt'] }}"
             key: "{{ secret_data['tls.key'] }}"
             ca: "{{ secret_data['ca.crt'] }}"
-
         ollama_config:
           baseUrl: "{{ ollama_service_url }}"
           # must be exact and include tag,
@@ -315,7 +314,6 @@
           # numGpu: ""
           # numThread: ""
           useMMap: true
-
         qdrant_config:
           qdrantServerUrl: "{{ qdrant_service_url }}"
           credential: "{{ qdrant_cred_id }}"
@@ -331,7 +329,6 @@
           metadataPayloadKey: metadata
           fileUpload: true
           batchSize: 10
-
         postgres_config:
           host: "{{ pgpool_service_host }}"
           port: "{{ pgpool_service_port }}"
@@ -346,16 +343,8 @@
           tableName: upsert_records
           sourceIdKey: source
           cleanup: none
-
-        embedding_config: "{{ accounts_doc_store.embeddingConfig }}"
-        vector_store_config: "{{ accounts_doc_store.vectorStoreConfig }}"
-        record_manager_config: "{{ accounts_doc_store.recordManagerConfig }}"
-      ansible.builtin.uri:
-        method: POST
-        url: "{{ api_base }}/document-store/vectorstore/save"
-        headers: "{{ auth_headers }}"
-        body_format: json
-        body:
+      ansible.builtin.set_fact:
+        vector_store_config:
           storeId: "{{ accounts_doc_store.id }}"
           embeddingName: ollamaEmbedding
           embeddingConfig: "{{ ollama_config }}"
@@ -363,15 +352,29 @@
           vectorStoreConfig: "{{ qdrant_config }}"
           recordManagerName: postgresRecordManager
           recordManagerConfig: "{{ postgres_config }}"
+
+    - name: Save new vector store config
+      vars:
+        old: "{{ accounts_doc_store }}"
+        new: "{{ vector_store_config }}"
+      ansible.builtin.uri:
+        method: POST
+        url: "{{ api_base }}/document-store/vectorstore/save"
+        headers: "{{ auth_headers }}"
+        body_format: json
+        body: "{{ new }}"
       when: >-
-        embedding_config      is not truthy or
-        embedding_config.config      | to_json != ollama_config   | to_json or
-        vector_store_config   is not truthy or
-        vector_store_config.config   | to_json != qdrant_config   | to_json or
-        record_manager_config is not truthy or
-        record_manager_config.config | to_json != postgres_config | to_json
-      register: config_vector_store
-      changed_when: config_vector_store.status == 200
+        old.embeddingConfig        is not truthy or
+        old.embeddingConfig.config     | to_json !=
+        new.embeddingConfig            | to_json or
+        old.vectorStoreConfig      is not truthy or
+        old.vectorStoreConfig.config   | to_json !=
+        new.vectorStoreConfig          | to_json or
+        old.recordManagerConfig    is not truthy or
+        old.recordManagerConfig.config | to_json !=
+        new.recordManagerConfig        | to_json
+      register: save_config
+      changed_when: save_config.status == 200
   any_errors_fatal: true
 
 - name: Update Accounts document store
@@ -384,140 +387,268 @@
     # this var can be set on the command line
     # to limit the number of files to process
     limit: 0
-    facts: "{{ hostvars['localhost'] }}"
-    api_base: "{{ facts['API_BASE'] }}"
     # PLAYBOOKS and TAGS are global vars
     # injected by play.sh wrapper script
     playbooks: |
       {{  PLAYBOOKS | split(',') if PLAYBOOKS is defined and PLAYBOOKS is truthy else [] }}
     tags_: "{{ TAGS | split(',') if      TAGS is defined and      TAGS is truthy else [] }}"
+    api_base: "{{ API_BASE }}"
   pre_tasks:
-    - name: Reprocess docs or skip upload?
+    - name: Load documents or skip upload?
       ansible.builtin.set_fact:
         do_upload: >-
           {{ playbooks | length == 1  and
              'flowise'   in playbooks and
              'documents' in tags_ }}
-
-    - name: Gather facts about user_dir
+  tasks:
+    - name: Find ~/accounts/*.txt files
+      when: do_upload
       # ansible_user_dir will
       # be set on 'localhost'
       delegate_to: cosmos
-      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/setup_module.html
-      ansible.builtin.setup:
-        gather_subset: user_dir
-      when: do_upload
+      block:
+        - name: Gather facts about user_dir
+          # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/setup_module.html
+          ansible.builtin.setup:
+            gather_subset: user_dir
 
-    - name: Find ~/accounts/*.txt files
-      delegate_to: cosmos
-      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/find_module.html
-      ansible.builtin.find:
-        paths: ~/accounts/
-        follow: true
-        recurse: true
-        patterns: "*.txt"
-      register: find_files
+        - name: Find ~/accounts/*.txt files
+          # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/find_module.html
+          ansible.builtin.find:
+            paths: ~/accounts/
+            follow: true
+            recurse: true
+            patterns: "*.txt"
+          register: find_files
+
+        - name: Load new document content
+          vars:
+            # ansible_user_dir for 'cosmos'
+            # set by ansible.builtin.setup
+            accts_dir: "{{ ansible_user_dir }}/accounts/"
+            acct_files: |
+              {% set files  = [] %}
+              {# use namespace() to create a scoped object #}
+              {# https://jinja.palletsprojects.com/en/stable/templates/#assignments #}
+              {% set ns = namespace(
+                  sorted=find_files.files | sort(attribute='mtime', reverse=true)) %}
+              {% if limit|int > 0 and limit|int < ns.sorted | length %}
+              {%   set ns.sorted = ns.sorted[:limit|int] %}
+              {% endif %}
+              {% set total  = ns.sorted | length %}
+              {% set n      = accts_dir | length %}
+              {% for i  in range(total)    %}
+              {%   set file = ns.sorted[i] %}
+              {%   set _    = files.append({
+                    'label': (i + 1) ~'/'~ total ~'|'~ file.path[n:],
+                    'path':  file.path,
+                   })   %}
+              {% endfor %}
+              {{ files  }}
+          # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/slurp_module.html
+          ansible.builtin.slurp:
+            src: "{{ item.path }}"
+          loop: "{{ acct_files }}"
+          loop_control:
+            label: "{{ item.label }}"
+          # file_data.results[].content
+          # will be base64-encoded!
+          register: file_data
+
+    - name: Create new document loader
       when: do_upload
+      block:
+        - name: Delete old document loader
+          vars:
+            # accounts_doc_store.loaders is both string and sequence
+            # ('[]') if from create_store.json, but is only sequence
+            # if from get_stores.json
+            loader: |
+              {{ accounts_doc_store.loaders | selectattr('loaderId', '==', 'textFile')
+              if accounts_doc_store.loaders is not string else [] }}
+          ansible.builtin.uri:
+            method: DELETE
+            url: "{{ api_base }}/document-store/loader/{{
+              accounts_doc_store.id }}/{{ loader | map(attribute='id') | first }}"
+            headers: "{{ auth_headers }}"
+          when: loader is truthy
+          register: delete_loader
+          changed_when: delete_loader.status == 200
+
+        - name: Set new loader_spec fact
+          vars:
+            text_files: |
+              {% set files = [] %}
+              {% for file in file_data.results %}
+              {%   set _ = files.append('data:text/plain;base64,'~ file.content
+                                      ~',filename:'~ file.source | basename) %}
+              {% endfor %}
+              {{ files  }}
+          ansible.builtin.set_fact:
+            loader_spec:
+              storeId: "{{ accounts_doc_store.id }}"
+              loaderId: textFile
+              loaderName: "*.txt Files"
+              loaderConfig:
+                txtFile: "{{ text_files | to_json }}"
+              splitterId: recursiveCharacterTextSplitter
+              splitterName: Recursive Character Text Splitter
+              splitterConfig:
+                chunkSize: 500
+                chunkOverlap: 100
+
+        - name: Save new document loader
+          ansible.builtin.uri:
+            method: POST
+            url: "{{ api_base }}/document-store/loader/save"
+            headers: "{{ auth_headers }}"
+            body_format: json
+            body: "{{ loader_spec }}"
+            return_content: true
+          register: save_loader
+          changed_when: save_loader.status == 200
+
+        - name: Process document chunks
+          ansible.builtin.uri:
+            method: POST
+            url: "{{ api_base }}/document-store/loader/process/{{ save_loader.json.id }}"
+            headers: "{{ auth_headers }}"
+            body_format: json
+            body: "{{ loader_spec }}"
+          register: process_docs
+          changed_when: process_docs.status == 200
+
+        - name: Wait until status is SYNC
+          ansible.builtin.uri:
+            url: "{{ api_base }}/document-store/store/{{ loader_spec.storeId }}"
+            headers: "{{ auth_headers }}"
+            return_content: true
+          register: check_status
+          until: >-
+            check_status.json is defined and
+            check_status.json.status | default('') == 'SYNC'
+          # processing can take few minutes
+          retries: 20
+          delay: 15
+
+        - name: Show document store stats
+          vars:
+            store: "{{ check_status.json }}"
+            loader: "{{ store.loaders | selectattr('loaderId', '==', 'textFile') | first }}"
+            # NOTE: loaders[].files property is
+            # only available if .status is SYNC
+            files: "{{ loader.files }}"
+          # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/debug_module.html
+          ansible.builtin.debug:
+            msg: |-
+              Document  store     ID: {{ store.id          }}
+              Document  store   name: {{ store.name        }}
+              Document  store status: {{ store.status      }}
+              Total documents stored: {{ files | length    }}
+              Total document  chunks: {{ store.totalChunks }}
+              Total characters  read: {{ store.totalChars  }}
+
+        # depending on how many NEW or UPDATED chunks,
+        # this request could take a very long time due
+        # to slow calls to Ollama to create embeddings
+        - name: Upsert chunks into Qdrant
+          ansible.builtin.uri:
+            method: POST
+            url: "{{ api_base }}/document-store/vectorstore/insert"
+            headers: "{{ auth_headers }}"
+            body_format: json
+            # body is same as save
+            # API in previous play
+            body: "{{ vector_store_config }}"
+            return_content: true
+            timeout: 3600
+          timeout: 3600
+          register: upsert_chunks
+          changed_when: >-
+            upsert_chunks.json.numSkipped <
+            upsert_chunks.json.totalKeys
+          until: upsert_chunks.status == 200
+          retries: 3
+          delay: 30
+
+        - name: Show Qdrant upsert results
+          vars:
+            result: "{{ upsert_chunks.json }}"
+          ansible.builtin.debug:
+            msg: |-
+              Chunks   added: {{ result.numAdded   }}
+              Chunks updated: {{ result.numUpdated }}
+              Chunks skipped: {{ result.numSkipped }}
+              Chunks deleted: {{ result.numDeleted }}
+              Total   chunks: {{ result.totalKeys  }}
+  any_errors_fatal: true
+
+- name: Create chatflows and agentflows
+  tags: configure
+  hosts: localhost
+  gather_facts: false
+  vars_files:
+    - vars/kubernetes.yml
+    - vars/ollama.yml
+  vars:
+    api_base: "{{ API_BASE }}"
+    chatflow_name: Accounts Assistant
   tasks:
-    - name: Load new document content
-      delegate_to: cosmos
-      vars:
-        # ansible_user_dir for 'cosmos'
-        # set by ansible.builtin.setup
-        accts_dir: "{{ ansible_user_dir }}/accounts/"
-        acct_files: |
-          {% set files  = [] %}
-          {# use namespace() to create a scoped object #}
-          {# https://jinja.palletsprojects.com/en/stable/templates/#assignments #}
-          {% set ns = namespace(
-               sorted=find_files.files | sort(attribute='mtime', reverse=true)) %}
-          {% if limit|int > 0 and limit|int < ns.sorted | length %}
-          {%   set ns.sorted = ns.sorted[:limit|int] %}
-          {% endif %}
-          {% set total  = ns.sorted | length %}
-          {% set n      = accts_dir | length %}
-          {% for i  in range(total)    %}
-          {%   set file = ns.sorted[i] %}
-          {%   set _    = files.append({
-                 'label': (i + 1) ~'/'~ total ~'|'~ file.path[n:],
-                 'path':  file.path,
-               })   %}
-          {% endfor %}
-          {{ files  }}
-      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/slurp_module.html
-      ansible.builtin.slurp:
-        src: "{{ item.path }}"
-      loop: "{{ acct_files }}"
-      loop_control:
-        label: "{{ item.label }}"
-      # file_data.results[].content
-      # will be base64-encoded!
-      register: file_data
-      when: do_upload
-
-    - name: Delete old document loader
-      vars:
-        # accounts_doc_store.loaders is both string and sequence
-        # ('[]') if from create_store.json, but is only sequence
-        # if from get_stores.json
-        loader: |
-          {{ accounts_doc_store.loaders |
-             selectattr('loaderId','==','textFile') if do_upload and
-             accounts_doc_store.loaders is not string else [] }}
+    - name: Get all Flowise chatflows
       ansible.builtin.uri:
-        method: DELETE
-        url: "{{ api_base }}/document-store/loader/{{
-          accounts_doc_store.id }}/{{ loader | map(attribute='id') | first }}"
+        url: "{{ api_base }}/chatflows"
         headers: "{{ auth_headers }}"
-      when: loader is truthy
-      register: delete_loader
-      changed_when: delete_loader.status == 200
-
-    - name: Set new loader_spec fact
-      vars:
-        text_files: |
-          {% set files = [] %}
-          {% for file in file_data.results %}
-          {%   set _ = files.append('data:text/plain;base64,'~ file.content
-                                  ~',filename:'~ file.source | basename) %}
-          {% endfor %}
-          {{ files  }}
-      ansible.builtin.set_fact:
-        loader_spec:
-          storeId: "{{ accounts_doc_store.id }}"
-          loaderId: textFile
-          loaderName: "*.txt Files"
-          loaderConfig:
-            txtFile: "{{ text_files | to_json }}"
-          splitterId: recursiveCharacterTextSplitter
-          splitterName: Recursive Character Text Splitter
-          splitterConfig:
-            chunkSize: 500
-            chunkOverlap: 100
-      when: do_upload
-
-    - name: Save new document loader
-      ansible.builtin.uri:
-        method: POST
-        url: "{{ api_base }}/document-store/loader/save"
-        headers: "{{ auth_headers }}"
-        body_format: json
-        body: "{{ loader_spec }}"
         return_content: true
-      when: do_upload
-      register: save_loader
-      changed_when: save_loader.status == 200
+      register: get_chatflows
 
-    - name: Process document chunks
+    - name: Create Accounts chatflow
       vars:
-        loader_id: "{{ save_loader.json.id }}"
+        chatflow: "{{ get_chatflows.json | selectattr('name', '==', chatflow_name) }}"
       ansible.builtin.uri:
         method: POST
-        url: "{{ api_base }}/document-store/loader/process/{{ loader_id }}"
+        url: "{{ api_base }}/chatflows"
         headers: "{{ auth_headers }}"
         body_format: json
-        body: "{{ loader_spec }}"
-      when: do_upload
-      register: process_docs
-      changed_when: process_docs.status == 200
+        body:
+          name: "{{ chatflow_name }}"
+          type: CHATFLOW
+          isPublic: false
+          deployed: false
+          flowData: '{"nodes":[],"edges":[],"viewport":{"x":0,"y":0,"zoom":1}}'
+        return_content: true
+      when: chatflow is not truthy
+      register: create_chatflow
+      changed_when: create_chatflow.status == 200
+
+    - name: Set accounts_chatflow fact
+      vars:
+        chatflow: "{{ get_chatflows.json | selectattr('name', '==', chatflow_name) }}"
+      ansible.builtin.set_fact:
+        accounts_chatflow: |
+          {{ chatflow | first if chatflow is truthy else create_chatflow.json }}
+
+    - name: Import nodes into chatflow
+      vars:
+        ollama_model: deepseek-r1:1.5b
+        doc_store_id: "{{ accounts_doc_store.id }}"
+        # NOTE: using non-standard variable markers
+        # [% and %] to avoid conflicts with Flowise:
+        # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/template_lookup.html
+        flow_data: >-
+          {{ lookup('ansible.builtin.template',
+               template_dir ~ '/flowise/chatflow.yaml.j2',
+               variable_start_string='[%',
+               variable_end_string='%]') |
+             from_yaml | to_json }}
+      ansible.builtin.uri:
+        method: PUT
+        url: "{{ api_base }}/chatflows/{{ accounts_chatflow.id }}"
+        headers: "{{ auth_headers }}"
+        body_format: json
+        body:
+          name: "{{ accounts_chatflow.name }}"
+          flowData: "{{ flow_data }}"
+      when: accounts_chatflow.flowData != flow_data
+      register: import_nodes
+      changed_when: import_nodes.status == 200
   any_errors_fatal: true
