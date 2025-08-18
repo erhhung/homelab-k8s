@@ -277,7 +277,7 @@ flowise_chart_values:
 
     resources:
       requests:
-        cpu: 50m
+        cpu: 500m
         memory: 512Mi
 
     securityContext: *security

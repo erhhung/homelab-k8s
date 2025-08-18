@@ -108,6 +108,9 @@
   vars:
     vars_file: vars/ollama.{{ use_ollama_chart_by }}.yml
     api_base: https://{{ openwebui_fqdns | first }}/api
+    group_name: Family
+    knowledge_name: Accounts
+    model_name: Accounts
   pre_tasks:
     - name: Include {{ vars_file }}
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_vars_module.html
@@ -200,7 +203,7 @@
 
     - name: Create Erhhung's Family group
       vars:
-        family: "{{ list_groups.json | selectattr('name','==','Family') }}"
+        family: "{{ list_groups.json | selectattr('name', '==', group_name) }}"
       when: family is not truthy
       block:
         - name: Create the "Family" group
@@ -210,8 +213,8 @@
             headers: "{{ auth_headers }}"
             body_format: json
             body:
-              name: Family
-              description: Erhhung's Family
+              name: "{{ group_name }}"
+              description: Erhhung's family
             return_content: true
           register: create_group
           changed_when: create_group.status == 200
@@ -238,8 +241,8 @@
         family_group_id: >-
           {{ create_group.json.id if create_group      is defined and
                                      create_group.json is defined else
-              list_groups.json | selectattr('name','==','Family')
-                               |   map(attribute='id') | first }}
+              list_groups.json | selectattr('name', '==', group_name)
+                               |        map(attribute='id') | first }}
 
     - name: Get Open WebUI user memories
       ansible.builtin.uri:
@@ -250,7 +253,7 @@
 
     - name: Populate Erhhung's memories
       vars:
-        current: "{{ list_memories.json | selectattr('user_id','==',admin_user.id) }}"
+        current: "{{ list_memories.json | selectattr('user_id', '==', admin_user.id) }}"
       when: current is not truthy
       block:
         - name: Read encrypted memories.yaml
@@ -294,14 +297,14 @@
 
     - name: Create Accounts knowledge
       vars:
-        knowledge: "{{ list_knowledge.json | selectattr('name','==','Accounts') }}"
+        knowledge: "{{ list_knowledge.json | selectattr('name', '==', knowledge_name) }}"
       ansible.builtin.uri:
         method: POST
         url: "{{ api_base }}/v1/knowledge/create"
         headers: "{{ auth_headers }}"
         body_format: json
         body:
-          name: Accounts
+          name: "{{ knowledge_name }}"
           description: Confidential information and notable events about various accounts
           access_control:
             read:
@@ -309,8 +312,8 @@
             write:
               user_ids: "{{ [admin_user.id] }}"
         return_content: true
-      register: create_knowledge
       when: knowledge is not truthy
+      register: create_knowledge
       changed_when: create_knowledge.status == 200
 
     # pass var to the next play since
@@ -318,7 +321,7 @@
     # Ansible is limited to this play
     - name: Set accounts_knowledge fact
       vars:
-        knowledge: "{{ list_knowledge.json | selectattr('name','==','Accounts') }}"
+        knowledge: "{{ list_knowledge.json | selectattr('name', '==', knowledge_name) }}"
       ansible.builtin.set_fact:
         accounts_knowledge: |
           {{ knowledge | first if knowledge is truthy else create_knowledge.json }}
@@ -332,8 +335,8 @@
 
     - name: Create Accounts custom model
       vars:
-        model: "{{ list_models.json | selectattr('name','==','Accounts') }}"
-        base_model: "{{ ollama_models | select('search','^qwen3') | first }}"
+        model: "{{ list_models.json | selectattr('name', '==', model_name) }}"
+        base_model: "{{ ollama_models | select('search', '^qwen3') | first }}"
         # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/file_lookup.html
         image_data: "{{ lookup('ansible.builtin.file', 'files/openwebui/ai-assistant.png') }}"
         image_url: data:image/png;base64,{{ image_data | b64encode }}
@@ -351,7 +354,7 @@
         body_format: json
         body:
           id: accounts
-          name: Accounts
+          name: "{{ model_name }}"
           meta:
             description: Qwen3 base model RAG-enhanced with Accounts knowledge base
             tags:
@@ -378,13 +381,13 @@
             write:
               user_ids: "{{ [admin_user.id] }}"
         return_content: true
-      register: create_model
       when: model is not truthy
+      register: create_model
       changed_when: create_model.status == 200
 
     - name: Set accounts_model fact
       vars:
-        model: "{{ list_models.json | selectattr('name','==','Accounts') }}"
+        model: "{{ list_models.json | selectattr('name', '==', model_name) }}"
       ansible.builtin.set_fact:
         accounts_model: |
           {{ model | first if model is truthy else create_model.json }}
@@ -506,14 +509,14 @@
       when: files_changed
       vars:
         model: "{{ facts['accounts_model'] }}"
-        know_id: "{{ model.meta.knowledge[0].id }}"
+        knowledge_id: "{{ model.meta.knowledge[0].id }}"
         auth_headers: "{{ facts['auth_headers'] }}"
         admin_user: "{{ facts['admin_user'] }}"
         api_base: "{{ facts['API_BASE'] }}/v1"
       block:
         - name: Refresh Accounts knowledge
           ansible.builtin.uri:
-            url: "{{ api_base }}/knowledge/{{ know_id }}"
+            url: "{{ api_base }}/knowledge/{{ knowledge_id }}"
             headers: "{{ auth_headers }}"
             return_content: true
           register: new_knowledge
