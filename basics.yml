@@ -37,21 +37,21 @@
       community.general.timezone:
         name: "{{ system_time_zone }}"
 
-    - name: Generate locale "{{ system_locale }}"
+    - name: Generate locale "{{ system_locale_linux }}"
       # https://docs.ansible.com/ansible/latest/collections/community/general/locale_gen_module.html
       # requires "locales" package
       community.general.locale_gen:
-        name: "{{ system_locale }}"
+        name: "{{ system_locale_linux }}"
         state: present
 
-    - name: Set locale to "{{ system_locale }}"
-        and language to "{{ system_language }}"
+    - name: "Set locale to {{ system_locale_linux }}
+        and language to {{ system_locale_linux }}"
       ansible.builtin.command: >-
-        localectl set-locale LANG={{ system_locale }}
-                         LANGUAGE={{ system_language }}
+        localectl set-locale LANG={{ system_locale_linux }}
+                         LANGUAGE={{ system_locale_linux }}
       when: >-
-        locale_lang     != system_locale or
-        locale_language != system_language
+        locale_lang     != system_locale_linux or
+        locale_language != system_locale_linux
       changed_when: true
 
     # https://errantminds.net/servers-it/optimising-xcp-ng-performance-on-older-servers-domu-clock-source
@@ -155,6 +155,8 @@
       ansible.builtin.shell: |
         set -o pipefail
         { dig +short {{ test_domain }} || true; } | grep -q {{ expected_ip }}
+      args:
+        executable: /bin/bash
       register: is_dns_working
       changed_when: false
       failed_when: false

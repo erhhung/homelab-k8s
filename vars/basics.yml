@@ -1,6 +1,8 @@
+# standard IETF BCP 47 notation
+system_locale: en-US
+# Linux uses '_' instead of '-'
+system_locale_linux: "{{ system_locale | replace('-','_') }}.UTF-8"
 system_time_zone: America/Los_Angeles
-system_locale: en_US.UTF-8
-system_language: en_US.UTF-8
 
 # adjust Linux kernel parameters:
 # https://www.enginyring.com/en/blog/a-guide-to-tuning-kernel-parameters-with-sysctl-in-linux

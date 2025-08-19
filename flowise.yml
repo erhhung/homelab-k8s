@@ -99,6 +99,7 @@
   hosts: localhost
   gather_facts: false
   vars_files:
+    - vars/basics.yml
     - vars/flowise.yml
     - vars/kubernetes.yml
     - vars/postgresql.yml
@@ -199,14 +200,81 @@
         # vars with the same name at the play level
         API_BASE: "{{ api_base }}"
 
-    - name: Get third-party credentials
+    - name: Get tools we already added
+      ansible.builtin.uri:
+        url: "{{ api_base }}/tools"
+        headers: "{{ auth_headers }}"
+        return_content: true
+      register: get_tools
+
+    - name: Get marketplace templates
+      ansible.builtin.uri:
+        url: "{{ api_base }}/marketplaces/templates"
+        headers: "{{ auth_headers }}"
+        return_content: true
+      register: get_templates
+
+    - name: Add tool from marketplace
+      vars:
+        all_tools: "{{ get_templates.json | selectattr('type', '==', 'Tool') }}"
+        available: "{{ all_tools     | map(attribute='name') }}"
+        existing: "{{ get_tools.json | map(attribute='name') }}"
+        add_tools: |
+          {% set tools = [] %}
+          {% for tool in flowise_marketplace_tools %}
+          {%   if tool.name not in existing and
+                  tool.name     in available %}
+          {%     set _ = tools.append(tool)  %}
+          {%   endif %}
+          {% endfor %}
+          {{ tools  }}
+        tool: "{{ all_tools | selectattr('name', '==', item.name) | first }}"
+        # make custom substitutions
+        # in provided function code
+        func: |-
+          {# use namespace() to create a scoped object #}
+          {# https://jinja.palletsprojects.com/en/stable/templates/#assignments #}
+          {% set ns = namespace(func=tool.func) %}
+          {% for sub in item.func | default([]) %}
+          {%   set ns.func = ns.func | regex_replace(sub.replace, sub.with) %}
+          {% endfor  %}
+          {{ ns.func }}
+      ansible.builtin.uri:
+        method: POST
+        url: "{{ api_base }}/tools"
+        headers: "{{ auth_headers }}"
+        body_format: json
+        body:
+          name: "{{ tool.name }}"
+          description: "{{ tool.description }}"
+          iconSrc: "{{ tool.iconSrc }}"
+          color: "{{ tool.color }}"
+          # cast to string as value may be "[]"
+          schema: "{{ tool.schema | string }}"
+          func: "{{ func }}"
+      loop: "{{ add_tools }}"
+      loop_control:
+        label: "{{ item.name }}"
+      register: add_tool
+      changed_when: add_tool.status == 200
+
+    - name: Set marketplace_tools fact
+      ansible.builtin.set_fact:
+        marketplace_tools: |
+          {% set tools = get_tools.json   %}
+          {% for tool in add_tool.results %}
+          {%   set _ = tools.append(tool.json) %}
+          {% endfor %}
+          {{ tools  }}
+
+    - name: Get creds we already added
       ansible.builtin.uri:
         url: "{{ api_base }}/credentials"
         headers: "{{ auth_headers }}"
         return_content: true
       register: get_creds
 
-    - name: Add third-party credentials
+    - name: Add third-party credential
       vars:
         existing: "{{ get_creds.json | map(attribute='name') }}"
         add_creds: |
@@ -427,9 +495,7 @@
             # set by ansible.builtin.setup
             accts_dir: "{{ ansible_user_dir }}/accounts/"
             acct_files: |
-              {% set files  = [] %}
-              {# use namespace() to create a scoped object #}
-              {# https://jinja.palletsprojects.com/en/stable/templates/#assignments #}
+              {% set files = [] %}
               {% set ns = namespace(
                   sorted=find_files.files | sort(attribute='mtime', reverse=true)) %}
               {% if limit|int > 0 and limit|int < ns.sorted | length %}
@@ -583,16 +649,16 @@
               Total   chunks: {{ result.totalKeys  }}
   any_errors_fatal: true
 
-- name: Create chatflows and agentflows
+- name: Create chatflows/agentflows
   tags: configure
   hosts: localhost
   gather_facts: false
   vars_files:
+    - vars/flowise.yml
     - vars/kubernetes.yml
     - vars/ollama.yml
   vars:
     api_base: "{{ API_BASE }}"
-    chatflow_name: Accounts Assistant
   tasks:
     - name: Get all Flowise chatflows
       ansible.builtin.uri:
@@ -601,54 +667,57 @@
         return_content: true
       register: get_chatflows
 
-    - name: Create Accounts chatflow
+    - name: Create chatflow placeholder
       vars:
-        chatflow: "{{ get_chatflows.json | selectattr('name', '==', chatflow_name) }}"
+        chatflow: "{{ get_chatflows.json | selectattr('name', '==', item.name) }}"
       ansible.builtin.uri:
         method: POST
         url: "{{ api_base }}/chatflows"
         headers: "{{ auth_headers }}"
         body_format: json
         body:
-          name: "{{ chatflow_name }}"
+          name: "{{ item.name }}"
           type: CHATFLOW
           isPublic: false
           deployed: false
           flowData: '{"nodes":[],"edges":[],"viewport":{"x":0,"y":0,"zoom":1}}'
         return_content: true
+      loop: "{{ flowise_custom_chatflows }}"
+      loop_control:
+        label: "{{ item.name }}"
       when: chatflow is not truthy
       register: create_chatflow
       changed_when: create_chatflow.status == 200
 
-    - name: Set accounts_chatflow fact
-      vars:
-        chatflow: "{{ get_chatflows.json | selectattr('name', '==', chatflow_name) }}"
-      ansible.builtin.set_fact:
-        accounts_chatflow: |
-          {{ chatflow | first if chatflow is truthy else create_chatflow.json }}
-
     - name: Import nodes into chatflow
       vars:
-        ollama_model: deepseek-r1:1.5b
-        doc_store_id: "{{ accounts_doc_store.id }}"
+        chatflow_: "{{ get_chatflows.json | selectattr('name', '==', item.name) }}"
+        chatflow: "{{ chatflow_ | first if chatflow_ is truthy
+          else create_chatflow.results[i].json }}"
+        j2_path: /flowise/chatflows/{{ item.id }}.yaml.j2
         # NOTE: using non-standard variable markers
         # [% and %] to avoid conflicts with Flowise:
         # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/template_lookup.html
         flow_data: >-
           {{ lookup('ansible.builtin.template',
-               template_dir ~ '/flowise/chatflow.yaml.j2',
+               template_dir ~ j2_path,
                variable_start_string='[%',
-               variable_end_string='%]') |
-             from_yaml | to_json }}
+               variable_end_string='%]',
+               template_vars=item.vars)
+           | from_yaml | to_json }}
       ansible.builtin.uri:
         method: PUT
-        url: "{{ api_base }}/chatflows/{{ accounts_chatflow.id }}"
+        url: "{{ api_base }}/chatflows/{{ chatflow.id }}"
         headers: "{{ auth_headers }}"
         body_format: json
         body:
-          name: "{{ accounts_chatflow.name }}"
+          name: "{{ chatflow.name }}"
           flowData: "{{ flow_data }}"
-      when: accounts_chatflow.flowData != flow_data
+      loop: "{{ flowise_custom_chatflows }}"
+      loop_control:
+        label: "{{ item.name }}"
+        index_var: i
+      when: chatflow.flowData != flow_data
       register: import_nodes
       changed_when: import_nodes.status == 200
   any_errors_fatal: true
