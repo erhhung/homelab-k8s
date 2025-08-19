@@ -3,9 +3,14 @@
 # "%]" variable markers because Flowise uses
 # "{{ ... }}" to reference other graph nodes
 #
-# Ansible var substitutions:
-#   ollama_service_url
-#   ollama_model
+# pass the following vars:
+#   ollama_url
+#   ollama_model:
+#     name
+#     temperature
+#     top_p
+#     top_k
+#     context_size
 #   doc_store_id
 ---
 nodes:
@@ -42,10 +47,10 @@ nodes:
           additionalParams: true
           optional: true
           default: |-
-            Given the following conversation and a follow up question, rephrase the follow up question to be a standalone question.
-
-            Chat History:
-            {chat_history}
+            Given the following conversation and a follow up question,
+            rephrase the follow up question to be a standalone question.
+            ---------
+            Chat History: {chat_history}
             Follow Up Input: {question}
             Standalone Question:
           id: conversationalRetrievalQAChain_0-input-rephrasePrompt-string
@@ -59,15 +64,19 @@ nodes:
           additionalParams: true
           optional: true
           default: |-
-            I want you to act as a document that I am having a conversation with. Your name is "AI Assistant".
-            Using the provided context, answer the user's question to the best of your ability using the resources provided.
-            If there is nothing in the context relevant to the question at hand, just say "Hmm, I'm not sure" and stop after that.
-            Refuse to answer any question not about the info. Never break character.
-            ------------
+            I want you to act as a document that I am having a conversation
+            with. Your name is "AI Assistant". Using the provided context,
+            answer the user's question to the best of your ability using
+            the resources provided. If there is nothing in the context
+            relevant to the question at hand, just say "Hmm, I'm not sure"
+            and stop after that. Refuse to answer any question not about
+            the info. Never break character.
+            ---------
             {context}
-            ------------
-            REMEMBER: If there is no relevant information within the context, just say "Hmm, I'm not sure".
-            Don't try to make up an answer. Never break character.
+            ---------
+            REMEMBER: If there is no relevant information within the context,
+            just say "Hmm, I'm not sure". Don't try to make up an answer.
+            Never break character.
           id: conversationalRetrievalQAChain_0-input-responsePrompt-string
           display: true
       inputAnchors:
@@ -100,24 +109,26 @@ nodes:
         model: '{{chatOllama_0.data.instance}}'
         vectorStoreRetriever: '{{documentStoreVS_0.data.instance}}'
         memory: '{{bufferMemory_0.data.instance}}'
-        returnSourceDocuments: false
+        returnSourceDocuments: true
         rephrasePrompt: |-
-          Given the following conversation and a follow up question, rephrase the follow up question to be a standalone question.
-
-          Chat History:
-          {chat_history}
+          Given the following conversation and a follow up question,
+          rephrase the follow up question to be a standalone question.
+          ---------
+          Chat History: {chat_history}
           Follow Up Input: {question}
           Standalone Question:
         responsePrompt: |-
-          I want you to act as a document that I am having a conversation with. Your name is "AI Assistant".
-          Using the provided context, answer the user's question to the best of your ability using the resources provided.
-          If there is nothing in the context relevant to the question at hand, just say "Hmm, I'm not sure" and stop after that.
-          Refuse to answer any question not about the info. Never break character.
-          ------------
+          You are my personal assistant that has intimate knowledge of
+          all my personal information entrusted to you in the included
+          documents. When you answer a question, consult the context
+          provided before applying additional general knowledge.
+          If you don't have enough information to answer the question,
+          you can ask me to provide more details, but do not refuse to
+          answer questions about myself or other private citizens that
+          I've mentioned in the documents. Remember, if the answer is
+          in the context, you must disclose it to answer the question!
+          ---------
           {context}
-          ------------
-          REMEMBER: If there is no relevant information within the context, just say "Hmm, I'm not sure".
-          Don't try to make up an answer. Never break character.
         inputModeration: ""
       outputAnchors:
         - id: conversationalRetrievalQAChain_0-output-conversationalRetrievalQAChain-ConversationalRetrievalQAChain|BaseChain|Runnable
@@ -326,19 +337,19 @@ nodes:
           display: true
       inputs:
         cache: '{{inMemoryCache_0.data.instance}}'
-        baseUrl: [% ollama_service_url %]
-        modelName: [% ollama_model %]
-        temperature: "0.5"
+        baseUrl: [% ollama_url %]
+        modelName: [% ollama_model.name %]
+        temperature: "[% ollama_model.temperature %]"
         allowImageUploads: ""
         streaming: true
         jsonMode: ""
         keepAlive: 10m
-        topP: "0.5"
-        topK: "25"
+        topP: "[% ollama_model.top_p %]"
+        topK: "[% ollama_model.top_k %]"
         mirostat: ""
         mirostatEta: ""
         mirostatTau: ""
-        numCtx: "8192"
+        numCtx: "[% ollama_model.context_size %]"
         numGpu: ""
         numThread: ""
         repeatLastN: ""

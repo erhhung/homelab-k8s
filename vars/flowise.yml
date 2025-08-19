@@ -3,6 +3,7 @@
 #      anthropic_api_key: {vault.yml}
 #         openai_api_key: {vault.yml}
 #           groq_api_key: {vault.yml}
+#           serp_api_key: {vault.yml}
 
 flowise_admin_user:
   name: "{{ user_erhhung.fullname }}"
@@ -360,6 +361,20 @@ flowise_chart_values:
                   secretName: "{{ postgresql_secrets['superuser'] }}"
                   defaultMode: 416 # "0640"
 
+flowise_marketplace_tools:
+  # the CurrentDateTime tool node only
+  # returns UTC date and time, whereas
+  # the todays_date_time tool from the
+  # marketplace provides the time zone
+  - name: todays_date_time
+    func:
+      # replace hardcoded time zone and
+      # locale with our system settings
+      - replace: Australia/Sydney
+        with: "{{ system_time_zone }}"
+      - replace: en-GB
+        with: "{{ system_locale }}"
+
 flowise_external_credentials:
   - name: PostgreSQL API
     type: PostgresApi
@@ -382,3 +397,36 @@ flowise_external_credentials:
     type: groqApi
     data:
       groqApiKey: "{{ groq_api_key }}"
+  - name: Serp "Default"
+    type: serpApi
+    data:
+      serpApiKey: "{{ serp_api_key }}"
+
+flowise_custom_chatflows:
+  # .id will be used to reference chatflow template
+  # file "templates/flowise/chatflows/{id}.yaml.j2"
+  - id: myassistant
+    name: Accounts Assistant
+    vars:
+      ollama_url: "{{ ollama_service_url }}"
+      ollama_model:
+        name: gemma2:2b
+        temperature: 0.4
+        top_p: 0.5
+        top_k: 25
+        context_size: 8192
+      doc_store_id: "{{ accounts_doc_store.id }}"
+  - id: toolsagent
+    name: Agent with Tools
+    vars:
+      openai_cred_id: "{{ external_credentials |
+        selectattr('credentialName', '==', 'openAIApi') | map(attribute='id') | first }}"
+      openai_model:
+        name: gpt-4o
+        temperature: 0.4
+        top_p: 0.5
+      memory_window: 5
+      date_tool_id: "{{ marketplace_tools |
+        selectattr('name', '==', 'todays_date_time')  | map(attribute='id') | first }}"
+      serp_cred_id: "{{ external_credentials |
+        selectattr('credentialName', '==', 'serpApi') | map(attribute='id') | first }}"
