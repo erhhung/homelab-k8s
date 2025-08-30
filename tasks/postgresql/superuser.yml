@@ -1,0 +1,27 @@
+# create client TLS secret "database-superuser"
+# (postgresql_secrets['superuser']) in the
+# specified namespace so that an init container
+# can install PostgreSQL extensions
+#
+# pass the following vars:
+#   kubeconfig <required> path to kubeconfig
+#   secret_ns  <required> namespace of Secret
+#   create_ns  [optional] default=true
+#   release    [optional] release name: add Helm
+#                         labels and annotations
+---
+- name: Include vars/postgresql.yml
+  # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_vars_module.html
+  ansible.builtin.include_vars: vars/postgresql.yml
+  when: postgresql_secrets is not defined
+
+- name: Create database superuser secret
+  vars:
+    secret_name: "{{ postgresql_secrets['superuser'] }}"
+    cert_name: database-superuser
+    days: 365
+    sans:
+      - "{{ postgresql_superuser }}"
+      - "{{ postgresql_superuser }}@{{ homelab_domain }}"
+  # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
+  ansible.builtin.include_tasks: tasks/k8s/secrets/tls.step.yml

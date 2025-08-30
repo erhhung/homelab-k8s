@@ -87,6 +87,10 @@ controlPlane:
     # the vCluster's Kubernetes API server endpoint specified in the
     # kubeconfig file, and must be created manually (for time being)
     # in the pfSense DNS Resolver
-    host: {{ vcluster.name }}.{{ vc_domain }}
+    host: {{ vcluster_fqdn }}
+    pathType: Prefix
     spec:
+      tls:
+        - secretName: {{ tls_secret }}
+          hosts: {{ [vcluster_fqdn] }}
       ingressClassName: {{ rke_ingress_class }}

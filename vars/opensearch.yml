@@ -22,7 +22,8 @@ opensearch_fqdns: "{{ opensearch_host_names | product(search_domains) | map('joi
 
 opensearch_cluster_name: opensearch
 opensearch_master_service: "{{ opensearch_cluster_name }}-master"
-opensearch_service_host: "{{ opensearch_master_service }}.{{ opensearch_namespace }}.svc.{{ cluster_domain }}"
+opensearch_service_host: "{{ opensearch_master_service }}.{{
+  opensearch_namespace }}.svc.{{ cluster_domain }}"
 opensearch_service_port: 9200
 opensearch_service_url: https://{{ opensearch_service_host }}:{{ opensearch_service_port }}
 opensearch_url: https://{{ opensearch_fqdns | first }}:{{ opensearch_service_port }}

@@ -7,13 +7,13 @@
 #                          StatefulSet, DaemonSet)
 #   res_name    <required> resource  name
 #   res_ns      <required> resource  namespace
-#   container   [optional] container name
-#                          (unless Pod has only one)
-#   max_wait    [optional] default=10 (seconds)
 #   probes      <required> dictionary of probes
-#     readinessProbe [optional]
-#     livenessProbe  [optional]
-#     startupProbe   [optional]
+#     {container}      <required> container name
+#       readinessProbe [optional]
+#       livenessProbe  [optional]
+#       startupProbe   [optional]
+#     ...                  additional containers
+#   max_wait    [optional] default=10 (seconds)
 ---
 - name: Configure container probes
   become: false
@@ -23,7 +23,7 @@
     max_retries: 3
     retry_delay: 1
   block:
-    - name: Get {{ res_kind }}/{{ res_name }}
+    - name: Get {{ res_name }} {{ res_kind }}
       vars:
         api_default: "{{ 'v1' if res_kind == 'Pod' else 'apps/v1' }}"
       # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_info_module.html
@@ -38,7 +38,7 @@
       delay: "{{ max_wait | default(10) / 10 }}"
       until: res_info.resources[0] is defined
 
-    - name: Find all containers in pod
+    - name: Find containers in resource
       vars:
         spec: "{{ res_info.resources[0].spec }}"
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/set_fact_module.html
@@ -47,42 +47,37 @@
         containers: "{{ spec.containers if res_kind == 'Pod' else
           spec.template.spec.containers }}"
 
-    - name: Identify container by name
-      ansible.builtin.set_fact:
-        container_index: |
-          {% for i in range(containers | length)  %}
-          {%   if containers[i].name == container %}
-          {{     i  -}}
-          {%   endif %}
-          {% endfor  %}
-      when: container is defined
-
-    - name: Ensure container identified
+    - name: Ensure all containers found
+      vars:
+        valid: "{{ containers | map(attribute='name') }}"
+        # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/difference_filter.html
+        invalid: "{{ probes.keys() | ansible.builtin.difference(valid) }}"
+        error: No container named "{{ (invalid + ['']) | first }}"
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/assert_module.html
       ansible.builtin.assert:
-        that: |
-          {% if container is defined %}
-          {{    container_index is defined and
-                container_index | int >= 0 -}}
-          {% else %}
-          {{    containers | length == 1 -}}
-          {% endif %}
-        fail_msg: No container named "{{ container }}"!
+        that: invalid is falsy
+        fail_msg: "{{ error }}!"
         quiet: true
 
-    - name: Update probes in container
+    - name: Update probes in containers
       vars:
         definition: |
-          {% set  i = container_index | default(0) | int %}
-          {% set container = resource.spec.containers[i] if res_kind == 'Pod' else
-               resource.spec.template.spec.containers[i] %}
-          {% for probe, config in probes.items() %}
-          {%   if probe in container %}
-          {#     https://docs.ansible.com/ansible/latest/collections/ansible/builtin/combine_filter.html #}
-          {%     set merged = container[probe] | ansible.builtin.combine(config, recursive=true) %}
-          {%     set _ = container.update({probe: merged}) %}
-          {%   else %}
-          {%     set _ = container.update({probe: config}) %}
+          {% set containers  = resource.spec.containers if res_kind == 'Pod' else
+                 resource.spec.template.spec.containers %}
+          {# use index so that we can reference
+             outer object within the loop scope  #}
+          {% for i in range(containers | length) %}
+          {%   set name = containers[i].name %}
+          {%   if name in probes             %}
+          {%     for probe, config in probes[name].items() %}
+          {%       if probe in containers[i] %}
+          {#         https://docs.ansible.com/ansible/latest/collections/ansible/builtin/combine_filter.html #}
+          {%         set merged = containers[i][probe] | ansible.builtin.combine(config, recursive=true)     %}
+          {%         set _ = containers[i].update({probe: merged}) %}
+          {%       else   %}
+          {%         set _ = containers[i].update({probe: config}) %}
+          {%       endif  %}
+          {%     endfor   %}
           {%   endif  %}
           {% endfor   %}
           {{ resource }}
@@ -91,6 +86,8 @@
         kubeconfig: "{{ kubeconfig }}"
         definition: "{{ definition }}"
         state: patched
+        validate:
+          fail_on_error: true
   rescue:
     # implement a retry logic because patching could fail due
     # to conflict error "the object has been modified; please

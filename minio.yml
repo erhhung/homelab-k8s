@@ -9,6 +9,7 @@
     - vars/kubernetes.yml
     - vars/monitoring.yml
     - vars/storage.yml
+    - vars/gitlab.yml
     - vars/minio.yml
   vars:
     # required kubernetes>=24.2 package only in user virtualenv
@@ -134,19 +135,20 @@
       retries: 60
       delay: 5
 
+    # minio-operator not allowing patch!
     - name: Patch tenant sidecar probes
       vars:
         res_kind: StatefulSet
         res_name: "{{ minio_tenant_name }}-{{ minio_pool_name }}"
         res_ns: "{{ minio_tenant_namespace }}"
-        container: sidecar
         probes:
-          # https://github.com/minio/operator/tree/master/pkg/resources/statefulsets/minio-statefulset.go#L739-L754
-          readinessProbe:
-            initialDelaySeconds: 30 # default=5
-            periodSeconds: 10 # default=1
-            timeoutSeconds: 5 # default=1
-            failureThreshold: 3 # default=1
+          sidecar:
+            # https://github.com/minio/operator/tree/master/pkg/resources/statefulsets/minio-statefulset.go#L739-L754
+            readinessProbe:
+              initialDelaySeconds: 30 # default=5
+              periodSeconds: 10 # default=1
+              timeoutSeconds: 5 # default=1
+              failureThreshold: 3 # default=1
       ansible.builtin.include_tasks: tasks/k8s/probes.yml
   any_errors_fatal: true
 
@@ -340,14 +342,14 @@
         # get list of existing buckets:
         # https://min.io/docs/minio/linux/reference/minio-mc/mc-ls.html
         buckets="$(mc ls local --json | jq -r .key)"
-        {% for name, bucket in minio_buckets.items() %}
+        {% for bucket in minio_buckets | flatten %}
 
-        grep -q "^{{ name }}/$" <<< "$buckets" || {
+        grep -q "^{{ bucket.name }}/$" <<< "$buckets" || {
           # https://min.io/docs/minio/linux/reference/minio-mc/mc-mb.html
           mc mb {{ bucket.options | join(' ') if
                    bucket.options is defined and
-                   bucket.options }} \
-            local/{{ name }}
+                   bucket.options is truthy }} \
+            local/{{ bucket.name }}
           rc=0
         }
         {% endfor %}

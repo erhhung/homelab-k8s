@@ -7,6 +7,7 @@
   vars:
     # required kubernetes>=24.2 package only in user virtualenv
     ansible_python_interpreter: "{{ venv_python_interpreter }}"
+    kubeconfig: "{{ rke_kubeconfig }}"
   block:
     # https://www.vcluster.com/docs/vcluster/introduction/architecture
     - name: Create vCluster storage
@@ -34,8 +35,8 @@
         - name: Create vCluster persistent volume
           # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_module.html
           kubernetes.core.k8s:
-            kubeconfig: "{{ rke_kubeconfig }}"
-            # https://kubernetes.io/docs/concepts/storage/volumes/#local
+            kubeconfig: "{{ kubeconfig }}"
+            # https://kubernetes.io/docs/concepts/storage/volumes#local
             definition:
               apiVersion: v1
               kind: PersistentVolume
@@ -52,17 +53,15 @@
                   storage: "{{ item.size }}"
                 local:
                   path: "{{ data_lv.mount }}/{{ item.name }}"
+                accessModes: ["ReadWriteOnce"]
                 volumeMode: Filesystem
-                accessModes:
-                  - ReadWriteOnce
                 nodeAffinity:
                   required:
                     nodeSelectorTerms:
                       - matchExpressions:
                           - key: kubernetes.io/hostname
                             operator: In
-                            values:
-                              - "{{ vcluster.node }}"
+                            values: "{{ [vcluster.node] }}"
                 persistentVolumeReclaimPolicy: Retain
             validate:
               fail_on_error: false
@@ -74,20 +73,33 @@
             label: "{{ item.name }}|{{ item.size }}"
 
     - name: Install vCluster Helm chart
+      vars:
+        vcluster_fqdn: "{{ vcluster.name }}.{{ vc_domain }}"
+        vcluster_ns: vcluster-{{ vcluster.name }}
+        tls_secret: vc-tls-{{ vcluster.name }}
       block:
+        - name: Create vCluster ingress secret
+          vars:
+            secret_name: "{{ tls_secret }}"
+            secret_ns: "{{ vcluster_ns }}"
+            cert_name: "{{ vcluster_ns }}"
+            release: "{{ vcluster.name }}"
+            sans: ["{{ vcluster_fqdn }}"]
+          # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
+          ansible.builtin.include_tasks: tasks/k8s/secrets/tls.step.yml
+
         - name: Install vCluster Helm chart
           vars:
             # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/template_lookup.html
             values: "{{ lookup('ansible.builtin.template', template_dir ~ '/vcluster.yaml.j2') }}"
           # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/helm_module.html
           kubernetes.core.helm:
-            kubeconfig: "{{ rke_kubeconfig }}"
+            kubeconfig: "{{ kubeconfig }}"
             chart_repo_url: https://charts.loft.sh
             chart_ref: vcluster
             chart_version: "{{ vcluster_chart_version }}"
             release_name: "{{ vcluster.name }}"
-            release_namespace: vcluster-{{ vcluster.name }}
-            create_namespace: true
+            release_namespace: "{{ vcluster_ns }}"
             release_values: "{{ values | from_yaml }}"
             history_max: "{{ helm_max_history }}"
             atomic: true
@@ -98,11 +110,11 @@
         - name: Fetch vCluster kubeconfig
           # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_info_module.html
           kubernetes.core.k8s_info:
-            kubeconfig: "{{ rke_kubeconfig }}"
+            kubeconfig: "{{ kubeconfig }}"
             api_version: v1
             kind: Secret
             name: vc-{{ vcluster.name }}
-            namespace: vcluster-{{ vcluster.name }}
+            namespace: "{{ vcluster_ns }}"
           register: vc_secret
 
         - name: Merge kubeconfig into local
@@ -110,8 +122,7 @@
             # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/b64decode_filter.html
             kubeconfig: "{{ vc_secret.resources[0].data.config | b64decode }}"
             context: x{{ vcluster.name }}
-            server: https://{{ vcluster.name }}.{{ vc_domain }}
-          # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
+            server: https://{{ vcluster_fqdn }}
           ansible.builtin.include_tasks: tasks/k8s/kubeconfig.yml
       rescue:
         - name: Delete vCluster resources

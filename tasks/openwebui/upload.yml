@@ -33,7 +33,7 @@
       ansible.builtin.set_fact:
         existing: "{{ file[0] if file is truthy else None }}"
         needs_upload: >-
-          {{ file is not truthy                    or
+          {{ file is falsy                         or
              file[0].meta.data.sha1 is not defined or
              file[0].meta.data.sha1 != file_info.sha1 }}
 

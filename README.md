@@ -29,29 +29,31 @@ All cluster services will be provisioned with TLS certificates from Erhhung's pr
 
 ## Service Endpoints
 
-|                       Service Endpoint | Description
-|---------------------------------------:|:----------------------
-|      https://rancher.fourteeners.local | Rancher Server console
-|       https://harbor.fourteeners.local | Harbor OCI registry
-|       https://velero.fourteeners.local | Velero dashboard
-|        https://minio.fourteeners.local | MinIO console
-|           https://s3.fourteeners.local | MinIO S3 API
-|      opensearch.fourteeners.local:9200 | OpenSearch _(HTTPS only)_
-|       https://kibana.fourteeners.local | OpenSearch Dashboards
-|        postgres.fourteeners.local:5432 | PostgreSQL via Pgpool _(mTLS only)_
-|          https://sso.fourteeners.local | Keycloak IAM console
-|          valkey.fourteeners.local:6379 <br/> valkey<i>{1..6}</i>.fourteeners.local:6379 | Valkey cluster _(mTLS only)_
-|      https://grafana.fourteeners.local | Grafana dashboards
-|      https://metrics.fourteeners.local | Prometheus UI _(Keycloak SSO)_
-|       https://alerts.fourteeners.local | Alertmanager UI _(Keycloak SSO)_
-|       https://thanos.fourteeners.local | Thanos Query UI
-|  https://rule.thanos.fourteeners.local <br/> https://store.thanos.fourteeners.local <br/> https://bucket.thanos.fourteeners.local <br/> https://compact.thanos.fourteeners.local | Thanos component status UIs
-|        https://kiali.fourteeners.local | Kiali console _(Keycloak SSO)_
-|       https://argocd.fourteeners.local | Argo CD console
-|       https://qdrant.fourteeners.local | Qdrant dashboard
-|       https://ollama.fourteeners.local | Ollama API server
-|    https://openwebui.fourteeners.local | Open WebUI portal
-|      https://flowise.fourteeners.local | Flowise console
+|                         Service Endpoint | Description
+|-----------------------------------------:|:----------------------
+|        https://rancher.fourteeners.local | Rancher Server console
+|         https://harbor.fourteeners.local | Harbor OCI registry
+|         https://velero.fourteeners.local | Velero dashboard
+|          https://minio.fourteeners.local | MinIO console
+|             https://s3.fourteeners.local | MinIO S3 API
+|        opensearch.fourteeners.local:9200 | OpenSearch _(HTTPS only)_
+|         https://kibana.fourteeners.local | OpenSearch Dashboards
+|          postgres.fourteeners.local:5432 | PostgreSQL via Pgpool _(mTLS only)_
+|            https://sso.fourteeners.local | Keycloak IAM console
+|            valkey.fourteeners.local:6379 <br/> valkey<i>{1..6}</i>.fourteeners.local:6379 | Valkey cluster _(mTLS only)_
+|        https://grafana.fourteeners.local | Grafana dashboards
+|        https://metrics.fourteeners.local | Prometheus UI _(Keycloak SSO)_
+|         https://alerts.fourteeners.local | Alertmanager UI _(Keycloak SSO)_
+|         https://thanos.fourteeners.local | Thanos Query UI
+| https://rule.thanos.fourteeners.local <br/> https://store.thanos.fourteeners.local <br/> https://bucket.thanos.fourteeners.local <br/> https://compact.thanos.fourteeners.local | Thanos component status UIs
+|          https://kiali.fourteeners.local | Kiali console _(Keycloak SSO)_
+|         https://gitlab.fourteeners.local | GitLab web UI
+| https://*.pages.gitlab.fourteeners.local | GitLab Pages websites
+|         https://argocd.fourteeners.local | Argo CD console
+|         https://qdrant.fourteeners.local | Qdrant dashboard
+|         https://ollama.fourteeners.local | Ollama API server
+|      https://openwebui.fourteeners.local | Open WebUI portal
+|        https://flowise.fourteeners.local | Flowise designer
 
 ## Installation Sources
 
@@ -99,12 +101,14 @@ All cluster services will be provisioned with TLS certificates from Erhhung's pr
 - [X] [Istio Service Mesh](https://istio.io/latest/about/service-mesh) with [Kiali Console](https://kiali.io/) — secure, observe, trace, and route traffic between workloads
     * Install on main RKE cluster using the [`istioctl`](https://istio.io/latest/docs/ambient/install/istioctl) CLI
     * Install Kiali using the [`kiali-operator`](https://kiali.io/docs/installation/installation-guide/install-with-helm/#install-with-operator) Helm chart and `Kiali` CR
+- [X] [GitLab CI/CD Platform](https://gitlab.com/rluna-gitlab/gitlab-ce) — run CI/CD pipelines for local deployments
+    * Install on main RKE cluster using the [`gitlab`](https://gitlab.com/gitlab-org/charts/gitlab) Helm chart
+- [X] [Argo CD Declarative GitOps](https://argo-cd.readthedocs.io/) — manage deployment of personal projects
+    * Install on main RKE cluster using the [`argo-cd`](https://github.com/argoproj/argo-helm/tree/main/charts/argo-cd) Helm chart
 - [ ] [Meshery Visual GitOps Platform](https://meshery.io/) — manage infrastructure visually and collaboratively
     * Install on K3s cluster using the [`meshery`](https://docs.meshery.io/installation/kubernetes/helm) Helm chart, along with  
     [`meshery-istio`](https://docs.meshery.io/concepts/architecture/adapters) and [`meshery-nighthawk`](https://getnighthawk.dev/) adapters
     * [ ] Connect to main RKE cluster, along with Prometheus and Grafana
-- [X] [Argo CD Declarative GitOps](https://argo-cd.readthedocs.io/) — manage deployment of other applications in the main RKE cluster
-    * Install on main RKE cluster using the [`argo-cd`](https://github.com/argoproj/argo-helm/tree/main/charts/argo-cd) Helm chart
 - [X] [Kubernetes Metacontroller](https://metacontroller.github.io/metacontroller) — enable easy creation of custom controllers
     * Install on main RKE cluster using the [`metacontroller`](https://metacontroller.github.io/metacontroller/guide/helm-install.html) Helm chart
 - [X] [Ollama LLM Server](https://github.com/ollama/ollama) with [Ollama CLI](https://github.com/masgari/ollama-cli) — run LLMs on Kubernetes cluster
@@ -153,20 +157,19 @@ ansible-vault view   $VAULTFILE
 | `stepca_provisioner_pass`         | `keycloak_admin_pass`
 | `harbor_secret`                   | `thanos_admin_pass`
 | `minio_client_pass`               | `grafana_admin_pass`
-| `velero_repo_pass`                | `argocd_admin_pass`
-| `velero_passphrase`               | `openwebui_admin_pass`
-| `dashboards_os_pass`              | `flowise_admin_pass`
-| `fluent_os_pass`                  |
+| `velero_repo_pass`                | `gitlab_root_pass`
+| `velero_passphrase`               | `argocd_admin_pass`
+| `dashboards_os_pass`              | `openwebui_admin_pass`
+| `fluent_os_pass`                  | `flowise_admin_pass`
 | `valkey_pass`                     |
 | `postgresql_pass`                 |
 | `keycloak_db_pass`                |
-| `keycloak_smtp_pass`              |
 | `monitoring_pass`                 |
 | `monitoring_oidc_client_secret.*` |
-| `alertmanager_smtp_pass`          |
 | `slack_webhook_url`               |
 | `oauth2_proxy_cookie_secret`      |
 | `kiali_oidc_client_secret`        |
+| `gitlab_secrets_data.*`           |
 | `argocd_signing_key`              |
 | `hass_access_token`               |
 | `qdrant_api_key.*`                |

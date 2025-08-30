@@ -5,27 +5,38 @@
 minio_region: homelab
 
 minio_buckets:
-  # bucket for Velero to store backups
-  backups: {}
+  # backups by Longhorn, Velero, etc.
+  - name: backups
     # https://min.io/docs/minio/linux/reference/minio-mc/mc-mb.html#parameters
     # options: ["--with-versioning"]
-  # bucket for Thanos to store metrics
-  metrics: {}
-  # bucket for Open WebUI
-  # to store user uploads
-  openwebui: {}
+  # long-term metrics from Thanos
+  - name: metrics
+  # GitLab LFS/artifacts/uploads/packages
+  - |
+    {% set buckets = [] %}
+    {% for name in gitlab_buckets.values() %}
+    {%   set _ = buckets.append({
+           'name': name,
+         })    %}
+    {% endfor  %}
+    {{ buckets }}
+  # Open WebUI uploads
+  - name: openwebui
 
-minio_policies:
-  # IAM-compatible policies for users and groups
-  # only (there is no support for bucket policy)
-  # NOTE: rendered JSON doc cannot exceed 20 KiB
-  # https://min.io/docs/minio/linux/administration/identity-access-management/policy-based-access-control.html#policy-document-structure
-  # lookup_plugins/one_bucket_iam_policy.py creates a broad
-  # policy. ideally, allowed actions should be more limited:
-  # https://github.com/vmware-tanzu/velero-plugin-for-aws#option-1-set-permissions-with-an-iam-user
-  backups-rw: "{{ lookup('one_bucket_iam_policy', 'backups') }}"
-  metrics-rw: "{{ lookup('one_bucket_iam_policy', 'metrics') }}"
-  openwebui-rw: "{{ lookup('one_bucket_iam_policy', 'openwebui') }}"
+# IAM-compatible policies for users and groups
+# only (there is no support for bucket policy)
+# NOTE: rendered JSON doc cannot exceed 20 KiB
+# https://min.io/docs/minio/linux/administration/identity-access-management/policy-based-access-control.html#policy-document-structure
+# lookup_plugins/one_bucket_iam_policy.py creates a broad
+# policy. ideally, allowed actions should be more limited:
+# https://github.com/vmware-tanzu/velero-plugin-for-aws#option-1-set-permissions-with-an-iam-user
+minio_policies: |
+  {{ {
+    'backups-rw': lookup('one_bucket_iam_policy', 'backups'),
+    'metrics-rw': lookup('one_bucket_iam_policy', 'metrics'),
+     'gitlab-rw': lookup('one_bucket_iam_policy', 'gitlab-*'),
+  'openwebui-rw': lookup('one_bucket_iam_policy', 'openwebui'),
+  } }}
 
 minio_users: # non-root
   # name = access_key
@@ -34,24 +45,28 @@ minio_users: # non-root
     # https://min.io/docs/minio/linux/administration/identity-access-management/policy-based-access-control.html#built-in-policies
     # policies: ["readwrite"]
   longhorn:
-    # policies managed by "backups" group
     secret_key: "{{ minio_client_pass }}"
+    # policies managed by "backups" group
   velero:
-    # policies managed by "backups" group
     secret_key: "{{ minio_client_pass }}"
+    # policies managed by "backups" group
   metrics:
     secret_key: "{{ minio_client_pass }}"
-    policies: ["diagnostics"]
-  thanos:
     # policies managed by "metrics" group
+  thanos:
     secret_key: "{{ minio_client_pass }}"
+    # policies managed by "metrics" group
+  gitlab:
+    secret_key: "{{ minio_client_pass }}"
+    policies: ["gitlab-rw"]
   openwebui:
-    # policies managed by "openwebui" group
     secret_key: "{{ minio_client_pass }}"
+    policies: ["openwebui-rw"]
 
 minio_groups:
   admins:
-    members: ["erhhung"]
+    members:
+      - erhhung
     policies: ["consoleAdmin"]
   backups:
     members:
@@ -59,11 +74,12 @@ minio_groups:
       - velero
     policies: ["backups-rw"]
   metrics:
-    members: ["thanos"]
-    policies: ["metrics-rw"]
-  openwebui:
-    members: ["openwebui"]
-    policies: ["openwebui-rw"]
+    members:
+      - metrics
+      - thanos
+    policies:
+      - diagnostics
+      - metrics-rw
 
 minio_host_names: # aliases of "homelab"
   - minio # console
@@ -228,14 +244,7 @@ minio_tenant_chart_values:
 
     # pre-create buckets
     # THIS DOES NOT WORK
-    buckets: |
-      {% set buckets = [] %}
-      {% for name in minio_buckets.keys() %}
-      {%   set _ = buckets.append({
-             'name': name
-           }) %}
-      {% endfor  %}
-      {{ buckets }}
+    buckets: "{{ minio_buckets | flatten }}"
 
     # https://min.io/docs/minio/kubernetes/upstream/operations/network-encryption.html
     # https://min.io/docs/minio/kubernetes/upstream/reference/operator-crd.html#localcertificatereference
