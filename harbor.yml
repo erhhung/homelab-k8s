@@ -132,15 +132,47 @@
     # https://harbor.fourteeners.local/devcenter-api-2.0
     api_base: https://{{ harbor_fqdn }}/api/v2.0
     api_auth: admin:'{{ harbor_admin_pass }}'
+    uri_auth: &uri_auth
+      url_username: admin
+      url_password: "{{ harbor_admin_pass }}"
+      force_basic_auth: true
   pre_tasks:
-    - name: Get library project config
+    - name: Get Harbor system settings
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/uri_module.html
       ansible.builtin.uri:
+        url: "{{ api_base }}/configurations"
+        <<: *uri_auth
+        return_content: true
+      register: system_settings
+
+    - name: Get library project config
+      ansible.builtin.uri:
         url: "{{ api_base }}/projects/library"
-        # GET does not require authentication
+        # no auth required
         return_content: true
       register: project_config
   tasks:
+    - name: Configure system settings
+      vars:
+        existing: "{{ system_settings.json }}"
+        settings: |
+          {% set settings = {} %}
+          {% for key, value in harbor_settings.items() %}
+          {%   if key in existing and existing[key].editable == true
+                                  and existing[key].value    != value %}
+          {%     set _ = settings.update({key: value}) %}
+          {%   endif  %}
+          {% endfor   %}
+          {{ settings }}
+      ansible.builtin.uri:
+        method: PUT
+        url: "{{ api_base }}/configurations"
+        <<: *uri_auth
+        body_format: json
+        body: "{{ settings }}"
+      when: settings is truthy
+      changed_when: true
+
     - name: Configure library project
       vars:
         metadata: "{{ project_config.json.metadata }}"
@@ -149,9 +181,7 @@
       ansible.builtin.uri:
         method: PUT
         url: "{{ api_base }}/projects/library"
-        url_username: admin
-        url_password: "{{ harbor_admin_pass }}"
-        force_basic_auth: true
+        <<: *uri_auth
         body_format: json
         body:
           metadata:

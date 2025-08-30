@@ -3,12 +3,16 @@
 
 # in order to log in using client TLS cert, generate
 # a cert at pki.fourteeners.local using CN=<db_user>
+# IMPORTANT: users (roles) are only created when the
+# cluster is initially deployed--new users will have
+# to be created manually afterwards
 postgresql_users:
   - erhhung
   - scraper
-  - "{{ keycloak_db_user }}"
+  - "{{  keycloak_db_user }}"
+  - "{{    gitlab_db_user }}"
   - "{{ openwebui_db_user }}"
-  - "{{ flowise_db_user }}"
+  - "{{   flowise_db_user }}"
 
 postgresql_superuser: erhhung
 
@@ -56,9 +60,15 @@ postgresql_chart_values:
       adminPassword: "{{ postgresql_pass }}" # user "admin"
 
   persistence:
-    storageClass: "{{ storage_classes['default'] }}"
-    size: 2Gi
-    mountPath: /postgresql
+    size: 5Gi
+    # don't change the mountPath because at least one
+    # postgresql container volumeMount hardcodes this
+    mountPath: /bitnami/postgresql
+
+  volumePermissions:
+    # required when providing
+    # postgresql.extendedConf
+    enabled: true
 
   postgresql:
     replicaCount: 3
@@ -76,14 +86,52 @@ postgresql_chart_values:
       certKeyFilename: tls.key
       certCAFilename: ca.crt
 
-    # https://github.com/bitnami/charts/tree/main/bitnami/postgresql-ha#resource-requests-and-limits
-    # use a preset instead of explicitly configuring resources:
-    # none, nano, micro, small, medium, large, xlarge, 2xlarge
-    # https://github.com/bitnami/charts/tree/main/bitnami/common/templates/_resources.tpl
-    resourcesPreset: micro
-    # resources: ~
+    # resourcesPreset: small
+    resources:
+      requests:
+        cpu: 100m
+        memory: 512Mi
+        ephemeral-storage: 50Mi
 
     priorityClassName: "{{ priority_classes['database'] }}"
+
+    readinessProbe:
+      enabled: false
+    # chart-defined probe
+    # is too complicated!
+    customLivenessProbe:
+      exec:
+        command:
+          - sh
+          - -c
+          - test "$(psql -U postgres -c "SELECT 1" -tAq)" = 1
+      initialDelaySeconds: 30
+      periodSeconds: 20
+      timeoutSeconds: 5
+      successThreshold: 1
+      failureThreshold: 6
+
+    # syncReplication sets synchronous_commit = 'on', but
+    # we override to 'remote_apply' in extendedConf below
+    syncReplication: true
+    # https://www.postgresql.org/docs/current/runtime-config-replication.html#GUC-SYNCHRONOUS-STANDBY-NAMES
+    syncReplicationMode: ANY
+
+    # similar to postgresql.configuration
+    # but appended to  main configuration:
+    # /bitnami/postgresql/conf/postgresql.conf
+    # /bitnami/postgresql/conf/conf.d/override.conf
+    extendedConf: |
+      # this setting could drastically increase write latency but will guarantee
+      # consistency since reads could come from any load-balanced Pgpool replica:
+      # https://www.postgresql.org/docs/current/runtime-config-wal.html#GUC-SYNCHRONOUS-COMMIT
+      synchronous_commit = 'remote_apply'
+
+    maxConnections: 5000 # max total connections
+    postgresConnectionLimit: 200 # max connections by 'postgres' user
+    dbUserConnectionLimit: 1000 # max connections by {username} user
+
+    sharedPreloadLibraries: pgaudit # CSV
 
     # https://github.com/bitnami/charts/tree/main/bitnami/postgresql-ha#initialize-a-fresh-instance
     initdbScripts:
@@ -91,7 +139,7 @@ postgresql_chart_values:
       init.sql: "{{ lookup('ansible.builtin.template', template_dir ~ '/postgresql/init.sql.j2') }}"
 
   pgpool:
-    replicaCount: 1
+    replicaCount: 2
 
     # duplicate global settings or
     # else helm diff upgrade fails
@@ -101,18 +149,43 @@ postgresql_chart_values:
     # https://github.com/bitnami/charts/tree/main/bitnami/postgresql-ha#securing-traffic-using-tls
     tls: *node_tls
 
+    # https://github.com/bitnami/charts/tree/main/bitnami/postgresql-ha#resource-requests-and-limits
     # use a preset instead of explicitly configuring resources:
-    # none, nano, micro, small, medium, large, xlarge, 2xlarge
+    # values: none|nano|micro|small|medium|large|xlarge|2xlarge
     resourcesPreset: micro
     # resources: ~
 
     priorityClassName: "{{ priority_classes['database'] }}"
 
-    # the exec probes cause more load
-    # and restarts than being helpful
-    readinessProbe: &probe
-      enabled: false
-    livenessProbe: *probe
+    startupProbe:
+      enabled: true
+      initialDelaySeconds: 5
+      periodSeconds: 5
+      timeoutSeconds: 5
+      successThreshold: 1
+      failureThreshold: 12
+    readinessProbe:
+      enabled: true
+      initialDelaySeconds: 5
+      periodSeconds: 20
+      timeoutSeconds: 5
+      successThreshold: 1
+      failureThreshold: 6
+    livenessProbe:
+      enabled: true
+      initialDelaySeconds: 30
+      periodSeconds: 60
+      timeoutSeconds: 5
+      successThreshold: 1
+      failureThreshold: 3
+
+    # this is off only because synchronous_commit = 'remote_apply'
+    # in postgresql.conf to ensure consistency by trading latency:
+    # https://www.pgpool.net/docs/latest/en/html/runtime-config-load-balancing.html#RUNTIME-CONFIG-LOAD-BALANCING-SETTINGS
+    disableLoadBalancingOnWrite: "off" # must be quoted
+
+    # Pgpool Control Protocol
+    logPcpProcesses: false
 
     customUsers:
       # semicolon-separated list of usernames & passwords

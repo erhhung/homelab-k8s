@@ -1,34 +1,35 @@
 # https://argo-cd.readthedocs.io/en/stable/getting_started/
 # https://argo-cd.readthedocs.io/en/stable/operator-manual/installation/
 ---
-- name: Install Argo CD on RKE cluster
+- name: Install Argo CD GitOps tool
   tags: install
   hosts: "{{ rke_control_plane_host }}"
+  gather_facts: false
   vars_files:
     - vars/kubernetes.yml
-    - vars/monitoring.yml
     - vars/valkey.yml
+    - vars/monitoring.yml
     - vars/argocd.yml
   vars:
+    # required kubernetes>=24.2 package only in user virtualenv
+    ansible_python_interpreter: "{{ venv_python_interpreter }}"
     kubeconfig: "{{ rke_kubeconfig }}"
     secret_ns: "{{ argocd_namespace }}"
+    create_ns: false
     release: "{{ argocd_release_name }}"
-  pre_tasks:
-    - name: Is the monitoring stack ready?
-      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
-      ansible.builtin.include_tasks: tasks/monitoring/stackready.yml
-      when: monitoring_stack_ready is not defined
   tasks:
     # https://argo-cd.readthedocs.io/en/stable/operator-manual/tls/#tls-certificates-used-by-argocd-server
     - name: Create Argo CD ingress secret
       vars:
         secret_name: "{{ argocd_secrets['server'] }}"
+        create_ns: true
         cert_name: argocd-server-ingress
         sans:
           - argocd
           - "{{ argocd_fqdn }}"
           - "*.{{ argocd_namespace }}.svc.{{ cluster_domain }}"
           - "*.{{ argocd_namespace }}.svc"
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
       ansible.builtin.include_tasks: tasks/k8s/secrets/tls.step.yml
 
     - name: Create Valkey password secret
@@ -36,14 +37,10 @@
         secret_name: "{{ argocd_secrets['valkey'] }}"
         secret_data:
           redis-password: "{{ valkey_pass }}"
-        create_ns: false
       ansible.builtin.include_tasks: tasks/k8s/secrets/generic.yml
 
     # https://github.com/argoproj/argo-helm/tree/main/charts/argo-cd
     - name: Install Argo CD Helm chart
-      vars:
-        # required kubernetes>=24.2 package only in user virtualenv
-        ansible_python_interpreter: "{{ venv_python_interpreter }}"
       # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/helm_module.html
       kubernetes.core.helm:
         kubeconfig: "{{ kubeconfig }}"

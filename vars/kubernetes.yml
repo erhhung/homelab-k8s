@@ -59,6 +59,10 @@ rke_fqdns: >
   {{ ([rke_cluster_name] + groups[rke_control_plane_group]) |
       product(search_domains) | map('join','.') | list }}
 
+kube_system_domain: kube-system.svc.{{ cluster_domain }}
+k3s_dns_host: kube-dns.{{ kube_system_domain }}
+rke_dns_host: rke2-coredns-rke2-coredns.{{ kube_system_domain }}
+
 k3s_ingress_class: traefik
 rke_ingress_class: nginx
 
@@ -74,7 +78,15 @@ rke_ingress_class: nginx
 # kubernetes.default.svc.cluster.local
 #                        cluster.local 10.43.0.1
 #                        localhost     127.0.0.1
-nginx_default_tls_secret: rke2-ingress-nginx-default-tls
+nginx_tls_secret: rke2-ingress-nginx-default-tls
+
+nginx_tcp_configmap: rke2-ingress-nginx-tcp-services
+nginx_udp_configmap: rke2-ingress-nginx-udp-services
+
+nginx_tcp_services:
+  # https://kubernetes.github.io/ingress-nginx/user-guide/exposing-tcp-udp-services
+  10022: gitlab/gitlab-shell:22
+nginx_udp_services: {}
 
 # virtual IP assigned by RKE2 kube-vip
 rke_lb_vip: "{{ lb_vip_range.start }}"

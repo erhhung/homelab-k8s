@@ -108,11 +108,11 @@
         res_kind: Deployment
         res_name: inteldeviceplugins-controller-manager
         res_ns: "{{ intel_device_plugins_namespace }}"
-        container: manager
         probes:
-          readinessProbe: &probe
-            timeoutSeconds: 5 # default=1
-          livenessProbe: *probe
+          manager:
+            readinessProbe: &probe
+              timeoutSeconds: 5 # default=1
+            livenessProbe: *probe
       ansible.builtin.include_tasks: tasks/k8s/probes.yml
 
     - name: Deploy Intel Device Plugin CRs

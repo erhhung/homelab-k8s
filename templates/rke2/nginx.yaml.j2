@@ -45,15 +45,20 @@ spec:
       # annotations, such as ones added by Keycloak
       allowSnippetAnnotations: true
 
-      # https://www.vcluster.com/docs/vcluster/manage/accessing-vcluster#expose-vcluster
+      # https://kubernetes.github.io/ingress-nginx/user-guide/cli-arguments
       extraArgs:
-        default-ssl-certificate: kube-system/{{ nginx_default_tls_secret }}
+        default-ssl-certificate: kube-system/{{ nginx_tls_secret }}
 
         # --enable-ssl-passthrough is required so that
         # the vCluster ingress controller can generate
         # and serve the proper SAN certificate for the
-        # Kubernetes API server
+        # Kubernetes API server:
+        # https://www.vcluster.com/docs/vcluster/manage/accessing-vcluster#expose-vcluster
         enable-ssl-passthrough: ""
+
+        # https://kubernetes.github.io/ingress-nginx/user-guide/exposing-tcp-udp-services
+        tcp-services-configmap: kube-system/{{ nginx_tcp_configmap }}
+        udp-services-configmap: kube-system/{{ nginx_udp_configmap }}
 
       resources:
         requests:

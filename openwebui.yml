@@ -204,7 +204,7 @@
     - name: Create Erhhung's Family group
       vars:
         family: "{{ list_groups.json | selectattr('name', '==', group_name) }}"
-      when: family is not truthy
+      when: family is falsy
       block:
         - name: Create the "Family" group
           ansible.builtin.uri:
@@ -254,7 +254,7 @@
     - name: Populate Erhhung's memories
       vars:
         current: "{{ list_memories.json | selectattr('user_id', '==', admin_user.id) }}"
-      when: current is not truthy
+      when: current is falsy
       block:
         - name: Read encrypted memories.yaml
           vars:
@@ -312,7 +312,7 @@
             write:
               user_ids: "{{ [admin_user.id] }}"
         return_content: true
-      when: knowledge is not truthy
+      when: knowledge is falsy
       register: create_knowledge
       changed_when: create_knowledge.status == 200
 
@@ -381,7 +381,7 @@
             write:
               user_ids: "{{ [admin_user.id] }}"
         return_content: true
-      when: model is not truthy
+      when: model is falsy
       register: create_model
       changed_when: create_model.status == 200
 

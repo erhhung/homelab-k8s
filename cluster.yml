@@ -2,7 +2,7 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/ansible/ansible-lint/main/src/ansiblelint/schemas/ansible.json
 ---
 # https://docs.rke2.io/install/quickstart
-- name: Perform RKE2 role
+- name: Install RKE2 using role
   tags: rke2
   hosts: cluster
   become: true
@@ -41,7 +41,7 @@
       # and then re-run this playbook.
   any_errors_fatal: true
 
-- name: Set up shell environment for kubectl
+- name: Configure kubectl usage
   tags:
     - kubectl
     - kubeconfig
@@ -78,7 +78,7 @@
       ansible.builtin.include_tasks: tasks/k8s/kubeconfig.yml
   any_errors_fatal: true
 
-- name: Set up shell environment for kubectl
+- name: Configure kubectl usage
   tags:
     - kubectl
     - kubeconfig
@@ -165,7 +165,7 @@
         install_cli.rc != 9
   any_errors_fatal: true
 
-- name: Apply supplemental RKE2 configuration
+- name: Configure RKE2 cluster
   tags: configure
   hosts: cluster
   vars_files:
@@ -214,16 +214,10 @@
     #   vars:
     #     failure_threshold: 12
     #   ansible.builtin.shell: |
-    #     set -o pipefail
     #     cd /var/lib/rancher/rke2/agent/pod-manifests
-    #
-    #     yq_expr='.spec.containers[0].livenessProbe.failureThreshold = {{ failure_threshold }}'
-    #     diff=$( diff <(yq -PM . kube-proxy.yaml) <(yq -PM "$yq_expr" kube-proxy.yaml) )
-    #     [ "$diff" ] || exit 9 # no change
-    #
-    #     yq -iPM "$yq_expr" kube-proxy.yaml
-    #   args:
-    #     executable: /bin/bash
+    #     prop=".spec.containers[0].livenessProbe.failureThreshold"
+    #     [ "$(yq "$prop" kube-proxy.yaml)" -ne {{ failure_threshold }} ] || exit 9 # no change
+    #     yq -i "$prop = {{ failure_threshold }}" kube-proxy.yaml
     #   register: patch_pod
     #   changed_when: patch_pod.rc == 0
     #   failed_when: >-
@@ -231,56 +225,82 @@
     #     patch_pod.rc != 9
     #   notify: Restart kube-proxy static pod
 
-    # not sure exactly why kube-proxy doesn't already have
-    # permissions to watch Service, EndpointSlice and Node
-    - name: Update kube-proxy ClusterRole
-      become: true
-      ansible.builtin.copy:
+    - name: Create supplemental resources
+      when: inventory_hostname == rke_control_plane_host
+      block:
+        # not sure exactly why kube-proxy doesn't already have
+        # permissions to watch Service, EndpointSlice and Node
+        - name: Create kube-proxy ClusterRole
+          become: true
+          ansible.builtin.copy:
+            # https://docs.rke2.io/advanced#auto-deploying-manifests
+            dest: "{{ rke_manifests_dir }}/kube-proxy-clusterrole.yaml"
+            content: |
+              apiVersion: rbac.authorization.k8s.io/v1
+              kind: ClusterRole
+              metadata:
+                name: system:kube-proxy
+              rules:
+                - apiGroups: [""]
+                  resources: ["services", "endpoints", "nodes"]
+                  verbs: ["get", "list", "watch"]
+                - apiGroups: ["discovery.k8s.io"]
+                  resources: ["endpointslices"]
+                  verbs: ["get", "list", "watch"]
+            mode: "0644"
+          register: kube_proxy_cr
+
+        - name: Create Nginx default TLS secret
+          vars:
+            kubeconfig: "{{ rke_kubeconfig }}"
+            cert_desc: Nginx ingress
+            cert_file: nginx
+            secret_name: "{{ nginx_tls_secret }}"
+            secret_ns: kube-system
+            create_ns: false
+          ansible.builtin.include_tasks: tasks/k8s/secrets/tls.pki.yml
+
+        # https://kubernetes.github.io/ingress-nginx/user-guide/exposing-tcp-udp-services
+        - name: Create Nginx TCP/UDP ConfigMap
+          vars:
+            # required kubernetes>=24.2 package only in user virtualenv
+            ansible_python_interpreter: "{{ venv_python_interpreter }}"
+          # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_module.html
+          kubernetes.core.k8s:
+            kubeconfig: "{{ rke_kubeconfig }}"
+            definition:
+              apiVersion: v1
+              kind: ConfigMap
+              metadata:
+                name: "{{ item.name }}"
+                namespace: kube-system
+              data: "{{ item.data }}"
+            validate:
+              fail_on_error: false
+            state: present
+          loop:
+            - name: "{{ nginx_tcp_configmap }}"
+              data: "{{ nginx_tcp_services }}"
+            - name: "{{ nginx_udp_configmap }}"
+              data: "{{ nginx_udp_services }}"
+          loop_control:
+            label: "{{ item.name }}"
+
         # https://docs.rke2.io/advanced#auto-deploying-manifests
-        dest: "{{ rke_manifests_dir }}/kube-proxy-clusterrole.yaml"
-        content: |
-          apiVersion: rbac.authorization.k8s.io/v1
-          kind: ClusterRole
-          metadata:
-            name: system:kube-proxy
-          rules:
-            - apiGroups: [""]
-              resources: ["services", "endpoints", "nodes"]
-              verbs: ["get", "list", "watch"]
-            - apiGroups: ["discovery.k8s.io"]
-              resources: ["endpointslices"]
-              verbs: ["get", "list", "watch"]
-        mode: "0644"
-      when: inventory_hostname == rke_control_plane_host
-      register: kube_proxy_cr
-
-    - name: Create Nginx ingress secret
-      vars:
-        kubeconfig: "{{ rke_kubeconfig }}"
-        cert_desc: Nginx ingress
-        cert_file: nginx
-        secret_name: "{{ nginx_default_tls_secret }}"
-        secret_ns: kube-system
-        create_ns: false
-      ansible.builtin.include_tasks: tasks/k8s/secrets/tls.pki.yml
-      when: inventory_hostname == rke_control_plane_host
-
-    # https://docs.rke2.io/advanced#auto-deploying-manifests
-    - name: Write HelmChartConfig manifests
-      become: true
-      ansible.builtin.template:
-        src: "{{ template_dir }}/{{ item.src }}"
-        dest: "{{ rke_manifests_dir }}/{{ item.dest }}"
-        mode: "0664"
-      loop:
-        - src: rke2/coredns.yaml.j2
-          dest: rke2-coredns-config.yaml
-        - src: rke2/nginx.yaml.j2
-          dest: rke2-ingress-nginx-config.yaml
-      loop_control:
-        label: "{{ item.dest }}"
-      when: inventory_hostname == rke_control_plane_host
-      register: chart_configs
+        - name: Write HelmChartConfig manifests
+          become: true
+          ansible.builtin.template:
+            src: "{{ template_dir }}/{{ item.src }}"
+            dest: "{{ rke_manifests_dir }}/{{ item.dest }}"
+            mode: "0664"
+          loop:
+            - src: rke2/coredns.yaml.j2
+              dest: rke2-coredns-config.yaml
+            - src: rke2/nginx.yaml.j2
+              dest: rke2-ingress-nginx-config.yaml
+          loop_control:
+            label: "{{ item.dest }}"
+          register: chart_configs
 
     # this task is known to fail for reasons not yet known,
     # and manually restarting the rke2-server service also
@@ -289,12 +309,12 @@
     - name: Restart {{ rke2_svc }} service
       # noqa no-handler
       when: >-
-        containerd_toml.changed   or
-        cri_base_json.changed     or
-        kube_proxy_cr is defined and
-        kube_proxy_cr.changed     or
-        chart_configs is defined and
-        chart_configs.results  | map(attribute='changed') is any
+        containerd_toml is changed  or
+        cri_base_json   is changed  or
+        kube_proxy_cr   is defined and
+        kube_proxy_cr   is changed  or
+        chart_configs   is defined and
+        chart_configs.results | map(attribute='changed') is any
       become: true
       block:
         - name: Stop {{ rke2_svc }} service
@@ -374,7 +394,6 @@
               {%   endfor %}
               {% endfor %}
               {{ nodes  }}
-          # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_module.html
           kubernetes.core.k8s:
             kubeconfig: "{{ rke_kubeconfig }}"
             api_version: v1

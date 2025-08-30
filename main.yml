@@ -96,6 +96,11 @@
   ansible.builtin.import_playbook: istio.yml
   tags: istio
 
+# GitLab depends on PostgreSQL, MinIO, Harbor
+- name: Include GitLab CI/CD stack playbook
+  ansible.builtin.import_playbook: gitlab.yml
+  tags: gitlab
+
 # Argo CD depends on Valkey
 - name: Include Argo CD GitOps tool playbook
   ansible.builtin.import_playbook: argocd.yml

@@ -229,6 +229,22 @@ cd "$HOME"
   istio.fourteeners.local
 
 ./cert.sh --exp=365 \
+          --out=gitlab_db \
+  gitlab gitlab@fourteeners.local
+
+./cert.sh --exp=365 \
+          --out=gitlab     gitlab-node \
+                           gitlab.fourteeners.local \
+                     pages.gitlab.fourteeners.local \
+                  \*.pages.gitlab.fourteeners.local \
+        \*.gitlab-praefect.gitlab.svc.cluster.local \
+        \*.gitlab-praefect.gitlab.svc \
+  \*.gitlab-gitaly-default.gitlab.svc.cluster.local \
+  \*.gitlab-gitaly-default.gitlab.svc \
+                        \*.gitlab.svc.cluster.local \
+                        \*.gitlab.svc
+
+./cert.sh --exp=365 \
      argocd \
      argocd.fourteeners.local \
   \*.argocd.svc.cluster.local \

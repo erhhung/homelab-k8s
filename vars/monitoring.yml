@@ -1,8 +1,7 @@
-#         monitoring_pass: {vault.yml}
-#       thanos_admin_pass: {vault.yml}
-#      grafana_admin_pass: {vault.yml}
-#  alertmanager_smtp_pass: {vault.yml}
-#             icloud_smtp: {vault.yml}
+#    monitoring_pass: {vault.yml}
+#  thanos_admin_pass: {vault.yml}
+# grafana_admin_pass: {vault.yml}
+#        icloud_smtp: {vault.yml}
 
 grafana_admin_user: erhhung
 
@@ -43,7 +42,7 @@ monitoring_fqdns: |
   {% for service, hosts in monitoring_host_names.items() %}
   {%   set _ = fqdns.update({
          service: hosts | product(search_domains) | map('join','.')
-       }) %}
+       })   %}
   {% endfor %}
   {{ fqdns  }}
 
@@ -114,7 +113,7 @@ alertmanager_config:
     smtp_smarthost: "{{ icloud_smtp.host }}:{{ icloud_smtp.port }}"
     smtp_require_tls: true
     smtp_auth_username: "{{ icloud_smtp.username }}"
-    smtp_auth_password: "{{ alertmanager_smtp_pass }}"
+    smtp_auth_password: "{{ icloud_smtp.passwords['alertmanager'] }}"
 
   # default e-mail template:
   # https://github.com/prometheus/alertmanager/tree/main/template/email.tmpl

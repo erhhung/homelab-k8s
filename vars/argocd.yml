@@ -189,7 +189,7 @@ argocd_chart_values:
       enabled: true
 
       serviceMonitor:
-        enabled: "{{ prometheus_crds_installed }}"
+        enabled: true
         additionalLabels:
           release: "{{ monitoring_release_name }}"
         # all dedicated *-metrics services

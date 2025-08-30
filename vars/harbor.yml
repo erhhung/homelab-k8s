@@ -119,3 +119,11 @@ harbor_roles:
   developer: 2
   guest: 3
   limitedGuest: 5
+
+# system settings API payload:
+# PUT /api/v2.0/configurations
+harbor_settings:
+  # Harbor UI user sessions
+  session_timeout: 480 # minutes
+  # Docker/Buildah sessions
+  token_expiration: 120 # minutes

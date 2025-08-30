@@ -1,4 +1,5 @@
 # keycloak_admin_pass: {vault.yml}
+#         icloud_smtp: {vault.yml}
 
 keycloak_namespace: keycloak
 keycloak_host_names: # aliases of "homelab"
@@ -47,6 +48,9 @@ keycloak_jdbc_url: >-
 
 # file is in "keycloakx-dbsql" ConfigMap
 keycloak_sql_gz_b64: keycloak.sql.gz.b64
+
+# NOTE: iCloud SMTP server configuration
+# has been pre-baked into the SQL script
 
 # https://github.com/codecentric/helm-charts/tree/master/charts/keycloakx
 keycloakx_chart_version: "7.0.1"

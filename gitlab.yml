@@ -1,0 +1,228 @@
+# https://docs.gitlab.com/charts/installation
+# https://docs.gitlab.com/charts/advanced
+---
+- name: Install GitLab CI/CD stack
+  tags: install
+  hosts: "{{ rke_control_plane_host }}"
+  gather_facts: false
+  vars_files:
+    - vars/basics.yml
+    - vars/kubernetes.yml
+    - vars/postgresql.yml
+    - vars/storage.yml
+    - vars/minio.yml
+    - vars/monitoring.yml
+    - vars/gitlab.secrets.yml
+    - vars/gitlab.yml
+  vars:
+    # required kubernetes>=24.2 package only in user virtualenv
+    ansible_python_interpreter: "{{ venv_python_interpreter }}"
+    kubeconfig: "{{ rke_kubeconfig }}"
+    secret_ns: "{{ gitlab_namespace }}"
+    create_ns: false
+    release: "{{ gitlab_release_name }}"
+  pre_tasks:
+    - name: Get the PostgreSQL image used
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
+      ansible.builtin.include_tasks: tasks/postgresql/image.yml
+      when: postgresql_image is not defined
+
+    - name: Get CA certificates from PKI
+      ansible.builtin.include_tasks: tasks/pki/cacerts.yml
+      when: ca_certificates is not defined
+  tasks:
+    # cert also used by GitLab ingress
+    - name: Create GitLab node secret
+      vars:
+        global_: "{{ gitlab_chart_values.global }}"
+        storages: "{{ global_.praefect.virtualStorages }}"
+        services:
+          - praefect
+          - gitaly-{{ storages[0].name }}
+        svc_domains:
+          - "{{ gitlab_namespace }}.svc.{{ cluster_domain }}"
+          - "{{ gitlab_namespace }}.svc"
+        secret_name: "{{ gitlab_secrets['node-tls'] }}"
+        create_ns: true
+        cert_name: gitlab-node
+        sans_:
+          - gitlab-node
+          - "{{ gitlab_fqdns.values() }}"
+          - "*.{{ gitlab_fqdns['pages'] }}"
+          # include SANs for service pods
+          - |
+            {% set pods = [] %}
+            {% for svc in services %}
+            {%   set svc = gitlab_release_name ~'-'~ svc %}
+            {%   set  _  = pods.append('*.'~ svc) %}
+            {% endfor %}
+            {{   pods | product(svc_domains) | map('join','.') }}
+          - "{{ ['*'] | product(svc_domains) | map('join','.') }}"
+        sans: "{{ sans_ | flatten }}"
+      ansible.builtin.include_tasks: tasks/k8s/secrets/tls.step.yml
+
+    # https://docs.gitlab.com/runner/install/kubernetes_helm_chart_configuration#access-gitlab-with-a-custom-certificate
+    - name: Create GitLab certs secret
+      vars:
+        domains:
+          # include both external FQDN
+          # and internal service domain
+          - "{{ gitlab_fqdns['gitlab'] }}"
+          - "{{ gitlab_service_host    }}"
+          - "{{ gitlab_service_host | replace('.'~ cluster_domain, '') }}"
+        bundle: "{{ ca_certificates | join('\n') }}"
+        secret_name: "{{ gitlab_secrets['certs'] }}"
+        secret_data: |
+          {% set files = {'ca.crt': ca_certificates[1]} %}
+          {% for domain in domains %}
+          {%   set _ = files.update({domain ~'.crt': bundle}) %}
+          {% endfor %}
+          {{ files  }}
+      ansible.builtin.include_tasks: tasks/k8s/secrets/generic.yml
+
+    - name: Create GitLab storage secret
+      vars:
+        secret_name: "{{ gitlab_secrets['storage'] }}"
+        secret_data:
+          # `connection` is used as consolidated object storage config
+          # and referenced by global.appConfig.object_store.connection
+          # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/to_nice_yaml_filter.html
+          connection: "{{ gitlab_minio_config |
+            ansible.builtin.to_nice_yaml(indent=2, sort_keys=false) }}"
+          # `accesskey` and `secretkey` are used as Runner cache
+          # config and referenced by gitlab-runner.runners.cache:
+          # https://docs.gitlab.com/runner/install/kubernetes_helm_chart_configuration#amazon-s3
+          accesskey: "{{ gitlab_minio_config.aws_access_key_id }}"
+          secretkey: "{{ gitlab_minio_config.aws_secret_access_key }}"
+      ansible.builtin.include_tasks: tasks/k8s/secrets/generic.yml
+
+    # only to install PostgreSQL extensions
+    - name: Create database superuser secret
+      ansible.builtin.include_tasks: tasks/postgresql/superuser.yml
+
+    - name: Create GitLab database secret
+      vars:
+        secret_name: "{{ gitlab_secrets['database'] }}"
+        cert_name: gitlab-database
+        days: 365
+        sans:
+          - "{{ gitlab_db_user }}"
+          - "{{ gitlab_db_user }}@{{ homelab_domain }}"
+      ansible.builtin.include_tasks: tasks/k8s/secrets/tls.step.yml
+
+    - name: Create GitLab passwords secret
+      vars:
+        secret_name: "{{ gitlab_secrets['passwords'] }}"
+        secret_data:
+          root: "{{ gitlab_root_pass }}"
+          postgresql: "{{ pgpool_pass }}"
+          redis: "{{ gitlab_secrets_data['redis'] }}"
+          smtp: "{{ icloud_smtp.passwords['gitlab'] }}"
+      ansible.builtin.include_tasks: tasks/k8s/secrets/generic.yml
+
+    # create secrets generated by the
+    # script: files/gitlab/secrets.sh
+    - name: Create generated GitLab secrets
+      vars:
+        # gitlab_secrets_data is defined in vault-encrypted vars/gitlab.secrets.yml:
+        # keys with "gitlab-" prefix will be secret names and their values are data
+        # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/dict2items_filter.html
+        secrets: |
+          {{ gitlab_secrets_data |
+             ansible.builtin.dict2items(key_name='name', value_name='data') |
+             selectattr('name', 'search', '^gitlab-') }}
+        secret_name: "{{ item.name }}"
+        secret_data: "{{ item.data }}"
+      ansible.builtin.include_tasks: tasks/k8s/secrets/generic.yml
+      loop: "{{ secrets }}"
+      loop_control:
+        label: "{{ item.name }}"
+
+    - name: Create monitoring scraper secret
+      ansible.builtin.include_tasks: tasks/monitoring/scraper.yml
+
+    - name: Install GitLab stack Helm chart
+      # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/helm_module.html
+      kubernetes.core.helm:
+        kubeconfig: "{{ kubeconfig }}"
+        chart_repo_url: https://charts.gitlab.io
+        chart_ref: gitlab
+        chart_version: "{{ gitlab_chart_version }}"
+        release_name: "{{ gitlab_release_name }}"
+        release_namespace: "{{ gitlab_namespace }}"
+        release_values: "{{ gitlab_chart_values }}"
+        history_max: "{{ helm_max_history }}"
+        # atomic: true
+        wait: true
+        wait_timeout: 10m0s # requires wait=true
+      # bootstrapping empty databases could take
+      # a long time, with webservice and sidekiq
+      # pods having to restart a few times
+      timeout: 900
+
+    # default 1s timeout for readiness and liveness
+    # probes are too optimistic for our environment
+    - name: Patch GitLab containers' probes
+      vars:
+        res_kind: "{{ item.kind }}"
+        res_name: "{{ gitlab_release_name }}-{{ item.name }}"
+        res_ns: "{{ gitlab_namespace }}"
+        probes: "{{ item.probes }}"
+        global_: "{{ gitlab_chart_values.global }}"
+        storages: "{{ global_.praefect.virtualStorages }}"
+        zoekt: "{{ gitlab_chart_values['gitlab-zoekt'] }}"
+      ansible.builtin.include_tasks: tasks/k8s/probes.yml
+      when: item.when | default(true)
+      loop:
+        - kind: StatefulSet
+          # resource name minus gitlab- prefix
+          name: gitaly-{{ storages[0].name }}
+          probes:
+            gitaly:
+              readinessProbe: &probe
+                periodSeconds: 10
+                timeoutSeconds: 5
+              livenessProbe: *probe
+        # the workhorse container probes had been
+        # "exec /scripts/healthcheck", which sent
+        # a non-HTTPS "GET / HTTP/1.1" request to
+        # /dev/tcp/127.0.0.1/8181
+        - kind: Deployment
+          name: webservice-default
+          probes:
+            gitlab-workhorse:
+              readinessProbe:
+                httpGet:
+                  path: /-/readiness
+                  port: 8181
+                  scheme: HTTPS
+                exec: "{{ omit }}"
+              livenessProbe:
+                httpGet:
+                  path: /-/liveness
+                  port: 8181
+                  scheme: HTTPS
+                exec: "{{ omit }}"
+        # the Zoekt chart templates only set each
+        # probe's httpGet property, leaving other
+        # properties as defaults without a way to
+        # override them in values file
+        - kind: StatefulSet
+          name: gitlab-zoekt
+          probes:
+            zoekt-indexer: &zoekt-container
+              readinessProbe: *probe
+              livenessProbe: *probe
+            zoekt-webserver: *zoekt-container
+            zoekt-internal-gateway: *zoekt-container
+          when: "{{ zoekt.install }}"
+        - kind: Deployment
+          name: gitlab-zoekt-gateway
+          probes:
+            zoekt-external-gateway:
+              readinessProbe: *probe
+              livenessProbe: *probe
+          when: "{{ zoekt.install }}"
+      loop_control:
+        label: "{{ item.name }}"
+  any_errors_fatal: true

@@ -18,7 +18,7 @@
       # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_info_module.html
       kubernetes.core.k8s_info:
         kubeconfig: "{{ user_kubeconfig }}"
-        # 'x' prefix matches mkcluster.yml
+        # 'x' prefix defined by create.yml
         context: x{{ vcluster.name }}
         api_version: v1
         kind: Pod
@@ -47,29 +47,30 @@
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/debug_module.html
       ansible.builtin.debug:
         msg: "{{ user_pods | join('\n') }}"
-      when: user_pods | length > 0
+      when: user_pods is truthy
 
     - name: Prompt for confirmation
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/pause_module.html
       ansible.builtin.pause:
         prompt: Delete vCluster? (y/n)
-      when: user_pods | length > 0
+      when: user_pods is truthy
       register: confirm
 
     - name: Continue with deletion
       when: >-
-        confirm is not defined or
+        confirm.user_input is not defined or
         confirm.user_input | lower == 'y'
       vars:
         # required kubernetes>=24.2 package only in user virtualenv
         ansible_python_interpreter: "{{ venv_python_interpreter }}"
+        vcluster_ns: vcluster-{{ vcluster.name }}
       block:
         - name: Uninstall vCluster Helm release
           # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/helm_module.html
           kubernetes.core.helm:
             kubeconfig: "{{ rke_kubeconfig }}"
             release_name: "{{ vcluster.name }}"
-            release_namespace: vcluster-{{ vcluster.name }}
+            release_namespace: "{{ vcluster_ns }}"
             release_state: absent
             wait: true
           # might take a while to kill non-vCluster
@@ -88,7 +89,7 @@
             kubeconfig: "{{ rke_kubeconfig }}"
             api_version: v1
             kind: Namespace
-            name: vcluster-{{ vcluster.name }}
+            name: "{{ vcluster_ns }}"
             state: absent
             wait: true
           timeout: 300
@@ -132,14 +133,14 @@
               - "{{ user_kubeconfig }}"
               - config
               - unset
-              # 'x' prefix matches mkcluster.yml
+              # 'x' prefix defined by create.yml
               - "{{ item }}.x{{ vcluster.name }}"
           loop:
             - contexts
-            - clusters
             - users
+            - clusters
           when: >-
             helm_uninstall is defined and
-            helm_uninstall.changed
-          changed_when: helm_uninstall.changed
+            helm_uninstall is changed
+          changed_when: helm_uninstall is changed
   any_errors_fatal: true

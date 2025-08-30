@@ -42,14 +42,7 @@
 
     # only to install PostgreSQL extensions
     - name: Create database superuser secret
-      vars:
-        secret_name: "{{ postgresql_secrets['superuser'] }}"
-        cert_name: database-superuser
-        days: 365
-        sans:
-          - "{{ postgresql_superuser }}"
-          - "{{ postgresql_superuser }}@{{ homelab_domain }}"
-      ansible.builtin.include_tasks: tasks/k8s/secrets/tls.step.yml
+      ansible.builtin.include_tasks: tasks/postgresql/superuser.yml
 
     # database-restricted PostgreSQL user
     - name: Create Flowise database secret
@@ -329,7 +322,7 @@
           name: "{{ doc_store_name }}"
           description: Confidential information and notable events about various accounts
         return_content: true
-      when: store is not truthy
+      when: store is falsy
       register: create_store
       changed_when: create_store.status == 200
 
@@ -407,7 +400,7 @@
           # additionalConfig object {ssl:{...}}
           ssl: false
           additionalConfig: "{{ postgres_ssl_config | to_json }}"
-          # namespace: ""
+          namespace: accounts
           tableName: upsert_records
           sourceIdKey: source
           cleanup: none
@@ -432,13 +425,13 @@
         body_format: json
         body: "{{ new }}"
       when: >-
-        old.embeddingConfig        is not truthy or
+        old.embeddingConfig             is falsy or
         old.embeddingConfig.config     | to_json !=
         new.embeddingConfig            | to_json or
-        old.vectorStoreConfig      is not truthy or
+        old.vectorStoreConfig           is falsy or
         old.vectorStoreConfig.config   | to_json !=
         new.vectorStoreConfig          | to_json or
-        old.recordManagerConfig    is not truthy or
+        old.recordManagerConfig         is falsy or
         old.recordManagerConfig.config | to_json !=
         new.recordManagerConfig        | to_json
       register: save_config
@@ -685,7 +678,7 @@
       loop: "{{ flowise_custom_chatflows }}"
       loop_control:
         label: "{{ item.name }}"
-      when: chatflow is not truthy
+      when: chatflow is falsy
       register: create_chatflow
       changed_when: create_chatflow.status == 200
 
