@@ -107,6 +107,7 @@
         - name: Let processes exit
           # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/pause_module.html
           ansible.builtin.pause:
+            prompt: Please wait...
             seconds: 30
 
         - name: Start k3s service

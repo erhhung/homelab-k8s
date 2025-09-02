@@ -40,10 +40,10 @@
         # if Grafana hasn't been installed, status code
         # would be -1 for CERTIFICATE_VERIFY_FAILED due
         # to Nginx returning its default cert; it would
-        # be 502 Bad Gateway if the Grafana pod is down;
+        # be 404 or 502 Bad Gateway if Grafana pod down;
         # otherwise, it would be 401 due to missing API
         # credentials
-        status_code: [-1, 401, 502]
+        status_code: [-1, 401, 404, 502]
       register: grafana_api
 
     - name: Set output facts about stack readiness

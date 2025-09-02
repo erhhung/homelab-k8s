@@ -58,6 +58,8 @@
             {% endfor %}
             {{   pods | product(svc_domains) | map('join','.') }}
           - "{{ ['*'] | product(svc_domains) | map('join','.') }}"
+          # workhorse to webservice
+          - localhost
         sans: "{{ sans_ | flatten }}"
       ansible.builtin.include_tasks: tasks/k8s/secrets/tls.step.yml
 
@@ -196,13 +198,13 @@
                   path: /-/readiness
                   port: 8181
                   scheme: HTTPS
-                exec: "{{ omit }}"
+                exec: OMIT # mark for removal
               livenessProbe:
                 httpGet:
                   path: /-/liveness
                   port: 8181
                   scheme: HTTPS
-                exec: "{{ omit }}"
+                exec: OMIT # mark for removal
         # the Zoekt chart templates only set each
         # probe's httpGet property, leaving other
         # properties as defaults without a way to
@@ -225,4 +227,99 @@
           when: "{{ zoekt.install }}"
       loop_control:
         label: "{{ item.name }}"
+  any_errors_fatal: true
+
+- name: Configure GitLab installation
+  tags: configure
+  hosts: localhost
+  gather_facts: false
+  vars_files:
+    - vars/gitlab.yml
+  vars:
+    config_method: shell # uri|shell
+    site_base: https://{{ gitlab_fqdns['gitlab'] }}
+    # using YAML anchors allows re-evaluation of
+    # facts in tasks to use their current values
+    auth_headers_: &auth-headers
+      Cookie: "{{ cookie_jar }}"
+      X-CSRF-Token: "{{ csrf_token }}"
+    html_headers_: &html-headers
+      Origin: "{{ site_base }}"
+      Referer: "{{ page_url }}"
+      Accept: text/html
+      <<: *auth-headers
+    json_headers_: &json-headers
+      Accept: application/json
+      <<: *auth-headers
+  pre_tasks:
+    - name: Wait until GitLab is ready
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/uri_module.html
+      ansible.builtin.uri:
+        url: "{{ site_base }}/"
+        follow_redirects: none
+        status_code: [301, 302]
+      # https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_loops.html#retrying-a-task-until-a-condition-is-met
+      register: site_check
+      retries: 20
+      delay: 3
+  tasks:
+    - name: Authenticate as root user
+      # skip because uri module issue:
+      # https://github.com/ansible/ansible/issues/85780
+      when: config_method == 'uri'
+      vars:
+        page_url: "{{ site_base }}/users/sign_in"
+      block:
+        - name: Get CSRF token from page
+          vars:
+            referer: "{{ site_base }}/"
+          ansible.builtin.include_tasks: tasks/gitlab/csrftoken.yml
+          # sets facts: csrf_token, page_html, cookie_jar
+
+        - name: Authenticate as root user
+          ansible.builtin.uri:
+            method: POST
+            url: "{{ page_url }}"
+            # makes no sense why must follow redirects
+            # so .cookies is available when Set-Cookie
+            # are already returned in the 302 response
+            follow_redirects: all
+            headers: *html-headers
+            body_format: form-urlencoded
+            body:
+              user[login]: root
+              user[password]: "{{ gitlab_root_pass }}"
+            # status_code: [302]
+          register: root_login
+
+        - name: Save issued cookies
+          vars:
+            cookies_in: "{{ cookie_jar }}"
+            uri_result: "{{ root_login }}"
+          ansible.builtin.include_tasks: tasks/cookiejar.yml
+          # updates cookie_jar fact
+
+    - name: Set application settings
+      when: config_method == 'uri'
+      vars:
+        section: "{{ item.section }}"
+        settings: "{{ item.settings }}"
+      ansible.builtin.include_tasks: tasks/gitlab/settings.yml
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/dict2items_filter.html
+      loop: "{{ gitlab_app_settings |
+        ansible.builtin.dict2items(key_name='section', value_name='settings') }}"
+      loop_control:
+        label: "{{ item.section }}"
+
+    # script will always perform apply,
+    # not checking if settings changed
+    - name: Configure by shell script
+      when: config_method == 'shell'
+      vars:
+        # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/template_lookup.html
+        script: "{{ lookup('ansible.builtin.template', template_dir ~ '/gitlab/configure.sh.j2') }}"
+      ansible.builtin.shell: "{{ script }}"
+      register: configure_sh
+      changed_when: >-
+        configure_sh.stdout is search(': (302|200)')
   any_errors_fatal: true

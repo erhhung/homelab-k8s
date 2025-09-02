@@ -1,0 +1,119 @@
+# set application settings in specific
+# section (general, preferences, etc.)
+#
+# pass the following vars:
+#   site_base <required> GitLab   URL
+#   section   <required> section  name
+#   settings  <required> settings dict
+#     {section}   <required>
+#       value     <required>
+#       attribute [optional]
+# uses the following facts:
+#   cookie_jar authenticated session
+# sets the following facts:
+#   csrf_token
+#   page_html
+#   cookie_jar
+---
+- name: Set application settings
+  delegate_to: localhost
+  become: false
+  vars:
+    page_url: "{{ site_base }}/admin/application_settings/{{ section }}"
+    # using YAML anchors allows re-evaluation of
+    # facts in tasks to use their current values
+    auth_headers_: &auth-headers
+      Cookie: "{{ cookie_jar }}"
+      X-CSRF-Token: "{{ csrf_token }}"
+    html_headers_: &html-headers
+      Origin: "{{ site_base }}"
+      Referer: "{{ page_url }}"
+      Accept: text/html
+      <<: *auth-headers
+  block:
+    - name: Get CSRF token from page
+      vars:
+        referer: "{{ site_base }}/admin"
+        cookies_in: "{{ cookie_jar }}"
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
+      ansible.builtin.include_tasks: tasks/gitlab/csrftoken.yml
+      # sets facts: csrf_token, page_html, cookie_jar
+
+    # currently not working because earlier GET
+    # request isn't returning the settings page
+    - name: Get application settings
+      vars:
+        existing: |
+          {% set settings_ = {} %}
+          {% for name, setting in settings.items() %}
+
+          {%   if setting.attribute is defined %}
+          {%     set value = (page_html | ansible.builtin.regex_search(
+                    ' '~ setting.attribute ~'=\"([^\"]+)\"',
+                    '\\1', multiline=true) or ['']) | first %}
+          {%     set _ = settings_.update({name: value}) %}
+
+          {%   elif setting.search is defined %}
+          {%    set value = (page_html | ansible.builtin.regex_search(
+                    ' name=\"'~   name | ansible.builtin.regex_escape ~
+                    '\".+?\"'~ setting.search ~'\".+?value=\"([^\"]+)\"',
+                    '\\1', multiline=true) or ['']) | first %}
+          {%     set _ = settings_.update({name: value}) %}
+
+          {%   else %}
+          {%     set value = (page_html | ansible.builtin.regex_search(
+                    ' value=\"([^\"]+)\" [^<>]+name=\"' ~
+                    name | ansible.builtin.regex_escape ~'\"',
+                    '\\1', multiline=true) or ['']) | first %}
+          {%     set _ = settings_.update({name: value}) %}
+          {%   endif   %}
+
+          {% endfor    %}
+          {{ settings_ }}
+        settings_: |
+          {% set settings_ = {} %}
+          {% for name, setting in settings.items() %}
+          {%   set _ = settings_.update({name: setting.value | string}) %}
+          {% endfor    %}
+          {{ settings_ }}
+        base_form:
+          _method: patch
+        post_form: "{{ base_form | ansible.builtin.combine(settings_) }}"
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/set_fact_module.html
+      ansible.builtin.set_fact:
+        app_settings: "{{ existing  }}"
+        set_settings: "{{ settings_ }}"
+        form_to_post: "{{ post_form }}"
+
+    - name: Diff application settings
+      vars:
+        post_headers: *html-headers
+      ansible.builtin.debug:
+        msg: |-
+          Current Settings
+          ----------------
+          {{ app_settings | ansible.builtin.to_nice_yaml(indent=2, sort_keys=false) }}
+          Desired Settings
+          ----------------
+          {{ set_settings | ansible.builtin.to_nice_yaml(indent=2, sort_keys=false) }}
+          Form to POST
+          ------------
+          {{ form_to_post | ansible.builtin.to_nice_yaml(indent=2, sort_keys=false) }}
+          POST Headers
+          ------------
+          {{ post_headers | ansible.builtin.to_nice_yaml(indent=2, sort_keys=false) }}
+
+    - name: Set application settings
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/uri_module.html
+      ansible.builtin.uri:
+        method: POST
+        url: "{{ page_url }}"
+        follow_redirects: all
+        headers: *html-headers
+        body_format: form-urlencoded
+        body: "{{ form_to_post }}"
+      when: >-
+        app_settings | to_json !=
+        set_settings | to_json
+      changed_when: true
+  any_errors_fatal: true

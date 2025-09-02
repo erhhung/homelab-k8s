@@ -70,14 +70,14 @@
         existing: "{{ saved_objs | selectattr('attributes.title', '==', title) |
           first | default(none) }}"
       ansible.builtin.set_fact:
-        existing_id: "{{ existing.id if existing }}"
+        existing_id: "{{ existing.id if existing else '' }}"
 
     - name: Get existing search
       ansible.builtin.uri:
         <<: *uri_params
         url: "{{ saved_objs_url }}/search/{{ existing_id }}"
       register: saved_search
-      when: existing_id
+      when: existing_id is truthy
       retries: 5
       delay: 2
 

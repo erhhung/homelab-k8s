@@ -88,9 +88,9 @@ valkey_chart_values:
 
   persistence:
     enabled: true
-    # no need for replicas at storage level when
-    # the cluster itself stores data in replicas
-    storageClass: "{{ storage_classes['single'] }}"
+    ## no need for replicas at storage level when
+    ## the cluster itself stores data in replicas
+    storageClass: "{{ storage_classes['default'] }}"
     # min XFS volume size is 300Mi
     size: 384Mi
 

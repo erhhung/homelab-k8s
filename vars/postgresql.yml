@@ -166,26 +166,41 @@ postgresql_chart_values:
       failureThreshold: 12
     readinessProbe:
       enabled: true
-      initialDelaySeconds: 5
+      initialDelaySeconds: 10
       periodSeconds: 20
-      timeoutSeconds: 5
+      timeoutSeconds: 10
       successThreshold: 1
       failureThreshold: 6
     livenessProbe:
       enabled: true
       initialDelaySeconds: 30
       periodSeconds: 60
-      timeoutSeconds: 5
+      timeoutSeconds: 10
       successThreshold: 1
       failureThreshold: 3
+
+    # Pgpool Control Protocol
+    logPcpProcesses: false
 
     # this is off only because synchronous_commit = 'remote_apply'
     # in postgresql.conf to ensure consistency by trading latency:
     # https://www.pgpool.net/docs/latest/en/html/runtime-config-load-balancing.html#RUNTIME-CONFIG-LOAD-BALANCING-SETTINGS
     disableLoadBalancingOnWrite: "off" # must be quoted
 
-    # Pgpool Control Protocol
-    logPcpProcesses: false
+    # num_init_children = number of preforked Pgpool server
+    # processes, or the concurrent client connections limit
+    numInitChildren: 300
+    # number of connections Pgpool will always allow beyond
+    # (num_init_children - reserved_connections) concurrent
+    # connections by superusers like "postgres"
+    reservedConnections: 20
+    # maximum number of cached connections (combination
+    # of specific user and database) in a child process
+    maxPool: 4
+    # number of sequential connections each child process
+    # can serve before it gets respawned (prevents memory
+    # leaks in long-running processes)
+    childMaxConnections: 1000
 
     customUsers:
       # semicolon-separated list of usernames & passwords

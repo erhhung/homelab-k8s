@@ -1,4 +1,6 @@
-# configure container probes
+# configure container probes. field value
+# can be "OMIT" as marker to remove field
+# (e.g. switch from "exec" to "httpGet")
 #
 # pass the following vars:
 #   kubeconfig  <required> path to kubeconfig
@@ -59,7 +61,7 @@
         fail_msg: "{{ error }}!"
         quiet: true
 
-    - name: Update probes in containers
+    - name: Patch container probe specs
       vars:
         definition: |
           {% set containers  = resource.spec.containers if res_kind == 'Pod' else
@@ -70,6 +72,11 @@
           {%   set name = containers[i].name %}
           {%   if name in probes             %}
           {%     for probe, config in probes[name].items() %}
+          {%       for k, v in config.items()           %}
+          {%         if   v is string and  v == 'OMIT'  %}
+          {%           set _ = config.update({k: omit}) %}
+          {%         endif %}
+          {%       endfor  %}
           {%       if probe in containers[i] %}
           {#         https://docs.ansible.com/ansible/latest/collections/ansible/builtin/combine_filter.html #}
           {%         set merged = containers[i][probe] | ansible.builtin.combine(config, recursive=true)     %}
@@ -80,12 +87,34 @@
           {%     endfor   %}
           {%   endif  %}
           {% endfor   %}
-          {{ resource }}
+          {# show the spec without meta fields #}
+          {{ resource | ansible.builtin.combine({
+               'metadata': {
+                 'uid':               omit,
+                 'creationTimestamp': omit,
+                 'resourceVersion':   omit,
+                 'managedFields':     omit,
+                 'generation':        omit,
+                 'annotations': {
+                   'kubectl.kubernetes.io/last-applied-configuration': omit,
+                 },
+               },
+               'status': omit,
+             }, recursive=true) }}
+      ansible.builtin.set_fact:
+        res_specs: "{{ definition }}"
+
+    # - name: Show patched resource spec
+    #   ansible.builtin.debug:
+    #     var: res_specs
+
+    - name: Apply patched resource spec
       # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_module.html
       kubernetes.core.k8s:
         kubeconfig: "{{ kubeconfig }}"
-        definition: "{{ definition }}"
-        state: patched
+        definition: "{{ res_specs  }}"
+        state: present
+        apply: true
         validate:
           fail_on_error: true
   rescue:
@@ -99,6 +128,7 @@
     - name: Delay before retrying
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/pause_module.html
       ansible.builtin.pause:
+        prompt: Please wait...
         seconds: "{{ retry_delay }}"
       when: retry_count | int < max_retries
 

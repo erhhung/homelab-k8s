@@ -91,7 +91,7 @@
               {% endfor %}
               {{ rules  }}
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/difference_filter.html
-      when: remove_log_fields | ansible.builtin.difference(rules)
+      when: remove_log_fields | ansible.builtin.difference(rules) is truthy
 
     # https://github.com/fluent/helm-charts/issues/605
     # https://github.com/fluent/helm-charts/pull/607

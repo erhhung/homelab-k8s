@@ -8,14 +8,19 @@
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
       ansible.builtin.include_tasks: tasks/localfacts.yml
   tasks:
-    - name: Dump "ansible_facts"
+    - name: Dump "ansible_version"
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/debug_module.html
       ansible.builtin.debug:
-        var: ansible_facts
+        var: ansible_version
 
     - name: Dump "ansible_local"
       ansible.builtin.debug:
         var: ansible_local
+
+    # this output is very long!
+    - name: Dump "ansible_facts"
+      ansible.builtin.debug:
+        var: ansible_facts
 
     - name: Local Python interpreter
       ansible.builtin.debug:
@@ -223,6 +228,24 @@
       ansible.builtin.debug:
         var: the_list
 
+    # NOTE: this doesn't work because omit loses
+    # its special value when passed as loop item
+    - name: Test 'omit' variable
+      vars:
+        original:
+          foo:
+            bar: xyz
+          bar:
+            baz: 123
+        patched: "{{ original | combine(item, recursive=true) }}"
+      ansible.builtin.debug:
+        var: patched
+      loop:
+        - hello: world
+          bar: "{{ omit }}"
+        - test: 123
+          foo: "{{ omit }}"
+
 - name: Debug expressions and statements
   tags: exprs
   hosts: localhost
@@ -257,7 +280,7 @@
           {#   https://jinja.palletsprojects.com/en/stable/templates/#assignments #}
           {%   set pod = namespace(desc=desc, found=false) %}
           {%   for regex in vc_pods %}
-          {%     if not pod.found and pod.desc | regex_search(regex) %}
+          {%     if not pod.found and pod.desc | ansible.builtin.regex_search(regex) %}
           {%        set pod.found = true %}
           {%     endif %}
           {%   endfor  %}
@@ -384,7 +407,7 @@
             age: 21
             email: bob@example.com
       ansible.builtin.debug:
-        var: item
+        var: item.info
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/dict2items_filter.html
       loop: "{{ users | ansible.builtin.dict2items(key_name='user', value_name='info') }}"
       loop_control:
@@ -411,6 +434,58 @@
         names: "{{ dashboards | map(attribute='title') | map('community.general.dict_kv', 'name') }}"
       ansible.builtin.debug:
         var: names
+
+    - name: Debug remove_keys filter
+      vars:
+        dirty:
+          apiVersion: v1
+          kind: Pod
+          metadata:
+            name: mypod
+            namespace: default
+            labels:
+              app: myapp
+            uid: 12345
+            creationTimestamp: "2024-01-01T00:00:00Z"
+            resourceVersion: "67890"
+            managedFields:
+              - manager: kubelet
+                operation: Update
+                apiVersion: v1
+                time: "2024-01-01T00:00:00Z"
+            generation: 1
+          spec:
+            containers:
+              - name: mycontainer
+                image: myimage:latest
+          status:
+            phase: Running
+        # https://docs.ansible.com/ansible/latest/collections/community/general/remove_keys_filter.html
+        # doesn't work as remove_keys
+        # doesn't support nested keys
+        clean1: |
+          {{ [dirty] | community.general.remove_keys(target=[
+             'metadata.uid',
+             'metadata.creationTimestamp',
+             'metadata.resourceVersion',
+             'metadata.managedFields',
+             'metadata.generation',
+             'status',
+             ]) | first }}
+        # using combine() with omit works!
+        clean2: |
+          {{ dirty | ansible.builtin.combine({
+            'metadata': {
+              'uid':               omit,
+              'creationTimestamp': omit,
+              'resourceVersion':   omit,
+              'managedFields':     omit,
+              'generation':        omit,
+            },
+            'status': omit,
+          }, recursive=true) }}
+      ansible.builtin.debug:
+        var: clean2
 
     - name: Is truthy expression
       vars:

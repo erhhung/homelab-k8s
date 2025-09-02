@@ -51,6 +51,7 @@
     - name: Wait for {{ kind_name }} to restart
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/pause_module.html
       ansible.builtin.pause:
+        prompt: Please wait...
         seconds: "{{ wait_secs }}"
       when: wait_secs | default(0) > 0
   any_errors_fatal: true
