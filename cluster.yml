@@ -7,6 +7,7 @@
   hosts: cluster
   become: true
   vars_files:
+    - vars/basics.yml
     - vars/kubernetes.yml
     - vars/lablabs.rke2.yml
     - vars/vclusters.yml
@@ -326,6 +327,7 @@
         - name: Wait until processes exit
           # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/pause_module.html
           ansible.builtin.pause:
+            prompt: Please wait...
             seconds: 60
 
         - name: Start {{ rke2_svc }} service
@@ -408,9 +410,8 @@
 
         - name: Apply registration manifest
           vars:
-            manifest_url: >-
-              {{ hostvars['rancher']['rke_reg_url'] if 'rke_reg_url' in
-                 hostvars['rancher'] }}
+            # URL won't be available unless rancher.yml playbook is run together
+            manifest_url: "{{ hostvars['rancher']['rke_reg_url'] | default('') }}"
           kubernetes.core.k8s:
             kubeconfig: "{{ rke_kubeconfig }}"
             src: "{{ manifest_url }}"
@@ -419,7 +420,7 @@
             wait: true
             wait_timeout: 600 # requires wait=true
           timeout: 1800
-          when: manifest_url
+          when: manifest_url is truthy
 
         - name: Wait for agent to be ready
           kubernetes.core.k8s_info:

@@ -16,15 +16,14 @@
     - name: Parse LANG from localectl output
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/set_fact_module.html
       ansible.builtin.set_fact:
-        locale_lang: "{{ locale_status.stdout |
-          regex_search('LANG=([^\n]+)','\\1') |
-          first }}"
+        # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/regex_search_filter.html
+        locale_lang: "{{ (locale_status.stdout |
+          ansible.builtin.regex_search('LANG=([^\n]+)','\\1') or ['']) | first }}"
 
     - name: Parse LANGUAGE from localectl output
       ansible.builtin.set_fact:
-        locale_language: "{{ locale_status.stdout |
-          regex_search('LANGUAGE=([^\n]+)','\\1') |
-          default([locale_lang], true) | first }}"
+        locale_language: "{{ (locale_status.stdout |
+          ansible.builtin.regex_search('LANGUAGE=([^\n]+)','\\1') or [locale_lang]) | first }}"
   tasks:
     - name: Set host name to "{{ inventory_hostname }}"
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/hostname_module.html
@@ -133,7 +132,7 @@
     - name: Parse resolvectl output values
       vars:
         csv: "{{ (resolvectl.results[i].stdout |
-          regex_search('.'~ host_pif ~'.: ([^\n]+)','\\1') or ['']) | first }}"
+          ansible.builtin.regex_search('.'~ host_pif ~'.: ([^\n]+)','\\1') + ['']) | first }}"
       ansible.builtin.set_fact:
         # generated facts: "resolvectl_dns" and "resolvectl_domain"
         "resolvectl_{{ item }}": "{{ csv | split if csv else [] }}"

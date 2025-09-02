@@ -1,0 +1,42 @@
+# set cookie_jar fact to ;-delimited name=value
+# pairs containing existing cookies (cookies_in)
+# and any cookies from page request (uri_result)
+#
+# pass the following vars:
+#   uri_result <required> ansible.builtin.uri
+#   cookies_in [optional] ;-delimited string
+# sets the following facts:
+#   cookie_jar            ;-delimited string
+---
+- name: Set cookie_jar fact
+  vars:
+    cookies: |
+      {% set cookies = {} %}
+      {% if  cookies_in is defined %}
+      {%   for c in cookies_in.split(';') %}
+      {%     set pair = c.split('=', 1)   %}
+      {%     if  pair | length == 2  %}
+      {%       set _ = cookies.update({
+                  pair[0] | trim: pair[1]}) %}
+      {%     endif %}
+      {%   endfor  %}
+      {% endif     %}
+      {% if  uri_result.cookies is defined    %}
+      {#   uri result: .cookies is dictionary #}
+      {#   and .cookies_string is ;-delimited #}
+      {#   name=value pairs                   #}
+      {%   set _ = cookies.update(uri_result.cookies) %}
+      {% endif   %}
+      {{ cookies }}
+  # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/set_fact_module.html
+  ansible.builtin.set_fact:
+    cookie_jar: |-
+      {% set items = cookies | dict2items -%}
+      {% set pairs = items | map(attribute='key')    |
+                 zip(items | map(attribute='value')) |
+                 map('join','=') -%}
+      {{ pairs | join('; ') }}
+
+- name: Show the cookie jar
+  ansible.builtin.debug:
+    var: cookie_jar

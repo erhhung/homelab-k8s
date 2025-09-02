@@ -89,9 +89,9 @@ qdrant_chart_values:
 
   persistence:
     storageVolumeName: qdrant-storage
-    # no need for storage level replicas when
-    # Qdrant stores collections with replicas
-    storageClassName: "{{ storage_classes['single'] }}"
+    ## no need for storage level replicas when
+    ## Qdrant stores collections with replicas
+    storageClassName: "{{ storage_classes['default'] }}"
     accessModes: ["ReadWriteOnce"]
     size: 2Gi
 

@@ -45,7 +45,7 @@
           first | default(none) }}"
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/set_fact_module.html
       ansible.builtin.set_fact:
-        existing_id: "{{ existing.id if existing }}"
+        existing_id: "{{ existing.id if existing else '' }}"
 
     - name: Create index pattern
       ansible.builtin.uri:
@@ -60,7 +60,7 @@
             title: "{{ pattern }}"
             timeFieldName: "{{ time_field | default('@timestamp') }}"
       register: create_pattern
-      when: existing_id == ''
+      when: existing_id is falsy
       changed_when: create_pattern.status == 200
       retries: 5
       delay: 2

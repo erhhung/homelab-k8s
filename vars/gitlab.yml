@@ -83,7 +83,7 @@ gitlab_buckets: |
   {{ buckets }}
 
 # https://gitlab.com/gitlab-org/charts/gitlab
-gitlab_chart_version: "9.2.4"
+gitlab_chart_version: "9.3.1"
 gitlab_release_name: gitlab
 
 # https://gitlab.com/gitlab-org/charts/gitlab/tree/master/values.yaml
@@ -115,6 +115,10 @@ gitlab_chart_values:
 
     # https://docs.gitlab.com/charts/charts/globals#custom-time-zone-for-all-containers
     time_zone: "{{ system_time_zone }}"
+
+    extraEnv:
+      # DEBUG|INFO|WARN|ERROR
+      GITLAB_LOG_LEVEL: WARN
 
     gitlab:
       license: {}
@@ -252,10 +256,10 @@ gitlab_chart_values:
 
           persistence: &gitaly-persistence
             enabled: true
-            # no need for storage level replicas when
-            # there are multiple Gitaly replicas and
-            # the repository replication factor > 1
-            storageClass: "{{ storage_classes['single'] }}"
+            ## no need for storage level replicas when
+            ## there are multiple Gitaly replicas and
+            ## the repository replication factor is 2
+            storageClass: "{{ storage_classes['default'] }}"
             accessMode: ReadWriteOnce
             size: 1Gi
 
@@ -644,8 +648,10 @@ gitlab_chart_values:
       minReplicas: 1 # scaling via HPA
       maxReplicas: 2
 
+      http:
+        enabled: true # expose port 8080
       tls:
-        enabled: true
+        enabled: true # expose port 8081
         secretName: "{{ gitlab_secrets['node-tls'] }}"
 
       workerTimeout: 60
@@ -689,8 +695,14 @@ gitlab_chart_values:
             tlsConfig: "{{ metric_scraper_tls_config }}"
 
       workhorse:
-        enabled: true
         logFormat: text # text|json|structured
+
+        # https://docs.gitlab.com/development/workhorse/configuration#cli-options
+        # -authBackend is a workaround for the chart template hardcoding
+        # webservice URL to use `http` scheme even though TLS is enabled:
+        # https://gitlab.com/gitlab-org/charts/gitlab/issues/6131
+        extraArgs: >-
+          -authBackend https://localhost:8081
 
         tls: # required when global.workhorse.tls.enabled
           secretName: "{{ gitlab_secrets['node-tls'] }}"
@@ -751,6 +763,8 @@ gitlab_chart_values:
 
     # https://docs.gitlab.com/charts/charts/gitlab/kas
     kas: {}
+
+  # ==================================== End of Subcharts ====================================
 
   # we create our secrets manually, so
   # don't need this Job to create them:
@@ -820,7 +834,7 @@ gitlab_chart_values:
     install: false
     replicas: 1
 
-    indexStorageClassName: "{{ storage_classes['single'] }}"
+    indexStorageClassName: "{{ storage_classes['default'] }}"
     indexStorage: 512Mi
 
     resources:
@@ -839,7 +853,7 @@ gitlab_chart_values:
   # https://docs.gitlab.com/charts/charts/gitlab/gitlab-runner
   # https://docs.gitlab.com/runner/install/kubernetes_helm_chart_configuration
   gitlab-runner:
-    install: true
+    install: false
     logFormat: text # text|json|runner
 
     # number of manager pods, not
@@ -943,3 +957,39 @@ gitlab_chart_values:
 
     # https://docs.gitlab.com/runner/commands#signals
     terminationGracePeriodSeconds: 300
+
+# form POST /admin/application_settings/<section>
+gitlab_app_settings:
+
+  general:
+    # Settings > General > Sign-up restrictions
+    application_setting[signup_enabled]:
+      value: "false"
+      # search for this unique element
+      # attribute to get current value
+      attribute: data-signup-enabled
+
+    # Settings > General > Sign-in restrictions
+    application_setting[after_sign_out_path]:
+      value: https://{{ gitlab_fqdns['gitlab'] }}/
+      # if no other property provided,
+      # current value is in value="X"
+      # attribute BEFORE name="{key}"
+    application_setting[root_moved_permanently_redirection]:
+      value: 1
+
+  preferences:
+    # Settings > Preferences > Localization
+    application_setting[first_day_of_week]:
+      value: 1 # Monday
+      # search for name="{key}".+?"{search}"
+      # BEFORE value="X"
+      search: selected
+    application_setting[time_tracking_limit_to_hours]:
+      value: 1
+      search: checkbox
+
+# JSON POST /-/users/callouts
+gitlab_user_callouts:
+  - security_newsletter_callout
+  - product_usage_data_collection_changes

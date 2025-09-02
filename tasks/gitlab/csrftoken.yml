@@ -1,0 +1,69 @@
+# set "csrf_token" fact with CSRF
+# token extracted from given page
+#
+# pass the following vars:
+#   page_url   <required> HTML page URL
+#   referer    [optional] Referer header
+#   cookies_in [optional] input cookies
+# sets the following facts:
+#   csrf_token
+#   page_html
+#   cookie_jar
+---
+- name: Get CSRF token from page
+  delegate_to: localhost
+  become: false
+  vars:
+    # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/urlsplit_filter.html
+    url_parts: "{{ page_url | ansible.builtin.urlsplit }}"
+    origin: "{{ url_parts.scheme }}://{{ url_parts.netloc }}"
+  block:
+    - name: Show cookies_in value
+      ansible.builtin.debug:
+        var: cookies_in
+      when: cookies_in is defined
+
+    - name: Load page {{ url_parts.path }}
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/uri_module.html
+      ansible.builtin.uri:
+        url: "{{ page_url }}"
+        headers:
+          Origin: "{{ origin }}"
+          Referer: "{{ referer   | default(omit) }}"
+          Cookie: "{{ cookies_in | default(omit) }}"
+          Accept: text/html
+        return_content: true
+      register: load_page
+
+    - name: Show the page title
+      vars:
+        # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/regex_search_filter.html
+        title: "{{ load_page.content | ansible.builtin.regex_search(
+          '<title>([^<]+)</title>', '\\1', multiline=true) }}"
+      ansible.builtin.debug:
+        msg: ==> {{ (title or ['N/A']) | first }} <==
+
+    - name: Set csrf_token fact
+      vars:
+        # GitLab web pages provide CSRF token in two ways:
+        # 1. <meta  name="csrf-token"       content="...">
+        # 2. <input name="authenticity_token" value="...">
+        token1: "{{ load_page.content | ansible.builtin.regex_search(
+          'name=\"csrf-token\" content=\"([^\"]+)\"',
+          '\\1', multiline=true) }}"
+        token2: "{{ load_page.content | ansible.builtin.regex_search(
+          'name=\"authenticity_token\" value=\"([^\"]+)\"',
+          '\\1', multiline=true) }}"
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/set_fact_module.html
+      ansible.builtin.set_fact:
+        csrf_token: "{{ (token1 or token2 or ['']) | first }}"
+        page_html: "{{ load_page.content }}"
+      failed_when: csrf_token is falsy
+
+    # update cookie_jar fact
+    - name: Save issued cookies
+      vars:
+        uri_result: "{{ load_page }}"
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
+      ansible.builtin.include_tasks: tasks/cookiejar.yml
+  any_errors_fatal: true

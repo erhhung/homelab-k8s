@@ -162,13 +162,14 @@
       vars:
         user: |
           {{ admin_auth.json if admin_auth.json is defined else admin_reauth.json }}
+        # uri result: .cookies is dictionary
+        # and .cookies_string is ;-delimited
+        # name=value pairs
         cookies: >-
           {{ admin_auth.cookies_string if admin_auth.cookies_string is defined else
            admin_reauth.cookies_string }}
       ansible.builtin.set_fact:
         auth_headers:
-          # uri result: .cookies is a dictionary and
-          #.cookies_string is ;-delimited name=value
           Cookie: "{{ cookies }}"
           X-Request-From: internal
         admin_user: "{{ {

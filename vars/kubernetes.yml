@@ -85,7 +85,7 @@ nginx_udp_configmap: rke2-ingress-nginx-udp-services
 
 nginx_tcp_services:
   # https://kubernetes.github.io/ingress-nginx/user-guide/exposing-tcp-udp-services
-  10022: gitlab/gitlab-shell:22
+  10022: gitlab/gitlab-gitlab-shell:10022
 nginx_udp_services: {}
 
 # virtual IP assigned by RKE2 kube-vip

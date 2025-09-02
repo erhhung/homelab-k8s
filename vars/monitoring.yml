@@ -319,9 +319,9 @@ prometheus_stack_chart_values:
       storageSpec:
         volumeClaimTemplate:
           spec:
-            # no need for replicas at storage level as we
-            # already have replicas scraping same metrics
-            storageClassName: "{{ storage_classes['single'] }}"
+            ## no need for replicas at storage level as we
+            ## already have replicas scraping same metrics
+            storageClassName: "{{ storage_classes['default'] }}"
             resources:
               requests:
                 storage: 8Gi
@@ -331,7 +331,7 @@ prometheus_stack_chart_values:
         whenDeleted: Delete
 
       # data retention period
-      retention: 12h
+      retention: 6h
 
       tsdb:
         # allow out-of-order samples because

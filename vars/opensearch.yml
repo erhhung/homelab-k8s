@@ -247,9 +247,9 @@ opensearch_chart_values:
                                                                        indent(4) }}
 
   persistence:
-    # no need for storage level replicas when
-    # the cluster stores indices with replicas
-    storageClass: "{{ storage_classes['single'] }}"
+    ## no need for storage level replicas when
+    ## the cluster stores indices with replicas
+    storageClass: "{{ storage_classes['default'] }}"
     size: 8Gi # allocate enough for logging
 
   extraVolumes:

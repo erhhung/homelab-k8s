@@ -13,6 +13,7 @@
 # shellcheck disable=SC2030 # Modification is subshell only
 # shellcheck disable=SC2046 # Quote to avoid word splitting
 # shellcheck disable=SC2128 # Expanding array without index
+# shellcheck disable=SC2155 # Declare and assign separately
 
 cd "$(dirname "$0")"
 
@@ -32,9 +33,6 @@ _reqcmds yq jo || exit $?
 
 export ANSIBLE_CONFIG=./ansible.cfg
 export ANSIBLE_FORCE_COLOR=true
-
-echo -e "\nInstalling roles from requirements...\n"
-ansible-galaxy install -r roles/requirements.yml
 
 prettify() {
   # first sed adds newline between tasks
@@ -114,6 +112,17 @@ get_tags() {
   str="${list[*]}"
   echo "${str// /,}"
 }
+
+# install roles from requirements
+install_roles() {
+  # so far only cluster playbook uses role
+  local plays=$(get_playbooks "${args[@]}")
+  [[ ",$plays," =~ ^.*,(cluster),.*$ ]] || return 0
+
+  echo -e "\nInstalling roles from requirements...\n"
+  ansible-galaxy install -r roles/requirements.yml
+}
+install_roles
 
 # inject global vars to indicate playbooks that will
 # be run and tags on which to filter plays and tasks

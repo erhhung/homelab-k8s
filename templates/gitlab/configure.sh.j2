@@ -1,0 +1,94 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+GITLAB_URL="{{ site_base }}"
+COOKIE_JAR="/tmp/cookie.jar"
+
+AUTH_ARGS=(
+  -b "$COOKIE_JAR"
+  -c "$COOKIE_JAR"
+)
+HTML_ARGS=(
+  -H 'Accept: text/html'
+  -o /dev/null -w '%{http_code}'
+)
+JSON_ARGS=(
+  -H       'Accept: application/json'
+  -H 'Content-Type: application/json'
+  -o /dev/null -w '%{http_code}'
+)
+
+# get CSRF token for page given its URL
+csrf_token() {
+  local regex='name="(csrf-token|authenticity_token)" (content|value)="([^"]+)'
+  curl -s "$1" "${AUTH_ARGS[@]}" | sed -En 's/^.+'"$regex"'.+$/\3/p' | head -1
+}
+
+# get CSRF header for page given its URL
+# (uses token given if second arg given)
+csrf_header() {
+  local token="${2:-"$(csrf_token "$1")"}"
+  printf -- "X-CSRF-Token: %s" "$token"
+}
+
+gitlab_login() {
+  rm -f "$COOKIE_JAR"
+  local page_url="$GITLAB_URL/users/sign_in"
+  curl -s             "$page_url"   \
+    -H "$(csrf_header "$page_url")" \
+    "${AUTH_ARGS[@]}" \
+    "${HTML_ARGS[@]}" \
+    -d 'user[login]=root' \
+    -d 'user[password]={{ gitlab_root_pass }}'
+}
+
+dismiss_popups() {
+  local features=(
+{% for feat in gitlab_user_callouts %}
+    {{ feat }}
+{% endfor %}
+  )
+  local feat once
+  for feat in "${features[@]}"; do
+    [ "$once" ] && printf ','
+    once=1
+
+    curl -s             "$GITLAB_URL/-/users/callouts" \
+      -H "$(csrf_header "$GITLAB_URL/admin")" \
+      "${AUTH_ARGS[@]}" \
+      "${JSON_ARGS[@]}" \
+      -d '{"feature_name":"'$feat'"}'
+  done
+}
+
+app_settings() {
+  local sections=()
+{% for name1, section in gitlab_app_settings.items() %}
+  sections+=({{ name1 }})
+  local {{ name1 }}_settings=(
+{% for name2, setting in section.items() %}
+    '{{ name2 }}={{ setting.value }}'
+{% endfor %}
+  )
+{% endfor %}
+  local once url_base="$GITLAB_URL/admin/application_settings"
+  for section in "${sections[@]}"; do
+    [ "$once" ] && printf ','
+    once=1
+
+    local args=(-d '_method=patch')
+    local set_var="${section}_settings"
+    for setting in "${!set_var[@]}"; do
+      args+=(-d "$setting")
+    done
+    local page_url="$url_base/$section"
+    curl -s             "$page_url"   \
+      -H "$(csrf_header "$page_url")" \
+      "${AUTH_ARGS[@]}" \
+      "${HTML_ARGS[@]}" "${args[@]}"
+  done
+}
+
+echo "   Login: $(gitlab_login)"
+echo "  Popups: $(dismiss_popups)"
+echo "Settings: $(app_settings)"

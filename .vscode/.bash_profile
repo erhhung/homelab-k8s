@@ -2,9 +2,12 @@
 # shellcheck disable=SC2148
 # shellcheck disable=SC2207
 
-source /etc/profile
-source "$HOME/.bash_profile"
-
+# load ~/.bash_profile only if not
+# done so because it takes a while
+[ "$POSH_SESSION_ID" ] || {
+  source         /etc/profile
+  source "$HOME/.bash_profile"
+}
 export ANSIBLE_CONFIG="./ansible.cfg"
 export VAULTFILE="group_vars/all/vault.yml"
 
