@@ -1,5 +1,5 @@
 ---
-# https://helm.sh/docs/intro/install/#from-apt-debianubuntu
+# https://helm.sh/docs/intro/install#from-apt-debianubuntu
 - name: Configure Helm Apt repository
   tags: configure
   hosts: k8s_all
@@ -27,7 +27,7 @@
       ansible.builtin.shell: |
         set -o pipefail
 
-        curl https://baltocdn.com/helm/signing.asc | \
+        curl -fsSL https://packages.buildkite.com/helm-linux/helm-debian/gpgkey | \
           gpg --dearmor | tee {{ keyring }} > /dev/null
       args:
         executable: /bin/bash
@@ -40,8 +40,8 @@
         dest: "{{ srcs_list }}"
         content: |
           Types: deb
-          URIs: https://baltocdn.com/helm/stable/debian/
-          Suites: all
+          URIs: https://packages.buildkite.com/helm-linux/helm-debian/any/
+          Suites: any
           Components: main
           Architectures: {{ machine_arch }}
           Signed-By: {{ keyring }}

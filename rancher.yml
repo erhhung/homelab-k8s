@@ -403,19 +403,18 @@
       ansible.builtin.set_fact:
         rke_cluster: >-
           {% set lines = import_rke.stdout_lines | select('search','^CLUSTER=') | list -%}
-          {{ lines[0].split('CLUSTER=')[1] if lines | length > 0 else none }}
+          {{ lines[0].split('CLUSTER=')[1] if lines is truthy else none }}
         # used in cluster.yml
         rke_reg_url: >-
           {% set lines = import_rke.stdout_lines | select('search','^REGISTER=') | list -%}
-          {{ lines[0].split('REGISTER=')[1] if lines | length > 0 else none }}
+          {{ lines[0].split('REGISTER=')[1] if lines is truthy else none }}
       when: import_rke.rc == 0
 
     - name: Show RKE registration URL
       vars:
         is_defined: >-
-          rke_reg_url is defined  and
-          rke_reg_url is not none and
-          rke_reg_url != ''
+          rke_reg_url is defined and
+          rke_reg_url is truthy
       ansible.builtin.debug:
         msg: |-
           rke_cluster: "{{ rke_cluster }}"

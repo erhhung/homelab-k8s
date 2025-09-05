@@ -82,6 +82,13 @@ gitlab_buckets: |
   {% endfor  %}
   {{ buckets }}
 
+gitlab_runner:
+  name: default-runner
+  tags:
+    - linux
+    - buildah
+  max_timeout: 7200
+
 # https://gitlab.com/gitlab-org/charts/gitlab
 gitlab_chart_version: "9.3.1"
 gitlab_release_name: gitlab
@@ -576,13 +583,18 @@ gitlab_chart_values:
       # https://docs.gitlab.com/administration/operations/gitlab_sshd
       sshDaemon: gitlab-sshd # or openssh
 
+      resources:
+        requests:
+          cpu: 10m
+          memory: 32Mi
+
       # NOTE: metrics are not supported if
       # using default SSH daemon "openssh"
       metrics: &metrics-smon-http
         enabled: true
         serviceMonitor:
           enabled: true
-          additionalLabels: &metrics-labels
+          additionalLabels: &metrics-mon-labels
             release: "{{ monitoring_release_name }}"
           endpointConfig:
             interval: 30s
@@ -597,7 +609,7 @@ gitlab_chart_values:
       resources:
         requests:
           cpu: 50m
-          memory: 64Mi
+          memory: 128Mi
 
       metrics: *metrics-smon-http
 
@@ -662,7 +674,7 @@ gitlab_chart_values:
       resources:
         requests:
           cpu: 100m
-          memory: 1Gi
+          memory: 2Gi
 
       deployment:
         readinessProbe: &ws-readiness
@@ -683,10 +695,19 @@ gitlab_chart_values:
           enabled: true
       metrics: &metrics-smon-https
         enabled: true
-        tls: *node-tls
+        tls:
+          secretName: "{{ gitlab_secrets['node-tls'] }}"
+          # don't set .enabled or else service metrics
+          # port will be named "https-metrics-ws" while
+          # ServiceMonitor hardcodes "http-metrics-ws",
+          # but endpoint scheme will still use "https"
+          enabled: false
+
+        # &metrics-mon-https also
+        # referenced by PodMonitor
         serviceMonitor: &metrics-mon-https
           enabled: true
-          additionalLabels: *metrics-labels
+          additionalLabels: *metrics-mon-labels
           endpointConfig:
             interval: 30s
             scheme: https
@@ -715,7 +736,11 @@ gitlab_chart_values:
           exporter:
             enabled: true
             tls:
-              enabled: true
+              # don't set .enabled or else service metrics
+              # port will be named "https-metrics-wh" while
+              # ServiceMonitor hardcodes "http-metrics-wh",
+              # but endpoint scheme will still use "https"
+              enabled: false
         metrics:
           enabled: true
           serviceMonitor: *metrics-mon-https
@@ -734,7 +759,7 @@ gitlab_chart_values:
       resources:
         requests:
           cpu: 100m
-          memory: 512Mi
+          memory: 1Gi
 
       metrics:
         enabled: true
@@ -755,7 +780,7 @@ gitlab_chart_values:
           cpu: 100m
           memory: 256Mi
 
-      metrics: *metrics-smon-https
+      metrics: *metrics-smon-http
 
     # https://docs.gitlab.com/charts/charts/gitlab/gitlab-exporter
     gitlab-exporter:
@@ -795,8 +820,6 @@ gitlab_chart_values:
       enabled: false
     sentinel:
       enabled: false
-    metrics:
-      enabled: true
 
     master:
       persistence:
@@ -808,6 +831,17 @@ gitlab_chart_values:
         enabled: true
         whenScaled: Retain
         whenDeleted: Delete
+
+      resources:
+        requests:
+          cpu: 50m
+          memory: 32Mi
+
+    metrics:
+      enabled: true
+      serviceMonitor:
+        enabled: true
+        additionalLabels: *metrics-mon-labels
 
   # https://docs.gitlab.com/charts/charts/registry
   registry:
@@ -853,12 +887,15 @@ gitlab_chart_values:
   # https://docs.gitlab.com/charts/charts/gitlab/gitlab-runner
   # https://docs.gitlab.com/runner/install/kubernetes_helm_chart_configuration
   gitlab-runner:
-    install: false
+    install: true
     logFormat: text # text|json|runner
 
-    # number of manager pods, not
-    # pods that actually run jobs
-    replicas: 1
+    # number of manager pods, not build pods
+    # that will actually run jobs (initially
+    # 0; will be scaled to 1 after runner is
+    # registered and the runner token secret
+    # is created)
+    replicas: "{{ runner_replicas }}"
     revisionHistoryLimit: 2
 
     # https://docs.gitlab.com/runner/install/kubernetes_helm_chart_configuration#run-with-non-root-user
@@ -887,7 +924,13 @@ gitlab_chart_values:
     gitlabUrl: "{{ gitlab_service_url }}"
 
     runners:
+      # https://docs.gitlab.com/charts/charts/gitlab/gitlab-runner#requirements
       locked: null
+
+      # https://docs.gitlab.com/ci/runners/new_creation_workflow#installing-gitlab-runner-with-helm-chart
+      name: "{{ gitlab_runner.name }}"
+      executor: kubernetes
+
       # NOTE: the .config chart value as a string
       # can be Helm-templated, so be careful with
       # Jinja2-templating using same {{ }} syntax
@@ -898,7 +941,6 @@ gitlab_chart_values:
 
           # https://docs.gitlab.com/runner/configuration/advanced-configuration#the-runnerskubernetes-section
           [runners.kubernetes]
-            namespace = "{{ gitlab_namespace }}"
 
             # https://docs.gitlab.com/runner/install/kubernetes_helm_chart_configuration#run-with-non-root-user
             # https://gitlab.com/gitlab-org/ci-cd/gitlab-runner-ubi-images/container_registry/1766433?orderBy=PUBLISHED_AT&sort=desc&search%5B%5D=v18
@@ -944,6 +986,12 @@ gitlab_chart_values:
         secretName: "{{ gitlab_secrets['storage'] }}"
     certsSecretName: "{{ gitlab_secrets['certs'] }}"
 
+    volumeMounts:
+      - name: custom-certs
+        mountPath: /usr/local/share/ca-certificates/ca.crt
+        subPath: ca.crt
+        readOnly: true
+
     # omit prometheus annotations
     # in the default chart values
     podAnnotations: {}
@@ -960,11 +1008,10 @@ gitlab_chart_values:
 
 # form POST /admin/application_settings/<section>
 gitlab_app_settings:
-
   general:
     # Settings > General > Sign-up restrictions
     application_setting[signup_enabled]:
-      value: "false"
+      value: 0
       # search for this unique element
       # attribute to get current value
       attribute: data-signup-enabled
@@ -991,5 +1038,52 @@ gitlab_app_settings:
 
 # JSON POST /-/users/callouts
 gitlab_user_callouts:
-  - security_newsletter_callout
   - product_usage_data_collection_changes
+  - registration_enabled_callout
+  - security_newsletter_callout
+
+# https://grafana.com/grafana/dashboards/?search=GitLab&dataSource=prometheus
+gitlab_grafana_dashboards:
+  # https://grafana.com/grafana/dashboards/18927-gitlab-jihu-overview
+  - title: GitLab / Overview
+    gnet_id: 18927
+    ds_var: DS_GITLAB_OMNIBUS
+  # https://grafana.com/grafana/dashboards/18921-gitlab-jihu-rails
+  - title: GitLab / Rails
+    gnet_id: 18921
+    ds_var: DS__GITLAB OMNIBUS
+    tags: ["gitlab"]
+  # https://grafana.com/grafana/dashboards/18917-gitlab-jihu-gitaly
+  - title: GitLab / Gitaly
+    gnet_id: 18917
+    ds_var: DS__GITLAB OMNIBUS
+    tags: ["gitlab"]
+  # https://grafana.com/grafana/dashboards/18922-gitlab-jihu-redis
+  - title: GitLab / Redis
+    gnet_id: 18922
+    ds_var: DS__GITLAB OMNIBUS
+    tags: ["gitlab"]
+  # https://grafana.com/grafana/dashboards/18926-gitlab-jihu-workhorse
+  - title: GitLab / Workhorse
+    gnet_id: 18926
+    ds_var: DS__GITLAB OMNIBUS
+    tags: ["gitlab"]
+  # https://grafana.com/grafana/dashboards/18925-gitlab-jihu-sidekiq
+  - title: GitLab / Sidekiq
+    gnet_id: 18925
+    ds_var: DS__GITLAB OMNIBUS
+    tags: ["gitlab"]
+  # https://grafana.com/grafana/dashboards/21662-gitlab-runner
+  - title: GitLab / Runner
+    gnet_id: 21662
+    tags: ["gitlab", "runner"]
+  # https://grafana.com/grafana/dashboards/18928-gitlab-jihu-ci-pipelines
+  - title: GitLab / CI Pipelines
+    gnet_id: 18928
+    ds_var: DS_GITLAB_OMNIBUS
+    inputs:
+      - name: VAR_GITLAB_HOST
+        label: GitLab Host
+        type: constant
+        value: "{{ gitlab_fqdns['gitlab'] }}"
+    tags: ["gitlab"]

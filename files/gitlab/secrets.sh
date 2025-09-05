@@ -289,7 +289,7 @@ $(rails_secrets | indent 6)
     $(pages_auth_secret)
 $(pages_oauth | indent 4)
 
-  gitlab-runner-token:
+  runner:
 $(runner_token | indent 4)
 
   gitlab-kas-secrets:

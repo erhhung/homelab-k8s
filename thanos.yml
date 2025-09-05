@@ -74,5 +74,5 @@
         history_max: "{{ helm_max_history }}"
         atomic: true
         wait: true
-      timeout: 300
+      timeout: 600
   any_errors_fatal: true

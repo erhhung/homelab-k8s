@@ -416,20 +416,20 @@
     - name: Debug dict_kv filter
       vars:
         dashboards:
-          - title: Istio Mesh Dashboard
-            gnetId: 7639
-          - title: Istio Ztunnel Dashboard
-            gnetId: 21306
-          - title: Istio Service Dashboard
-            gnetId: 7636
-          - title: Istio Workload Dashboard
-            gnetId: 7630
-          - title: Istio Performance Dashboard
-            gnetId: 11829
-          - title: Istio Control Plane Dashboard
-            gnetId: 7645
-          - title: Istio Wasm Extension Dashboard
-            gnetId: 13277
+          - title: Istio / Mesh
+            gnet_id: 7639
+          - title: Istio / Ztunnel
+            gnet_id: 21306
+          - title: Istio / Service
+            gnet_id: 7636
+          - title: Istio / Workload
+            gnet_id: 7630
+          - title: Istio / Performance
+            gnet_id: 11829
+          - title: Istio / Control Plane
+            gnet_id: 7645
+          - title: Istio / Wasm Extension
+            gnet_id: 13277
         # https://docs.ansible.com/ansible/latest/collections/community/general/dict_kv_filter.html
         names: "{{ dashboards | map(attribute='title') | map('community.general.dict_kv', 'name') }}"
       ansible.builtin.debug:

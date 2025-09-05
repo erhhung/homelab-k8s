@@ -184,7 +184,7 @@ monitoring_oidc_client_id:
 monitoring_oidc_issuer_uri: https://sso.{{ homelab_domain }}/realms/homelab
 
 # https://github.com/oauth2-proxy/oauth2-proxy/releases
-monitoring_oauth2_proxy_version: "7.11.0"
+monitoring_oauth2_proxy_version: "7.12.0"
 
 # https://oauth2-proxy.github.io/oauth2-proxy/configuration/overview/#general-provider-options
 # https://oauth2-proxy.github.io/oauth2-proxy/configuration/providers/keycloak_oidc
@@ -245,7 +245,7 @@ metric_scraper_tls_config:
   insecureSkipVerify: true
 
 # https://github.com/prometheus-community/helm-charts/tree/main/charts/kube-prometheus-stack
-prometheus_stack_chart_version: "75.15.2"
+prometheus_stack_chart_version: "77.5.0"
 monitoring_release_name: prometheus-stack
 
 # https://github.com/prometheus-community/helm-charts/tree/main/charts/kube-prometheus-stack/values.yaml

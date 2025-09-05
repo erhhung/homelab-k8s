@@ -74,6 +74,9 @@ thanos_tripper_config:
       ca_file:   /tls/thanos/ca.crt
 
 # https://github.com/bitnami/charts/tree/main/bitnami/thanos
+# NOTE: don't upgrade past 17.0.3 for the time being
+# as Query Frontend in Thanos 0.39.x fails to start:
+# https://github.com/thanos-io/thanos/issues/8448
 thanos_chart_version: "17.0.3"
 thanos_release_name: thanos
 

@@ -2,7 +2,14 @@
 set -euo pipefail
 
 GITLAB_URL="{{ site_base }}"
-COOKIE_JAR="/tmp/cookie.jar"
+TEMP_DIR="/tmp/gitlab"
+mkdir -p "$TEMP_DIR"
+
+   COOKIE_JAR="$TEMP_DIR/cookie.jar"
+ REFERER_HTML="$TEMP_DIR/referer.html"
+RESPONSE_HTML="$TEMP_DIR/response.html"
+RESPONSE_JSON="$TEMP_DIR/response.json"
+  RUNNER_JSON="$TEMP_DIR/runner.json"
 
 AUTH_ARGS=(
   -b "$COOKIE_JAR"
@@ -10,29 +17,35 @@ AUTH_ARGS=(
 )
 HTML_ARGS=(
   -H 'Accept: text/html'
-  -o /dev/null -w '%{http_code}'
+  -o "$RESPONSE_HTML"
+  -w '%{http_code}'
 )
 JSON_ARGS=(
   -H       'Accept: application/json'
   -H 'Content-Type: application/json'
-  -o /dev/null -w '%{http_code}'
+  -o "$RESPONSE_JSON"
+  -w '%{http_code}'
 )
 
 # get CSRF token for page given its URL
 csrf_token() {
   local regex='name="(csrf-token|authenticity_token)" (content|value)="([^"]+)'
-  curl -s "$1" "${AUTH_ARGS[@]}" | sed -En 's/^.+'"$regex"'.+$/\3/p' | head -1
+  curl -s "$1" "${AUTH_ARGS[@]}" | tee "$REFERER_HTML" | \
+    sed -En 's/^.+'"$regex"'.+$/\3/p' | head -1
 }
 
 # get CSRF header for page given its URL
-# (uses token given if second arg given)
+# (uses token given if arg is not a URL)
 csrf_header() {
-  local token="${2:-"$(csrf_token "$1")"}"
+  local token="$1"
+  [[ "$1" == *://* ]]   && \
+    token=$(csrf_token "$1")
   printf -- "X-CSRF-Token: %s" "$token"
 }
 
 gitlab_login() {
   rm -f "$COOKIE_JAR"
+
   local page_url="$GITLAB_URL/users/sign_in"
   curl -s             "$page_url"   \
     -H "$(csrf_header "$page_url")" \
@@ -76,19 +89,107 @@ app_settings() {
     [ "$once" ] && printf ','
     once=1
 
-    local args=(-d '_method=patch')
+    local page_url="$url_base/$section"
+    local token="$(csrf_token "$page_url")"
+    local args=(
+      -d '_method=patch'
+      -d "authenticity_token=$token"
+    )
     local set_var="${section}_settings"
     for setting in "${!set_var[@]}"; do
       args+=(-d "$setting")
     done
-    local page_url="$url_base/$section"
-    curl -s             "$page_url"   \
-      -H "$(csrf_header "$page_url")" \
+    curl -s             "$page_url" \
+      -H "$(csrf_header "$token")"  \
       "${AUTH_ARGS[@]}" \
       "${HTML_ARGS[@]}" "${args[@]}"
   done
 }
 
+register_runner() {
+  rm -f "$RUNNER_JSON"
+
+  curl -s             "$GITLAB_URL/api/graphql" \
+    -H "$(csrf_header "$GITLAB_URL/admin/runners")" \
+    "${AUTH_ARGS[@]}" \
+    "${JSON_ARGS[@]}" \
+    -d @- <<'EOT'
+{
+  "operationName": "getRunners",
+  "query": "query getRunners() {runners {nodes {id description creationState __typename}}}"
+}
+EOT
+  local exists="$(jq -r '.data.runners.nodes | map(
+    select(.description == "{{ gitlab_runner.name }}")
+    ) | length' < "$RESPONSE_JSON")"
+  [ "$exists" == 0 ] || return 0
+
+  printf ','
+  curl -s             "$GITLAB_URL/api/graphql" \
+    -H "$(csrf_header "$GITLAB_URL/admin/runners/new")" \
+    "${AUTH_ARGS[@]}" \
+    "${JSON_ARGS[@]}" \
+    -d @- <<'EOT'
+{
+  "operationName": "runnerCreate",
+  "variables": {
+    "input": {
+      "runnerType": "INSTANCE_TYPE",
+      "description": "{{ gitlab_runner.name }}",
+      "tagList": {{ gitlab_runner.tags | to_json }},
+      "locked": false,
+      "paused": false,
+      "runUntagged": true,
+      "accessLevel": "NOT_PROTECTED",
+      "maximumTimeout": {{ gitlab_runner.max_timeout }},
+      "maintenanceNote": ""
+    }
+  },
+  "query": "mutation runnerCreate($input: RunnerCreateInput!) {runnerCreate(input: $input) {runner {id ephemeralRegisterUrl __typename} errors __typename}}"
+}
+EOT
+  eval "$(jq -r '.data.runnerCreate.runner | "
+    local reg_url=\"\(.ephemeralRegisterUrl)\"
+    local runner_id=\"\(.id)\"
+    "' < "$RESPONSE_JSON")"
+  echo >&2 "runner_id: $runner_id"
+  echo >&2 "  reg_url: $reg_url"
+
+  printf ','
+  curl -s             "$GITLAB_URL/api/graphql" \
+    -H "$(csrf_header "$reg_url")" \
+    "${AUTH_ARGS[@]}" \
+    "${JSON_ARGS[@]}" \
+    -d @- <<EOT
+{
+  "operationName": "getRunnerForRegistration",
+  "variables": {
+    "id": "$runner_id"
+  },
+  "query": "query getRunnerForRegistration(\$id: CiRunnerID!) {runner(id: \$id) {id description ephemeralAuthenticationToken creationState __typename}}"
+}
+EOT
+  # function is being called from subshell,
+  # so export runner info to temp JSON file
+  jq '.data.runner | {
+    runner: {
+      id,
+      name:  .description,
+      token: .ephemeralAuthenticationToken
+    }
+  }' < "$RESPONSE_JSON" > "$RUNNER_JSON"
+}
+
 echo "   Login: $(gitlab_login)"
 echo "  Popups: $(dismiss_popups)"
 echo "Settings: $(app_settings)"
+echo "  Runner: $(register_runner)"
+[ -f "$RUNNER_JSON" ] || exit 0
+
+eval "$(jq -r '.runner | "
+  runner_id=\"\(.id)\"
+  runner_name=\"\(.name)\"
+  runner_token=\"\(.token)\"
+  "' < "$RUNNER_JSON")"
+echo "$runner_name ID: $runner_id"
+echo  "RUNNER_TOKEN=$runner_token"

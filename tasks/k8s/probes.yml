@@ -54,7 +54,7 @@
         valid: "{{ containers | map(attribute='name') }}"
         # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/difference_filter.html
         invalid: "{{ probes.keys() | ansible.builtin.difference(valid) }}"
-        error: No container named "{{ (invalid + ['']) | first }}"
+        error: No container named "{{ (invalid | list + ['']) | first }}"
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/assert_module.html
       ansible.builtin.assert:
         that: invalid is falsy

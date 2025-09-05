@@ -4,11 +4,21 @@
 #
 # pass the following vars:
 #   dashboards  <required> dashboard list
-#     - title:  <required> official title
-#       gnetId: <required> dashboard ID
-#       filter: [optional] contain desc
-#       dsVar:  [optional] default=DS_PROMETHEUS
-#       tags:   [optional] list of tags
+#     - title   <required> official title
+#       gnet_id <required> dashboard ID
+#       filter  [optional] filter by description
+#       ds_var  [optional] default=DS_PROMETHEUS
+#       inputs  [optional] extra variables
+#         - name
+#           type
+#           value
+#       tags    [optional] additional tags
+#   (following vars are default values for all
+#   dashboards unless overridden individually)
+#   filter      [optional] default .filter
+#   ds_var      [optional] default .ds_var
+#   inputs      [optional] default .inputs
+#   tags        [optional] default .tags
 #
 # TODO: detect revision change due to change in
 # description filter and reimport the dashboard
@@ -44,7 +54,7 @@
       retries: 5
       delay: 2
 
-    # https://istio.io/latest/docs/ops/integrations/grafana/#option-2-import-from-grafanacom-into-an-existing-deployment
+    # https://istio.io/latest/docs/ops/integrations/grafana#option-2-import-from-grafanacom-into-an-existing-deployment
     - name: Import Grafana dashboard
       vars:
         api_auth: "{{ admin_user }}:'{{ admin_pass }}'"
@@ -53,46 +63,57 @@
       ansible.builtin.shell: |
         set -eo pipefail
 
-        revs_url="https://grafana.com/api/dashboards/{{ item.gnetId }}/revisions"
+        revs_url="https://grafana.com/api/dashboards/{{ item.gnet_id }}/revisions"
         retry_opts=(--retry 5 --retry-delay 2)
 
         # find latest revision that matches filter
-        filter='{{ item.filter | default('') }}'
+        filter='{{ item.filter | default(filter | default('')) }}'
         [ "$filter" ] && \
             filter="| select(.description | contains(\"$filter\"))"
 
         rev=$(curl -sfL "$revs_url" | \
           jq -r  "[.items[] $filter | .revision] | max")
-        desc="revision $rev of {{ item.title }} ({{ item.gnetId }})"
+        desc="revision $rev of {{ item.title }} ({{ item.gnet_id }})"
 
         echo "Downloading $desc..."
         echo "URL: $revs_url/$rev/download"
         json="$(curl -fsSL "${retry_opts[@]}" "$revs_url/$rev/download")"
         json="$(jq 'del(.id) | .title = "{{ item.title }}"' <<< "$json")"
 
-        tags='{{ item.tags | default([]) | to_json }}'
+        tags='{{ item.tags | default(tags | default([])) | to_json }}'
         [ "$tags" == "[]" ] || \
-          json="$(jq ".tags += $tags" <<< "$json")"
+            json="$(jq ".tags += $tags" <<< "$json")"
 
-        file="/tmp/dashboard-{{ item.gnetId }}-$rev"
+        TMP_DIR="/tmp/grafana"
+        mkdir -p "$TMP_DIR"
+
+        file="$TMP_DIR/dashboard-{{ item.gnet_id }}-$rev"
         echo "$revs_url/$rev/download" > "$file.url"
         echo "$json" > "$file.json"
 
+        ds_var='{{ item.ds_var | default(ds_var | default('DS_PROMETHEUS')) }}'
+        inputs='{{ item.inputs | default(inputs | default([])) | to_json }}'
+        inputs="$(jq --argjson  inputs "$inputs" '. + $inputs' <<EOT
+        [{
+          "name":     "$ds_var",
+          "type":     "datasource",
+          "pluginId": "prometheus",
+          "value":    "Prometheus"
+        }]
+        EOT
+        )"
         echo -e "Importing $desc...\n"
         curl -X POST -fku {{ api_auth }} \
-          -H 'Content-Type: application/json' \
-          --data-binary '{
-            "dashboard": '"$json"',
-            "overwrite": true,
-            "inputs": [{
-              "name":     "{{ item.dsVar | default('DS_PROMETHEUS') }}",
-              "type":     "datasource",
-              "pluginId": "prometheus",
-              "value":    "Prometheus"
-            }]
-          }' \
           --no-progress-meter "${retry_opts[@]}" \
-          {{ api_base }}/dashboards/import
+          -H 'Content-Type: application/json' \
+          {{ api_base }}/dashboards/import \
+          -d @- <<EOT
+        {
+          "overwrite": true,
+          "dashboard": $json,
+          "inputs":    $inputs
+        }
+        EOT
 
         rm -f $file.*
       args:

@@ -427,7 +427,7 @@ opensearch_chart_values:
 opensearch_grafana_dashboards:
   # https://grafana.com/grafana/dashboards/23029-opensearch
   - title: OpenSearch
-    gnetId: 23029
+    gnet_id: 23029
     tags:
       - opensearch
       - logging
