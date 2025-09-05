@@ -152,8 +152,11 @@ postgresql_chart_values:
     # https://github.com/bitnami/charts/tree/main/bitnami/postgresql-ha#resource-requests-and-limits
     # use a preset instead of explicitly configuring resources:
     # values: none|nano|micro|small|medium|large|xlarge|2xlarge
-    resourcesPreset: micro
-    # resources: ~
+    # resourcesPreset: micro
+    resources:
+      requests:
+        cpu: 50m
+        memory: 512Mi
 
     priorityClassName: "{{ priority_classes['database'] }}"
 
@@ -167,17 +170,17 @@ postgresql_chart_values:
     readinessProbe:
       enabled: true
       initialDelaySeconds: 10
-      periodSeconds: 20
-      timeoutSeconds: 10
+      periodSeconds: 30
+      timeoutSeconds: 15
       successThreshold: 1
-      failureThreshold: 6
+      failureThreshold: 10
     livenessProbe:
       enabled: true
-      initialDelaySeconds: 30
+      initialDelaySeconds: 60
       periodSeconds: 60
-      timeoutSeconds: 10
+      timeoutSeconds: 15
       successThreshold: 1
-      failureThreshold: 3
+      failureThreshold: 10
 
     # Pgpool Control Protocol
     logPcpProcesses: false
@@ -189,18 +192,18 @@ postgresql_chart_values:
 
     # num_init_children = number of preforked Pgpool server
     # processes, or the concurrent client connections limit
-    numInitChildren: 300
+    numInitChildren: 500
     # number of connections Pgpool will always allow beyond
     # (num_init_children - reserved_connections) concurrent
     # connections by superusers like "postgres"
-    reservedConnections: 20
+    reservedConnections: 50
     # maximum number of cached connections (combination
     # of specific user and database) in a child process
     maxPool: 4
     # number of sequential connections each child process
     # can serve before it gets respawned (prevents memory
     # leaks in long-running processes)
-    childMaxConnections: 1000
+    childMaxConnections: 500
 
     customUsers:
       # semicolon-separated list of usernames & passwords
@@ -341,4 +344,4 @@ postgresql_chart_values:
 postgresql_grafana_dashboards:
   # https://grafana.com/grafana/dashboards/9628-postgresql-database
   - title: PostgreSQL Database
-    gnetId: 9628
+    gnet_id: 9628

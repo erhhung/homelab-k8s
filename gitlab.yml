@@ -14,7 +14,7 @@
     - vars/monitoring.yml
     - vars/gitlab.secrets.yml
     - vars/gitlab.yml
-  vars:
+  vars: &vars
     # required kubernetes>=24.2 package only in user virtualenv
     ansible_python_interpreter: "{{ venv_python_interpreter }}"
     kubeconfig: "{{ rke_kubeconfig }}"
@@ -30,6 +30,23 @@
     - name: Get CA certificates from PKI
       ansible.builtin.include_tasks: tasks/pki/cacerts.yml
       when: ca_certificates is not defined
+
+    - name: Get current runner replicas
+      # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_info_module.html
+      kubernetes.core.k8s_info:
+        kubeconfig: "{{ kubeconfig }}"
+        api_version: apps/v1
+        kind: Deployment
+        name: "{{ release }}-gitlab-runner"
+        namespace: "{{ gitlab_namespace }}"
+      register: runner_info
+
+    - name: Set runner_replicas fact
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/set_fact_module.html
+      ansible.builtin.set_fact:
+        runner_replicas: >-
+          {{ runner_info.resources[0].spec.replicas if
+             runner_info.resources is truthy else 0 }}
   tasks:
     # cert also used by GitLab ingress
     - name: Create GitLab node secret
@@ -161,10 +178,19 @@
       # a long time, with webservice and sidekiq
       # pods having to restart a few times
       timeout: 900
+      # after container probes have been patched
+      # by the next task, Helm upgrade fails due
+      # to conflicting probe handlers, so ignore
+      # just that specific error
+      ignore_errors: true
+      register: helm_install
+      failed_when: >-
+        helm_install is failed and helm_install.stderr is not search(
+        'httpGet: Forbidden: may not specify more than 1 handler type')
 
-    # default 1s timeout for readiness and liveness
+    # default 3s timeout for readiness and liveness
     # probes are too optimistic for our environment
-    - name: Patch GitLab containers' probes
+    - name: Patch GitLab container probes
       vars:
         res_kind: "{{ item.kind }}"
         res_name: "{{ gitlab_release_name }}-{{ item.name }}"
@@ -227,6 +253,11 @@
           when: "{{ zoekt.install }}"
       loop_control:
         label: "{{ item.name }}"
+
+    - name: Import Grafana dashboards
+      vars:
+        dashboards: "{{ gitlab_grafana_dashboards }}"
+      ansible.builtin.include_tasks: tasks/grafana/dashboards.yml
   any_errors_fatal: true
 
 - name: Configure GitLab installation
@@ -315,11 +346,57 @@
     # not checking if settings changed
     - name: Configure by shell script
       when: config_method == 'shell'
-      vars:
-        # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/template_lookup.html
-        script: "{{ lookup('ansible.builtin.template', template_dir ~ '/gitlab/configure.sh.j2') }}"
-      ansible.builtin.shell: "{{ script }}"
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/shell_module.html
+      ansible.builtin.shell: |
+        {{ lookup('ansible.builtin.template', template_dir ~ '/gitlab/configure.sh.j2') }}
       register: configure_sh
-      changed_when: >-
-        configure_sh.stdout is search(': (302|200)')
+      changed_when: configure_sh.stdout is search(':.*(302|200)')
+      failed_when: configure_sh.stdout is search(':.*500') or configure_sh.rc != 0
+      # outputs RUNNER_TOKEN
+
+    - name: Set the runner_token fact
+      when: config_method == 'shell'
+      ansible.builtin.set_fact:
+        runner_token: >-
+          {% set lines = configure_sh.stdout_lines | select('search','^RUNNER_TOKEN=') | list -%}
+          {{ lines[0].split('RUNNER_TOKEN=')[1] if lines is truthy else none }}
+  any_errors_fatal: true
+
+# requires non-empty runner_token
+# fact to be set in previous play
+- name: Configure and launch runner
+  tags: configure
+  hosts: "{{ rke_control_plane_host }}"
+  gather_facts: false
+  vars_files:
+    - vars/kubernetes.yml
+    - vars/gitlab.yml
+  vars:
+    <<: *vars
+    facts: "{{ hostvars['localhost'] }}"
+    token: "{{ facts['runner_token'] | default(none) }}"
+  tasks:
+    - name: Create GitLab runner secret
+      vars:
+        secret_name: "{{ gitlab_secrets['runner'] }}"
+        secret_data:
+          runner-registration-token: ""
+          runner-token: "{{ token }}"
+        if_changed: Scale runner to 1 replica
+      ansible.builtin.include_tasks: tasks/k8s/secrets/generic.yml
+      when: token is truthy
+  handlers:
+    - name: Scale runner to 1 replica
+      # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_module.html
+      kubernetes.core.k8s:
+        kubeconfig: "{{ kubeconfig }}"
+        api_version: apps/v1
+        kind: Deployment
+        name: "{{ release }}-gitlab-runner"
+        namespace: "{{ gitlab_namespace }}"
+        definition:
+          spec:
+            replicas: 1
+        state: patched
+        wait: true
   any_errors_fatal: true

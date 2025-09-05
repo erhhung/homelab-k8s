@@ -298,7 +298,7 @@
         label: "{{ item.user ~'|'~ item.groups | join(',') }}"
       when: inventory_hostname in item.hosts
 
-    - name: Create sudoers rule file
+    - name: Create sudoers rule file # noqa: args
       # https://docs.ansible.com/ansible/latest/collections/community/general/sudoers_module.html
       community.general.sudoers:
         name: "{{ item.name }}"

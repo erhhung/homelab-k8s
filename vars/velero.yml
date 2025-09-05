@@ -260,6 +260,6 @@ velero_ui_chart_values:
 velero_grafana_dashboards:
   # https://grafana.com/grafana/dashboards/16829-kubernetes-tanzu-velero
   - title: Velero Dashboard
-    gnetId: 16829
+    gnet_id: 16829
     tags:
       - storage

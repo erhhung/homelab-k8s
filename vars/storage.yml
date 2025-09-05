@@ -136,7 +136,7 @@ nfs_provisioners:
 storage_grafana_dashboards:
   # https://grafana.com/grafana/dashboards/22705-longhorn-dashboard
   - title: Longhorn Dashboard
-    gnetId: 22705
+    gnet_id: 22705
     tags:
       - longhorn
       - storage

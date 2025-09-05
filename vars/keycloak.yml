@@ -319,6 +319,6 @@ keycloakx_chart_values:
 keycloak_grafana_dashboards:
   # https://grafana.com/grafana/dashboards/19659-keycloak-metrics-dashboard
   - title: Keycloak Metrics Dashboard
-    gnetId: 19659
+    gnet_id: 19659
     tags:
       - keycloak

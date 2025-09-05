@@ -118,7 +118,7 @@ log_index_max_age: 7d
 logging_grafana_dashboards:
   # https://grafana.com/grafana/dashboards/18855-fluent-bit
   - title: Fluent Bit
-    gnetId: 18855
+    gnet_id: 18855
     tags:
       - fluent-bit
       - logging

@@ -311,10 +311,10 @@ minio_tenant_chart_values:
 minio_grafana_dashboards:
   # https://grafana.com/grafana/dashboards/13502-minio-dashboard
   - title: MinIO Dashboard
-    gnetId: 13502
+    gnet_id: 13502
   # https://grafana.com/grafana/dashboards/15305-minio-replication-dashboard
   - title: MinIO Replication Dashboard
-    gnetId: 15305
+    gnet_id: 15305
   # https://grafana.com/grafana/dashboards/19237-minio-bucket-dashboard
   - title: MinIO Bucket Dashboard
-    gnetId: 19237
+    gnet_id: 19237
