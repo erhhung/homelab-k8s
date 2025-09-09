@@ -103,15 +103,23 @@ longhorn_chart_values:
         type: bak
         backupMode: full
 
-# https://computingforgeeks.com/configure-nfs-as-kubernetes-persistent-volume-storage/
-nfs_mount_opts: rw,nosuid,nodev,noexec,hard,timeo=600,retrans=3,rsize=32768,wsize=32768
+nfs_provisioner_namespace: nfs-provisioner
 
+# https://github.com/kubernetes-sigs/nfs-subdir-external-provisioner/tree/master/charts/nfs-subdir-external-provisioner
+nfs_provisioner_chart_version: "4.0.18"
+# chart values common to all provisioners defined in nfs_provisioners list below:
 # https://github.com/kubernetes-sigs/nfs-subdir-external-provisioner/tree/master/charts/nfs-subdir-external-provisioner/values.yaml
+nfs_provisioner_chart_values:
+  resources:
+    requests:
+      cpu: 10m
+      memory: 32Mi
+
 # NOTE: storage class settings cannot be changed
 # after creation without deletion and recreation
 nfs_provisioners:
   - cluster: k3s
-    name: qnap
+    name: qnap # release name
     server: qnap.{{ homelab_domain }}
     path: /k8s_data/k3s
     storageClass:
@@ -122,7 +130,7 @@ nfs_provisioners:
       onDelete: delete
 
   - cluster: rke
-    name: qnap
+    name: qnap # release name
     server: qnap.{{ homelab_domain }}
     path: /k8s_data/rke
     storageClass:
@@ -131,6 +139,9 @@ nfs_provisioners:
       volumeBindingMode: WaitForFirstConsumer
       reclaimPolicy: Delete
       onDelete: delete
+
+# https://computingforgeeks.com/configure-nfs-as-kubernetes-persistent-volume-storage/
+nfs_mount_opts: rw,nosuid,nodev,noexec,hard,timeo=600,retrans=3,rsize=32768,wsize=32768
 
 # https://grafana.com/grafana/dashboards/?search=Longhorn&dataSource=prometheus
 storage_grafana_dashboards:

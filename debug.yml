@@ -1,5 +1,5 @@
 ---
-- name: Show remote and local facts
+- name: Show local and remote facts
   tags: facts
   hosts: control_plane
   gather_facts: true
@@ -8,6 +8,16 @@
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
       ansible.builtin.include_tasks: tasks/localfacts.yml
   tasks:
+    - name: Show controller facts
+      vars:
+        facts:
+          - local_python_interpreter: "{{ local_python_interpreter }}"
+          - local_bash_interpreter: "{{ local_bash_interpreter }}"
+          - local_machine_arch: "{{ local_machine_arch }}"
+          - local_tz_offset: "{{ local_tz_offset }}"
+      ansible.builtin.debug:
+        var: facts
+
     - name: Dump "ansible_version"
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/debug_module.html
       ansible.builtin.debug:
@@ -21,14 +31,6 @@
     - name: Dump "ansible_facts"
       ansible.builtin.debug:
         var: ansible_facts
-
-    - name: Local Python interpreter
-      ansible.builtin.debug:
-        var: local_python_interpreter
-
-    - name: Local timezone offset
-      ansible.builtin.debug:
-        var: local_tz_offset
 
 - name: Show hosts and domain names
   tags: hosts

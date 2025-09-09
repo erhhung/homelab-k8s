@@ -158,18 +158,19 @@ ansible-vault view   $VAULTFILE
 | `harbor_secret`                   | `thanos_admin_pass`
 | `minio_client_pass`               | `grafana_admin_pass`
 | `velero_repo_pass`                | `gitlab_root_pass`
-| `velero_passphrase`               | `argocd_admin_pass`
-| `dashboards_os_pass`              | `openwebui_admin_pass`
-| `fluent_os_pass`                  | `flowise_admin_pass`
-| `valkey_pass`                     |
+| `velero_passphrase`               | `gitlab_user_pass`
+| `dashboards_os_pass`              | `argocd_admin_pass`
+| `fluent_os_pass`                  | `openwebui_admin_pass`
+| `valkey_pass`                     | `flowise_admin_pass`
 | `postgresql_pass`                 |
 | `keycloak_db_pass`                |
 | `monitoring_pass`                 |
 | `monitoring_oidc_client_secret.*` |
-| `slack_webhook_url`               |
+| `slack_webhook_url.*`             |
 | `oauth2_proxy_cookie_secret`      |
 | `kiali_oidc_client_secret`        |
 | `gitlab_secrets_data.*`           |
+| `gitlab_omniauth.*`               |
 | `argocd_signing_key`              |
 | `hass_access_token`               |
 | `qdrant_api_key.*`                |

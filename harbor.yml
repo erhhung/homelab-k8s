@@ -1,5 +1,5 @@
 # https://goharbor.io/
-# https://goharbor.io/docs/latest/install-config/harbor-ha-helm/
+# https://goharbor.io/docs/latest/install-config/harbor-ha-helm
 ---
 - name: Install Harbor on K3s cluster
   tags: install
@@ -113,7 +113,7 @@
         export HARBOR_ENCRYPTION_KEY="$HARBOR_ENCRYPTION_KEY"
         EOF
         }
-        harbor login https://{{ harbor_fqdn }} \
+        harbor login {{ harbor_url }} \
           -u admin -p '{{ harbor_admin_pass }}'
         EOT
       register: config_cli
@@ -130,7 +130,7 @@
   vars_files: *vars_files
   vars:
     # https://harbor.fourteeners.local/devcenter-api-2.0
-    api_base: https://{{ harbor_fqdn }}/api/v2.0
+    api_base: "{{ harbor_url }}/api/v2.0"
     api_auth: admin:'{{ harbor_admin_pass }}'
     uri_auth: &uri_auth
       url_username: admin
@@ -147,7 +147,7 @@
 
     - name: Get library project config
       ansible.builtin.uri:
-        url: "{{ api_base }}/projects/library"
+        url: "{{ api_base }}/projects/{{ harbor_default_project }}"
         # no auth required
         return_content: true
       register: project_config
@@ -180,7 +180,7 @@
         auto_scan: "{{ metadata.auto_scan            | default('false') | bool }}"
       ansible.builtin.uri:
         method: PUT
-        url: "{{ api_base }}/projects/library"
+        url: "{{ api_base }}/projects/{{ harbor_default_project }}"
         <<: *uri_auth
         body_format: json
         body:
@@ -214,7 +214,9 @@
         )
         curl -X POST -sku {{ api_auth }} \
              -H 'Content-Type: application/json' \
-             -d "$(jo "${params[@]}")" {{ api_base }}/users
+             -d "$(jo "${params[@]}")" \
+             {{ api_base }}/users
+
         user_id="$(get_user_id {{ item.username }})"
         [ "$user_id" ] || exit 1
 
@@ -226,7 +228,8 @@
         )
         curl -X POST -sku {{ api_auth }} \
              -H 'Content-Type: application/json' \
-             -d "$(jo "${params[@]}")" {{ api_base }}/projects/library/members
+             -d "$(jo "${params[@]}")" \
+             {{ api_base }}/projects/{{ harbor_default_project }}/members
       args:
         executable: /bin/bash
       loop: "{{ harbor_users }}"

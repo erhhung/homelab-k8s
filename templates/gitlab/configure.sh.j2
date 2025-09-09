@@ -1,5 +1,31 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -eo pipefail
+
+# this Bash script uses curl to configure
+# GitLab using same HTML form submissions
+# and REST API calls as the web UI. tasks
+# performed include:
+#
+# 1. add user "erhhung" besides root account
+# 2. set new user password and user settings
+# 3. dismiss new user pop-ups and callouts
+# 4. add Erhhung's SSH and GPG public keys
+# 5. set app settings defined in vars file
+# 6. register GitLab Runner and show token
+#
+# pass the following variables:
+#   site_base
+#   system_time_zone
+#   gitlab_root_pass
+#   gitlab_user_pass
+#   user_erhhung.*
+#   erhhung_ssh_pub_key
+#   erhhung_gpg_pub_key
+#   gitlab_user_callouts[]
+#   gitlab_user_prefs.*
+#   gitlab_app_settings.*
+#   gitlab_integrations.*
+#   gitlab_runner.*
 
 GITLAB_URL="{{ site_base }}"
 TEMP_DIR="/tmp/gitlab"
@@ -16,11 +42,13 @@ AUTH_ARGS=(
   -c "$COOKIE_JAR"
 )
 HTML_ARGS=(
+  "${AUTH_ARGS[@]}"
   -H 'Accept: text/html'
   -o "$RESPONSE_HTML"
   -w '%{http_code}'
 )
 JSON_ARGS=(
+  "${AUTH_ARGS[@]}"
   -H       'Accept: application/json'
   -H 'Content-Type: application/json'
   -o "$RESPONSE_JSON"
@@ -28,6 +56,7 @@ JSON_ARGS=(
 )
 
 # get CSRF token for page given its URL
+# csrf_token <page-url>
 csrf_token() {
   local regex='name="(csrf-token|authenticity_token)" (content|value)="([^"]+)'
   curl -s "$1" "${AUTH_ARGS[@]}" | tee "$REFERER_HTML" | \
@@ -36,6 +65,7 @@ csrf_token() {
 
 # get CSRF header for page given its URL
 # (uses token given if arg is not a URL)
+# csrf_header <page-url-or-csrf-token>
 csrf_header() {
   local token="$1"
   [[ "$1" == *://* ]]   && \
@@ -43,19 +73,153 @@ csrf_header() {
   printf -- "X-CSRF-Token: %s" "$token"
 }
 
-gitlab_login() {
-  rm -f "$COOKIE_JAR"
-
-  local page_url="$GITLAB_URL/users/sign_in"
-  curl -s             "$page_url"   \
-    -H "$(csrf_header "$page_url")" \
-    "${AUTH_ARGS[@]}" \
-    "${HTML_ARGS[@]}" \
-    -d 'user[login]=root' \
-    -d 'user[password]={{ gitlab_root_pass }}'
+# print function name and args to stderr
+_func_call() {
+  echo >&2 " FUNCTION: ${FUNCNAME[1]}" "$*"
 }
 
+# output command (given as $@) to stderr
+# and execute, piping in heredoc, if any
+# run <command> [args...] [<<EOT...EOT]
+run() {
+  local arg args=()
+  for arg in "$@"; do
+    if [[ "$arg" =~ [[]|[]]|[\<\>\{\}\`\*\#\$\^\&\?\|\\\;] ]]; then
+      args+=("'$arg'")
+    elif [[ "$arg" == *\'* && \
+            "$arg" != *\"* ]]; then
+      args+=("\"$arg\"")
+    elif [[ "$arg" == *\"* && \
+            "$arg" != *\'* ]]; then
+      args+=("'$arg'")
+    elif [[ "$arg" == *\"* && \
+            "$arg" == *\'* ]]; then
+      args+=("\"$(sed 's/"/\\"/g' <<< "$arg")\"")
+    elif [[ "$arg" == *\ * ]]; then
+      args+=("\"$arg\"")
+    else
+      args+=("$arg")
+    fi
+  done
+
+  local stdin
+  if read -t 0; then
+    stdin="$(cat -)"
+  fi
+  printf >&2 "EXECUTING:"
+  printf >&2 " %s" "${args[@]}"
+  [ "$stdin" ] && printf >&2 " <<'EOT'\n%s\nEOT" "$stdin"
+  printf >&2 "\n"
+
+  if [ "$stdin" ]; then # pipe in heredoc
+    eval "echo \"\$stdin\" | ${args[*]}"
+  else
+    eval "${args[*]}"
+  fi
+}
+
+root_login() {
+  gitlab_login root '{{ gitlab_root_pass }}'
+}
+
+# clear cookie jar and get new session credentials
+# gitlab_login <user> <password>
+gitlab_login() {
+  _func_call "$@"
+  rm -f "$COOKIE_JAR"
+
+  local page_url user="$1" pass="$2"
+  page_url="$GITLAB_URL/users/sign_in"
+  run curl -s         "$page_url"   \
+    -H "$(csrf_header "$page_url")" \
+    "${HTML_ARGS[@]}" \
+    -d "user[login]=$user" \
+    -d "user[password]=$pass"
+}
+
+# create primary user besides root/admin account
+user_erhhung() {
+  _func_call "$@"
+
+  local user='{{ user_erhhung.username }}'
+  local page_url="$GITLAB_URL/admin/users"
+  local user_url="$page_url/$user"
+
+  local status="$(run curl -s "$user_url" "${HTML_ARGS[@]}")"
+  printf "$status"
+  [ "$status" == 404 ] || return 0
+  printf ','
+
+  local token="$(csrf_token "$page_url/new")"
+  run curl -s               "$page_url" \
+    "${HTML_ARGS[@]}" \
+    -d "authenticity_token=$token" \
+    -d "user[username]=$user" \
+    -d 'user[name]={{  user_erhhung.fullname }}' \
+    -d 'user[email]={{ user_erhhung.email }}' \
+    -d 'user[can_create_group]=1' \
+    -d 'user[access_level]=admin' \
+    -d 'user[credit_card_validation_attributes][credit_card_validated_at]=1'
+
+  printf ','
+  token="$(csrf_token "$page_url")"
+  run curl -s         "$user_url/trust" \
+    "${HTML_ARGS[@]}" \
+    -d '_method=put'  \
+    -d "authenticity_token=$token"
+
+  printf ',['
+  set_password "$user" '{{ gitlab_user_pass }}'
+  printf '],'
+  gitlab_login "$user" '{{ gitlab_user_pass }}'
+  printf ',['
+  dismiss_popups
+  printf '],['
+  user_settings
+  printf ','
+  user_prefs
+  printf '],['
+  add_ssh_key
+  printf '],['
+  add_gpg_key
+  printf '],'
+  root_login
+}
+
+# set_password <user> <password>
+# requires root user credentials, but
+# will be switched to user afterwards
+set_password() {
+  _func_call "$@"
+
+  local page_url token user="$1" pass="$2"
+  page_url="$GITLAB_URL/admin/users/$user"
+  token="$(csrf_token "$page_url/edit")"
+  run curl -s         "$page_url" \
+    "${HTML_ARGS[@]}"  \
+    -d '_method=patch' \
+    -d "authenticity_token=$token"  \
+    -d 'user[password]=t3MPA$$w0RD' \
+    -d 'user[password_confirmation]=t3MPA$$w0RD'
+
+  printf ','
+  gitlab_login "$user" 't3MPA$$w0RD'
+  printf ','
+
+  page_url="$GITLAB_URL/-/user_settings/password"
+  token="$(csrf_token "$page_url/new")"
+  run curl -s         "$page_url" \
+    "${HTML_ARGS[@]}" \
+    -d "authenticity_token=$token"  \
+    -d 'user[password]=t3MPA$$w0RD' \
+    -d "user[new_password]=$pass"   \
+    -d "user[password_confirmation]=$pass"
+}
+
+# requires admin user credentials
 dismiss_popups() {
+  _func_call "$@"
+
   local features=(
 {% for feat in gitlab_user_callouts %}
     {{ feat }}
@@ -66,54 +230,150 @@ dismiss_popups() {
     [ "$once" ] && printf ','
     once=1
 
-    curl -s             "$GITLAB_URL/-/users/callouts" \
+    run curl -s         "$GITLAB_URL/-/users/callouts" \
       -H "$(csrf_header "$GITLAB_URL/admin")" \
-      "${AUTH_ARGS[@]}" \
-      "${JSON_ARGS[@]}" \
-      -d '{"feature_name":"'$feat'"}'
+      "${JSON_ARGS[@]}" -d '{"feature_name":"'$feat'"}'
   done
 }
 
+user_settings() {
+  _func_call "$@"
+
+  local page_url="$GITLAB_URL/-/user_settings/profile"
+  local token="$(csrf_token "$page_url")"
+  run curl -s               "$page_url" \
+    "${HTML_ARGS[@]}"  \
+    -d '_method=patch' \
+    -d "authenticity_token=$token" \
+    -d 'user[timezone]={{ system_time_zone }}'  \
+    -d 'user[user_detail_organization]=Homelab' \
+    -d 'user[achievements_enabled]=1'
+}
+
+user_prefs() {
+  _func_call "$@"
+
+  local args=(
+{% for pref, value in gitlab_user_prefs.items() %}
+    -d '{{ pref }}={{ value }}'
+{% endfor %}
+  )
+  local page_url="$GITLAB_URL/-/profile/preferences"
+  run curl -s         "$page_url"   \
+    -H "$(csrf_header "$page_url")" \
+    "${HTML_ARGS[@]}"  \
+    -d '_method=patch' "${args[@]}"
+}
+
+add_ssh_key() {
+  _func_call "$@"
+
+  local url_path="-/user_settings/ssh_keys"
+  local id page_url="$GITLAB_URL/$url_path"
+  run curl -s "$page_url" "${HTML_ARGS[@]}"
+
+  id="$(sed -En 's|^.*href="/'"$url_path"'/([0-9]+)".*$|\1|p' \
+             "$RESPONSE_HTML" | sort -nr | head -1)"
+  [ "$id" ] && return
+  printf ','
+
+  # key[key] value must be URL-encoded
+  local token="$(csrf_token "$page_url")"
+  run curl -s               "$page_url" \
+    "${HTML_ARGS[@]}" \
+    -d "authenticity_token=$token" \
+    -d 'key[key]={{ erhhung_ssh_pub_key | urlencode }}' \
+    -d 'key[title]={{ user_erhhung.username }}' \
+    -d 'key[usage_type]=auth_and_signing' \
+    -d 'key[expires_at]='
+}
+
+add_gpg_key() {
+  _func_call "$@"
+
+  local url_path="-/user_settings/gpg_keys"
+  local id page_url="$GITLAB_URL/$url_path"
+  run curl -s "$page_url" "${HTML_ARGS[@]}"
+
+  id="$(sed -En 's|^.*href="/'"$url_path"'/([0-9]+)".*$|\1|p' \
+             "$RESPONSE_HTML" | sort -nr | head -1)"
+  [ "$id" ] && return
+  printf ','
+
+  # gpg_key[key] value must be URL-encoded
+  local token="$(csrf_token "$page_url")"
+  run curl -s               "$page_url" \
+    "${HTML_ARGS[@]}" \
+    -d "authenticity_token=$token" \
+    -d 'gpg_key[key]={{ erhhung_gpg_pub_key | urlencode }}'
+}
+
+# requires root user credentials
 app_settings() {
-  local sections=()
-{% for name1, section in gitlab_app_settings.items() %}
-  sections+=({{ name1 }})
-  local {{ name1 }}_settings=(
-{% for name2, setting in section.items() %}
-    '{{ name2 }}={{ setting.value }}'
+  _func_call "$@"
+
+  local once url_base section sections=()
+{% for name, section in gitlab_app_settings.items() %}
+  sections+=({{ name }})
+  local {{ name }}_args=(
+{% for key, setting in section.items() %}
+    -d '{{ key }}={{ setting.value }}'
 {% endfor %}
   )
 {% endfor %}
-  local once url_base="$GITLAB_URL/admin/application_settings"
+  url_base="$GITLAB_URL/admin/application_settings"
   for section in "${sections[@]}"; do
     [ "$once" ] && printf ','
     once=1
 
+    local -n args="${section}_args"
     local page_url="$url_base/$section"
     local token="$(csrf_token "$page_url")"
-    local args=(
-      -d '_method=patch'
-      -d "authenticity_token=$token"
-    )
-    local set_var="${section}_settings"
-    for setting in "${!set_var[@]}"; do
-      args+=(-d "$setting")
-    done
-    curl -s             "$page_url" \
-      -H "$(csrf_header "$token")"  \
-      "${AUTH_ARGS[@]}" \
-      "${HTML_ARGS[@]}" "${args[@]}"
+    run curl -s               "$page_url" \
+      "${HTML_ARGS[@]}"  \
+      -d '_method=patch' \
+      -d "authenticity_token=$token" \
+      "${args[@]}"
   done
 }
 
+# requires root user credentials
+integrations() {
+  _func_call "$@"
+
+  local once url_base service services=()
+{% for name, service in gitlab_integrations.items() %}
+  services+=({{ name }})
+  local {{ name }}_args=(
+{% for setting, value in service.items() %}
+    -d '{{ setting }}={{ value }}'
+{% endfor %}
+  )
+{% endfor %}
+  url_base="$GITLAB_URL/admin/application_settings/integrations"
+  for service in "${services[@]}"; do
+    [ "$once" ] && printf ','
+    once=1
+
+    local -n args="${service}_args"
+    local page_url="$url_base/$service"
+    local token="$(csrf_token "$page_url/edit")"
+    run curl -s               "$page_url" \
+      "${HTML_ARGS[@]}"  \
+      -d '_method=patch' \
+      -d "authenticity_token=$token" \
+      "${args[@]}"
+  done
+}
+
+# requires root user credentials
 register_runner() {
+  _func_call "$@"
   rm -f "$RUNNER_JSON"
 
-  curl -s             "$GITLAB_URL/api/graphql" \
+  run curl -s         "$GITLAB_URL/api/graphql" \
     -H "$(csrf_header "$GITLAB_URL/admin/runners")" \
-    "${AUTH_ARGS[@]}" \
-    "${JSON_ARGS[@]}" \
-    -d @- <<'EOT'
+    "${JSON_ARGS[@]}" -d @- <<'EOT'
 {
   "operationName": "getRunners",
   "query": "query getRunners() {runners {nodes {id description creationState __typename}}}"
@@ -125,11 +385,9 @@ EOT
   [ "$exists" == 0 ] || return 0
 
   printf ','
-  curl -s             "$GITLAB_URL/api/graphql" \
+  run curl -s         "$GITLAB_URL/api/graphql" \
     -H "$(csrf_header "$GITLAB_URL/admin/runners/new")" \
-    "${AUTH_ARGS[@]}" \
-    "${JSON_ARGS[@]}" \
-    -d @- <<'EOT'
+    "${JSON_ARGS[@]}" -d @- <<'EOT'
 {
   "operationName": "runnerCreate",
   "variables": {
@@ -156,11 +414,9 @@ EOT
   echo >&2 "  reg_url: $reg_url"
 
   printf ','
-  curl -s             "$GITLAB_URL/api/graphql" \
+  run curl -s         "$GITLAB_URL/api/graphql" \
     -H "$(csrf_header "$reg_url")" \
-    "${AUTH_ARGS[@]}" \
-    "${JSON_ARGS[@]}" \
-    -d @- <<EOT
+    "${JSON_ARGS[@]}" -d @- <<EOT
 {
   "operationName": "getRunnerForRegistration",
   "variables": {
@@ -180,10 +436,14 @@ EOT
   }' < "$RESPONSE_JSON" > "$RUNNER_JSON"
 }
 
-echo "   Login: $(gitlab_login)"
-echo "  Popups: $(dismiss_popups)"
-echo "Settings: $(app_settings)"
-echo "  Runner: $(register_runner)"
+echo "       Login: $(root_login)"
+echo "     Erhhung: $(user_erhhung)"
+echo "      Popups: $(dismiss_popups)"
+echo "    Settings: [$(user_settings),$(
+                       user_prefs)],[$(
+                       app_settings)]"
+echo "Integrations: $(integrations)"
+echo "      Runner: $(register_runner)"
 [ -f "$RUNNER_JSON" ] || exit 0
 
 eval "$(jq -r '.runner | "
