@@ -21,6 +21,7 @@
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/set_fact_module.html
       ansible.builtin.set_fact:
         local_python_interpreter: "{{ lookup('ansible.builtin.pipe', 'which python3') }}"
+        local_bash_interpreter: "{{ lookup('ansible.builtin.pipe', 'which bash') }}"
         local_machine_arch: "{{ 'arm64' if arch == 'aarch64' else 'amd64' }}"
         local_tz_offset:
           in_hours: "{{ tz_offset.in_hours | float }}"

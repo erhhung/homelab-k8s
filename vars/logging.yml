@@ -21,8 +21,8 @@ fluent_operator_chart_values:
 
     resources:
       requests:
-        cpu: 50m
-        memory: 24Mi
+        cpu: 10m
+        memory: 64Mi
 
   fluentbit:
     enable: true
@@ -30,6 +30,11 @@ fluent_operator_chart_values:
 
     # https://doc.crds.dev/github.com/fluent/fluent-operator/fluentbit.fluent.io/FluentBit/v1alpha2#spec-secrets
     secrets: "{{ [logging_secrets['plugin']] }}"
+
+    resources:
+      requests:
+        cpu: 10m
+        memory: 64Mi
 
     input:
       tail:

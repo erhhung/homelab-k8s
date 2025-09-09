@@ -95,7 +95,7 @@ argocd_chart_values:
         #   sed -En 's|^pub.+/([A-Z0-9]+).+$|\1|p'
         # gpg --export --output erhhung.asc --armor B9C45C9F62942408
         # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/file_lookup.html
-        B9C45C9F62942408: "{{ lookup('ansible.builtin.file', 'files/argocd/erhhung.asc', rstrip=false) }}"
+        B9C45C9F62942408: "{{ lookup('ansible.builtin.file', 'files/erhhung/erhhung.asc', rstrip=false) }}"
 
     # "argocd-cmd-params-cm" ConfigMap:
     # https://argo-cd.readthedocs.io/en/stable/operator-manual/argocd-cmd-params-cm-yaml/

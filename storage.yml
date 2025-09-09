@@ -53,7 +53,7 @@
         daemon_reload: true
 
     # multipathd is known to have a breakage that affects Longhorn:
-    # https://longhorn.io/kb/troubleshooting-volume-with-multipath/
+    # https://longhorn.io/kb/troubleshooting-volume-with-multipath
     - name: Disable the multipath daemon
       ansible.builtin.systemd_service:
         name: multipathd
@@ -217,7 +217,7 @@
         wait: true
       timeout: 300
 
-    # https://longhorn.io/docs/latest/snapshots-and-backups/scheduling-backups-and-snapshots/#set-up-recurring-jobs
+    # https://longhorn.io/docs/latest/snapshots-and-backups/scheduling-backups-and-snapshots#set-up-recurring-jobs
     # (this CR cannot be added to .extraObjects in chart
     # values because Longhorn CRDs won't be created yet)
     - name: Add recurring "delete-snapshots" job
@@ -275,7 +275,7 @@
         apply: true
   any_errors_fatal: true
 
-# https://computingforgeeks.com/configure-nfs-as-kubernetes-persistent-volume-storage/
+# https://computingforgeeks.com/configure-nfs-as-kubernetes-persistent-volume-storage
 - name: Install NFS dynamic provisioner
   tags: nfs
   hosts:
@@ -288,35 +288,31 @@
     ansible_python_interpreter: "{{ venv_python_interpreter }}"
     # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/ternary_filter.html
     cluster: "{{ (inventory_hostname == k3s_control_plane_host) | ternary('k3s','rke') }}"
+    provisioners: "{{ nfs_provisioners | selectattr('cluster', '==', cluster) }}"
   tasks:
     - name: Install NFS provisioner Helm chart
       vars:
-        provisioners: "{{ nfs_provisioners | selectattr('cluster', '==', cluster) }}"
-        mount_options: "{{ nfs_mount_opts | split(',') }}"
-        storage_class: |
-          {# https://docs.ansible.com/ansible/latest/collections/ansible/builtin/combine_filter.html #}
-          {% set sc = item.storageClass | ansible.builtin.combine({
-               'name': item.storageClass.name | default('nfs-'~ item.name)
-             }) %}
-          {{ sc }}
+        values_:
+          nfs:
+            server: "{{ item.server }}"
+            path: "{{ item.path }}"
+            mountOptions: "{{ nfs_mount_opts | split(',') }}"
+          storageClass: |
+            {% set sc = item.storageClass | ansible.builtin.combine({
+                'name': item.storageClass.name | default('nfs-'~ item.name)
+               }) %}
+            {{ sc }}
+        # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/combine_filter.html
+        values: "{{ values_ | ansible.builtin.combine(nfs_provisioner_chart_values) }}"
       kubernetes.core.helm:
         kubeconfig: "{{ vars[cluster ~'_kubeconfig'] }}"
         chart_repo_url: https://kubernetes-sigs.github.io/nfs-subdir-external-provisioner
         chart_ref: nfs-subdir-external-provisioner
-        release_name: "{{ item.name }}"
-        release_namespace: nfs-provisioner
+        chart_version: "{{ nfs_provisioner_chart_version }}"
+        release_namespace: "{{ nfs_provisioner_namespace }}"
         create_namespace: "{{ i == 0 }}"
-        # https://github.com/kubernetes-sigs/nfs-subdir-external-provisioner/tree/master/charts/nfs-subdir-external-provisioner/values.yaml
-        release_values:
-          nfs:
-            server: "{{ item.server }}"
-            path: "{{ item.path }}"
-            mountOptions: "{{ mount_options }}"
-          storageClass: "{{ storage_class }}"
-          resources:
-            requests:
-              cpu: 10m
-              memory: 16Mi
+        release_name: "{{ item.name }}"
+        release_values: "{{ values }}"
         history_max: "{{ helm_max_history }}"
         atomic: true
         wait: true

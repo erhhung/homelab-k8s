@@ -10,6 +10,9 @@ harbor_host_name: harbor # alias of "rancher"
 # https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_filters.html#products
 harbor_fqdn: "{{ [harbor_host_name] | product(search_domains) | map('join','.') | first }}"
 
+harbor_url: https://{{ harbor_fqdn }}
+harbor_default_project: library
+
 harbor_secrets:
   ingress: harbor-ingress-tls
 
@@ -20,7 +23,7 @@ harbor_release_name: harbor
 
 # https://github.com/goharbor/harbor-helm/tree/main/values.yaml
 harbor_chart_values:
-  externalURL: https://{{ harbor_fqdn }}
+  externalURL: "{{ harbor_url }}"
 
   expose:
     # IMPORTANT! if using Traefik (K3s default) as ingress
@@ -102,8 +105,9 @@ harbor_chart_values:
   metrics:
     enabled: true
 
+# user_erhhung:  {vault.yml}
+# homelab_admin: {vault.yml}
 harbor_users:
-  # user_erhhung: {vault.yml}
   - username: "{{ user_erhhung.username }}"
     realname: "{{ user_erhhung.fullname }}"
     email: "{{ user_erhhung.email }}"
@@ -111,6 +115,11 @@ harbor_users:
     password: "{{ harbor_admin_pass }}"
     role: maintainer # project: library
     # comment: optional
+  - username: gitlab
+    realname: GitLab CI/CD
+    email: "{{ homelab_admin.email }}"
+    password: "{{ harbor_admin_pass }}"
+    role: maintainer # project: library
 
 # https://github.com/goharbor/harbor/tree/main/src/portal/src/app/shared/entities/shared.const.ts#L295-L309
 harbor_roles:

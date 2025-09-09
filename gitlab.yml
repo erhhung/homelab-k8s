@@ -115,6 +115,12 @@
           secretkey: "{{ gitlab_minio_config.aws_secret_access_key }}"
       ansible.builtin.include_tasks: tasks/k8s/secrets/generic.yml
 
+    - name: Create GitLab OmniAuth secret
+      vars:
+        secret_name: "{{ gitlab_secrets['omniauth'] }}"
+        secret_data: "{{ gitlab_omniauth_config }}"
+      ansible.builtin.include_tasks: tasks/k8s/secrets/generic.yml
+
     # only to install PostgreSQL extensions
     - name: Create database superuser secret
       ansible.builtin.include_tasks: tasks/postgresql/superuser.yml
@@ -182,7 +188,6 @@
       # by the next task, Helm upgrade fails due
       # to conflicting probe handlers, so ignore
       # just that specific error
-      ignore_errors: true
       register: helm_install
       failed_when: >-
         helm_install is failed and helm_install.stderr is not search(
@@ -265,7 +270,10 @@
   hosts: localhost
   gather_facts: false
   vars_files:
+    - vars/basics.yml
+    - vars/harbor.yml
     - vars/gitlab.yml
+    - vars/gitlab.configure.yml
   vars:
     config_method: shell # uri|shell
     site_base: https://{{ gitlab_fqdns['gitlab'] }}
@@ -283,6 +291,9 @@
       Accept: application/json
       <<: *auth-headers
   pre_tasks:
+    - name: Gather facts about controller
+      ansible.builtin.include_tasks: tasks/localfacts.yml
+
     - name: Wait until GitLab is ready
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/uri_module.html
       ansible.builtin.uri:
@@ -346,12 +357,19 @@
     # not checking if settings changed
     - name: Configure by shell script
       when: config_method == 'shell'
+      vars:
+        erhhung_ssh_pub_key: |-
+          {{ lookup('ansible.builtin.file', 'files/erhhung/erhhung.pub', rstrip=false) }}
+        erhhung_gpg_pub_key: |-
+          {{ lookup('ansible.builtin.file', 'files/erhhung/erhhung.asc', rstrip=false) }}
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/shell_module.html
-      ansible.builtin.shell: |
+      ansible.builtin.shell: |-
         {{ lookup('ansible.builtin.template', template_dir ~ '/gitlab/configure.sh.j2') }}
+      args:
+        executable: "{{ local_bash_interpreter }}"
       register: configure_sh
       changed_when: configure_sh.stdout is search(':.*(302|200)')
-      failed_when: configure_sh.stdout is search(':.*500') or configure_sh.rc != 0
+      failed_when: configure_sh.stdout is search(':.*(422|500)') or configure_sh.rc != 0
       # outputs RUNNER_TOKEN
 
     - name: Set the runner_token fact

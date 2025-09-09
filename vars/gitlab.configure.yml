@@ -1,0 +1,108 @@
+# slack_webhook_url.*: {vault.yml}
+
+# JSON POST /-/users/callouts
+gitlab_user_callouts:
+  - product_usage_data_collection_changes
+  - registration_enabled_callout
+  - security_newsletter_callout
+
+# form POST /-/profile/preferences
+gitlab_user_prefs:
+  # 1=Light 2=Dark 3=Auto
+  user[color_mode_id]: 2
+  # 1=Light 3=Solarized Light 5=Monokai
+  # 2=Dark  4=Solarized Dark  6=None
+  user[dark_color_scheme_id]: 2
+  # 1=Indigo  6=Light Indigo
+  # 2=Gray    7=Light Blue
+  # 3=Neutral 8=Light Green
+  # 4=Blue    9=Red
+  # 5=Green  10=Light Red
+  user[theme_id]: 3
+  # fixed=1280px max
+  # fluid=100% width
+  user[layout]: fixed
+  # rich_text_editor|plain_text_editor
+  user[text_editor]: plain_text_editor
+  user[tab_width]: 2
+  user[time_display_relative]: 1
+  # 0=System 1=12-hour 2=24-hour
+  user[time_display_format]: 1
+
+# form POST /admin/application_settings/{section}
+gitlab_app_settings:
+  general:
+    # Settings > General > Sign-up restrictions
+    application_setting[signup_enabled]:
+      value: 0
+      # search for this unique element
+      # attribute to get current value
+      attribute: data-signup-enabled
+
+    # Settings > General > Sign-in restrictions
+    application_setting[after_sign_out_path]:
+      value: https://{{ gitlab_fqdns['gitlab'] }}/
+      # if no other property provided,
+      # current value is in value="X"
+      # attribute BEFORE name="{key}"
+    application_setting[root_moved_permanently_redirection]:
+      value: 1
+
+    # Settings > General > Import and export settings
+    application_setting[import_sources][]:
+      # requires OmniAuth configuration
+      value: github
+      search: checked
+
+  preferences:
+    # Settings > Preferences > Localization
+    application_setting[first_day_of_week]:
+      value: 1 # Monday
+      # search for name="{key}".+?"{search}"
+      # BEFORE value="X"
+      search: selected
+    application_setting[time_tracking_limit_to_hours]:
+      value: 1
+      search: checked
+
+  network:
+    # Settings > Network > Outbound requests
+    application_setting[allow_local_requests_from_web_hooks_and_services]:
+      value: 1
+
+# form POST /admin/application_settings/integrations/{service}
+gitlab_integrations:
+  # when activated, global environment variables HARBOR_URL, HARBOR_OCI, HARBOR_HOST,
+  # HARBOR_USERNAME, HARBOR_PASSWORD, HARBOR_PROJECT will be available in CI/CD jobs
+  harbor:
+    # quote boolean values!
+    service[active]: "true"
+    service[url]: "{{ harbor_url }}"
+    service[project_name]: "{{ harbor_default_project }}"
+    service[username]: gitlab
+    service[password]: "{{ harbor_admin_pass }}"
+
+  slack:
+    service[active]: "true"
+    service[webhook]: "{{ slack_webhook_url.gitlab }}"
+    service[username]: GitLab
+    service[push_events]: "false"
+    service[tag_push_events]: "false"
+    service[issues_events]: "false"
+    service[confidential_issues_events]: "false"
+    service[merge_requests_events]: "false"
+    service[pipeline_events]: "true"
+    service[pipeline_channel]: "#gitlab"
+    service[deployment_events]: "true"
+    service[deployment_channel]: "#gitlab"
+    service[note_events]: "false"
+    service[confidential_note_events]: "false"
+    service[wiki_page_events]: "false"
+    service[incident_events]: "false"
+    service[vulnerability_events]: "false"
+    service[alert_events]: "false"
+    service[notify_only_broken_pipelines]: "false"
+    # all|default|protected|default_and_protected
+    service[branches_to_be_notified]: all
+    # match_any|match_all
+    service[labels_to_be_notified_behavior]: match_any
