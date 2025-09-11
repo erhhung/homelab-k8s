@@ -376,7 +376,8 @@
       when: config_method == 'shell'
       ansible.builtin.set_fact:
         runner_token: >-
-          {% set lines = configure_sh.stdout_lines | select('search','^RUNNER_TOKEN=') | list -%}
+          {% set lines = configure_sh.stdout_lines |
+                select('search', '^RUNNER_TOKEN=') | list -%}
           {{ lines[0].split('RUNNER_TOKEN=')[1] if lines is truthy else none }}
   any_errors_fatal: true
 

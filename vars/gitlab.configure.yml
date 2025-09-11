@@ -106,3 +106,38 @@ gitlab_integrations:
     service[branches_to_be_notified]: all
     # match_any|match_all
     service[labels_to_be_notified_behavior]: match_any
+
+gitlab_cicd_vars:
+  # since GitLab Container Registry was not installed,
+  # define well-known variables used by Auto DevOps to
+  # reference Harbor registry instead
+  CI_REGISTRY:
+    description: Container Registry URL
+    environment_scope: "*"
+    value: $HARBOR_URL
+    protected: false
+    masked: false
+    raw: false
+  CI_REGISTRY_USER:
+    description: Container Registry Username
+    environment_scope: "*"
+    value: $HARBOR_USERNAME
+    protected: false
+    masked: false
+    raw: false
+  CI_REGISTRY_PASSWORD:
+    description: Container Registry Password
+    environment_scope: "*"
+    value: $HARBOR_PASSWORD
+    protected: false
+    # cannot mask variable that
+    # references other variable
+    masked: false
+    raw: false
+  CI_REGISTRY_IMAGE:
+    description: Image {host}/{project}/{name}
+    environment_scope: "*"
+    value: $HARBOR_HOST/$HARBOR_PROJECT/$CI_PROJECT_NAME
+    protected: false
+    masked: false
+    raw: false

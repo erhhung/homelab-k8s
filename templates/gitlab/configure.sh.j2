@@ -8,10 +8,13 @@ set -eo pipefail
 #
 # 1. add user "erhhung" besides root account
 # 2. set new user password and user settings
-# 3. dismiss new user pop-ups and callouts
-# 4. add Erhhung's SSH and GPG public keys
-# 5. set app settings defined in vars file
-# 6. register GitLab Runner and show token
+# 3. create "Homelab" group owned by Erhhung
+# 4. dismiss new user pop-ups and callouts
+# 5. add Erhhung's SSH and GPG public keys
+# 6. set app settings defined in vars file
+# 7. add integrations defined in vars file
+# 8. set  CI/CD vars  defined in vars file
+# 9. register GitLab Runner and emit token
 #
 # pass the following variables:
 #   site_base
@@ -25,12 +28,14 @@ set -eo pipefail
 #   gitlab_user_prefs.*
 #   gitlab_app_settings.*
 #   gitlab_integrations.*
+#   gitlab_cicd_vars.*
 #   gitlab_runner.*
 
 GITLAB_URL="{{ site_base }}"
 TEMP_DIR="/tmp/gitlab"
 mkdir -p "$TEMP_DIR"
 
+    AUTH_USER="$TEMP_DIR/auth_user"
    COOKIE_JAR="$TEMP_DIR/cookie.jar"
  REFERER_HTML="$TEMP_DIR/referer.html"
 RESPONSE_HTML="$TEMP_DIR/response.html"
@@ -85,7 +90,7 @@ run() {
   local arg args=()
   for arg in "$@"; do
     if [[ "$arg" =~ [[]|[]]|[\<\>\{\}\`\*\#\$\^\&\?\|\\\;] ]]; then
-      args+=("'$arg'")
+      args+=("'${arg//\'/\'\"\'\"\'}'")
     elif [[ "$arg" == *\'* && \
             "$arg" != *\"* ]]; then
       args+=("\"$arg\"")
@@ -94,7 +99,7 @@ run() {
       args+=("'$arg'")
     elif [[ "$arg" == *\"* && \
             "$arg" == *\'* ]]; then
-      args+=("\"$(sed 's/"/\\"/g' <<< "$arg")\"")
+      args+=("\"${arg//\"/\\\"}\"")
     elif [[ "$arg" == *\ * ]]; then
       args+=("\"$arg\"")
     else
@@ -121,23 +126,33 @@ run() {
 root_login() {
   gitlab_login root '{{ gitlab_root_pass }}'
 }
+erhhung_login() {
+  gitlab_login {{ user_erhhung.username }} \
+              '{{ gitlab_user_pass }}'
+}
 
 # clear cookie jar and get new session credentials
 # gitlab_login <user> <password>
 gitlab_login() {
   _func_call "$@"
-  rm -f "$COOKIE_JAR"
+  rm -f "$AUTH_USER" "$COOKIE_JAR"
 
   local page_url user="$1" pass="$2"
   page_url="$GITLAB_URL/users/sign_in"
-  run curl -s         "$page_url"   \
-    -H "$(csrf_header "$page_url")" \
-    "${HTML_ARGS[@]}" \
+  local status=$(run curl -s "$page_url"   \
+    -H "$(csrf_header        "$page_url")" \
+    "${HTML_ARGS[@]}"      \
     -d "user[login]=$user" \
-    -d "user[password]=$pass"
+    -d "user[password]=$pass")
+
+  printf "$status"
+  [ "$status" == 302 ] || return
+  printf "$user" > "$AUTH_USER"
 }
 
-# create primary user besides root/admin account
+# create primary user besides the root account
+# (session will be switched to the new user if
+# successful)
 user_erhhung() {
   _func_call "$@"
 
@@ -146,20 +161,28 @@ user_erhhung() {
   local user_url="$page_url/$user"
 
   local status="$(run curl -s "$user_url" "${HTML_ARGS[@]}")"
-  printf "$status"
-  [ "$status" == 404 ] || return 0
-  printf ','
+  printf "$status,"
+  [ "$status" == 404 ] || {
+    erhhung_login
+    return $?
+  }
 
+  local args=(
+    -d "user[username]=$user"
+    -d 'user[name]={{  user_erhhung.fullname }}'
+    -d 'user[email]={{ user_erhhung.email }}'
+    -d 'user[can_create_group]=1'
+     # regular|admin (IMPORTANT: admin user cannot be
+     # the target of a placeholder user reassignment)
+    -d 'user[access_level]=regular'
+    -d 'user[external]=0'
+    -d 'user[credit_card_validation_attributes][credit_card_validated_at]=1'
+  )
   local token="$(csrf_token "$page_url/new")"
   run curl -s               "$page_url" \
     "${HTML_ARGS[@]}" \
     -d "authenticity_token=$token" \
-    -d "user[username]=$user" \
-    -d 'user[name]={{  user_erhhung.fullname }}' \
-    -d 'user[email]={{ user_erhhung.email }}' \
-    -d 'user[can_create_group]=1' \
-    -d 'user[access_level]=admin' \
-    -d 'user[credit_card_validation_attributes][credit_card_validated_at]=1'
+    "${args[@]}"
 
   printf ','
   token="$(csrf_token "$page_url")"
@@ -171,19 +194,7 @@ user_erhhung() {
   printf ',['
   set_password "$user" '{{ gitlab_user_pass }}'
   printf '],'
-  gitlab_login "$user" '{{ gitlab_user_pass }}'
-  printf ',['
-  dismiss_popups
-  printf '],['
-  user_settings
-  printf ','
-  user_prefs
-  printf '],['
-  add_ssh_key
-  printf '],['
-  add_gpg_key
-  printf '],'
-  root_login
+  erhhung_login
 }
 
 # set_password <user> <password>
@@ -216,6 +227,69 @@ set_password() {
     -d "user[password_confirmation]=$pass"
 }
 
+# use Erhhung's credentials to
+# create group to become owner
+group_homelab() {
+  _func_call "$@"
+
+  local group_id group='homelab'
+  local group_url="$GITLAB_URL/$group"
+
+  local status="$(run curl -s "$group_url" "${HTML_ARGS[@]}")"
+  printf "$status"
+  [ "$status" == 404 ] || return 0
+  printf ','
+
+  local args=(
+     # top-level group
+    -F 'group[parent_id]='
+    -F 'group[name]=Homelab'
+    -F 'group[path]=homelab'
+    -F "group[description]=Erhhung's homelab projects"
+     # image should be 192px square
+    -F 'group[avatar]=@{{ playbook_dir }}/images/homelab.png;type=image/png'
+     # 0=Private 10=Internal 20=Public
+    -F 'group[visibility_level]=20'
+     # for company/team or "just me"
+    -F 'group[setup_for_company]=true'
+     # basics|move_repository|code_storage|exploring|ci|other
+    -F 'group[jobs_to_be_done]=ci'
+     # invite members as developers
+    -F 'group[emails][]='
+    -F 'group[lfs_enabled]=1'
+    -F 'group[request_access_enabled]=1'
+     # 0=No One 2=Developers 4=Owners
+     # 1=Maintainers 3=Administrators
+    -F 'group[project_creation_level]=2'
+     # 0=Owners 1=Maintainers
+    -F 'group[subgroup_creation_level]=1'
+    -F 'group[require_two_factor_authentication]=0'
+    -F 'group[runner_registration_enabled]=1'
+  )
+  local page_url="$GITLAB_URL/groups"
+  local token="$(csrf_token "$page_url/new")"
+  run curl -s               "$page_url" \
+    "${HTML_ARGS[@]}" \
+    -F "authenticity_token=$token" \
+    "${args[@]}"
+
+  printf ','
+  run curl -s "$group_url" "${HTML_ARGS[@]}"
+  group_id="$(sed -En 's/Group ID: ([0-9]+)/\1/p' "$RESPONSE_HTML")"
+  echo >&2 "group_id: $group_id"
+
+  printf ','
+  page_url="$GITLAB_URL/-/users/group_callouts"
+  run curl -s          "$page_url"   \
+    -H "$(csrf_header "$group_url")" \
+    "${JSON_ARGS[@]}" -d @- <<EOT
+{
+  "feature_name": "invite_members_banner",
+  "group_id":     "$group_id"
+}
+EOT
+}
+
 # requires admin user credentials
 dismiss_popups() {
   _func_call "$@"
@@ -231,8 +305,8 @@ dismiss_popups() {
     once=1
 
     run curl -s         "$GITLAB_URL/-/users/callouts" \
-      -H "$(csrf_header "$GITLAB_URL/admin")" \
-      "${JSON_ARGS[@]}" -d '{"feature_name":"'$feat'"}'
+      -H "$(csrf_header "$GITLAB_URL/")" \
+      "${JSON_ARGS[@]}" -d '{"feature_name": "'$feat'"}'
   done
 }
 
@@ -366,6 +440,45 @@ integrations() {
   done
 }
 
+cicd_vars() {
+  _func_call "$@"
+
+  local page_url url_base="$GITLAB_URL/admin"
+  page_url="$url_base/application_settings/ci_cd"
+  run curl -s         "$GITLAB_URL/api/graphql" \
+    -H "$(csrf_header "$page_url")" \
+    "${JSON_ARGS[@]}" -d @- <<'EOT'
+{
+  "operationName": "getVariables",
+  "query": "query getVariables($after: String, $before: String, $first: Int, $last: Int, $sort: CiVariableSort = KEY_ASC) {ciVariables(after: $after before: $before first: $first last: $last sort: $sort) {nodes {...BaseCiVariable ...BaseCiInstanceVariable}}} fragment BaseCiVariable on CiVariable {id key value variableType} fragment BaseCiInstanceVariable on CiInstanceVariable {description protected masked raw}"
+}
+EOT
+  local existing="$(jq '[.data.ciVariables.nodes[] | {
+    (.key): .id | capture("/(?<x>\\d+)$").x | tonumber
+    }] | add' "$RESPONSE_JSON")"
+
+  printf ','
+  run curl -sX PATCH  "$url_base/ci/variables" \
+    -H "$(csrf_header "$page_url")" \
+    "${JSON_ARGS[@]}" -d @- <<EOT
+{
+  "variables_attributes": [
+{% for var in gitlab_cicd_vars | ansible.builtin.dict2items(value_name='attrs') %}
+    {
+      "key": "{{ var.key }}",
+      "variable_type": "env_var",
+{%   for attr, value in var.attrs.items() %}
+      "{{ attr }}": {{ value | to_json | replace('$','\$') }},
+{%   endfor %}
+      "id": $(jq '.{{ var.key }} // null' <<< "$existing")
+    }
+{{- '\n' if loop.last else ',\n' -}}
+{% endfor %}
+  ]
+}
+EOT
+}
+
 # requires root user credentials
 register_runner() {
   _func_call "$@"
@@ -376,7 +489,7 @@ register_runner() {
     "${JSON_ARGS[@]}" -d @- <<'EOT'
 {
   "operationName": "getRunners",
-  "query": "query getRunners() {runners {nodes {id description creationState __typename}}}"
+  "query": "query getRunners() {runners {nodes {id description creationState}}}"
 }
 EOT
   local exists="$(jq -r '.data.runners.nodes | map(
@@ -403,7 +516,7 @@ EOT
       "maintenanceNote": ""
     }
   },
-  "query": "mutation runnerCreate($input: RunnerCreateInput!) {runnerCreate(input: $input) {runner {id ephemeralRegisterUrl __typename} errors __typename}}"
+  "query": "mutation runnerCreate($input: RunnerCreateInput!) {runnerCreate(input: $input) {runner {id ephemeralRegisterUrl} errors}}"
 }
 EOT
   eval "$(jq -r '.data.runnerCreate.runner | "
@@ -422,7 +535,7 @@ EOT
   "variables": {
     "id": "$runner_id"
   },
-  "query": "query getRunnerForRegistration(\$id: CiRunnerID!) {runner(id: \$id) {id description ephemeralAuthenticationToken creationState __typename}}"
+  "query": "query getRunnerForRegistration(\$id: CiRunnerID!) {runner(id: \$id) {id description ephemeralAuthenticationToken creationState}}"
 }
 EOT
   # function is being called from subshell,
@@ -436,14 +549,18 @@ EOT
   }' < "$RESPONSE_JSON" > "$RUNNER_JSON"
 }
 
-echo "       Login: $(root_login)"
-echo "     Erhhung: $(user_erhhung)"
-echo "      Popups: $(dismiss_popups)"
-echo "    Settings: [$(user_settings),$(
-                       user_prefs)],[$(
-                       app_settings)]"
-echo "Integrations: $(integrations)"
-echo "      Runner: $(register_runner)"
+echo "‖        Login: $(root_login)"
+echo "‖      Erhhung: $(user_erhhung)"
+echo "‖      ‖    Group: $(group_homelab)"
+echo "‖      ‖   Popups: $(dismiss_popups)"
+echo "‖      ‖ Settings: $(user_settings),$(user_prefs)"
+echo "‖      ‖ Pub Keys: $(add_ssh_key),$(add_gpg_key)"
+echo "‖        Login: $(root_login)"
+echo "‖       Popups: $(dismiss_popups)"
+echo "‖     Settings: $(user_settings),$(user_prefs),[$(app_settings)]"
+echo "‖ Integrations: $(integrations)"
+echo "‖   CI/CD Vars: $(cicd_vars)"
+echo "‖       Runner: $(register_runner)"
 [ -f "$RUNNER_JSON" ] || exit 0
 
 eval "$(jq -r '.runner | "

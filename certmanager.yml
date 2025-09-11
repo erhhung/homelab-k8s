@@ -83,34 +83,32 @@
   vars_files: *vars_files
   vars: *vars
   pre_tasks:
+    - name: Gather facts about controller
+      ansible.builtin.include_tasks: tasks/localfacts.yml
+      when: local_python_interpreter is not defined
+
     - name: Get CA certificates from PKI
       ansible.builtin.include_tasks: tasks/pki/cacerts.yml
       when: ca_certificates is not defined
 
     - name: Get Step CA provisioner info
+      delegate_to: localhost
       run_once: true
       block:
         - name: Fetch Step CA provisioners
-          delegate_to: "{{ pki_host }}"
           vars:
-            ansible_python_interpreter: "{{ default_python_interpreter }}"
-          ansible.builtin.shell: |
-            exec /bin/bash -l <<'EOT'
-            export XDG_CONFIG_HOME="$HOME/.config"
-            eval "$(grep STEPPATH .bash_aliases)"
-            step ca provisioner list
-            EOT
-          register: step_cmd
-          changed_when: false
+            ansible_python_interpreter: "{{ local_python_interpreter }}"
+          # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/uri_module.html
+          ansible.builtin.uri:
+            url: "{{ step_ca_url }}/provisioners"
+          register: step_ca_provisioners
 
-        - name: Set stepca_provisioner fact
-          # delegating to localhost sets fact at
-          # global scope so all hosts can access
-          delegate_to: localhost
+        - name: Set step_ca_provisioner fact
           # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/set_fact_module.html
           ansible.builtin.set_fact:
-            stepca_provisioner: "{{ step_cmd.stdout | from_json |
-              selectattr('type', '==', 'JWK') | first }}"
+            step_ca_provisioner: |
+              {{ step_ca_provisioners.json.provisioners |
+                 selectattr('type', '==', 'JWK')  | first }}
   tasks:
     - name: Create CA provisioner secret
       vars:
@@ -119,7 +117,7 @@
         secret_ns: "{{ step_issuer_namespace }}"
         create_ns: false
         secret_data: "{{ {
-          passwordRef.key: stepca_provisioner_pass
+          passwordRef.key: step_ca_provisioner_pass
           } }}"
       ansible.builtin.include_tasks: tasks/k8s/secrets/generic.yml
 

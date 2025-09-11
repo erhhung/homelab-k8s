@@ -310,7 +310,7 @@
         chart_ref: nfs-subdir-external-provisioner
         chart_version: "{{ nfs_provisioner_chart_version }}"
         release_namespace: "{{ nfs_provisioner_namespace }}"
-        create_namespace: "{{ i == 0 }}"
+        create_namespace: "{{ ansible_loop.first }}"
         release_name: "{{ item.name }}"
         release_values: "{{ values }}"
         history_max: "{{ helm_max_history }}"
@@ -318,8 +318,8 @@
         wait: true
       loop: "{{ provisioners }}"
       loop_control:
+        extended: true
         label: "{{ item.name }}"
-        index_var: i
   any_errors_fatal: true
 
 - name: Configure storage dashboards

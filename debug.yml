@@ -248,6 +248,75 @@
         - test: 123
           foo: "{{ omit }}"
 
+    - name: Test loop variables
+      vars:
+        items:
+          - foo
+          - bar
+          - baz
+      block:
+        - name: Echo loop item
+          ansible.builtin.command: date +"{{ ansible_loop.index }}-{{ item }}-%s"
+          loop: "{{ items }}"
+          loop_control:
+            # https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_loops.html#extended-loop-variables
+            extended: true
+            # https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_loops.html#pausing-within-a-loop
+            pause: 2
+          register: echo_item
+          changed_when: false
+
+        - name: Show echo results
+          vars:
+            j: "{{ ansible_loop.index0 }}"
+          ansible.builtin.debug:
+            msg: |
+              i (index_var):          {{ i }}
+              j=ansible_loop.index0:  {{ j }}
+              stdout:                 {{ item.stdout }}
+              stdout[{{ i }}]:              {{ echo_item.results[i].stdout }}
+              stdout[{{ j }}]:              {{ echo_item.results[j].stdout }}
+          loop: "{{ echo_item.results }}"
+          loop_control:
+            extended: true
+            label: "{{ item.item }}"
+            index_var: i
+
+        - name: Show loop vars
+          ansible.builtin.debug:
+            msg: |
+              item:                   {{ item }}
+              ansible_loop.index:     {{ ansible_loop.index }}
+              ansible_loop.index0:    {{ ansible_loop.index0 }}
+              ansible_loop.revindex:  {{ ansible_loop.revindex }}
+              ansible_loop.revindex0: {{ ansible_loop.revindex0 }}
+              ansible_loop.first:     {{ ansible_loop.first }}
+              ansible_loop.last:      {{ ansible_loop.last }}
+          loop: "{{ items }}"
+          loop_control:
+            extended: true
+            # https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_loops.html#breaking-out-of-a-loop
+            break_when: item == 'bar'
+
+        - name: Loops in Jinaj2
+          vars:
+            stats: |
+              {% set stats = [] %}
+              {% for item in items %}
+              {%   set _ = stats.append({
+                     'item':           item,
+                     'loop.index':     loop.index,
+                     'loop.index0':    loop.index0,
+                     'loop.revindex':  loop.revindex,
+                     'loop.revindex0': loop.revindex0,
+                     'loop.first':     loop.first,
+                     'loop.last':      loop.last,
+                   })   %}
+              {% endfor %}
+              {{ stats  }}
+          ansible.builtin.debug:
+            var: stats
+
 - name: Debug expressions and statements
   tags: exprs
   hosts: localhost

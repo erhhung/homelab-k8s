@@ -338,7 +338,7 @@
         model: "{{ list_models.json | selectattr('name', '==', model_name) }}"
         base_model: "{{ ollama_models | select('search', '^qwen3') | first }}"
         # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/file_lookup.html
-        image_data: "{{ lookup('ansible.builtin.file', 'files/openwebui/ai-assistant.png') }}"
+        image_data: "{{ lookup('ansible.builtin.file', 'images/assistant.png') }}"
         image_url: data:image/png;base64,{{ image_data | b64encode }}
         knowledge: |
           {% set know = accounts_knowledge %}

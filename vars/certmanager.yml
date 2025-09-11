@@ -53,7 +53,8 @@ certmanager_chart_values:
       path: /metrics
       interval: 60s
 
-# stepca_provisioner_pass: {vault.yml}
+# step_ca_provisioner_pass: {vault.yml}
+step_ca_url: https://pki.fourteeners.local
 
 # deploy into cert-manager namespace
 step_issuer_namespace: cert-manager
@@ -95,11 +96,11 @@ step_issuer_chart_values:
   stepClusterIssuer:
     create: true
 
-    caUrl: https://pki.fourteeners.local
+    caUrl: "{{ step_ca_url }}"
     caBundle: "{{ ca_certificates[1] | b64encode }}"
     provisioner:
-      name: "{{ stepca_provisioner.name }}"
-      kid: "{{ stepca_provisioner.key.kid }}"
+      name: "{{ step_ca_provisioner.name }}"
+      kid: "{{ step_ca_provisioner.key.kid }}"
       passwordRef:
         name: "{{ step_issuer_secrets['provisioners'] }}"
         namespace: "{{ step_issuer_namespace }}"

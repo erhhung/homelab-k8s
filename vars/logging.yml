@@ -23,6 +23,9 @@ fluent_operator_chart_values:
       requests:
         cpu: 10m
         memory: 64Mi
+      limits:
+        cpu: 50m
+        memory: 96Mi
 
   fluentbit:
     enable: true
