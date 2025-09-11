@@ -154,7 +154,7 @@ ansible-vault view   $VAULTFILE
 | `icloud_smtp.*`                   | `minio_admin_pass`
 | `k3s_token`                       | `velero_admin_pass`
 | `rke2_token`                      | `opensearch_admin_pass`
-| `stepca_provisioner_pass`         | `keycloak_admin_pass`
+| `step_ca_provisioner_pass`        | `keycloak_admin_pass`
 | `harbor_secret`                   | `thanos_admin_pass`
 | `minio_client_pass`               | `grafana_admin_pass`
 | `velero_repo_pass`                | `gitlab_root_pass`

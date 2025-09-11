@@ -29,7 +29,7 @@
       vars:
         secret_name: "{{ item.name }}"
         secret_ns: "{{ minio_tenant_namespace }}"
-        create_ns: "{{ i == 0 }}"
+        create_ns: "{{ ansible_loop.first }}"
         release: "{{ minio_tenant_release_name }}"
         cert_name: minio-{{ item.cert }}-ingress
         sans: "{{ item.sans }}"
@@ -48,8 +48,8 @@
             - "*.{{ minio_tenant_namespace }}.svc.{{ cluster_domain }}"
             - "*.{{ minio_tenant_namespace }}.svc"
       loop_control:
+        extended: true
         label: "{{ item.cert }}"
-        index_var: i
 
     - name: Create MinIO CA certs secret
       vars:

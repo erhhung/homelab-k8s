@@ -80,11 +80,11 @@
         sysctl_set: true
         state: present
         # reload sysctl.conf after all changes
-        reload: "{{ i == sysctl | length - 1 }}"
+        reload: "{{ ansible_loop.last }}"
       loop: "{{ sysctl }}"
       loop_control:
+        extended: true
         label: "{{ item.key }}"
-        index_var: i
 
     - name: Adjust system resource limits
       # https://docs.ansible.com/ansible/latest/collections/community/general/pam_limits_module.html
