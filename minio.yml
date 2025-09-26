@@ -92,7 +92,6 @@
       loop_control:
         label: "{{ item.key }}"
 
-    # https://min.io/docs/minio/kubernetes/upstream/operations/install-deploy-manage/deploy-operator-helm.html
     - name: Install MinIO Operator Helm chart
       # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/helm_module.html
       kubernetes.core.helm:
@@ -108,8 +107,6 @@
         wait: true
       timeout: 300
 
-    # https://min.io/docs/minio/kubernetes/upstream/operations/install-deploy-manage/deploy-minio-tenant.html
-    # https://min.io/docs/minio/kubernetes/upstream/operations/install-deploy-manage/deploy-minio-tenant-helm.html
     - name: Install MinIO Tenant Helm chart
       kubernetes.core.helm:
         kubeconfig: "{{ kubeconfig }}"
@@ -243,9 +240,9 @@
     # promptly detects a conflict and overwrites it with the original:
     # https://github.com/minio/operator/issues/940
     - name: Fix Prometheus scrape configs
-      when: >-
-        monitoring_stack_ready and
-        minio_prometheus_operator
+      when:
+        - minio_prometheus_operator
+        - monitoring_stack_ready
       block:
         - name: Get bad scrape configs secret
           vars:

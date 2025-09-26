@@ -1,0 +1,17 @@
+# save rendered config as /var/lib/rancher/rke2/server/manifests/rke2-canal-config.yaml
+# on an RKE2 server node, after which rke2-server service on that node must be restarted:
+# https://docs.rke2.io/helm#customizing-packaged-components-with-helmchartconfig
+---
+# https://github.com/rancher/rke2-charts/tree/main-source/packages
+# https://github.com/rancher/rke2-charts/tree/main-source/packages/rke2-canal/charts/values.yaml
+
+apiVersion: helm.cattle.io/v1
+kind: HelmChartConfig
+metadata:
+  name: rke2-canal
+  namespace: kube-system
+spec:
+  valuesContent: |-
+    flannel:
+      iface: {{ host_pif }}
+      regexIface: {{ host_pif | regex_replace('[0-9]$','[0-9]') }}

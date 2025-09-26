@@ -1,10 +1,10 @@
 # kibana_os_pass: {vault.yml}
 
 kibana_namespace: opensearch
-kibana_host_name: kibana # alias of "homelab"
+kibana_host_name: kibana # alias of "ingress"
 
 # remember to add kibana.fourteeners.local to pfSense DNS
-# as an alias of homelab.fourteeners.local: 192.168.0.221
+# as an alias of ingress.fourteeners.local: 192.168.4.222
 # https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_filters.html#products
 kibana_fqdn: "{{ [kibana_host_name] | product(search_domains) | map('join','.') | first }}"
 

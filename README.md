@@ -6,14 +6,16 @@ The approach taken on all service deployments is to treat the clusters as a **pr
 
 ## Overview
 
-The top-level Ansible playbook `main.yml` run by `play.sh` will provision 5 VM hosts (`rancher` and `k8s1`..`k8s4`)
-in the existing XCP-ng `Home` pool, all running Ubuntu Server 24.04 Minimal without customizations besides basic networking
-and authorized SSH key for the user `erhhung`.
+The top-level Ansible playbook `main.yml` run by `play.sh` will provision 7 VM hosts (`rancher` and `k8s1`..`k8s6`)
+in the existing XCP-ng `Homelab` pool, all running Ubuntu Server 24.04 Minimal without customizations besides basic networking
+and authorized SSH key for user `erhhung`.
 
-A single-node K3s Kubernetes cluster will be installed on host `rancher` alongside with Rancher Server on that cluster, and a 4-node RKE2 Kubernetes cluster with a high-availability control plane using virtual IPs will be installed on hosts
-`k8s1`..`k8s4`. Longhorn and NFS storage provisioners will be installed in each cluster to manage a pool of LVM logical volumes on each node, and to expand the overall storage capacity on the QNAP NAS.
+A single-node K3s Kubernetes cluster will be installed on host `rancher` along with Rancher Server on that cluster, and a 6-node RKE2 Kubernetes cluster with high-availability control plane using a virtual IP will be installed on hosts
+`k8s1`..`k8s6`. MetalLB will be installed and configured in BGP mode on the 6-node cluster to load-balance external traffic among cluster nodes using ECMP routing provided by pfSense and FRR.
 
-All cluster services will be provisioned with TLS certificates from Erhhung's private CA server at `pki.fourteeners.local` or its faster mirror at `cosmos.fourteeners.local`.
+Longhorn and NFS storage provisioners will be installed in each cluster to manage a pool of LVM logical volumes on each node, and to expand the overall storage capacity onto the QNAP NAS. MinIO will also be installed, serving as S3-compatible object storage backed by NFS volumes on QNAP.
+
+All cluster services will be provisioned with TLS certificates from Erhhung's private CA server at `pki.fourteeners.local` (or its faster mirror at `cosmos.fourteeners.local`) with the help of `cert-manager` and Step CA.
 
 ## Cluster Topology
 
@@ -63,11 +65,17 @@ All cluster services will be provisioned with TLS certificates from Erhhung's pr
     * Install on K3s cluster using the [`rancher`](https://ranchermanager.docs.rancher.com/getting-started/installation-and-upgrade/install-upgrade-on-a-kubernetes-cluster#install-the-rancher-helm-chart) Helm chart
 - [X] [RKE2 Kubernetes Cluster](https://rke2.io/) — Kubernetes distribution with focus on security and compliance
     * Install on hosts `k8s1`-`k8s4` using the [RKE2 Ansible Role](https://github.com/lablabs/ansible-role-rke2) with HA mode enabled
+- [X] [MetalLB Load Balancer](https://metallb.io/) — network load-balancer for "bare metal" Kubernetes clusters
+    * Install on main RKE cluster using Bitnami's [`metallb`](https://github.com/bitnami/charts/tree/main/bitnami/metallb) Helm chart
 - [X] [Certificate Manager](https://cert-manager.io/) — X.509 certificate management for Kubernetes
     * Install on K3s and RKE clusters using the [`cert-manager`](https://cert-manager.io/docs/installation/helm) Helm chart
     * [X] Connect to Step CA `pki.fourteeners.local` using the [`step-issuer`](https://github.com/smallstep/helm-charts/tree/master/step-issuer) Helm chart
     * [ ] Connect to Step CA `pki.fourteeners.local` as an [ACME](https://cert-manager.io/docs/configuration/acme) `ClusterIssuer`
-- [X] [Wave Config Monitor](https://github.com/wave-k8s/wave) — ensure pods run with up-to-date `ConfigMaps` and `Secrets`
+- [X] [Node Feature Discovery](https://kubernetes-sigs.github.io/node-feature-discovery) — label nodes with available hardware features, like GPUs
+    * Install on K3s and RKE clusters using the [`node-feature-discovery`](https://kubernetes-sigs.github.io/node-feature-discovery/stable/deployment/helm.html) Helm chart
+    * [X] Install [Intel Device Plugins](https://intel.github.io/intel-device-plugins-for-kubernetes) using the [`intel-device-plugins-operator`](https://github.com/intel/helm-charts/tree/main/charts/device-plugin-operator) Helm chart
+    * [ ] Install [NVIDIA GPU Operator](https://docs.nvidia.com/datacenter/cloud-native/gpu-operator/latest/overview.html) on RKE cluster ... _when I procure an NVIDIA card_ :(
+- [X] [Wave Config Monitoring](https://github.com/wave-k8s/wave) — ensure pods run with up-to-date `ConfigMaps` and `Secrets`
     * Install on K3s and RKE clusters using the [`wave`](https://github.com/wave-k8s/wave#deploying-with-helm) Helm chart
 - [X] [Longhorn Block Storage](https://longhorn.io/docs/latest/what-is-longhorn) — distributed block storage for Kubernetes
     * Install on main RKE cluster using the [`longhorn`](https://longhorn.io/docs/latest/deploy/install/install-with-helm) Helm chart
@@ -80,10 +88,6 @@ All cluster services will be provisioned with TLS certificates from Erhhung's pr
 - [X] [Velero Backup & Restore](https://velero.io/docs/latest/basic-install) — back up and restore persistent volumes
     * Install on main RKE cluster using the [`velero`](https://github.com/vmware-tanzu/helm-charts/tree/main/charts/velero) Helm chart
     * [X] Install [Velero Dashboard](https://github.com/otwld/velero-ui) using the [`velero-ui`](https://github.com/otwld/helm-charts/tree/main/charts/velero-ui) Helm chart
-- [X] [Node Feature Discovery](https://kubernetes-sigs.github.io/node-feature-discovery) — label nodes with available hardware features, like GPUs
-    * Install on K3s and RKE clusters using the [`node-feature-discovery`](https://kubernetes-sigs.github.io/node-feature-discovery/stable/deployment/helm.html) Helm chart
-    * [X] Install [Intel Device Plugins](https://intel.github.io/intel-device-plugins-for-kubernetes) using the [`intel-device-plugins-operator`](https://github.com/intel/helm-charts/tree/main/charts/device-plugin-operator) Helm chart
-    * [ ] Install [NVIDIA GPU Operator](https://docs.nvidia.com/datacenter/cloud-native/gpu-operator/latest/overview.html) on RKE cluster ... _when I procure an NVIDIA card_ :(
 - [X] [OpenSearch Logging Stack](https://opensearch.org/docs/latest) — aggregate and filter logs using OpenSearch and Fluent Bit
     * Install on main RKE cluster using the [`opensearch`](https://opensearch.org/docs/latest/install-and-configure/install-opensearch/helm) and [`opensearch-dashboards`](https://opensearch.org/docs/latest/install-and-configure/install-dashboards/helm) Helm charts
     * Instal Fluent Bit using the [`fluent-operator`](https://github.com/fluent/fluent-operator) Helm chart and `FluentBit` CR
@@ -149,19 +153,20 @@ ansible-vault view   $VAULTFILE
 |      Infrastructure Secrets       |    User Passwords
 |:---------------------------------:|:-------------------:
 | `ansible_become_pass`             | `rancher_admin_pass`
-| `github_access_token`             | `harbor_admin_pass`
-| `age_secret_key`                  | `minio_root_pass`
-| `icloud_smtp.*`                   | `minio_admin_pass`
-| `k3s_token`                       | `velero_admin_pass`
+| `github_access_token`             | `minio_root_pass`
+| `age_secret_key`                  | `minio_admin_pass`
+| `icloud_smtp.*`                   | `velero_admin_pass`
+| `k3s_token`                       | `harbor_admin_pass`
 | `rke2_token`                      | `opensearch_admin_pass`
-| `step_ca_provisioner_pass`        | `keycloak_admin_pass`
-| `harbor_secret`                   | `thanos_admin_pass`
+| `metallb_secret`                  | `keycloak_admin_pass`
+| `step_ca_provisioner_pass`        | `thanos_admin_pass`
 | `minio_client_pass`               | `grafana_admin_pass`
 | `velero_repo_pass`                | `gitlab_root_pass`
 | `velero_passphrase`               | `gitlab_user_pass`
-| `dashboards_os_pass`              | `argocd_admin_pass`
-| `fluent_os_pass`                  | `openwebui_admin_pass`
-| `valkey_pass`                     | `flowise_admin_pass`
+| `harbor_secret`                   | `argocd_admin_pass`
+| `dashboards_os_pass`              | `openwebui_admin_pass`
+| `fluent_os_pass`                  | `flowise_admin_pass`
+| `valkey_pass`                     |
 | `postgresql_pass`                 |
 | `keycloak_db_pass`                |
 | `monitoring_pass`                 |
@@ -232,55 +237,74 @@ however, all privileged operations using `sudo` will require the password stored
     ```
 </details>
 
-5. <details><summary>Provision <strong>Kubernetes cluster</strong> with <strong>RKE</strong> on 4 nodes</summary><br/>
+5. <details><summary>Provision <strong>Kubernetes cluster</strong> with <strong>RKE</strong> on 6 nodes</summary><br/>
 
-    Install **RKE2** with a single control plane node and 3 worker nodes, all permitting workloads,  
-    or RKE2 in HA mode with 3 control plane nodes and 1 worker node, all permitting workloads  
-    _(in HA mode, the cluster will be accessible thru a **virtual IP** address courtesy of `kube-vip`)_
+    Install **RKE2** with a single control plane node and 5 worker nodes, all permitting workloads,  
+    or RKE2 in HA mode with 3 control plane nodes and 3 worker nodes, all permitting workloads  
+    _(in HA mode, the cluster will be accessible using a **virtual IP** address courtesy of `kube-vip`)_
 
     ```bash
     ./play.sh cluster
     ```
 </details>
 
-6. <details><summary>Install <strong><code>cert-manager</code></strong> to automate certificate issuing</summary><br/>
+6. <details><summary>Install <strong>MetalLB</strong> network load-balancer in BGP mode</summary><br/>
 
-    6.1. Connect to **Step CA** `pki.fourteeners.local` as a `StepClusterIssuer`
+    6.1. Create `BGPPeer`, `IPAddressPool`, and `BGPAdvertisement` CRs  
+         to complement **FRR BGP** configuration on **pfSense**, the local router
+
+    ```bash
+    ./play.sh metallb
+    ```
+</details>
+
+7. <details><summary>Install <strong><code>cert-manager</code></strong> to automate certificate issuing</summary><br/>
+
+    7.1. Connect to **Step CA** `pki.fourteeners.local` as a `StepClusterIssuer`
 
     ```bash
     ./play.sh certmanager
     ```
 </details>
 
-7. <details><summary>Install <strong>Wave</strong> to monitor <code>ConfigMaps</code> and <code>Secrets</code></summary><br/>
+8. <details><summary>Install <strong>Node Feature Discovery</strong> to identify GPU nodes</summary><br/>
+
+    8.1. Install Intel Device Plugins and `GpuDevicePlugin`
+
+    ```bash
+    ./play.sh nodefeatures
+    ```
+</details>
+
+9. <details><summary>Install <strong>Wave</strong> to monitor <code>ConfigMaps</code> and <code>Secrets</code></summary><br/>
 
     ```bash
     ./play.sh wave
     ```
 </details>
 
-8. <details><summary>Install <strong>Longhorn</strong> dynamic PV provisioner<br/> &nbsp; &nbsp; Install <strong>MinIO</strong> object storage in <em><strong>HA</strong></em> mode<br/> &nbsp; &nbsp; Install <strong>Velero</strong> backup and restore tools</summary><br/>
+10. <details><summary>Install <strong>Longhorn</strong> dynamic PV provisioner<br/> &nbsp; &nbsp; Install <strong>MinIO</strong> object storage in <em><strong>HA</strong></em> mode<br/> &nbsp; &nbsp; Install <strong>Velero</strong> backup and restore tools</summary><br/>
 
-    8.1. Create a pool of LVM logical volumes  
-    8.2. Install Longhorn storage components  
-    8.3. Install NFS dynamic PV provisioner  
-    8.4. Install MinIO tenant using NFS PVs  
-    8.5. Install Velero using MinIO as target  
-    8.6. Install Velero Dashboard
+    10.1. Create a pool of LVM logical volumes  
+    10.2. Install Longhorn storage components  
+    10.3. Install NFS dynamic PV provisioner  
+    10.4. Install MinIO tenant using NFS PVs  
+    10.5. Install Velero using MinIO as target  
+    10.6. Install Velero Dashboard
 
     ```bash
     ./play.sh storage minio velero
     ```
 </details>
 
-9. <details><summary>Install <strong>Harbor</strong> OCI & Helm registry</summary><br/>
+11. <details><summary>Install <strong>Harbor</strong> OCI & Helm registry</summary><br/>
 
     ```bash
     ./play.sh harbor
     ```
 </details>
 
-10. <details><summary>Create resources from manifest files</summary><br/>
+12. <details><summary>Create resources from manifest files</summary><br/>
 
     **IMPORTANT**: Resource manifests must specify the namespaces they wished to be installed  
     into because the playbook simply applies each one without targeting a specific namespace
@@ -290,118 +314,109 @@ however, all privileged operations using `sudo` will require the password stored
     ```
 </details>
 
-11. <details><summary>Install <strong>Node Feature Discovery</strong> to identify GPU nodes</summary><br/>
+13. <details><summary>Install <strong>OpenSearch</strong> cluster in <em><strong>HA</strong></em> mode</summary><br/>
 
-    11.1. Install Intel Device Plugins and `GpuDevicePlugin`
-
-    ```bash
-    ./play.sh nodefeatures
-    ```
-</details>
-
-12. <details><summary>Install <strong>OpenSearch</strong> cluster in <em><strong>HA</strong></em> mode</summary><br/>
-
-    12.1. Configure the OpenSearch security plugin (users and roles) for downstream applications  
-    12.2. Install **OpenSearch Dashboards** UI
+    13.1. Configure the OpenSearch security plugin (users and roles) for downstream applications  
+    13.2. Install **OpenSearch Dashboards** UI
 
     ```bash
     ./play.sh opensearch
     ```
 </details>
 
-13. <details><summary>Install <strong>Fluent Bit</strong> to ingest logs into OpenSearch</summary><br/>
+14. <details><summary>Install <strong>Fluent Bit</strong> to ingest logs into OpenSearch</summary><br/>
 
     ```bash
     ./play.sh logging
     ```
 </details>
 
-14. <details><summary>Install <strong>PostgreSQL</strong> database in <em><strong>HA</strong></em> mode</summary><br/>
+15. <details><summary>Install <strong>PostgreSQL</strong> database in <em><strong>HA</strong></em> mode</summary><br/>
 
-    14.1. Run initialization SQL script to create roles and databases for downstream applications  
-    14.2. Create users in both PostgreSQL and **Pgpool**
+    15.1. Run initialization SQL script to create roles and databases for downstream applications  
+    15.2. Create users in both PostgreSQL and **Pgpool**
 
     ```bash
     ./play.sh postgresql
     ```
 </details>
 
-15. <details><summary>Install <strong>Keycloak</strong> IAM & OIDC provider</summary><br/>
+16. <details><summary>Install <strong>Keycloak</strong> IAM & OIDC provider</summary><br/>
 
-    15.1. Bootstrap **PostgreSQL** database with realm `homelab`, user `erhhung`, and OIDC clients
+    16.1. Bootstrap **PostgreSQL** database with realm `homelab`, user `erhhung`, and OIDC clients
 
     ```bash
     ./play.sh keycloak
     ```
 </details>
 
-16. <details><summary>Install <strong>Valkey</strong> key-value store in <em><strong>HA</strong></em> mode</summary><br/>
+17. <details><summary>Install <strong>Valkey</strong> key-value store in <em><strong>HA</strong></em> mode</summary><br/>
 
-    16.1. Deploy 6 nodes in total: 3 primaries and 3 replicas
+    17.1. Deploy 6 nodes in total: 3 primaries and 3 replicas
 
     ```bash
     ./play.sh valkey
     ```
 </details>
 
-17. <details><summary>Install <strong>Prometheus</strong>, <strong>Thanos</strong>, and <strong>Grafana</strong> in <em><strong>HA</strong></em> mode</summary><br/>
+18. <details><summary>Install <strong>Prometheus</strong>, <strong>Thanos</strong>, and <strong>Grafana</strong> in <em><strong>HA</strong></em> mode</summary><br/>
 
-    17.1. Expose Prometheus & Alertmanager UIs via `oauth2-proxy` integration with **Keycloak**  
-    17.2. Connect Thanos sidecars to **MinIO** to store scraped metrics in the `metrics` bucket  
-    17.3. Deploy and integrate other Thanos components with Prometheus and Alertmanager
+    18.1. Expose Prometheus & Alertmanager UIs via `oauth2-proxy` integration with **Keycloak**  
+    18.2. Connect Thanos sidecars to **MinIO** to store scraped metrics in the `metrics` bucket  
+    18.3. Deploy and integrate other Thanos components with Prometheus and Alertmanager
 
     ```bash
     ./play.sh monitoring thanos
     ```
 </details>
 
-18. <details><summary>Install <strong>Istio</strong> service mesh in <em><strong>ambient</strong></em> mode</summary><br/>
+19. <details><summary>Install <strong>Istio</strong> service mesh in <em><strong>ambient</strong></em> mode</summary><br/>
 
     ```bash
     ./play.sh istio
     ```
 </details>
 
-19. <details><summary>Install <strong>Argo CD</strong> GitOps delivery in <em><strong>HA</strong></em> mode</summary><br/>
+20. <details><summary>Install <strong>Argo CD</strong> GitOps delivery in <em><strong>HA</strong></em> mode</summary><br/>
 
-    19.1. Configure Argo CD components to use the **Valkey** cluster for their caching needs
+    20.1. Configure Argo CD components to use the **Valkey** cluster for their caching needs
 
     ```bash
     ./play.sh argocd
     ```
 </details>
 
-20. <details><summary>Install <strong>Metacontroller</strong> to create Operators</summary><br/>
+21. <details><summary>Install <strong>Metacontroller</strong> to create Operators</summary><br/>
 
     ```bash
     ./play.sh metacontroller
     ```
 </details>
 
-21. <details><summary>Install <strong>Qdrant</strong> vector database in <em><strong>HA</strong></em> mode</summary><br/>
+22. <details><summary>Install <strong>Qdrant</strong> vector database in <em><strong>HA</strong></em> mode</summary><br/>
 
     ```bash
     ./play.sh qdrant
     ```
 </details>
 
-22. <details><summary>Install <strong>Ollama</strong> LLM server with common models<br/> &nbsp; &nbsp; Install <strong>Open WebUI</strong> AI platform with <strong>Pipelines</strong></summary><br/>
+23. <details><summary>Install <strong>Ollama</strong> LLM server with common models<br/> &nbsp; &nbsp; Install <strong>Open WebUI</strong> AI platform with <strong>Pipelines</strong></summary><br/>
 
-    22.1. Create `Accounts` knowledge base, and then `Accounts` custom model that embeds that KB  
-    22.2. **NOTE**: Populate `Accounts` KB by running `./play.sh openwebui -t knowledge` separately
+    23.1. Create `Accounts` knowledge base, and then `Accounts` custom model that embeds that KB  
+    23.2. **NOTE**: Populate `Accounts` KB by running `./play.sh openwebui -t knowledge` separately
 
     ```bash
     ./play.sh ollama openwebui
     ```
 </details>
 
-23. <details><summary>Install <strong>Flowise</strong> AI platform and integrations</summary><br/>
+24. <details><summary>Install <strong>Flowise</strong> AI platform and integrations</summary><br/>
 
     ```bash
     ./play.sh flowise
     ```
 
-24. <details><summary>Create <strong>virtual Kubernetes clusters</strong> in RKE</summary><br/>
+25. <details><summary>Create <strong>virtual Kubernetes clusters</strong> in RKE</summary><br/>
 
     ```bash
     ./play.sh vclusters
@@ -417,13 +432,16 @@ Alternatively, **run all playbooks** automatically in order:
 # run all playbooks starting from "storage"
 # ("storage" is a playbook tag in main.yml)
 ./play.sh storage-
+
+# run all playbooks up to "wave" (inclusive)
+./play.sh -wave
 ```
 
 Output from `play.sh` will be logged in "`ansible.log`".
 
 ### VS Code Shortcuts
 
-The default Bash shell for VS Code terminal has been configured to load a custom [`.bash_profile`](.vscode/.bash_profile) containing aliases for common Ansible commands as well as the `play` function with **completions** for playbook tags.
+The default Bash shell for VS Code integrated terminal has been configured to load a custom [`.bash_profile`](.vscode/.bash_profile) containing aliases for common Ansible-related commands, as well as functions `play` and `debug` with **completions** for tags in playbooks `main.yml` and `debug.yml`, respectively.
 
 ### Multipass Required
 
@@ -534,32 +552,44 @@ to confirm available disk space on all cluster nodes.</summary><br/>
 ```bash
 rancher
 -------
-Filesystem      Size  Used Avail Use% Mounted on
-/dev/xvda2       32G   18G   13G  60% /
+Filesystem                         Size  Used Avail Use% Mounted on
+/dev/mapper/ubuntu--vg-ubuntu--lv   44G   16G   27G  38% /
 
 k8s1
 ----
 Filesystem                         Size  Used Avail Use% Mounted on
-/dev/mapper/ubuntu--vg-ubuntu--lv   50G   21G   27G  44% /
-/dev/mapper/ubuntu--vg-data--lv     30G  781M   30G   3% /data
+/dev/mapper/ubuntu--vg-ubuntu--lv   53G   22G   29G  44% /
+/dev/mapper/ubuntu--vg-data--lv     60G  1.2G   59G   2% /data
 
 k8s2
 ----
 Filesystem                         Size  Used Avail Use% Mounted on
-/dev/mapper/ubuntu--vg-ubuntu--lv   50G   22G   26G  47% /
-/dev/mapper/ubuntu--vg-data--lv     30G  781M   30G   3% /data
+/dev/mapper/ubuntu--vg-ubuntu--lv   53G   18G   33G  36% /
+/dev/mapper/ubuntu--vg-data--lv     60G  1.2G   59G   2% /data
 
 k8s3
 ----
 Filesystem                         Size  Used Avail Use% Mounted on
-/dev/mapper/ubuntu--vg-ubuntu--lv   50G   23G   25G  48% /
-/dev/mapper/ubuntu--vg-data--lv     30G  1.2G   29G   4% /data
+/dev/mapper/ubuntu--vg-ubuntu--lv   53G   23G   28G  46% /
+/dev/mapper/ubuntu--vg-data--lv     60G  1.2G   59G   2% /data
 
 k8s4
 ----
 Filesystem                         Size  Used Avail Use% Mounted on
-/dev/mapper/ubuntu--vg-ubuntu--lv   50G   27G   21G  57% /
-/dev/mapper/ubuntu--vg-data--lv     30G  1.2G   29G   4% /data
+/dev/mapper/ubuntu--vg-ubuntu--lv   53G   20G   31G  39% /
+/dev/mapper/ubuntu--vg-data--lv     60G  1.2G   59G   2% /data
+
+k8s5
+----
+Filesystem                         Size  Used Avail Use% Mounted on
+/dev/mapper/ubuntu--vg-ubuntu--lv   53G   16G   35G  32% /
+/dev/mapper/ubuntu--vg-data--lv     60G  1.2G   59G   2% /data
+
+k8s6
+----
+Filesystem                         Size  Used Avail Use% Mounted on
+/dev/mapper/ubuntu--vg-ubuntu--lv   53G   23G   28G  46% /
+/dev/mapper/ubuntu--vg-data--lv     60G  1.2G   59G   2% /data
 ```
 </details>
 

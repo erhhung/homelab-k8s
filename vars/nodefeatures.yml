@@ -1,4 +1,4 @@
-nfd_namespace: node-feature-discovery
+nfd_namespace: nfd-system
 
 # https://github.com/kubernetes-sigs/node-feature-discovery/tree/master/deployment/helm/node-feature-discovery
 nfd_chart_version: "0.17.3"

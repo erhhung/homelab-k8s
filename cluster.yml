@@ -10,7 +10,6 @@
     - vars/basics.yml
     - vars/kubernetes.yml
     - vars/lablabs.rke2.yml
-    - vars/vclusters.yml
   # https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_reuse_roles.html#using-roles
   pre_tasks:
     - name: Include vars/lablabs.rke2ha.yml
@@ -71,11 +70,7 @@
       vars:
         kubeconfig: "{{ rke_kubeconfig }}"
         context: "{{ rke_cluster_name }}"
-        # rke_fqdns[0] resolves to the virtual IP, but,
-        # for reasons not yet known, the connection is
-        # very flaky, while resolving directly to k8s1
-        # or another control plane node is very stable
-        server: https://{{ rke_fqdns[1] }}:6443
+        server: https://{{ rke_fqdns | first }}:6443
       ansible.builtin.include_tasks: tasks/k8s/kubeconfig.yml
   any_errors_fatal: true
 
@@ -97,7 +92,6 @@
         file_desc: RKE kubectl
         file_path: "{{ rke_bin_dir }}/kubectl"
         file_mode: "0755"
-      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
       ansible.builtin.include_tasks: tasks/fs/readable.yml
 
     - name: Write kubeconfig on worker node
@@ -106,9 +100,9 @@
         dest: "{{ rke_kubeconfig }}"
         content: "{{ kubeconfig_content }}"
         mode: "0644"
-      when: >-
-        kubeconfig_content != '' and
-        inventory_hostname in groups[rke_workers_group]
+      when:
+        - inventory_hostname in groups[rke_workers_group]
+        - kubeconfig_content != ''
 
     - name: Create /etc/profile.d/kubernetes.sh
       ansible.builtin.copy:
@@ -173,6 +167,7 @@
     - vars/basics.yml
     - vars/kubernetes.yml
     - vars/lablabs.rke2.yml
+    - vars/metallb.yml
     - vars/rancher.yml
   vars:
     rke2_svc: "rke2-{{ 'server' if inventory_hostname
@@ -198,8 +193,6 @@
         # generate base OCI spec JSON by installing
         # containerd package; running: ctr oci spec
         - name: Write containerd/cri-base.json
-          vars:
-            nofile_limit: "{{ pam_limits[0].value }}"
           ansible.builtin.template:
             src: "{{ template_dir }}/rke2/containerd/cri-base.json.j2"
             dest: "{{ containerd_config_dir }}/cri-base.json"
@@ -228,6 +221,9 @@
 
     - name: Create supplemental resources
       when: inventory_hostname == rke_control_plane_host
+      vars:
+        # required kubernetes>=24.2 package only in user virtualenv
+        ansible_python_interpreter: "{{ venv_python_interpreter }}"
       block:
         # not sure exactly why kube-proxy doesn't already have
         # permissions to watch Service, EndpointSlice and Node
@@ -255,7 +251,7 @@
           vars:
             kubeconfig: "{{ rke_kubeconfig }}"
             cert_desc: Nginx ingress
-            cert_file: nginx
+            cert_file: ingress
             secret_name: "{{ nginx_tls_secret }}"
             secret_ns: kube-system
             create_ns: false
@@ -263,9 +259,6 @@
 
         # https://kubernetes.github.io/ingress-nginx/user-guide/exposing-tcp-udp-services
         - name: Create Nginx TCP/UDP ConfigMap
-          vars:
-            # required kubernetes>=24.2 package only in user virtualenv
-            ansible_python_interpreter: "{{ venv_python_interpreter }}"
           # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_module.html
           kubernetes.core.k8s:
             kubeconfig: "{{ rke_kubeconfig }}"
@@ -287,6 +280,23 @@
           loop_control:
             label: "{{ item.name }}"
 
+        # also see templates/rke2/canal.yaml.j2
+        - name: Patch Canal FelixConfiguration
+          kubernetes.core.k8s:
+            kubeconfig: "{{ rke_kubeconfig }}"
+            api_version: crd.projectcalico.org/v1
+            kind: FelixConfiguration
+            name: default
+            definition:
+              spec:
+                # suppress noisy warnings in container calico-node logs:
+                # Failed to auto-detect host MTU - no interfaces matched
+                # the MTU interface pattern. To use auto-MTU, set
+                # mtuIfacePattern to match your host's interfaces
+                # https://docs.tigera.io/calico/latest/reference/resources/felixconfig#mtuIfacePattern
+                mtuIfacePattern: "{{ host_pif | regex_replace('[0-9]$','[0-9]') }}"
+          notify: Restart rke2-canal DaemonSet
+
         # https://docs.rke2.io/advanced#auto-deploying-manifests
         - name: Write HelmChartConfig manifests
           become: true
@@ -295,6 +305,8 @@
             dest: "{{ rke_manifests_dir }}/{{ item.dest }}"
             mode: "0664"
           loop:
+            - src: rke2/canal.yaml.j2
+              dest: rke2-canal-config.yaml
             - src: rke2/coredns.yaml.j2
               dest: rke2-coredns-config.yaml
             - src: rke2/nginx.yaml.j2
@@ -358,33 +370,23 @@
         file_desc: RKE kubeconfig
         file_path: "{{ rke_kubeconfig }}"
       ansible.builtin.include_tasks: tasks/fs/readable.yml
-      when: >-
-        restart_rke is defined and
-        restart_rke.changed
+      when:
+        - restart_rke is defined
+        - restart_rke is changed
 
     - name: Register cluster with Rancher
       when: inventory_hostname == rke_control_plane_host
       vars:
         # required kubernetes>=24.2 package only in user virtualenv
         ansible_python_interpreter: "{{ venv_python_interpreter }}"
+        kubeconfig: "{{ rke_kubeconfig }}"
       block:
         - name: Wait for CoreDNS to be ready
-          # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_info_module.html
-          kubernetes.core.k8s_info:
-            kubeconfig: "{{ rke_kubeconfig }}"
-            api_version: apps/v1
-            kind: Deployment
-            name: rke2-coredns-rke2-coredns
-            namespace: kube-system
-          # https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_loops.html#retrying-a-task-until-a-condition-is-met
-          register: deploy_info
-          until: >-
-            deploy_info.resources[0].status               is defined and
-            deploy_info.resources[0].status.readyReplicas is defined and
-            deploy_info.resources[0].status.readyReplicas ==
-            deploy_info.resources[0].status.replicas
-          retries: 30
-          delay: 10
+          vars:
+            res_kind: Deployment
+            res_name: rke2-coredns-rke2-coredns
+            res_ns: kube-system
+          ansible.builtin.include_tasks: tasks/k8s/waitready.yml
 
         - name: Apply additional node labels
           vars:
@@ -397,7 +399,7 @@
               {% endfor %}
               {{ nodes  }}
           kubernetes.core.k8s:
-            kubeconfig: "{{ rke_kubeconfig }}"
+            kubeconfig: "{{ kubeconfig }}"
             api_version: v1
             kind: Node
             name: "{{ item }}"
@@ -413,7 +415,7 @@
             # URL won't be available unless rancher.yml playbook is run together
             manifest_url: "{{ hostvars['rancher']['rke_reg_url'] | default('') }}"
           kubernetes.core.k8s:
-            kubeconfig: "{{ rke_kubeconfig }}"
+            kubeconfig: "{{ kubeconfig }}"
             src: "{{ manifest_url }}"
             state: present
             apply: true
@@ -423,31 +425,31 @@
           when: manifest_url is truthy
 
         - name: Wait for agent to be ready
-          kubernetes.core.k8s_info:
-            kubeconfig: "{{ rke_kubeconfig }}"
-            api_version: apps/v1
-            kind: Deployment
-            name: cattle-cluster-agent
-            namespace: "{{ rancher_namespace }}"
-          register: deploy_info
-          until: >-
-            deploy_info.resources[0].status               is defined and
-            deploy_info.resources[0].status.readyReplicas is defined and
-            deploy_info.resources[0].status.readyReplicas ==
-            deploy_info.resources[0].status.replicas
-          retries: 30
-          delay: 10
-  # handlers:
-  #   # restart a static pod by deleting it
-  #   - name: Restart kube-proxy static pod
-  #     vars:
-  #       # required kubernetes>=24.2 package only in user virtualenv
-  #       ansible_python_interpreter: "{{ venv_python_interpreter }}"
-  #     kubernetes.core.k8s:
-  #       kubeconfig: "{{ rke_kubeconfig }}"
-  #       api_version: v1
-  #       kind: Pod
-  #       name: kube-proxy-{{ inventory_hostname }}
-  #       namespace: kube-system
-  #       state: absent
+          vars:
+            res_kind: Deployment
+            res_name: cattle-cluster-agent
+            res_ns: "{{ rancher_namespace }}"
+          ansible.builtin.include_tasks: tasks/k8s/waitready.yml
+  handlers:
+    - name: Restart rke2-canal DaemonSet
+      vars:
+        kubeconfig: "{{ rke_kubeconfig }}"
+        res_kind: DaemonSet
+        res_name: rke2-canal
+        res_ns: kube-system
+        max_wait: 300
+      ansible.builtin.include_tasks: tasks/k8s/restart.yml
+
+    # restart a static pod by deleting it
+    # - name: Restart kube-proxy static pod
+    #   vars:
+    #     # required kubernetes>=24.2 package only in user virtualenv
+    #     ansible_python_interpreter: "{{ venv_python_interpreter }}"
+    #   kubernetes.core.k8s:
+    #     kubeconfig: "{{ rke_kubeconfig }}"
+    #     api_version: v1
+    #     kind: Pod
+    #     name: kube-proxy-{{ inventory_hostname }}
+    #     namespace: kube-system
+    #     state: absent
   any_errors_fatal: true

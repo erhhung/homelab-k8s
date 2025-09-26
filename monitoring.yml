@@ -180,7 +180,6 @@
         # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/basename_filter.html
         label: "{{ item | ansible.builtin.basename }}"
 
-    # https://github.com/prometheus-community/helm-charts/tree/main/charts/kube-prometheus-stack
     - name: Install Prometheus stack Helm chart
       # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/helm_module.html
       kubernetes.core.helm:

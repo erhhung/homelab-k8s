@@ -34,7 +34,7 @@
           {%   set desc = meta.namespace ~'/'~ meta.name %}
           {#   https://jinja.palletsprojects.com/en/stable/templates/#assignments #}
           {%   set pod = namespace(desc=desc, found=false) %}
-          {%   for regex in vc_pods %}
+          {%   for regex in vcluster_pods %}
           {%     set pod.found = true if not pod.found and pod.desc
                                | ansible.builtin.regex_search(regex) %}
           {%   endfor %}
@@ -140,8 +140,8 @@
             - contexts
             - users
             - clusters
-          when: >-
-            helm_uninstall is defined and
-            helm_uninstall is changed
-          changed_when: helm_uninstall is changed
+          when:
+            - helm_uninstall is defined
+            - helm_uninstall is changed
+          changed_when: true
   any_errors_fatal: true

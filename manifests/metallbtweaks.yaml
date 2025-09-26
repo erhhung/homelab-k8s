@@ -1,0 +1,372 @@
+# this manifest is part of the debugging effort to root cause
+# TCP connection failures (on responses) when sending a large
+# request payload to MetalLB VIP, routed by pfSense over ECMP
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: metallb-tweaks
+  namespace: metallb-system
+spec:
+  selector:
+    matchLabels:
+      app: metallb-tweaks
+  template:
+    metadata:
+      labels:
+        app: metallb-tweaks
+    spec:
+      priorityClassName: system-cluster-critical
+      tolerations:
+        - operator: Exists
+      hostNetwork: true
+      hostPID: true
+      securityContext:
+        runAsUser: 0
+      volumes:
+        - name: scripts
+          emptyDir: {}
+
+      initContainers:
+        - name: add-script
+          image: alpine:latest
+          imagePullPolicy: IfNotPresent
+          volumeMounts:
+            - name: scripts
+              mountPath: /scripts
+          command:
+            - /bin/sh
+            - -c
+          args:
+            - |
+              cat <<'EOF' > /scripts/nft.sh
+              apk add --no-cache nftables
+
+              # export env vars about the host:
+              # IFNAME, IFCIDR, IFADDR, GATEWAY
+              host_facts() {
+                read IFNAME GATEWAY < <(ip -4 route show default                | awk '{print $5 " " $3}')
+                read IFADDR IFCIDR  < <(ip -4 route show dev $IFNAME scope link | awk '{print $5 " " $1}')
+                export IFNAME IFADDR IFCIDR GATEWAY
+              }
+
+              # <table-type> <table-name>
+              list_table() (
+                table_type=$1 table_name=$2
+                nft list table $table_type $table_name
+              )
+
+              # <table-type> <table-name>
+              # type: inet|ip
+              add_table() (
+                table_type=$1 table_name=$2
+                table_args="$table_type $table_name"
+
+                list_table $table_args &> /dev/null && return
+                set -x; nft add table $table_args
+              )
+
+              # <table-type> <table-name> <chain-name> [options]...
+              list_chain() (
+                table_type=$1 table_name=$2 chain_name=$3; shift 3
+                nft $@ list chain $table_type $table_name $chain_name 2> /dev/null
+              )
+
+              # <table-type> <table-name> <chain-name> <chain-type> <hook> <priority>
+              delete_chain() (
+                table_type=$1 table_name=$2 chain_name=$3
+                chain_args="$table_type $table_name $chain_name"
+                chain="$(list_chain $chain_args)" || true
+                [ "$chain" ] || return 0
+
+                chain_type=$4 hook=$5 priority=$6
+                # list chain outputs negative priority value with space after minus
+                chain_match="type $chain_type hook $hook priority.+${priority/-/- }"
+                echo "$chain" | egrep -q "$chain_match" || {
+                  nft flush  chain $chain_args
+                  nft delete chain $chain_args
+                }
+              )
+
+              # <table-type> <table-name> <chain-name> <chain-type> <hook> <priority>
+              add_chain() (
+                table_type=$1 table_name=$2 chain_name=$3
+                chain_args="$table_type $table_name $chain_name"
+                chain_type=$4 hook=$5 priority=$6
+                chain_spec="type $chain_type hook $hook priority $priority"
+
+                delete_chain $@
+                set -x; nft add chain $chain_args "{ $chain_spec; policy accept; }"
+              )
+
+              # <table-type> <table-name> <chain-name> <rule-match>
+              delete_rule() (
+                table_type=$1 table_name=$2
+                chain_name=$3 rule_match="$4"
+                chain_args="$table_type $table_name $chain_name"
+
+                while read handle; do
+                  nft delete rule $chain_args handle $handle
+                done < <(
+                  list_chain $chain_args -a | \
+                    egrep "$rule_match.+handle" | awk '{print $NF}'
+                )
+              )
+
+              # <table-type> <table-name> <chain-name> <rule-match> <rule-spec>
+              add_rule() (
+                table_type=$1 table_name=$2 chain_name=$3
+                chain_args="$table_type $table_name $chain_name"
+                rule_match="$4" rule_spec="$5"
+
+                delete_rule $chain_args "$rule_match"
+                set -x; nft add rule $chain_args $rule_spec
+              )
+
+              # <ipset-name>
+              list_ipset() (
+                ipset_name=$1
+                command -v ipset &> /dev/null || apk add --no-cache ipset
+                ipset="$(ipset list $ipset_name 2> /dev/null)" || return
+
+                printf 'IP Set "%s" ' $ipset_name
+                echo "$ipset" | sed -n '/Members/,$p'
+              )
+
+              # <ipset-name> <cidrs>...
+              add_ipset() (
+                ipset_name=$1; shift
+                list_ipset $ipset_name &> /dev/null || \
+                  ipset create $ipset_name hash:net
+
+                for cidr in $@; do # ignore error if already added
+                  ipset add $ipset_name $cidr 2> /dev/null || true
+                done
+              )
+
+              clean_output() {
+                sed -n '/^+ (nft|ip) /p; /^+ /!p'
+              }
+              EOF
+
+        - name: no-offload
+          image: alpine:latest
+          imagePullPolicy: IfNotPresent
+          securityContext: &privileged
+            privileged: true
+          command:
+            - /bin/sh
+            - -c
+          args:
+            - |
+              apk add --no-cache ethtool
+              ethtool -K enX0 gro off gso off tso off lro off
+              ethtool -k enX0 | grep offload
+
+        - name: pre-accept
+          image: alpine:latest
+          imagePullPolicy: IfNotPresent
+          securityContext: *privileged
+          volumeMounts: &mount-scripts
+            - name: scripts
+              mountPath: /scripts
+              readOnly: true
+          env:
+            - name: VIP_CIDR
+              value: 192.168.4.0/24 # MetalLB VIP destination subnet
+            - name: NFT_TABLE
+              value: metallb_pfsense_raw
+            - name: NFT_CHAIN
+              value: preraw
+            - name: PRIORITY
+              value: "-400"
+          command:
+            - /bin/sh
+            - -c
+          args:
+            - |
+              . /scripts/nft.sh
+              ( set -e
+
+              table_args="ip $NFT_TABLE"
+              chain_args="$table_args $NFT_CHAIN"
+              chain_type=filter
+              hook=prerouting
+
+              rule_match="ip daddr $VIP_CIDR counter.*accept"
+              rule_spec="ip daddr $VIP_CIDR counter accept"
+
+              add_table $table_args
+              add_chain $chain_args $chain_type $hook $PRIORITY
+              add_rule  $chain_args "$rule_match" "$rule_spec"
+
+              ( set -x; list_table $table_args )
+              echo "Applied $NFT_CHAIN ACCEPT to VIPs $VIP_CIDR."
+              ) 2>&1 | clean_output
+
+        - name: mss-clamp
+          image: alpine:latest
+          imagePullPolicy: IfNotPresent
+          securityContext: *privileged
+          volumeMounts: *mount-scripts
+          env:
+            - name: NFT_TABLE
+              value: metallb_pfsense
+            - name: PRIORITY
+              value: "-1"
+            - name: SRC_CIDRS
+              value: 192.168.0.0/24 192.168.86.0/24 # LAN and WIFI
+            - name: DEST_CIDR
+              value: 192.168.4.0/24 # MetalLB VIP destination subnet
+            - name: MSS_VALUE
+              value: "1200"
+          command:
+            - /bin/sh
+            - -c
+          args:
+            - |
+              . /scripts/nft.sh
+              ( set -e
+
+               add_ipset lan_wifi $SRC_CIDRS
+              list_ipset lan_wifi
+
+              table_args="inet $NFT_TABLE"
+              add_table $table_args
+
+              chain_name=prerouting
+              chain_type=filter
+              hook=$chain_name
+              chain_args="$table_args $chain_name"
+
+              rule_args="tcp flags syn tcp option maxseg size set"
+              rule_spec="ip daddr $DEST_CIDR $rule_args"
+              rule_match="${rule_spec//./\\.}"
+              rule_spec="$rule_spec $MSS_VALUE"
+
+              add_chain $chain_args $chain_type $hook $PRIORITY
+              add_rule  $chain_args "$rule_match" "$rule_spec"
+
+              chain_name=postrouting
+              hook=$chain_name
+              chain_args="$table_args $chain_name"
+
+              rule_spec="ip daddr { ${SRC_CIDRS// /, } } $rule_args"
+              rule_match="${rule_spec//./\\.}"
+              # escape curly braces for regex
+              rule_match="${rule_match//\{/\\\{}"
+              rule_match="${rule_match//\}/\\\}}"
+              rule_spec="$rule_spec $MSS_VALUE"
+
+              add_chain $chain_args $chain_type $hook $PRIORITY
+              add_rule  $chain_args "$rule_match" "$rule_spec"
+
+              chain_name=forward
+              hook=$chain_name
+              chain_args="$table_args $chain_name"
+
+              add_chain $chain_args $chain_type $hook $PRIORITY
+              add_rule  $chain_args "$rule_match" "$rule_spec"
+
+              chain_name=output
+              chain_type=route
+              hook=$chain_name
+              chain_args="$table_args $chain_name"
+
+              add_chain $chain_args $chain_type $hook $PRIORITY
+              add_rule  $chain_args "$rule_match" "$rule_spec"
+
+              ( set -x; list_table $table_args )
+              echo "Applied TCPMSS clamp to VIPs $DEST_CIDR."
+              ) 2>&1 | clean_output
+
+        - name: set-mark
+          image: alpine:latest
+          imagePullPolicy: IfNotPresent
+          securityContext: *privileged
+          volumeMounts: *mount-scripts
+          env:
+            - name: NFT_TABLE
+              value: metallb_pfsense
+            - name: PRIORITY
+              value: "-1"
+            - name: VIP_CIDR
+              value: 192.168.4.0/24 # MetalLB VIP destination subnet
+            - name: MARK_VALUE
+              value: "0x4"
+            - name: MARK_MASK
+              value: "0x4"
+            - name: ROUTE_TABLE
+              value: "100"
+            - name: ROUTE_PREF
+              value: "10000" # after local:0, before main:32766
+          command:
+            - /bin/sh
+            - -c
+          args:
+            - |
+              . /scripts/nft.sh
+              ( set -e
+
+              table_args="inet $NFT_TABLE"
+              add_table $table_args
+
+              chain_name=prerouting
+              chain_type=filter
+              hook=$chain_name
+              chain_args="$table_args $chain_name"
+
+              rule_args="ct direction reply ct original"
+              rule_spec="$rule_args ip daddr $VIP_CIDR counter meta mark set"
+              rule_match="${rule_spec//./\\.}"
+              # ignore packet and byte counts
+              rule_match="${rule_match/counter /counter.+}"
+              rule_spec="$rule_spec $MARK_VALUE"
+
+              add_chain $chain_args $chain_type $hook $PRIORITY
+              add_rule  $chain_args "$rule_match" "$rule_spec"
+
+              ( set -x; list_table $table_args )
+              echo "Applied return-path marking to VIPs $VIP_CIDR."
+
+              host_facts
+              ( set -x
+
+              # add rule for fwmark to table
+              rule_spec="fwmark $MARK_VALUE/$MARK_MASK lookup $ROUTE_TABLE"
+              rule_cmd="ip -4 rule"
+              $rule_cmd show | grep -Eq "$rule_spec" || \
+                $rule_cmd add pref $ROUTE_PREF $rule_spec
+
+              # populate custom route table
+              route_cmd="ip -4 route replace table $ROUTE_TABLE"
+              $route_cmd default    dev $IFNAME via $GATEWAY
+              $route_cmd $IFCIDR    dev $IFNAME proto kernel scope link src $IFADDR
+              $route_cmd $IFADDR/32 dev $IFNAME scope host
+              )
+
+              echo "=== IP Rules ==="
+              ip -4 rule show
+              echo "=== Table $ROUTE_TABLE ==="
+              ip -4 route show table $ROUTE_TABLE
+              ) 2>&1 | clean_output
+
+      containers:
+        - name: sleeping
+          image: alpine:latest
+          imagePullPolicy: IfNotPresent
+          command: &sleep-command
+            - /bin/sleep
+            - infinity
+          resources: &resources
+            requests:
+              cpu: 1m
+              memory: 1Ki
+
+        - name: debugging
+          image: alpine:latest
+          imagePullPolicy: IfNotPresent
+          securityContext: *privileged
+          volumeMounts: *mount-scripts
+          command: *sleep-command
+          resources: *resources

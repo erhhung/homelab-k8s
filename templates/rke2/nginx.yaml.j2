@@ -4,6 +4,7 @@
 ---
 # https://docs.rke2.io/networking/networking_services#nginx-ingress-controller
 # https://github.com/kubernetes/ingress-nginx/tree/main/charts/ingress-nginx/values.yaml
+# https://github.com/rancher/rke2-charts/tree/main-source/packages/rke2-ingress-nginx/generated-changes/patch/values.yaml.patch
 
 apiVersion: helm.cattle.io/v1
 kind: HelmChartConfig
@@ -16,14 +17,25 @@ spec:
       # https://kubernetes.github.io/ingress-nginx/user-guide/nginx-configuration/configmap
       config:
         # https://kubernetes.github.io/ingress-nginx/user-guide/nginx-configuration/configmap#use-forwarded-headers
-        use-forwarded-headers: true
-        enable-real-ip: true
+        use-forwarded-headers: "true"
+        enable-real-ip: "true"
 
         # https://kubernetes.github.io/ingress-nginx/user-guide/nginx-configuration/configmap#proxy-read-timeout
         proxy-read-timeout: "600"
         proxy-send-timeout: "600"
         # https://kubernetes.github.io/ingress-nginx/user-guide/nginx-configuration/configmap#proxy-body-size
         proxy-body-size: 5m
+
+        # https://kubernetes.github.io/ingress-nginx/user-guide/nginx-configuration/configmap#client-body-buffer-size
+        client-body-buffer-size: 256k
+        # https://kubernetes.github.io/ingress-nginx/user-guide/nginx-configuration/configmap#proxy-request-buffering
+        proxy-request-buffering: "off"
+        # https://kubernetes.github.io/ingress-nginx/user-guide/nginx-configuration/configmap#proxy-buffering
+        proxy-buffering: "off"
+
+        # https://kubernetes.github.io/ingress-nginx/user-guide/nginx-configuration/configmap#proxy-next-upstream
+        proxy-next-upstream: "off"
+        proxy-next-upstream-tries: "1"
 
         # https://kubernetes.github.io/ingress-nginx/user-guide/nginx-configuration/configmap#keep-alive
         keep-alive: "125"
@@ -68,3 +80,17 @@ spec:
         requests:
           cpu: 25m
           memory: 256Mi
+
+      service:
+        # chart default value is enabled, but RKE2 patches
+        # it to disabled--we want this LoadBalancer service
+        # enabled so that MetalLB can assign it virtual IP
+        enabled: true
+
+        annotations:
+          # replaces deprecated .spec.loadBalancerIP field
+          metallb.universe.tf/loadBalancerIPs: "{{ metallb_vips['ingress'] }}"
+
+        # prevent kube-proxy from re-spraying traffic to all
+        # nodes since pfSense is already doing that via ECMP
+        externalTrafficPolicy: Local

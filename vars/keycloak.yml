@@ -2,13 +2,13 @@
 #         icloud_smtp: {vault.yml}
 
 keycloak_namespace: keycloak
-keycloak_host_names: # aliases of "homelab"
+keycloak_host_names: # aliases of "ingress"
   - keycloak
   - iam
   - sso
 
 # remember to add keycloak.fourteeners.local (also iam. and sso.) to
-# pfSense DNS as aliases of homelab.fourteeners.local: 192.168.0.221
+# pfSense DNS as aliases of ingress.fourteeners.local: 192.168.4.222
 # https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_filters.html#products
 keycloak_fqdns: "{{ keycloak_host_names | product(search_domains) | map('join','.') }}"
 
@@ -235,8 +235,6 @@ keycloakx_chart_values:
 
     annotations:
       nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
-      # https://github.com/codecentric/helm-charts/tree/master/charts/keycloakx#bad-gateway-and-proxy-buffer-size-in-nginx
-      nginx.ingress.kubernetes.io/proxy-buffer-size: 128k
       # https://github.com/codecentric/helm-charts/tree/master/charts/keycloakx#prometheus-metrics-support
       # IMPORTANT! annotation group ServerSnippet has risk level Critical, so the
       # Nginx Ingress Controller config must be changed to accept that risk level

@@ -12,13 +12,13 @@ openwebui_admin_user:
   profile_image_url: "{{ user_erhhung.gravatar }}"
 
 openwebui_namespace: open-webui
-openwebui_host_names: # aliases of "homelab"
+openwebui_host_names: # aliases of "ingress"
   - openwebui
   - chatgpt
   - chat
 
 # remember to add openwebui.fourteeners.local (also chatgpt. and chat.)
-# to pfSense DNS as aliases of homelab.fourteeners.local: 192.168.0.221
+# to pfSense DNS as aliases of ingress.fourteeners.local: 192.168.4.222
 # https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_filters.html#products
 openwebui_fqdns: "{{ openwebui_host_names | product(search_domains) | map('join','.') }}"
 

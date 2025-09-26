@@ -14,7 +14,7 @@
 #     size:     file size in bytes
 #     mtime:    "%Y-%m-%d %H:%M:%S"
 ---
-- name: 'Upload "{{ file.rel_path | basename }}"'
+- name: 'Upload "{{ file_info.rel_path | basename }}"'
   become: false
   vars:
     counter: "{{ file_info.index }}/{{ file_info.total }}"
@@ -28,7 +28,7 @@
     - name: '{{ counter }}: "{{ filename }}"?'
       vars:
         # NOTE: meta.data.* properties are only added by Ansible, not by UI upload
-        file: "{{ files | selectattr('meta.data.path','==',file_info.rel_path) }}"
+        file: "{{ files | selectattr('meta.data.path', '==', file_info.rel_path) }}"
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/set_fact_module.html
       ansible.builtin.set_fact:
         existing: "{{ file[0] if file is truthy else None }}"
@@ -136,10 +136,10 @@
             url: "{{ api_base }}/files/{{ upload_file.json.id }}"
             headers: "{{ headers }}"
             status_code: [200, 400]
-          when: >-
-            upload_file         is defined and
-            upload_file.json    is defined and
-            upload_file.json.id is defined
+          when:
+            - upload_file         is defined
+            - upload_file.json    is defined
+            - upload_file.json.id is defined
   any_errors_fatal: true
 
 - name: Update loop_changes fact

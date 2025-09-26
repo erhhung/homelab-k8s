@@ -48,7 +48,6 @@
     - name: Create monitoring scraper secret
       ansible.builtin.include_tasks: tasks/monitoring/scraper.yml
 
-    # https://github.com/qdrant/qdrant-helm/tree/main/charts/qdrant
     - name: Install Qdrant Helm chart
       # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/helm_module.html
       kubernetes.core.helm:
@@ -62,9 +61,10 @@
         history_max: "{{ helm_max_history }}"
         atomic: true
         wait: true
+        wait_timeout: 10m0s # requires wait=true
       # normal OrderedReady startup takes ~5 minutes, but
       # it can be longer if there's a snapshot to restore
-      timeout: 600
+      timeout: 900
 
     # Helm chart does not currently allow
     # providing .serviceMonitor.tlsConfig

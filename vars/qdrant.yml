@@ -1,10 +1,10 @@
 # qdrant_api_key.*: {vault.yml}
 
 qdrant_namespace: qdrant
-qdrant_host_name: qdrant # alias of "homelab"
+qdrant_host_name: qdrant # alias of "ingress"
 
 # remember to add qdrant.fourteeners.local to pfSense DNS
-# as an alias of homelab.fourteeners.local: 192.168.0.221
+# as an alias of ingress.fourteeners.local: 192.168.4.222
 # https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_filters.html#products
 qdrant_fqdn: "{{ [qdrant_host_name] | product(search_domains) | map('join','.') | first }}"
 

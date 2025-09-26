@@ -4,10 +4,10 @@
 
 velero_namespace: velero
 velero_ui_namespace: velero
-velero_host_name: velero # alias of "homelab"
+velero_host_name: velero # alias of "ingress"
 
 # remember to add velero.fourteeners.local to pfSense DNS
-# as an alias of homelab.fourteeners.local: 192.168.0.221
+# as an alias of ingress.fourteeners.local: 192.168.4.222
 # https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_filters.html#products
 velero_fqdn: "{{ [velero_host_name] | product(search_domains) | map('join','.') | first }}"
 

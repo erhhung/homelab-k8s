@@ -1,6 +1,6 @@
 # https://istio.io/latest/about/faq/#install-method-selection
-# https://istio.io/latest/docs/overview/dataplane-modes/
-# https://istio.io/latest/docs/ambient/install/istioctl/
+# https://istio.io/latest/docs/overview/dataplane-modes
+# https://istio.io/latest/docs/ambient/install/istioctl
 ---
 - name: Install istioctl on RKE cluster
   tags: istioctl
@@ -12,7 +12,7 @@
     - vars/monitoring.yml
     - vars/istio.yml
   tasks:
-    # https://istio.io/latest/docs/setup/additional-setup/download-istio-release/
+    # https://istio.io/latest/docs/setup/additional-setup/download-istio-release
     - name: Install istioctl CLI utility
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/shell_module.html
       ansible.builtin.shell: |
@@ -143,7 +143,6 @@
       ansible.builtin.include_tasks: tasks/pki/cacerts.yml
       when: ca_certificates is not defined
   tasks:
-    # https://kiali.io/docs/installation/installation-guide/install-with-helm/#operator-only-install
     - name: Install Kiali Operator Helm chart
       # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/helm_module.html
       kubernetes.core.helm:
@@ -159,7 +158,7 @@
         atomic: true
         wait: true
 
-    # https://kiali.io/docs/configuration/authentication/openid/#set-up-with-no-namespace-access-control-support
+    # https://kiali.io/docs/configuration/authentication/openid#set-up-with-no-namespace-access-control-support
     - name: Create Kiali OpenID secret
       vars:
         secret_name: "{{ kiali_secrets['openid'] }}"
@@ -174,7 +173,7 @@
         sans: "{{ kiali_fqdns }}"
       ansible.builtin.include_tasks: tasks/k8s/secrets/tls.step.yml
 
-    # https://kiali.io/docs/configuration/authentication/openid/#using-an-openid-provider-with-a-self-signed-certificate
+    # https://kiali.io/docs/configuration/authentication/openid#using-an-openid-provider-with-a-self-signed-certificate
     - name: Create kiali-cabundle ConfigMap
       kubernetes.core.k8s:
         kubeconfig: "{{ kubeconfig }}"
@@ -205,26 +204,15 @@
         apply: true
 
     - name: Wait for Kiali to be ready
-      # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_info_module.html
-      kubernetes.core.k8s_info:
-        kubeconfig: "{{ kubeconfig }}"
-        api_version: apps/v1
-        kind: Deployment
-        name: kiali
-        namespace: "{{ kiali_namespace }}"
-      # https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_loops.html#retrying-a-task-until-a-condition-is-met
-      register: deploy_info
-      until: >-
-        deploy_info.resources[0].status               is defined and
-        deploy_info.resources[0].status.readyReplicas is defined and
-        deploy_info.resources[0].status.readyReplicas ==
-        deploy_info.resources[0].status.replicas
-      retries: 30
-      delay: 10
+      vars:
+        res_kind: Deployment
+        res_name: kiali
+        res_ns: "{{ kiali_namespace }}"
+      ansible.builtin.include_tasks: tasks/k8s/waitready.yml
   any_errors_fatal: true
 
 - name: Enable Prometheus monitoring
-  tags: monitoring
+  tags: dashboards
   hosts: "{{ rke_control_plane_host }}"
   gather_facts: false
   vars_files: *vars_files

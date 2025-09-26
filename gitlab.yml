@@ -177,13 +177,16 @@
         release_namespace: "{{ gitlab_namespace }}"
         release_values: "{{ gitlab_chart_values }}"
         history_max: "{{ helm_max_history }}"
-        # atomic: true
+        # this is too large a deplopyment to
+        # expect everything to be perfect in
+        # one go, so allow manual retries
+        atomic: false
         wait: true
-        wait_timeout: 10m0s # requires wait=true
+        wait_timeout: 15m0s # requires wait=true
       # bootstrapping empty databases could take
       # a long time, with webservice and sidekiq
       # pods having to restart a few times
-      timeout: 900
+      timeout: 1200
       # after container probes have been patched
       # by the next task, Helm upgrade fails due
       # to conflicting probe handlers, so ignore

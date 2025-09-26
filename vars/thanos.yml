@@ -1,4 +1,4 @@
-# aliases of "homelab" and subdomains
+# aliases of "ingress" and subdomains
 # of thanos.fourteeners.local (itself
 # routes to Query)
 thanos_host_names:
@@ -19,7 +19,7 @@ thanos_host_names:
     - compactor
 
 # remember to add all domain names to pfSense DNS as
-# aliases of homelab.fourteeners.local: 192.168.0.221
+# aliases of ingress.fourteeners.local: 192.168.4.222
 # https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_filters.html#products
 thanos_fqdns: |
   {% set fqdns = {} %}

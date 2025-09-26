@@ -8,6 +8,7 @@
   gather_facts: false
   vars_files:
     - vars/kubernetes.yml
+    - vars/metallb.yml
     - vars/storage.yml
     - vars/monitoring.yml
     - vars/valkey.yml
@@ -43,7 +44,6 @@
         secret_data: "{{ { key: valkey_pass } }}"
       ansible.builtin.include_tasks: tasks/k8s/secrets/generic.yml
 
-    # https://github.com/bitnami/charts/tree/main/bitnami/valkey-cluster
     - name: Install Valkey cluster Helm chart
       vars:
         # required kubernetes>=24.2 package only in user virtualenv

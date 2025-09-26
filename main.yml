@@ -23,11 +23,20 @@
   ansible.builtin.import_playbook: cluster.yml
   tags: cluster
 
+- name: Include MetalLB load balancer playbook
+  ansible.builtin.import_playbook: metallb.yml
+  tags: metallb
+
 - name: Include cert-manager and PKI playbook
   ansible.builtin.import_playbook: certmanager.yml
   tags: certmanager
 
-- name: Include Wave config monitor playbook
+# Intel Device Plugins depends on cert-manager
+- name: Include Node Feature Discovery playbook
+  ansible.builtin.import_playbook: nodefeatures.yml
+  tags: nodefeatures
+
+- name: Include Wave config monitoring playbook
   ansible.builtin.import_playbook: wave.yml
   tags: wave
 
@@ -53,11 +62,6 @@
 - name: Include resource manifests playbook
   ansible.builtin.import_playbook: manifests.yml
   tags: manifests
-
-# Intel Device Plugins depends on cert-manager
-- name: Include Node Feature Discovery playbook
-  ansible.builtin.import_playbook: nodefeatures.yml
-  tags: nodefeatures
 
 - name: Include OpenSearch cluster playbook
   ansible.builtin.import_playbook: opensearch.yml

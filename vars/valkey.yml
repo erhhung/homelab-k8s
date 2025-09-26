@@ -9,7 +9,7 @@ valkey_node_count: 6
 
 # valkey, valkey{1..6}
 #  redis,  redis{1..6}
-# 192.168.0.22{2..7}
+# 192.168.4.231..236
 valkey_host_names: |
   {% set hosts = ['valkey', 'redis']   %}
   {% for i in range(valkey_node_count) %}
@@ -22,17 +22,17 @@ valkey_host_names: |
 
 # remember to add valkey1.fourteeners.local thru valkey6.
 # (valkey. = <all-vIPs> plus aliases redis1. thru redis6.)
-# to pfSense DNS using kube virtual IPs: 192.168.0.222-227
+# to pfSense using MetalLB virtual IPs: 192.168.4.231..236
 # https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_filters.html#products
 valkey_fqdns: "{{ valkey_host_names | product(search_domains) | map('join','.') }}"
 
 # https://docs.ansible.com/ansible/latest/collections/ansible/utils/ipmath_filter.html
 # (requires Python package "netaddr" on Ansible controller)
-# ["192.168.0.222", ..."192.168.0.227"]
+# ["192.168.4.231", ..."192.168.4.236"]
 valkey_lb_ips: |
   {% set ips = [] %}
   {% for i in range(valkey_node_count) %}
-  {%   set _ = ips.append(rke_lb_vip | ansible.utils.ipmath(i + 1)) %}
+  {%   set _ = ips.append(metallb_vips['valkey'] | ansible.utils.ipmath(i)) %}
   {% endfor %}
   {{ ips    }}
 
@@ -129,8 +129,13 @@ valkey_chart_values:
       service:
         type: LoadBalancer
         port: "{{ valkey_service_port }}"
+
+        disableLoadBalancerIP: true
+        # OMG! misspelled key in template!
+        # https://github.com/bitnami/charts/issues/36278
+        loadBalancerIPAnnotaion: metallb.universe.tf/loadBalancerIPs
         # create one service per node and
-        # expose on IPs 192.168.0.222-227
+        # expose on IPs 192.168.4.231-236
         loadBalancerIP: "{{ valkey_lb_ips }}"
 
   metrics:

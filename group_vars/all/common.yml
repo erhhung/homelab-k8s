@@ -4,7 +4,8 @@ pki_host: "{{ groups['_pki'] | first }}"
 ansible_ssh_private_key_file: "{{ lookup('ansible.builtin.env', 'HOME') }}/.ssh/{{
                                   lookup('ansible.builtin.env', 'USER') }}.pem"
 ansible_ssh_common_args: -o StrictHostKeyChecking=no -o ForwardAgent=yes
-# ansible_become_pass: {vault.yml}
+# password overrides in inventory/host_vars/*.yml
+ansible_become_pass: "{{ sudo_pass['default'] }}"
 
 default_python_interpreter: /usr/bin/python3
 ansible_python_interpreter: "{{ default_python_interpreter }}"
@@ -18,12 +19,6 @@ template_dir: "{{ playbook_dir }}/templates"
 homelab_domain: fourteeners.local
 search_domains:
   - "{{ homelab_domain }}"
-
-# virtual IP address range reserved
-# for use by kube-vip on RKE cluster
-lb_vip_range:
-  start: 192.168.0.221
-  end: 192.168.0.240
 
 # IP addresses of RKE cluster nodes
 cluster_node_ips: |

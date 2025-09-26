@@ -54,7 +54,7 @@ ollama_chart_values:
     # 2048-token context size
     - name: OLLAMA_CONTEXT_LENGTH
       value: &num_ctx >-
-        {{ ollama_context_size }}
+        {{ ollama_context_size | string }}
     # version < 2.3.0b20250429
     - name: IPEX_LLM_NUM_CTX
       value: *num_ctx

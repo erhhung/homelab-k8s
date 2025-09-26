@@ -45,6 +45,15 @@ cd "$HOME"
 
 ./cert.sh --kty=RSA \
           --exp=365 \
+  xcp \
+  xcp{1..8}.fourteeners.local \
+  xcp{1..8} \
+  192.168.0.15{1..2} \
+  192.168.0.16{1..2} \
+  192.168.0.16{5..8}
+
+./cert.sh --kty=RSA \
+          --exp=365 \
    xo.fourteeners.local \
   xoa.fourteeners.local
 
@@ -57,18 +66,10 @@ cd "$HOME"
 
 # rke2-ingress-nginx-controller default-ssl-certificate
 ./cert.sh --exp=365 \
-          --out=nginx \
-      homelab.fourteeners.local homelab 192.168.0.221 \
-         k8s1.fourteeners.local k8s1    192.168.0.171 \
-         k8s2.fourteeners.local k8s2    192.168.0.172 \
-         k8s3.fourteeners.local k8s3    192.168.0.173 \
-  \*.vcluster.fourteeners.local \
-   kubernetes \
-   kubernetes.default \
-   kubernetes.default.svc \
-   kubernetes.default.svc.cluster.local \
-                          cluster.local 10.43.0.1 \
-                          localhost     127.0.0.1
+  ingress.fourteeners.local \
+    nginx.fourteeners.local \
+  192.168.4.222 \
+  192.168.0.17{1..8}
 
 ./cert.sh --exp=365 \
   harbor.fourteeners.local
@@ -95,7 +96,8 @@ cd "$HOME"
        opensearch.fourteeners.local \
                es.fourteeners.local \
     \*.opensearch.svc.cluster.local \
-    \*.opensearch.svc
+    \*.opensearch.svc \
+    192.168.4.223
 
 ./cert.sh --kty=RSA \
           --exp=365 \
@@ -120,7 +122,7 @@ cd "$HOME"
              pg.fourteeners.local \
   \*.postgresql.svc.cluster.local \
   \*.postgresql.svc \
-  192.168.0.222
+  192.168.4.224
 
 ./cert.sh --exp=365 \
   erhhung erhhung@gmail.com
@@ -147,7 +149,7 @@ cd "$HOME"
    redis{1..6}.fourteeners.local \
      \*.valkey.svc.cluster.local \
      \*.valkey.svc \
-     192.168.0.22{2..7}
+     192.168.4.23{1..6}
 
 ./cert.sh --exp=365 \
      prometheus \

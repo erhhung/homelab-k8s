@@ -39,7 +39,6 @@
           redis-password: "{{ valkey_pass }}"
       ansible.builtin.include_tasks: tasks/k8s/secrets/generic.yml
 
-    # https://github.com/argoproj/argo-helm/tree/main/charts/argo-cd
     - name: Install Argo CD Helm chart
       # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/helm_module.html
       kubernetes.core.helm:

@@ -94,9 +94,7 @@
 
     - name: Restart k3s service
       # noqa no-handler
-      when: >-
-        chart_configs is defined and
-        chart_configs.results  | map(attribute='changed') is any
+      when: chart_configs.results | map(attribute='changed') is any
       become: true
       block:
         - name: Stop k3s service

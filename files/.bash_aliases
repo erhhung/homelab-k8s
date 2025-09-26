@@ -312,11 +312,11 @@ command -v crictl &> /dev/null && {
   complete -o default -F _crictl c
 }
 
-command -v cmctl &> /dev/null && {
+command -v cmctl &> /dev/null && \
   . <(cmctl completion bash 2> /dev/null)
-}
 
 command -v harbor &> /dev/null && {
+  alias hls='harbor repo list library'
   . <(harbor completion bash 2> /dev/null)
 }
 
@@ -326,13 +326,11 @@ command -v mc &> /dev/null && {
   export MC_DISABLE_PAGER=1
 }
 
-command -v velero &> /dev/null && {
+command -v velero &> /dev/null && \
   . <(velero completion bash 2> /dev/null)
-}
 
-command -v istioctl &> /dev/null && {
+command -v istioctl &> /dev/null && \
   . <(istioctl completion bash 2> /dev/null)
-}
 
 # usage: rmevicted [args...]
 # all args, including -A, are
@@ -346,10 +344,10 @@ rmevicted() {
     | xargs -n 1 -r bash -c
 }
 
-[ -f "$HOME/.bash_secrets" ] && {
+[ -f "$HOME/.bash_secrets" ] && \
    . "$HOME/.bash_secrets"
-}
 
 # only installed on Rancher host
-[ -f "$HOME/.rancher_api" ] && \
-   . "$HOME/.rancher_api"
+command -v rancher &> /dev/null && \
+  [ -f "$HOME/.rancher_api" ]   && \
+     . "$HOME/.rancher_api"

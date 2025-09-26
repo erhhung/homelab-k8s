@@ -44,7 +44,6 @@
           admin-password: "{{ velero_admin_pass }}"
       ansible.builtin.include_tasks: tasks/k8s/secrets/generic.yml
 
-    # https://github.com/vmware-tanzu/helm-charts/tree/main/charts/velero
     - name: Install Velero Helm chart
       # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/helm_module.html
       kubernetes.core.helm:
@@ -60,7 +59,6 @@
         wait: true
       timeout: 300
 
-    # https://github.com/otwld/helm-charts/tree/main/charts/velero-ui
     - name: Install Velero UI Helm chart
       kubernetes.core.helm:
         kubeconfig: "{{ kubeconfig }}"

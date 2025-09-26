@@ -103,9 +103,9 @@
           {%   set ns.needs = true %}
           {% endif    %}
           {{ ns.needs }}
-      when: >-
-        saved_search.status is defined and
-        saved_search.status == 200
+      when:
+        - saved_search.status is defined
+        - saved_search.status == 200
 
     - name: Create saved search
       vars:

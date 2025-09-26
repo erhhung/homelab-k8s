@@ -139,7 +139,6 @@
         state: present
         apply: true
 
-    # https://github.com/codecentric/helm-charts/tree/master/charts/keycloakx
     - name: Install Keycloak.X Helm chart
       # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/helm_module.html
       kubernetes.core.helm:

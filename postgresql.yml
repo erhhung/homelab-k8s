@@ -6,6 +6,7 @@
   gather_facts: false
   vars_files:
     - vars/kubernetes.yml
+    - vars/metallb.yml
     - vars/storage.yml
     - vars/monitoring.yml
     - vars/postgresql.yml
@@ -36,14 +37,13 @@
           - "{{ postgresql_fqdns }}"
           - "*.{{ postgresql_namespace }}.svc.{{ cluster_domain }}"
           - "*.{{ postgresql_namespace }}.svc"
-          - "{{ postgresql_lb_ip }}"
+          - "{{ metallb_vips['postgresql'] }}"
         sans: "{{ sans_ | flatten }}"
       ansible.builtin.include_tasks: tasks/k8s/secrets/tls.step.yml
 
     - name: Create Pgpool exporter secret
       ansible.builtin.include_tasks: tasks/monitoring/scraper.yml
 
-    # https://github.com/bitnami/charts/tree/main/bitnami/postgresql-ha
     - name: Install PostgreSQL HA Helm chart
       vars:
         # required kubernetes>=24.2 package only in user virtualenv

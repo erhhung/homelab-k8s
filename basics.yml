@@ -86,16 +86,19 @@
         extended: true
         label: "{{ item.key }}"
 
-    - name: Adjust system resource limits
+    - name: Adjust process resource limits
+      vars:
+        # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/dict2items_filter.html
+        items: "{{ pam_limits | ansible.builtin.dict2items(key_name='item', value_name='spec') }}"
       # https://docs.ansible.com/ansible/latest/collections/community/general/pam_limits_module.html
       community.general.pam_limits:
-        domain: "{{ item.domain }}"
         limit_item: "{{ item.item }}"
-        limit_type: "{{ item.type }}"
-        value: "{{ item.value }}"
+        limit_type: "{{ item.spec.type }}"
+        domain: "{{ item.spec.domain }}"
+        value: "{{ item.spec.value }}"
         # increase limits only
         use_max: true
-      loop: "{{ pam_limits }}"
+      loop: "{{ items }}"
       loop_control:
         label: "{{ item.item }}"
 
@@ -223,9 +226,9 @@
           - mv
           - "{{ cloud_init_netplan }}"
           - "{{ cloud_init_netplan }}.disabled"
-      when: >-
-        cloud_init_yaml.results[0].stat.exists and
-        not cloud_init_yaml.results[1].stat.exists
+      when:
+        - cloud_init_yaml.results[0].stat.exists
+        - not cloud_init_yaml.results[1].stat.exists
       register: disabled_netplan
       changed_when: true
 

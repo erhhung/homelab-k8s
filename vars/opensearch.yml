@@ -11,12 +11,12 @@ opensearch_passwords:
   metrics: "{{ fluent_os_pass }}"
 
 opensearch_namespace: opensearch
-opensearch_host_names: # aliases of "homelab"
+opensearch_host_names: # aliases of "ingress"
   - opensearch
   - es
 
 # remember to add opensearch.fourteeners.local and es.fourteeners.local
-# to pfSense DNS as aliases of homelab.fourteeners.local: 192.168.0.221
+# to pfSense DNS as aliases of ingress.fourteeners.local: 192.168.4.222
 # https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_filters.html#products
 opensearch_fqdns: "{{ opensearch_host_names | product(search_domains) | map('join','.') }}"
 
@@ -389,9 +389,11 @@ opensearch_chart_values:
           app.kubernetes.io/name: opensearch
           app.kubernetes.io/instance: "{{ opensearch_cluster_name }}"
           app.kubernetes.io/component: "{{ opensearch_master_service }}"
+        annotations:
+          # replaces deprecated .spec.loadBalancerIP field
+          metallb.universe.tf/loadBalancerIPs: "{{ metallb_vips['opensearch'] }}"
       spec:
         type: LoadBalancer
-        loadBalancerIP: "{{ rke_lb_vip }}" # ingress IP
         ports:
           - name: http
             port: "{{ opensearch_service_port }}"

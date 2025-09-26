@@ -19,7 +19,7 @@ email_alerts_enabled: false
 slack_alerts_enabled: true
 
 monitoring_namespace: monitoring
-# aliases of "homelab" and direct
+# aliases of "ingress" and direct
 # subdomains of fourteeners.local
 monitoring_host_names:
   prometheus:
@@ -36,7 +36,7 @@ monitoring_host_names:
     - monitoring
 
 # remember to add all domain names to pfSense DNS as
-# aliases of homelab.fourteeners.local: 192.168.0.221
+# aliases of ingress.fourteeners.local: 192.168.4.222
 # https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_filters.html#products
 monitoring_fqdns: |
   {% set fqdns = {} %}
@@ -453,8 +453,14 @@ prometheus_stack_chart_values:
       # inject additional containers, e.g. adding
       # an authentication proxy like oauth2-proxy
       containers:
-        # this performs a merge patch on the
-        # operator-generated "thanos-sidecar"
+        # perform merge patch on operator-generated "prometheus"
+        - name: prometheus
+          readinessProbe: &probe
+            periodSeconds: 10
+            timeoutSeconds: 5
+          livenessProbe: *probe
+
+        # perform merge patch on operator-generated "thanos-sidecar"
         - name: thanos-sidecar
           volumeMounts:
             - name: tls-thanos
@@ -732,6 +738,11 @@ prometheus_stack_chart_values:
       # inject additional containers, e.g. adding
       # an authentication proxy like oauth2-proxy
       containers:
+        # perform merge patch on operator-generated "alertmanager"
+        - name: alertmanager
+          readinessProbe: *probe
+          livenessProbe: *probe
+
         # https://github.com/oauth2-proxy/oauth2-proxy
         - name: oauth-proxy
           image: quay.io/oauth2-proxy/oauth2-proxy:v{{ monitoring_oauth2_proxy_version }}

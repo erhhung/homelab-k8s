@@ -4,7 +4,7 @@
 
 # load ~/.bash_profile only if not
 # done so because it takes a while
-[ "$POSH_SESSION_ID" ] || {
+alias omp &> /dev/null || {
   source         /etc/profile
   source "$HOME/.bash_profile"
 }
@@ -34,6 +34,15 @@ gzage() {
   "$root/gzage.sh" "$@"
 }
 
+debug() {
+  local args root
+  root=$(git_root) || return $?
+
+  args=("$root/debug.yml")
+  [ "$1" ] && args+=(-t "$@")
+  "$root/play.sh" "${args[@]}"
+}
+
 # run play.sh from any project subdirectory
 # and allow tab completion of playbook tags
 play() {
@@ -42,26 +51,35 @@ play() {
   "$root/play.sh" "$@"
 }
 
-# enable tab completion if yq is installed
+plays() {
+  local root
+  root=$(git_root) || return $?
+  yq '.[].tags' "$root/main.yml"
+}
+
+# enable completions if yq is installed
 command -v yq &> /dev/null && {
-  _complete_play() {
+  _complete_play()  { _complete_tags main;  }
+  _complete_debug() { _complete_tags debug; }
+  _complete_tags()  {
 
-    local root main args cur tag tags=()
+    local root book="$1" args cur tag tags=()
     root=$(git rev-parse --show-toplevel 2> /dev/null)
-    main="$root/main.yml"
+    book="$root/$book.yml"
 
-    [ -f "$main" ] || {
+    [ -f "$book" ] || {
       COMPREPLY=()
       return
     }
     args=" ${COMP_WORDS[*]:1} "
       cur="${COMP_WORDS[COMP_CWORD]}"
 
-    # offer tags that are not already in args
-    for tag in $(yq 'map(.tags)[]' "$main"); do
+    # only show tags not already in args
+    for tag in $(yq '.[].tags' "$book"); do
       [[ "$args" != *" $tag "* ]] && tags+=("$tag")
     done
     COMPREPLY=($(compgen -W "${tags[*]}" -- "$cur"))
   }
-  complete -F _complete_play play
+  complete -F _complete_play  play
+  complete -F _complete_debug debug
 }

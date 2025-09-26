@@ -38,7 +38,6 @@
         sans: "{{ [harbor_fqdn] }}"
       ansible.builtin.include_tasks: tasks/k8s/secrets/tls.step.yml
 
-    # https://github.com/goharbor/harbor-helm/tree/main
     - name: Install Harbor Helm chart
       vars:
         # required kubernetes>=24.2 package only in user virtualenv
@@ -104,8 +103,9 @@
         . .bash_aliases
         set -o pipefail
 
-        harbor context list -o yaml | \
-          grep -q admin && exit 9 # no change
+        exists="$(harbor context list -o yaml | \
+          yq -r '.credentials[] | select(.username == "admin")')"
+        [ "$exists" ] && exit 9 # no change
 
         [ "$HARBOR_ENCRYPTION_KEY" ] || {
           export HARBOR_ENCRYPTION_KEY=$(openssl rand -base64 32)
@@ -113,8 +113,8 @@
         export HARBOR_ENCRYPTION_KEY="$HARBOR_ENCRYPTION_KEY"
         EOF
         }
-        harbor login {{ harbor_url }} \
-          -u admin -p '{{ harbor_admin_pass }}'
+        harbor login {{ harbor_url }} --context-name admin \
+            -u admin -p '{{ harbor_admin_pass }}'
         EOT
       register: config_cli
       changed_when: config_cli.rc == 0

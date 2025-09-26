@@ -12,9 +12,15 @@ rke2_architecture: amd64
 
 rke2_cluster_domain: cluster.local # don't change default!
 # remember to add homelab.fourteeners.local to pfSense DNS!
-# include *.vcluster.fourteeners.local for vCluster domains
 rke2_additional_sans: |
-  {{ [rke_cluster_name] + rke_fqdns + ['"*.'~ vc_domain ~'"'] }}
+  {% set cp_hosts = groups[rke_control_plane_group] %}
+  {# https://docs.ansible.com/ansible/latest/collections/ansible/builtin/extract_filter.html #}
+  {% set cp_addrs = cp_hosts | map('ansible.builtin.extract', hostvars, 'ansible_host') %}
+  {{ [ rke_cluster_name,
+       rke_fqdns,
+       cp_hosts,
+       cp_addrs,
+     ] | flatten }}
 
 # default CIDR ranges in RKE2
 # for pod and service networks

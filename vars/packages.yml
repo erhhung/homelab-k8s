@@ -9,7 +9,11 @@ add_apt_repositories:
       # https://dgpu-docs.intel.com/driver/client/overview.html
       - ppa:kobuk-team/intel-graphics
     # GPU passthrough enabled hosts
-    hosts: ["k8s2", "k8s3", "k8s4"]
+    hosts: &gpu-hosts
+      - k8s3
+      - k8s4
+      - k8s5
+      - k8s6
 
 install_apt_packages:
   - packages:
@@ -27,8 +31,11 @@ install_apt_packages:
       # iptables is required by Calico networking in RKE2:
       # https://github.com/rancher/rke2/issues/4385#issuecomment-1738848974
       - iptables
+      - nftables
+      - ipset
       - dnsutils # provides nslookup/dig/host
       - iputils-ping
+      - netcat-openbsd
       - open-iscsi # required by Longhorn storage engine
       - nfs-common # required by Longhorn storage engine
       - python3-pip
@@ -39,6 +46,13 @@ install_apt_packages:
       - git # required by kubernetes.core.helm_plugin
       - helm # requires /etc/apt/sources.list.d/helm.sources
     hosts: "{{ groups['k8s_all'] }}"
+
+  - packages:
+      # useful tools to debug MetalLB routing issues
+      - tcpdump
+      - tshark
+      - conntrack
+    hosts: "{{ groups['cluster'] }}"
 
   # PPA packages below offer support for Intel client GPUs:
   # https://dgpu-docs.intel.com/driver/client/overview.html
@@ -57,7 +71,7 @@ install_apt_packages:
       - va-driver-all
       - vainfo
     # GPU passthrough enabled hosts
-    hosts: ["k8s2", "k8s3", "k8s4"]
+    hosts: *gpu-hosts
 
 # packages will be installed under
 # virtualenv ansible_user_dir/.venv

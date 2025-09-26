@@ -1,0 +1,59 @@
+# patch resource with kubectl.kubernetes.io/restartedAt
+# annotation to restart all pods (whether the restart
+# is rolling depends on the configured update strategy)
+#
+# pass the following vars:
+#   kubeconfig  <required> path to kubeconfig
+#   api_version [optional] default based on resource kind
+#   res_kind    <required> resource type (Pod, Deployment,
+#                          StatefulSet, DaemonSet)
+#   res_name    <required> resource name
+#   res_ns      <required> resource namespace
+#   max_wait    [optional] seconds to wait until pods are
+#                          ready (default=0 or don't wait)
+---
+- name: Gather facts about controller
+  # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
+  ansible.builtin.include_tasks: tasks/localfacts.yml
+  when: local_tz_offset is not defined
+
+- name: Restart {{ res_name }} {{ res_kind }}
+  become: false
+  vars:
+    # required kubernetes>=24.2 package only in user virtualenv
+    ansible_python_interpreter: "{{ venv_python_interpreter }}"
+    wait_max: "{{ max_wait | default(0) }}"
+  block:
+    - name: Patch {{ res_kind }} annotation
+      vars:
+        api_default: "{{ 'v1' if res_kind == 'Pod' else 'apps/v1' }}"
+        # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/strftime_filter.html
+        time_now: "{{ '%Y-%m-%dT%H:%M:%S' | strftime() }}{{ local_tz_offset.in_hh_mm }}"
+        template:
+          metadata:
+            annotations:
+              kubectl.kubernetes.io/restartedAt: "{{ time_now }}"
+      # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_module.html
+      kubernetes.core.k8s:
+        kubeconfig: "{{ kubeconfig }}"
+        api_version: "{{ api_version | default(api_default) }}"
+        kind: "{{ res_kind }}"
+        name: "{{ res_name }}"
+        namespace: "{{ res_ns }}"
+        definition: |
+          {{ template if res_kind == 'Pod' else
+          { 'spec': {'template': template} } }}
+      retries: 3
+      delay: 3
+
+    - name: Wait until first pod restarts
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/pause_module.html
+      ansible.builtin.pause:
+        prompt: Please wait...
+        seconds: "{{ [wait_max,5] | min }}"
+      when: wait_max > 0
+
+    - name: Wait until pods have restarted
+      ansible.builtin.include_tasks: tasks/k8s/waitready.yml
+      when: wait_max > 0
+  any_errors_fatal: false

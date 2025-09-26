@@ -2,6 +2,9 @@
 # on each RKE2 node, after which the rke2-server or rke2-agent service must be restarted.
 #
 # https://docs.rke2.io/advanced#configuring-containerd
+# NOTE: RKE2 uses containerd 2.x and config version 3, so plugin name
+# "io.containerd.grpc.v1.cri" should be "io.containerd.cri.v1.runtime"
+#
 # https://github.com/k3s-io/k3s/tree/master/pkg/agent/templates/templates.go#L158-L275
 # IMPORTANT! beware of mixed Go and Jinja2 template syntax (search for "raw").
 #
