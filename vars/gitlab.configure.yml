@@ -5,6 +5,7 @@ gitlab_user_callouts:
   - product_usage_data_collection_changes
   - registration_enabled_callout
   - security_newsletter_callout
+  - gcp_signup_offer
 
 # form POST /-/profile/preferences
 gitlab_user_prefs:

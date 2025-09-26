@@ -4,33 +4,60 @@
   gather_facts: false
   vars_files:
     - vars/kubernetes.yml
+    - vars/xcp.yml
   vars:
     # targets can be overridden on command-line:
     # ansible-playbook shutdownvms.yml -e targets=workers
     targets: k8s_all
     # fail fast if host already appears to be shut down
     ansible_ssh_args: -o ConnectTimeout=1s -o ConnectionAttempts=1
+  pre_tasks:
+    - name: Resolve target hosts
+      vars:
+        target_hosts: "{{ targets }}"
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
+      ansible.builtin.include_tasks: tasks/hosts/resolve.yml
+      # sets resolved_hosts fact
   tasks:
     - name: Shut down worker nodes
       vars:
-        services:
-          - rke2-agent
-      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
+        services: ["rke2-agent"]
       ansible.builtin.include_tasks: tasks/hosts/shutdown.yml
       when: inventory_hostname in groups[rke_workers_group]
 
     - name: Shut down control plane
       vars:
-        services:
-          - rke2-server
+        services: ["rke2-server"]
       ansible.builtin.include_tasks: tasks/hosts/shutdown.yml
       when: inventory_hostname in groups[rke_control_plane_group]
 
     - name: Shut down Rancher Server
       vars:
-        services:
-          - k3s
+        services: ["k3s"]
       ansible.builtin.include_tasks: tasks/hosts/shutdown.yml
       when: inventory_hostname in groups['_rancher']
+
+    - name: Wait until hosts down
+      delegate_to: "{{ xcp_master }}"
+      run_once: true
+      # cannot use ansible.builtin.shell because XCP-ng 8.3 only has Python 3.6,
+      # which requires an older version of Ansible that we don't otherwise need
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/raw_module.html
+      ansible.builtin.raw: |
+        # run Bash to load .bashrc in order to
+        # use exported functions and variables
+        exec /bin/bash -l <<'EOT'
+
+        uuid_var="UUID_{{ item | upper }}"
+        uuid="${!uuid_var}"
+
+        while true; do
+          [[ "$(vmstate $uuid)" =~ ^(halted|suspended|)$ ]] && break
+          sleep 1
+        done
+        EOT
+      loop: "{{ resolved_hosts }}"
+      changed_when: true
+  # ignore if already down
   ignore_unreachable: true
   ignore_errors: true

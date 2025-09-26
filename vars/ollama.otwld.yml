@@ -49,7 +49,7 @@ ollama_chart_values:
     # increase Ollama default
     # 2048-token context size
     - name: OLLAMA_CONTEXT_LENGTH
-      value: "{{ ollama_context_size }}"
+      value: "{{ ollama_context_size | string }}"
 
   podSecurityContext: "{{ ollama_common_values['podSecurityContext'] }}"
   securityContext: "{{ ollama_common_values['securityContext'] }}"

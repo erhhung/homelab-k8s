@@ -11,20 +11,21 @@
         name: "{{ item }}"
         state: stopped
       loop: "{{ services }}"
-      when: >-
-        services is defined  and
-        services is iterable and
-        services | length > 0
+      when:
+        - services is defined
+        - services is iterable
+        - services is truthy
+      failed_when: false
 
     - name: Run commands
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/command_module.html
       ansible.builtin.command: "{{ item }}"
       loop: "{{ commands }}"
-      when: >-
-        commands is defined  and
-        commands is iterable and
-                    commands | length > 0
-      changed_when: commands | length > 0
+      when:
+        - commands is defined
+        - commands is iterable
+        - commands is truthy
+      changed_when: true
 
     - name: Halt system
       # https://docs.ansible.com/ansible/latest/collections/community/general/shutdown_module.html

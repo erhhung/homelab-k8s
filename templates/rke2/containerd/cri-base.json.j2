@@ -59,8 +59,8 @@
     "rlimits": [
       {
         "type": "RLIMIT_NOFILE",
-        "soft": {{ nofile_limit }},
-        "hard": {{ nofile_limit }}
+        "soft": {{ pam_limits['nofile'].value }},
+        "hard": {{ pam_limits['nofile'].value }}
       }
     ],
     "noNewPrivileges": true

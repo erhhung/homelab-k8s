@@ -34,7 +34,7 @@ indent() {
 random() {
   local nchars=$1 charset="$2"
   if [ "$charset" ]; then
-    head -c 512 /dev/urandom | \
+    head -c 4096 /dev/urandom | \
       LC_CTYPE=C tr -cd "$charset" | \
       head -c "$nchars"
   else

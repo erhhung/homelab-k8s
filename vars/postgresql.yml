@@ -17,19 +17,15 @@ postgresql_users:
 postgresql_superuser: erhhung
 
 postgresql_namespace: postgresql
-postgresql_host_names: # 192.168.0.222
+postgresql_host_names: # 192.168.4.224
   - postgresql
   - postgres
   - pg
 
 # remember to add postgresql.fourteeners.local (also postgres.
-# and pg.) to pfSense DNS using kube virtual IP 192.168.0.222
+# + pg.) to pfSense DNS using MetalLB virtual IP 192.168.4.224
 # https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_filters.html#products
 postgresql_fqdns: "{{ postgresql_host_names | product(search_domains) | map('join','.') }}"
-
-# https://docs.ansible.com/ansible/latest/collections/ansible/utils/ipmath_filter.html
-# (requires Python package "netaddr" on Ansible controller)
-postgresql_lb_ip: "{{ rke_lb_vip | ansible.utils.ipmath(1) }}"
 
 pgpool_service_host: postgresql-pgpool.{{ postgresql_namespace }}.svc.{{ cluster_domain }}
 pgpool_service_port: 5432
@@ -265,7 +261,15 @@ postgresql_chart_values:
     # an Ingress; instead, we create a LoadBalancer service:
     # https://github.com/bitnami/charts/tree/main/bitnami/postgresql-ha#configure-the-way-how-to-expose-postgresql
     type: LoadBalancer
-    loadBalancerIP: "{{ postgresql_lb_ip }}"
+
+    annotations:
+      # replaces deprecated .spec.loadBalancerIP field
+      metallb.universe.tf/loadBalancerIPs: "{{ metallb_vips['postgresql'] }}"
+
+    sessionAffinity: ClientIP
+    sessionAffinityConfig:
+      clientIP:
+        timeoutSeconds: 28800 # 8 hours
 
   metrics:
     # adds postgres-exporter sidecar container:
@@ -277,9 +281,9 @@ postgresql_chart_values:
     # service on HTTP "metrics" port 9187
     serviceMonitor:
       enabled: "{{ prometheus_crds_installed }}"
-      labels: &monitor_labels
+      labels: &smon-labels
         release: "{{ monitoring_release_name }}"
-      selector: *monitor_labels
+      selector: *smon-labels
 
   # NOTE: Helm will render these manifests as templates,
   # but the only templating currently used are processed

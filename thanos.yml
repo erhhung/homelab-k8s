@@ -60,7 +60,6 @@
         state: present
         apply: true
 
-    # https://github.com/bitnami/charts/tree/main/bitnami/thanos
     - name: Install Thanos Helm chart
       # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/helm_module.html
       kubernetes.core.helm:

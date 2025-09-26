@@ -11,12 +11,12 @@ k8s_gateway_api_crds_url: >-
 
 istio_namespace: istio-system
 kiali_namespace: "{{ istio_namespace }}"
-kiali_host_names: # aliases of "homelab"
+kiali_host_names: # aliases of "ingress"
   - kiali
   - istio
 
 # remember to add kiali.fourteeners.local (and istio.fourteeners.local)
-# to pfSense DNS as aliases of homelab.fourteeners.local: 192.168.0.221
+# to pfSense DNS as aliases of ingress.fourteeners.local: 192.168.4.222
 # https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_filters.html#products
 kiali_fqdns: "{{ kiali_host_names | product(search_domains) | map('join','.') }}"
 

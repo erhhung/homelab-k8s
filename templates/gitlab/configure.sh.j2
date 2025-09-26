@@ -494,7 +494,7 @@ register_runner() {
 EOT
   local exists="$(jq -r '.data.runners.nodes | map(
     select(.description == "{{ gitlab_runner.name }}")
-    ) | length' < "$RESPONSE_JSON")"
+    ) | length' "$RESPONSE_JSON")"
   [ "$exists" == 0 ] || return 0
 
   printf ','
@@ -522,7 +522,7 @@ EOT
   eval "$(jq -r '.data.runnerCreate.runner | "
     local reg_url=\"\(.ephemeralRegisterUrl)\"
     local runner_id=\"\(.id)\"
-    "' < "$RESPONSE_JSON")"
+    "' "$RESPONSE_JSON")"
   echo >&2 "runner_id: $runner_id"
   echo >&2 "  reg_url: $reg_url"
 
@@ -546,7 +546,7 @@ EOT
       name:  .description,
       token: .ephemeralAuthenticationToken
     }
-  }' < "$RESPONSE_JSON" > "$RUNNER_JSON"
+  }' "$RESPONSE_JSON" > "$RUNNER_JSON"
 }
 
 echo "‖        Login: $(root_login)"

@@ -48,7 +48,7 @@ controlPlane:
   #                   - ReadWriteOnce
   #                 resources:
   #                   requests:
-  #                     storage: {{ vc_etcd_pv_size }}
+  #                     storage: {{ vcluster_pv_sizes['etcd'] }}
   #                 selector:
   #                   matchLabels:
   #                     app: vcluster
@@ -69,7 +69,7 @@ controlPlane:
               - ReadWriteOnce
             resources:
               requests:
-                storage: {{ vc_data_pv_size }}
+                storage: {{ vcluster_pv_sizes['data'] }}
             selector:
               matchLabels:
                 app: vcluster

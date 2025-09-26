@@ -2,7 +2,6 @@
 - name: Create/revert/delete VM snapshots
   hosts: "{{ xcp_master }}"
   gather_facts: false
-  become: true
   vars_files:
     - vars/xcp.yml
   vars:
@@ -49,7 +48,7 @@
       # sets resolved_hosts fact
 
     - name: Get snapshots JSON
-      # cannot use ansible.builtin.shell because XCP-ng 8.2 only has Python 3.6,
+      # cannot use ansible.builtin.shell because XCP-ng 8.3 only has Python 3.6,
       # which requires an older version of Ansible that we don't otherwise need
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/raw_module.html
       ansible.builtin.raw: |

@@ -9,6 +9,7 @@
   gather_facts: false
   vars_files: &vars_files
     - vars/kubernetes.yml
+    - vars/metallb.yml
     - vars/storage.yml
     - vars/ollama.yml
   tasks:

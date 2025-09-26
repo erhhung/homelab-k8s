@@ -1,0 +1,136 @@
+# stable virtual IP addresses reserved for specific LoadBalancer Services.
+# they're specified in the Service's "metallb.universe.tf/loadBalancerIPs"
+# annotation or .spec.loadBalancerIP field, although latter is deprecated.
+
+metallb_vips:
+  # use subnet 192.168.4.0/24 which is not "on-link" for
+  # clients, so they must route to pfSense. pfSense then
+  # responds to ARP requests with advertised ECMP routes
+  start: 192.168.4.222
+  end: 192.168.4.240
+
+  ingress: 192.168.4.222
+  opensearch: 192.168.4.223
+  postgresql: 192.168.4.224
+  # Valkey creates a LoadBalancer Service
+  # for each node, so reserve 6 IPs total
+  valkey: 192.168.4.231 # ..192.168.4.236
+  ollama: 192.168.4.225 # HTTP port 11434
+
+metallb_namespace: metallb-system
+
+metallb_secrets:
+  speaker: metallb-memberlist
+
+# https://github.com/bitnami/charts/tree/main/bitnami/metallb
+metallb_chart_version: "6.4.22"
+metallb_release_name: metallb
+
+# https://github.com/bitnami/charts/tree/main/bitnami/metallb/values.yaml
+metallb_chart_values:
+  installCRDs: true
+
+  controller:
+    priorityClassName: "{{ priority_classes['critical'] }}"
+
+    readinessProbe: &probe
+      periodSeconds: 10
+      timeoutSeconds: 3
+      failureThreshold: 3
+    livenessProbe: *probe
+
+    metrics: &metrics
+      enabled: true
+
+      serviceMonitor:
+        enabled: "{{ prometheus_crds_installed }}"
+        labels:
+          release: "{{ monitoring_release_name }}"
+
+  speaker:
+    # RKE2's Canal CNI doesn't use Calico's BGP feature:
+    # it uses Flannel's VXLAN overlay for pod networking
+    # and Calico for policies, so speaker is required to
+    # advertise routes to the network via BGP
+    enabled: true
+
+    # native BGP implementation (as opposed to FRR) is
+    # lighter weight and adequate for homelab use cases:
+    # https://metallb.universe.tf/concepts/bgp/#frr-mode
+    frr:
+      enabled: false
+
+    # "metallb-memberlist" Secret
+    #  will be created by Ansible
+    secretName: "{{ metallb_secrets['speaker'] }}"
+
+    priorityClassName: "{{ priority_classes['critical'] }}"
+
+    readinessProbe: *probe
+    livenessProbe: *probe
+
+    metrics: *metrics
+
+  prometheusRule:
+    enabled: "{{ prometheus_crds_installed }}"
+
+# remember to install FRR package on pfSense
+# and configure BGP local and remote ASNs as
+# well as neighbor IPs for all cluster nodes
+
+# required FRR config settings
+# ----------------------------
+# FRR/Global/Routes -> Add "ALLOW-ALL" with description "Match any
+#                      route", action "Permit", and sequence "100"
+# FRR/BGP/Neighbors -> Use "ALLOW-ALL" route map for both inbound
+#                      and outbound peer filtering
+# FRR/BGP/Advanced  -> ✅ Disable requirement to apply incoming
+#                         and outgoing filter to eBGP sessions
+
+# pfSense diagnostic commands
+# ---------------------------
+# vtysh -c "show running-config"
+# vtysh -c "show ip bgp"
+# vtysh -c "show ip route 192.168.4.222"
+# vtysh -c "clear ip bgp * soft in"
+
+# also see `netstat` commands:
+# https://docs.netgate.com/pfsense/en/latest/routing/multipath.html
+
+# client connectivity tests
+# -------------------------
+# nc -vz 192.168.4.222 80
+# nc -vz 192.168.4.222 443
+
+# additional references:
+# https://blog.perfectra1n.com/setting-up-metallb-in-bgp-mode-with-pfsense
+# https://natarajmb.com/2025/02/kubernetes-services-over-bgp-with-metallb-and-pfsense
+
+metallb_config_crs:
+  - apiVersion: metallb.io/v1beta2
+    kind: BGPPeer
+    metadata:
+      name: pfsense
+    spec:
+      myASN: 64513              # cluster ASN
+      peerASN: 64512            # pfSense ASN
+      peerAddress: 192.168.0.1  # pfSense RID
+
+  - apiVersion: metallb.io/v1beta1
+    kind: IPAddressPool
+    metadata:
+      name: cluster-pool
+    spec:
+      addresses:
+        - "{{ metallb_vips.start }}-{{ metallb_vips.end }}"
+      # services should define stable IP in metallb_vips.*
+      autoAssign: false
+
+  - apiVersion: metallb.io/v1beta1
+    kind: BGPAdvertisement
+    metadata:
+      name: cluster-advert
+    spec:
+      ipAddressPools:
+        - cluster-pool
+      aggregationLength: 32

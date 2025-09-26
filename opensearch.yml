@@ -8,6 +8,7 @@
   gather_facts: false
   vars_files: &vars_files
     - vars/kubernetes.yml
+    - vars/metallb.yml
     - vars/storage.yml
     - vars/monitoring.yml
     - vars/opensearch.yml
@@ -57,6 +58,7 @@
           - "{{ opensearch_fqdns }}"
           - "*.{{ opensearch_namespace }}.svc.{{ cluster_domain }}"
           - "*.{{ opensearch_namespace }}.svc"
+          - "{{ metallb_vips['opensearch'] }}"
         sans: "{{ sans_ | flatten }}"
       ansible.builtin.include_tasks: tasks/k8s/secrets/tls.step.yml
 
@@ -102,7 +104,6 @@
     - name: Create monitoring scraper secret
       ansible.builtin.include_tasks: tasks/monitoring/scraper.yml
 
-    # https://github.com/opensearch-project/helm-charts/tree/main/charts/opensearch
     - name: Install OpenSearch Helm chart
       # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/helm_module.html
       kubernetes.core.helm:
@@ -182,7 +183,6 @@
         sans: "{{ [kibana_fqdn] }}"
       ansible.builtin.include_tasks: tasks/k8s/secrets/tls.step.yml
 
-    # https://github.com/opensearch-project/helm-charts/tree/main/charts/opensearch-dashboards
     - name: Install Dashboards Helm chart
       vars:
         # required kubernetes>=24.2 package only in user virtualenv

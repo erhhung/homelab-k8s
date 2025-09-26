@@ -68,9 +68,9 @@
       loop: "{{ api_urls.keys() }}"
       loop_control:
         index_var: i
-      when: >-
-        user_settings.results[i] is defined and
-        user_settings.results[i].status == 200
+      when:
+        - user_settings.results[i] is defined
+        - user_settings.results[i].status == 200
 
     - name: Apply custom user settings
       vars:

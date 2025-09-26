@@ -6,14 +6,14 @@
 #           and stored encrypted in  vars/gitlab.secrets.yml
 
 gitlab_namespace: gitlab
-# aliases of "homelab" and direct
+# aliases of "ingress" and direct
 # subdomains of fourteeners.local
 gitlab_host_names:
   gitlab: gitlab
   pages: pages.gitlab
 
 # add gitlab.fourteeners.local and its subdomains to pfSense
-# DNS as aliases of homelab.fourteeners.local: 192.168.0.221
+# DNS as aliases of ingress.fourteeners.local: 192.168.4.222
 # https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_filters.html#products
 gitlab_fqdns: |
   {% set fqdns = {} %}
@@ -946,6 +946,7 @@ gitlab_chart_values:
 
     securityContext:
       runAsNonRoot: true
+    podSecurityContext:
       runAsUser: 999
       fsGroup: 999
 
@@ -983,7 +984,6 @@ gitlab_chart_values:
             helper_image = "registry.gitlab.com/gitlab-org/ci-cd/gitlab-runner-ubi-images/gitlab-runner-helper-ocp:v18.3.0"
 
             [runners.kubernetes.pod_security_context]
-              run_as_non_root = true
               run_as_user = 59417
               fs_group = 59417
 

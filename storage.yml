@@ -77,11 +77,11 @@
     - name: Run Longhorn environment check
       # run once in each cluster if
       # Longhorn not installed yet
-      when: >-
-        inventory_hostname in [
+      when:
+        - longhorn_installed.resources | default([]) is falsy
+        - inventory_hostname in [
           k3s_control_plane_host,
-          rke_control_plane_host
-        ] and longhorn_installed.resources | default([]) is falsy
+          rke_control_plane_host]
       become: false
       vars:
         # NOTE: depending on version, environment_check.sh may not be available
@@ -201,7 +201,6 @@
       ansible.builtin.include_tasks: tasks/k8s/secrets/generic.yml
 
     # https://longhorn.io/docs/latest/deploy/install/install-with-helm
-    # https://github.com/longhorn/charts/tree/v1.9.x/charts/longhorn
     - name: Install Longhorn Helm chart
       # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/helm_module.html
       kubernetes.core.helm:

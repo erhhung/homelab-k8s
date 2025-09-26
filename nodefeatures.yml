@@ -1,5 +1,5 @@
 # https://jonathangazeley.com/2025/02/11/intel-gpu-acceleration-on-kubernetes
-# https://kubernetes.io/docs/tasks/manage-gpus/scheduling-gpus/
+# https://kubernetes.io/docs/tasks/manage-gpus/scheduling-gpus
 #
 # GPU detection on our nodes requires the following steps:
 # 1. install linux-modules-extra-<kernel> package on nodes: Intel i915 driver
@@ -19,7 +19,8 @@
     - vars/kubernetes.yml
     - vars/monitoring.yml
     - vars/nodefeatures.yml
-  vars: &vars # required kubernetes>=24.2 package only in user virtualenv
+  vars: &vars
+    # required kubernetes>=24.2 package only in user virtualenv
     ansible_python_interpreter: "{{ venv_python_interpreter }}"
     # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/ternary_filter.html
     cluster: "{{ (inventory_hostname == k3s_control_plane_host) | ternary('k3s','rke') }}"
@@ -118,22 +119,11 @@
     - name: Deploy Intel Device Plugin CRs
       block:
         - name: Wait for IDP webhook to be ready
-          # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_info_module.html
-          kubernetes.core.k8s_info:
-            kubeconfig: "{{ kubeconfig }}"
-            api_version: apps/v1
-            kind: Deployment
-            name: inteldeviceplugins-controller-manager
-            namespace: "{{ intel_device_plugins_namespace }}"
-          # https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_loops.html#retrying-a-task-until-a-condition-is-met
-          register: deploy_info
-          until: >-
-            deploy_info.resources[0].status               is defined and
-            deploy_info.resources[0].status.readyReplicas is defined and
-            deploy_info.resources[0].status.readyReplicas ==
-            deploy_info.resources[0].status.replicas
-          retries: 20
-          delay: 3
+          vars:
+            res_kind: Deployment
+            res_name: inteldeviceplugins-controller-manager
+            res_ns: "{{ intel_device_plugins_namespace }}"
+          ansible.builtin.include_tasks: tasks/k8s/waitready.yml
 
         - name: Deploy Intel Device Plugin CRs
           vars:

@@ -45,7 +45,6 @@
           - "{{ fluent_os_user }}@{{ homelab_domain }}"
       ansible.builtin.include_tasks: tasks/k8s/secrets/tls.step.yml
 
-    # https://github.com/fluent/helm-charts/tree/main/charts/fluent-operator
     - name: Install Fluent Operator Helm chart
       # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/helm_module.html
       kubernetes.core.helm:

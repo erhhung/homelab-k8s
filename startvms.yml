@@ -16,8 +16,8 @@
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
       ansible.builtin.include_tasks: tasks/hosts/resolve.yml
   tasks:
-    - name: Start resolved VMs
-      # cannot use ansible.builtin.shell because XCP-ng 8.2 only has Python 3.6,
+    - name: Power on resolved VM hosts
+      # cannot use ansible.builtin.shell because XCP-ng 8.3 only has Python 3.6,
       # which requires an older version of Ansible that we don't otherwise need
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/raw_module.html
       ansible.builtin.raw: |
@@ -33,11 +33,26 @@
         case "$(vmstate $uuid)" in
           running)
             echo "VM \"{{ item }}\" is already running"
+            exit 9 # no change
             ;;
           halted)    startvm  $uuid "$name" ;;
           suspended) resumevm $uuid "$name" ;;
         esac
         EOT
       loop: "{{ resolved_hosts }}"
-      changed_when: true
+      register: poweron_vms
+      changed_when: poweron_vms.rc == 0
+      failed_when: >-
+        poweron_vms.rc != 0 and
+        poweron_vms.rc != 9
+
+    - name: Wait until hosts reachable
+      delegate_to: "{{ item }}"
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/command_module.html
+      ansible.builtin.command: "true"
+      loop: "{{ resolved_hosts }}"
+      ignore_unreachable: true
+      changed_when: false
+      retries: 60
+      delay: 5
   any_errors_fatal: true

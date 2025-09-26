@@ -18,6 +18,9 @@
       vars:
         # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/pipe_lookup.html
         arch: "{{ lookup('ansible.builtin.pipe', 'uname -m') }}" # x86_64 or aarch64
+        # https://jinja.palletsprojects.com/en/stable/templates#jinja-filters.format
+        tz_hh_mm: "{{  '%+03d:%02d' |
+          format(tz_offset.in_hours | int, tz_offset.in_seconds % 3600) }}"
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/set_fact_module.html
       ansible.builtin.set_fact:
         local_python_interpreter: "{{ lookup('ansible.builtin.pipe', 'which python3') }}"
@@ -26,4 +29,5 @@
         local_tz_offset:
           in_hours: "{{ tz_offset.in_hours | float }}"
           in_seconds: "{{ tz_offset.in_seconds | int }}"
+          in_hh_mm: "{{ tz_hh_mm }}"
   any_errors_fatal: true

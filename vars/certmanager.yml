@@ -73,7 +73,7 @@ step_issuer_chart_values:
   resources:
     requests:
       cpu: 20m
-      memory: 32Mi
+      memory: 96Mi
     limits:
       cpu: 100m
       memory: 128Mi

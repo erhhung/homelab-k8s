@@ -1,11 +1,8 @@
 ollama_namespace: ollama
-ollama_host_name: ollama # alias of "k8s2"
+ollama_host_name: ollama # alias of "ingress"
 
 # remember to add ollama.fourteeners.local to pfSense DNS
-# as alias of k8s2.fourteeners.local: 192.168.0.172 (note
-# that virtual IP isn't used here because connections via
-# kube-vip exhibit frequent but inconsistent drops/resets
-# for reasons not yet known)
+# as an alias of ingress.fourteeners.local: 192.168.4.222
 # https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_filters.html#products
 ollama_fqdn: "{{ [ollama_host_name] | product(search_domains) | map('join','.') | first }}"
 
@@ -109,9 +106,11 @@ ollama_common_values:
       labels:
         app.kubernetes.io/name: ollama
         app.kubernetes.io/instance: "{{ ollama_release_name }}"
+      annotations:
+        # replaces deprecated .spec.loadBalancerIP field
+        metallb.universe.tf/loadBalancerIPs: "{{ metallb_vips['ollama'] }}"
     spec:
       type: LoadBalancer
-      loadBalancerIP: "{{ rke_lb_vip }}"
       ports:
         - name: http
           port: "{{ ollama_service_port }}"

@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 
-# Show available disk space on all cluster nodes
-# (assumes `ssh <host>` works without password
-# for hosts: rancher, k8s1, k8s2, k8s3, k8s4)
+# Show available disk space on all cluster
+# nodes (assumes `ssh <host>` works without
+# password for hosts: rancher & k8s1..k8sN)
 
- NOCLR='\033[0m'
-YELLOW='\033[1;33m'
+  NOCLR='\033[0m'
+ YELLOW='\033[1;33m'
+NUM_K8S=6
 
 # strip ANSI color codes
 no_colors() {
@@ -30,6 +31,6 @@ run_df() {
 }
 
 run_df rancher /
-for i in $(seq 4); do
+for i in $(seq 1 $NUM_K8S); do
   run_df "k8s$i" / /data
 done

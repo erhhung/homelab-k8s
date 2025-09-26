@@ -11,10 +11,10 @@ flowise_admin_user:
   password: "{{ flowise_admin_pass }}"
 
 flowise_namespace: flowise
-flowise_host_name: flowise # alias of "homelab"
+flowise_host_name: flowise # alias of "ingress"
 
 # remember to add flowise.fourteeners.local to pfSense DNS
-# as an alias of  homelab.fourteeners.local: 192.168.0.221
+# as an alias of  ingress.fourteeners.local: 192.168.4.222
 # https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_filters.html#products
 flowise_fqdn: "{{ [flowise_host_name] | product(search_domains) | map('join','.') | first }}"
 

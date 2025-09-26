@@ -32,6 +32,13 @@
       ansible.builtin.debug:
         var: ansible_facts
 
+    - name: Format current time
+      vars:
+        # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/strftime_filter.html
+        time_now: "{{ '%Y-%m-%dT%H:%M:%S' | strftime() }}{{ local_tz_offset.in_hh_mm }}"
+      ansible.builtin.debug:
+        var: time_now
+
 - name: Show hosts and domain names
   tags: hosts
   hosts: localhost
@@ -204,14 +211,14 @@
   tasks:
     - name: Create IP address range
       vars:
-        rke_lb_vip: 192.168.0.221
-        valkey_cluster_nodes: 6
+        metallb_vip: 192.168.4.231
+        valkey_node_count: 6
         valkey_lb_ips: |
           {% set ips = [] %}
-          {% for i in range(valkey_cluster_nodes) %}
-          {%   set _ = ips.append(rke_lb_vip | ansible.utils.ipmath(i+1)) %}
+          {% for i in range(valkey_node_count) %}
+          {%   set _ = ips.append(metallb_vip | ansible.utils.ipmath(i)) %}
           {% endfor %}
-          {{ ips }}
+          {{ ips    }}
       ansible.builtin.debug:
         var: valkey_lb_ips
 
@@ -333,7 +340,7 @@
 
     - name: Debug filtering functions
       vars:
-        vc_pods:
+        vcluster_pods:
           - ^kube-system/coredns-.*$
         get_pods: # kubernetes.core.k8s_info
           resources:
@@ -350,7 +357,7 @@
           {#   use namespace() to create a scoped object #}
           {#   https://jinja.palletsprojects.com/en/stable/templates/#assignments #}
           {%   set pod = namespace(desc=desc, found=false) %}
-          {%   for regex in vc_pods %}
+          {%   for regex in vcluster_pods %}
           {%     if not pod.found and pod.desc | ansible.builtin.regex_search(regex) %}
           {%        set pod.found = true %}
           {%     endif %}

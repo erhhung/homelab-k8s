@@ -50,7 +50,7 @@
         . .bash_aliases
 
         # zeros out file time MM:ss
-        _touch -t 00 . .sudo_as_* .rancher_api
+        _touch -t 00 . .sudo_as_* .rancher_*
         # now do the same again but recursively
         touchall -t 00 {{ copy_files | map('quote') | join(' ') }}
         EOT

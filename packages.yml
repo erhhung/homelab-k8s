@@ -55,50 +55,50 @@
   vars_files:
     - vars/packages.yml
   tasks:
-    - name: Add required Apt repositories
-      become: true
-      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/apt_repository_module.html
-      ansible.builtin.apt_repository:
-        repo: "{{ item[1] }}"
-        state: present
-      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/subelements_filter.html
-      loop: "{{ add_apt_repositories | ansible.builtin.subelements('repos') }}"
-      loop_control:
-        label: "{{ item[0].hosts | join(',') ~'|'~ item[1] }}"
-      when: inventory_hostname in item[0].hosts
-
     - name: Install required Apt packages
       become: true
-      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/apt_module.html
-      ansible.builtin.apt:
-        name: "{{ item.packages }}"
-        state: present
-        update_cache: true
-        force_apt_get: true
-        install_recommends: false
-      loop: "{{ install_apt_packages }}"
-      loop_control:
-        label: "{{ item.hosts | join(',') ~'|...' }}"
-      when: inventory_hostname in item.hosts
-      # task could fail due to normal Apt updates
-      # that hold lock, so retry until successful
-      # https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_loops.html#retrying-a-task-until-a-condition-is-met
-      retries: 5
-      delay: 5
+      block:
+        - name: Add required Apt repositories
+          # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/apt_repository_module.html
+          ansible.builtin.apt_repository:
+            repo: "{{ item[1] }}"
+            state: present
+          # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/subelements_filter.html
+          loop: "{{ add_apt_repositories | ansible.builtin.subelements('repos') }}"
+          loop_control:
+            label: "{{ item[0].hosts | join(',') ~'|'~ item[1] }}"
+          when: inventory_hostname in item[0].hosts
+          # task could fail due to normal Apt updates
+          # that hold lock, so retry until successful
+          retries: 3
+          delay: 5
 
+        - name: Install required Apt packages
+          # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/apt_module.html
+          ansible.builtin.apt:
+            name: "{{ item.packages }}"
+            state: present
+            update_cache: true
+            force_apt_get: true
+            install_recommends: false
+          loop: "{{ install_apt_packages }}"
+          loop_control:
+            label: "{{ item.hosts | join(',') ~'|...' }}"
+          when: inventory_hostname in item.hosts
+          retries: 3
+          delay: 5
+
+    # create virtualenv in user's home directory
     - name: Install required Pip packages
-      # create virtualenv in user's home directory
-      become: false
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/pip_module.html
       ansible.builtin.pip:
         name: "{{ install_pip_packages }}"
         state: present
         virtualenv: "{{ ansible_user_virtualenv }}"
 
+    # plugins are installed in the user's home
+    # directory under .local/share/helm/plugins
     - name: Install useful Helm plugins
-      # plugins are installed in the user's home
-      # directory under .local/share/helm/plugins
-      become: false
       # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/helm_plugin_module.html
       kubernetes.core.helm_plugin:
         plugin_name: "{{ item.name | default(omit) }}"

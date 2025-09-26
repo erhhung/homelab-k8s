@@ -15,10 +15,10 @@
         pv_list:
           # - name: vcluster-{{ vcluster.name }}-etcd-pv
           #   role: etcd # controlPlane.backingStore.etcd.deploy.statefulSet.persistence
-          #   size: "{{ vc_etcd_pv_size }}"
+          #   size: "{{ vcluster_pv_sizes['etcd'] }}"
           - name: vcluster-{{ vcluster.name }}-data-pv
             role: data # controlPlane.statefulSet.persistence
-            size: "{{ vc_data_pv_size }}"
+            size: "{{ vcluster_pv_sizes['data'] }}"
       block:
         - name: Create PV path on node data LV
           delegate_to: "{{ vcluster.node }}"
@@ -74,7 +74,7 @@
 
     - name: Install vCluster Helm chart
       vars:
-        vcluster_fqdn: "{{ vcluster.name }}.{{ vc_domain }}"
+        vcluster_fqdn: "{{ vcluster.name }}.{{ vcluster_domain }}"
         vcluster_ns: vcluster-{{ vcluster.name }}
         tls_secret: vc-tls-{{ vcluster.name }}
       block:

@@ -4,22 +4,12 @@
 # security config change would trigger
 # a rolling update of StatefulSet pods
 - name: Wait for OpenSearch to be ready
-  # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_info_module.html
-  kubernetes.core.k8s_info:
-    kubeconfig: "{{ kubeconfig }}"
-    api_version: apps/v1
-    kind: StatefulSet
-    name: "{{ opensearch_master_service }}"
-    namespace: "{{ opensearch_namespace }}"
-  # https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_loops.html#retrying-a-task-until-a-condition-is-met
-  register: deploy_info
-  until: >-
-    deploy_info.resources[0].status               is defined and
-    deploy_info.resources[0].status.readyReplicas is defined and
-    deploy_info.resources[0].status.readyReplicas ==
-    deploy_info.resources[0].status.replicas
-  retries: 30
-  delay: 10
+  vars:
+    res_kind: StatefulSet
+    res_name: "{{ opensearch_master_service }}"
+    res_ns: "{{ opensearch_namespace }}"
+  # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
+  ansible.builtin.include_tasks: tasks/k8s/waitready.yml
 
 # https://docs.opensearch.org/docs/latest/security/configuration/security-admin/
 # it is sufficient to run securityadmin.sh on a single pod
