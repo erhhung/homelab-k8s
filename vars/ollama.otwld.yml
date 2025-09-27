@@ -92,4 +92,10 @@ ollama_models:
   - gemma3:1b # 815MB
   - gemma2:2b # 1.6GB
   - llama3.2:3b # 2.0GB
+
+  # NOTE: using this or other embedding models with
+  # older llama.cpp versions may cause Ollama to log
+  # copius "cannot decode batches with this context"
+  # warnings that can be ignored:
+  # https://github.com/ollama/ollama/issues/10811
   - nomic-embed-text:v1.5 # 274MB

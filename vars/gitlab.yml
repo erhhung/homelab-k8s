@@ -488,8 +488,8 @@ gitlab_chart_values:
           args:
             - -c
             - |
-              wait4x --interval 3s --timeout 0 \
-                redis "redis://:${REDIS_PASSWORD}@${REDIS_HOST}:${REDIS_PORT}"
+              wait4x --interval 3s --timeout 0 redis \
+                "redis://:${REDIS_PASSWORD}@${REDIS_HOST}:${REDIS_PORT}"
           env:
             {% raw -%}
             - name: REDIS_HOST
@@ -670,8 +670,16 @@ gitlab_chart_values:
           args:
             - -c
             - |
-              wait4x --interval 3s --timeout 0 \
-                postgresql "postgres://${POSTGRESQL_USERNAME}:${POSTGRESQL_PASSWORD}@${POSTGRESQL_HOST}:${POSTGRESQL_PORT}/${POSTGRESQL_DATABASE}?sslmode=disable"
+              set -e
+              wait4x --interval 3s --timeout 0 postgresql \
+                "postgres://${POSTGRESQL_USERNAME}:${POSTGRESQL_PASSWORD}@${POSTGRESQL_HOST}:${POSTGRESQL_PORT}/${POSTGRESQL_DATABASE}?sslmode=disable"
+
+              # wait a bit longer before database migrations
+              wget --spider --no-check-certificate -T 3 -q \
+                {{ gitlab_service_url }} 2> /dev/null && exit
+              echo -en "\nWaiting for another 30s..."
+              sleep 30
+              echo DONE.
           env:
             - name: POSTGRESQL_HOST
               value: "{{ pgpool_service_host }}"

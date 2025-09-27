@@ -1,5 +1,6 @@
-# applies all Kubernetes manifests in the "manifests" directory
-# IMPORTANT: manifests must specify namespaces to install into
+# apply Kubernetes manifests in manifests/ directory
+# (file names must be *.yaml but not .*). IMPORTANT:
+# manifests must specify namespaces to install into
 ---
 - name: Create resources on RKE cluster
   hosts: "{{ rke_control_plane_host }}"
@@ -14,20 +15,18 @@
       vars:
         # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/fileglob_lookup.html
         # https://docs.ansible.com/ansible/latest/plugins/lookup.html#forcing-lookups-to-return-lists-query-and-wantlist-true
-        manifests: "{{ query('ansible.builtin.fileglob', 'manifests/*.y*ml') }}"
+        manifests: "{{ query('ansible.builtin.fileglob', 'manifests/*.yaml') |
+          map('ansible.builtin.basename') | select('search', '^[^.].+') }}"
       # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_module.html
       kubernetes.core.k8s:
         kubeconfig: "{{ rke_kubeconfig }}"
         # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/file_lookup.html
-        definition: "{{ lookup('ansible.builtin.file', item) }}"
+        definition: "{{ lookup('ansible.builtin.file', 'manifests/'~ item) }}"
         validate:
           fail_on_error: false
         state: present
         apply: true
         wait: true
       loop: "{{ manifests }}"
-      loop_control:
-        # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/basename_filter.html
-        label: "{{ item | ansible.builtin.basename }}"
       timeout: 300
   any_errors_fatal: true

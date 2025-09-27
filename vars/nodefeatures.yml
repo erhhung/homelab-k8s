@@ -8,19 +8,13 @@ nfd_release_name: nfd
 nfd_chart_values:
   nameOverride: "{{ nfd_release_name }}"
 
+  priorityClassName: "{{ priority_classes['critical'] }}"
+
   # https://kubernetes-sigs.github.io/node-feature-discovery/stable/get-started/introduction.html#nfd-master
   master:
     enable: true
     replicaCount: 1
     revisionHistoryLimit: 2
-
-    resources:
-      requests:
-        cpu: 10m
-        memory: 32Mi
-      limits:
-        cpu: 20m
-        memory: 64Mi
 
     # run NFD-Master on a control plane node
     affinity:
@@ -37,6 +31,14 @@ nfd_chart_values:
       - key: node-role.kubernetes.io/control-plane
         operator: Exists
         effect: NoSchedule
+
+    resources:
+      requests:
+        cpu: 10m
+        memory: 32Mi
+      limits:
+        cpu: 20m
+        memory: 64Mi
 
     startupProbe: &probe
       periodSeconds: 10

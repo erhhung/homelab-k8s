@@ -48,7 +48,7 @@ ollama_common_values:
       memory: 3Gi
       gpu.intel.com/i915: "1"
     limits:
-      cpu: 2000m
+      cpu: 4000m
       memory: 6Gi # should be enough for model
       gpu.intel.com/i915: "1"
 

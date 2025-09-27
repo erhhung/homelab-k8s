@@ -78,8 +78,18 @@ metallb_chart_values:
 # and configure BGP local and remote ASNs as
 # well as neighbor IPs for all cluster nodes
 
-# required FRR config settings
-# ----------------------------
+# helpful references:
+# https://blog.perfectra1n.com/setting-up-metallb-in-bgp-mode-with-pfsense
+# https://natarajmb.com/2025/02/kubernetes-services-over-bgp-with-metallb-and-pfsense
+
+# required pfSense settings
+# -------------------------
+# Firewall/Rules/Floating -> Add Pass rule "Allow VIP from any" on
+#                            Any interface in Any direction, using
+#                            Any IPv4 protocol, from Any source to
+#                            192.168.4.0/24 network. Set State type
+#                            (Advanced Options) to Sloppy; ✅ Quick
+#                            to apply the rule immediately on match
 # FRR/Global/Routes -> Add "ALLOW-ALL" with description "Match any
 #                      route", action "Permit", and sequence "100"
 # FRR/BGP/Neighbors -> Use "ALLOW-ALL" route map for both inbound
@@ -101,10 +111,6 @@ metallb_chart_values:
 # -------------------------
 # nc -vz 192.168.4.222 80
 # nc -vz 192.168.4.222 443
-
-# additional references:
-# https://blog.perfectra1n.com/setting-up-metallb-in-bgp-mode-with-pfsense
-# https://natarajmb.com/2025/02/kubernetes-services-over-bgp-with-metallb-and-pfsense
 
 metallb_config_crs:
   - apiVersion: metallb.io/v1beta2
