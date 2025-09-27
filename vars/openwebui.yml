@@ -28,15 +28,6 @@ openwebui_secrets:
   ingress: open-webui-ingress-tls
 
 openwebui_replicas: 1
-# use our own image with Redis Cluster support
-# (REDIS_CLUSTER_MODE="True") and UID+GID=1000
-openwebui_image:
-  pullPolicy: Always
-  repository: "{{ harbor_container_registry }}/library/open-webui"
-  tag: latest
-# openwebui_image:
-#   pullPolicy: IfNotPresent
-#   repository: ghcr.io/open-webui/open-webui
 
 openwebui_db_name: openwebui
 openwebui_db_user: openwebui
@@ -137,6 +128,9 @@ openwebui_volumes:
   # init container stores updated CA bundle
   - name: trust-store
     emptyDir: {}
+  # copy of /app/backend/open_webui/static
+  - name: web-static
+    emptyDir: {}
   - |
     {% set vols = [] %}
     {% for name, spec in openwebui_pvc_specs.items() %}
@@ -160,6 +154,10 @@ openwebui_mounts:
     mountPath: /etc/ssl/certs/ca-certificates.crt
     subPath: ca-certificates.crt
     readOnly: true
+  # static files with 1000:1000 permissions
+  - name: web-static
+    mountPath: /app/backend/open_webui/static
+    readOnly: false
   - |
     {% set mounts = [] %}
     {% for name, spec in openwebui_pvc_specs.items() %}
@@ -175,8 +173,20 @@ openwebui_extras:
   - "{{ openwebui_pvcs }}"
 
 # https://github.com/open-webui/helm-charts/tree/main/charts/open-webui
-openwebui_chart_version: "6.28.0"
+openwebui_chart_version: "8.7.0"
+# openwebui_app_version: {fact}
 openwebui_release_name: open-webui
+
+openwebui_image:
+  pullPolicy: IfNotPresent
+  repository: ghcr.io/open-webui/open-webui
+  tag: "{{ openwebui_app_version }}"
+
+  # use our own image with Redis Cluster support
+  # (REDIS_CLUSTER_MODE="True") and UID+GID=1000
+  # pullPolicy: Always
+  # repository: "{{ harbor_container_registry }}/library/open-webui"
+  # tag: latest
 
 # Pipelines is open-webui subchart:
 # https://github.com/open-webui/helm-charts/tree/main/charts/pipelines/values.yaml
@@ -206,7 +216,7 @@ openwebui_chart_values:
   # (notset/debug/info/warning/error/critical)
   logging:
     # global level
-    level: debug
+    level: info
     components:
       # Config Management
       config: ""
@@ -415,8 +425,8 @@ openwebui_chart_values:
       imagePullPolicy: IfNotPresent
       command:
         - bash
-      args:
         - -c
+      args:
         - |
           # uses connection params added
           # by PG* environment variables
@@ -460,10 +470,12 @@ openwebui_chart_values:
     - name: update-ca-bundle
       image: "{{ openwebui_image.repository }}:{{ openwebui_image.tag }}"
       imagePullPolicy: IfNotPresent
+      securityContext:
+        runAsUser: 0
       command:
         - sh
-      args:
         - -c
+      args:
         - |
           set -xe
           # copy our CA certs to standard extra certs dir
@@ -476,10 +488,6 @@ openwebui_chart_values:
           # the new ca-certificates.crt will be mounted
           # into main container to replace existing one.
           cp /etc/ssl/certs/ca-certificates.crt /ssl
-      securityContext:
-        runAsUser: 0
-        runAsGroup: 0
-        readOnlyRootFilesystem: false
       volumeMounts:
         - name: database-tls
           mountPath: /tls/ca.crt
@@ -487,6 +495,26 @@ openwebui_chart_values:
           readOnly: true
         - name: trust-store
           mountPath: /ssl
+
+    # duplicate /app/backend/open_webui/static files in
+    # emptyDir and change file permissions to 1000:1000
+    - name: fix-permissions
+      image: "{{ openwebui_image.repository }}:{{ openwebui_image.tag }}"
+      imagePullPolicy: IfNotPresent
+      securityContext:
+        runAsUser: 0
+      command:
+        - sh
+        - -c
+      args:
+        - |
+          set -ex
+          cp -a /app/backend/open_webui/static/. /static
+          chown -R 1000:1000 /static
+          ls -l /static
+      volumeMounts:
+        - name: web-static
+          mountPath: /static
 
   managedCertificate:
     # create our own ingress

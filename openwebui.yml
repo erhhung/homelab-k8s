@@ -24,7 +24,32 @@
     secret_ns: "{{ openwebui_namespace }}"
     create_ns: false
     release: "{{ openwebui_release_name }}"
+    chart_repo_url: https://helm.openwebui.com
+    chart_ref: open-webui
   pre_tasks:
+    - name: Get Open WebUI chart appVersion
+      block:
+        - name: Run `helm show chart` command
+          # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/command_module.html
+          ansible.builtin.command:
+            argv:
+              - helm
+              - show
+              - chart
+              - --repo
+              - "{{ chart_repo_url }}"
+              - "{{ chart_ref }}"
+              - --version
+              - "{{ openwebui_chart_version }}"
+          register: show_chart
+          changed_when: false
+
+        - name: Set openwebui_app_version fact
+          vars:
+            chart_info: "{{ show_chart.stdout | from_yaml }}"
+          ansible.builtin.set_fact:
+            openwebui_app_version: "{{ chart_info.appVersion }}"
+
     - name: Get the PostgreSQL image used
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
       ansible.builtin.include_tasks: tasks/postgresql/image.yml
@@ -80,8 +105,8 @@
       # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/helm_module.html
       kubernetes.core.helm:
         kubeconfig: "{{ kubeconfig }}"
-        chart_repo_url: https://helm.openwebui.com
-        chart_ref: open-webui
+        chart_repo_url: "{{ chart_repo_url }}"
+        chart_ref: "{{ chart_ref }}"
         chart_version: "{{ openwebui_chart_version }}"
         release_name: "{{ openwebui_release_name }}"
         release_namespace: "{{ openwebui_namespace }}"

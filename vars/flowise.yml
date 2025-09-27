@@ -56,10 +56,10 @@ flowise_chart_values:
 
   extraEnvVars: &env # error|info|verbose|debug
     - name: LOG_LEVEL
-      value: debug
+      value: info
     # see logs from components
     - name: DEBUG
-      value: "true"
+      value: "false"
     # used by all external components to validate TLS certificates:
     # https://nodejs.org/api/cli.html#cli_node_extra_ca_certs_file
     - name: NODE_EXTRA_CA_CERTS

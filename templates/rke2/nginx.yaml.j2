@@ -76,6 +76,8 @@ spec:
         tcp-services-configmap: kube-system/{{ nginx_tcp_configmap }}
         udp-services-configmap: kube-system/{{ nginx_udp_configmap }}
 
+      priorityClassName: {{ priority_classes['critical'] }}
+
       resources:
         requests:
           cpu: 25m
