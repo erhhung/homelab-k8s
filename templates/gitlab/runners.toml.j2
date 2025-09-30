@@ -1,0 +1,115 @@
+# this GitLab runner configuration file is included in the
+# Helm chart values at .gitlab-runner.runners.config, and
+# is subject to additional Helm templating, so be careful
+# with Jinja2 templating using the same {{ 'syntax' }}
+
+# https://docs.gitlab.com/runner/configuration/advanced-configuration#the-runners-section
+[[runners]]
+  shell = "bash"
+  environment = [
+    # required to patch generated pod spec
+    "FF_USE_ADVANCED_POD_SPEC_CONFIGURATION=true",
+
+    # pod spec patch of appArmorProfile doesn't seem to
+    # work, so try DEPRECATED annotation method as well:
+    "KUBERNETES_POD_ANNOTATIONS_1=container.apparmor.security.beta.kubernetes.io/build=localhost/buildah",
+  ]
+  # collapsed multi-line command
+  # see: files/gitlab/ciutils.sh
+  pre_build_script = '''
+    . /ci/scripts/ci-utils.sh
+    init_certs
+    sys_info
+    env_vars
+    identities
+  '''
+  # build log size limit in KiB
+  output_limit = 10240 # 10 MiB
+
+  # https://docs.gitlab.com/runner/configuration/advanced-configuration#the-runnerskubernetes-section
+  [runners.kubernetes]
+    # https://docs.gitlab.com/runner/install/kubernetes_helm_chart_configuration#run-with-non-root-user
+    # https://gitlab.com/gitlab-org/ci-cd/gitlab-runner-ubi-images/container_registry/1766433?orderBy=PUBLISHED_AT&sort=desc&search%5B%5D=v18
+    helper_image = "registry.gitlab.com/gitlab-org/ci-cd/gitlab-runner-ubi-images/gitlab-runner-helper-ocp:v18.3.0"
+
+    # https://github.com/erhhung/al2023-devops
+    image = "{{ harbor_container_registry }}/library/al2023-devops:latest"
+
+    # https://docs.gitlab.com/runner/executors/kubernetes#cpu-requests-and-limits
+    cpu_request = "1000m"
+    # https://docs.gitlab.com/runner/executors/kubernetes#memory-requests-and-limits
+    memory_request = "8Gi"
+    # https://docs.gitlab.com/runner/executors/kubernetes#storage-requests-and-limits
+    ephemeral_storage_request = "20Gi"
+
+    # enable custom pod annotations in
+    # order to assign AppArmor profile:
+    # https://docs.gitlab.com/runner/executors/kubernetes#overwrite-pod-annotations
+    pod_annotations_overwrite_allowed = ".*"
+
+    # service account with cluster admin
+    # access is defined in .extraObjects
+    service_account = "{{ gitlab_release_name }}-gitlab-build"
+    privileged = true
+
+    [runners.kubernetes.pod_security_context]
+      # adding CA cert to system trust
+      # store requires root privileges
+      run_as_user = 0 # 59417
+      fs_group    = 0 # 59417
+
+    # set AppArmor profile by patching pod spec since
+    # [*.pod_security_context] doesn't support it yet:
+    # https://gitlab.com/gitlab-org/gitlab-runner/issues/38266
+    # https://gitlab.com/gitlab-org/gitlab-runner/issues/38936
+    # NOTE: this patch doesn't work, although
+    # deprecated annotation method still does!
+    # https://docs.gitlab.com/runner/executors/kubernetes#overwrite-generated-pod-specifications
+    # (requires FF_USE_ADVANCED_POD_SPEC_CONFIGURATION=true)
+    [[runners.kubernetes.pod_spec]]
+      name = "AppArmor"
+      patch = '''
+        containers:
+          - name: build
+            securityContext:
+              appArmorProfile:
+                type: Localhost
+                localhostProfile: buildah
+      '''
+      # https://docs.gitlab.com/runner/executors/kubernetes#strategic-patch-strategy
+      patch_type = "strategic"
+
+    [[runners.kubernetes.volumes.secret]]
+      # will be merged with system CA bundle
+      name = "{{ gitlab_secrets['certs'] }}"
+      mount_path = "/tls/certs"
+      read_only = true
+
+    [[runners.kubernetes.volumes.config_map]]
+      name = "{{ gitlab_configmaps['scripts'] }}"
+      mount_path = "/ci/scripts"
+      read_only = true
+
+    # https://docs.gitlab.com/runner/executors/kubernetes#define-a-list-of-node-affinities
+    [runners.kubernetes.affinity]
+      [runners.kubernetes.affinity.node_affinity]
+        [[runners.kubernetes.affinity.node_affinity.preferred_during_scheduling_ignored_during_execution]]
+          weight = 100
+          [runners.kubernetes.affinity.node_affinity.preferred_during_scheduling_ignored_during_execution.preference]
+            [[runners.kubernetes.affinity.node_affinity.preferred_during_scheduling_ignored_during_execution.preference.match_expressions]]
+              # label defined in vars/kubernetes.yml
+              key = "node-role.kubernetes.io/runner"
+              operator = "Exists"
+
+  # https://docs.gitlab.com/runner/configuration/advanced-configuration#the-runnerscaches3-section
+  [runners.cache]
+    Type = "s3"
+    Shared = true
+    Path = "runners"
+
+    [runners.cache.s3]
+      ServerAddress = "{{ minio_service_host }}"
+      BucketName = "{{ gitlab_buckets['cache'] }}"
+      BucketLocation = "{{ minio_region }}"
+      AuthenticationType = "access-key"
+      Insecure = false

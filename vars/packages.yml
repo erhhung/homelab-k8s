@@ -28,7 +28,7 @@ install_apt_packages:
       - rsync # required by ansible.posix.synchronize
       - unzip
       - emacs-nox
-      # iptables is required by Calico networking in RKE2:
+      # iptables is required by Canal/Calico CNI in RKE2:
       # https://github.com/rancher/rke2/issues/4385#issuecomment-1738848974
       - iptables
       - nftables
@@ -36,6 +36,7 @@ install_apt_packages:
       - dnsutils # provides nslookup/dig/host
       - iputils-ping
       - netcat-openbsd
+      - parted
       - open-iscsi # required by Longhorn storage engine
       - nfs-common # required by Longhorn storage engine
       - python3-pip

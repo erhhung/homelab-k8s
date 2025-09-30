@@ -1,0 +1,68 @@
+# deal with one of the non-production-ready quirks of the Praefect
+# Helm chart: on initial install, required database migrations may
+# not run (pod logs show: praefect sql-migrate: all migrations are
+# up), resulting in metrics exporter not listening on port 9236.
+# this can be anecdotally fixed by restarting all Praefect pods.
+#
+# pass the following vars:
+#   kubeconfig <required> path to kubeconfig
+# sets the following facts:
+#   praefect_ready: true/false
+---
+- name: Wait until Praefect is ready
+  become: false
+  vars:
+    # required kubernetes>=24.2 package only in user virtualenv
+    ansible_python_interpreter: "{{ venv_python_interpreter }}"
+    res_kind: StatefulSet
+    res_name: "{{ gitlab_release_name }}-praefect"
+    res_ns: "{{ gitlab_namespace }}"
+    max_retries: 5
+  block:
+    - name: Wait until pods are ready
+      vars:
+        max_wait: 60 # seconds
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
+      ansible.builtin.include_tasks: tasks/k8s/waitready.yml
+
+    - name: Check metrics endpoint
+      vars:
+        metrics_url: http://localhost:9236/metrics
+      # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_exec_module.html
+      kubernetes.core.k8s_exec:
+        kubeconfig: "{{ kubeconfig }}"
+        namespace: "{{ res_ns }}"
+        pod: "{{ res_name }}-0"
+        container: praefect
+        command: curl -s -o /dev/null -w '%{http_code}' {{ metrics_url }}
+      register: curl_metrics
+      changed_when: false
+      failed_when: false
+
+    - name: Set praefect_ready fact
+      ansible.builtin.set_fact:
+        praefect_ready: |
+          {{ curl_metrics.rc     ==    0 and
+             curl_metrics.stdout == '200' }}
+
+    - name: Repeat readiness check
+      when: not praefect_ready
+      block:
+        - name: Increment retry_count
+          ansible.builtin.set_fact:
+            retry_count: "{{ (retry_count | default(0) | int) + 1 }}"
+
+        - name: Restart Praefect pod(s)
+          vars:
+            max_wait: 0 # don't wait
+          ansible.builtin.include_tasks: tasks/k8s/restart.yml
+          when: retry_count | int <= max_retries
+
+        - name: Repeat readiness check
+          ansible.builtin.include_tasks: tasks/gitlab/praefectready.yml # recursion
+          when: retry_count | int <= max_retries
+
+        - name: Set retry_count to zero
+          ansible.builtin.set_fact:
+            retry_count: 0
+  any_errors_fatal: true

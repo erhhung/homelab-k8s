@@ -96,3 +96,8 @@ spec:
         # prevent kube-proxy from re-spraying traffic to all
         # nodes since pfSense is already doing that via ECMP
         externalTrafficPolicy: Local
+
+    # additional TCP/UDP ports to expose
+    # on external service and Nginx pods
+    tcp: {{ nginx_tcp_services }}
+    udp: {{ nginx_udp_services }}

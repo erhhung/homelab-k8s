@@ -18,6 +18,11 @@ additional_node_labels:
     value: "true"
     nodes: "{{ groups['cluster'] }}"
 
+  # k8s6 has the most memory and ephemeral storage
+  - label: node-role.kubernetes.io/runner
+    value: "true"
+    nodes: ["k8s6"]
+
   # k8s5 is running on XCP-ng host with
   # Intel Alder Lake-P GT1 UHD Graphics
   # k8s6 is running on XCP-ng host with
@@ -82,7 +87,7 @@ nginx_udp_configmap: rke2-ingress-nginx-udp-services
 
 nginx_tcp_services:
   # https://kubernetes.github.io/ingress-nginx/user-guide/exposing-tcp-udp-services
-  10022: gitlab/gitlab-gitlab-shell:10022
+  2222: gitlab/gitlab-gitlab-shell:2222
 nginx_udp_services: {}
 
 # ensure names match those defined

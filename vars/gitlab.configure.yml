@@ -30,6 +30,14 @@ gitlab_user_prefs:
   # 0=System 1=12-hour 2=24-hour
   user[time_display_format]: 1
 
+# JSON PUT /-/users/pins
+gitlab_user_pins:
+  group: # panel
+    - harbor_registry
+  project:
+    - pipelines
+    - harbor_registry
+
 # form POST /admin/application_settings/{section}
 gitlab_app_settings:
   general:
@@ -133,6 +141,13 @@ gitlab_cicd_vars:
     protected: false
     # cannot mask variable that
     # references other variable
+    masked: false
+    raw: false
+  CI_REGISTRY_PATH:
+    description: Image {host}/{project}
+    environment_scope: "*"
+    value: $HARBOR_HOST/$HARBOR_PROJECT
+    protected: false
     masked: false
     raw: false
   CI_REGISTRY_IMAGE:
