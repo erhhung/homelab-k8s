@@ -531,9 +531,9 @@ thanos_chart_values:
     cronJob:
       enabled: false
 
-    retentionResolutionRaw: 7d
-    retentionResolution5m: 14d # raw metrics older than 40 hours
-    retentionResolution1h: 30d #  5m metrics older than 10 days
+    retentionResolutionRaw: 2d
+    retentionResolution5m: 10d # raw metrics older than 40 hours
+    retentionResolution1h: 20d #  5m metrics older than 10 days
 
     # number of goroutines to
     # use when compact groups

@@ -262,6 +262,9 @@
       loop_control:
         label: "{{ item.name }}"
 
+    - name: Wait until Praefect is ready
+      ansible.builtin.include_tasks: tasks/gitlab/praefectready.yml
+
     - name: Import Grafana dashboards
       vars:
         dashboards: "{{ gitlab_grafana_dashboards }}"
@@ -407,9 +410,25 @@
         if_changed: Scale runner to 1 replica
       ansible.builtin.include_tasks: tasks/k8s/secrets/generic.yml
       when: token is truthy
+
+    - name: Create CI scripts ConfigMap
+      # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_module.html
+      kubernetes.core.k8s:
+        kubeconfig: "{{ kubeconfig }}"
+        definition:
+          apiVersion: v1
+          kind: ConfigMap
+          metadata:
+            name: "{{ gitlab_configmaps['scripts'] }}"
+            namespace: "{{ gitlab_namespace }}"
+          data:
+            ci-utils.sh: "{{ lookup('ansible.builtin.file',
+              'files/gitlab/ciutils.sh', rstrip=false) }}"
+        validate:
+          fail_on_error: false
+        state: present
   handlers:
     - name: Scale runner to 1 replica
-      # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_module.html
       kubernetes.core.k8s:
         kubeconfig: "{{ kubeconfig }}"
         api_version: apps/v1

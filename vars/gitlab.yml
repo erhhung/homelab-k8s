@@ -31,7 +31,7 @@ gitlab_service_url: https://{{ gitlab_service_host }}:{{ gitlab_service_port }}
 
 # make sure port matches the one defined by
 # nginx_tcp_services in vars/kubernetes.yml
-gitlab_shell_port: 10022
+gitlab_shell_port: 2222
 
 gitlab_secrets:
   # license: gitlab-license
@@ -54,6 +54,9 @@ gitlab_secrets:
   # kas: gitlab-kas-secrets
   zoekt: gitlab-zoekt-secrets
   registry: gitlab-registry-secrets
+
+gitlab_configmaps:
+  scripts: gitlab-ci-scripts
 
 gitlab_db_user: gitlab
 gitlab_db_name: gitlab
@@ -124,7 +127,7 @@ gitlab_chart_values:
         name: "{{ gitlab_fqdns['gitlab'] }}"
       pages:
         name: "{{ gitlab_fqdns['pages'] }}"
-      # SSH access on port 10022
+      # SSH access on port 2222
       # (see nginx_tcp_services)
       ssh: "{{ gitlab_fqdns['gitlab'] }}"
 
@@ -575,7 +578,6 @@ gitlab_chart_values:
               readOnly: true
 
       scriptTpl: |-
-        #
         /scripts/wait-for-deps
         /scripts/db-migrate
 
@@ -673,13 +675,6 @@ gitlab_chart_values:
               set -e
               wait4x --interval 3s --timeout 0 postgresql \
                 "postgres://${POSTGRESQL_USERNAME}:${POSTGRESQL_PASSWORD}@${POSTGRESQL_HOST}:${POSTGRESQL_PORT}/${POSTGRESQL_DATABASE}?sslmode=disable"
-
-              # wait a bit longer before database migrations
-              wget --spider --no-check-certificate -T 3 -q \
-                {{ gitlab_service_url }} 2> /dev/null && exit
-              echo -en "\nWaiting for another 30s..."
-              sleep 30
-              echo DONE.
           env:
             - name: POSTGRESQL_HOST
               value: "{{ pgpool_service_host }}"
@@ -932,6 +927,8 @@ gitlab_chart_values:
   # https://docs.gitlab.com/runner/install/kubernetes_helm_chart_configuration
   gitlab-runner:
     install: true
+
+    logLevel: info # debug|info|warn|error|fatal|panic
     logFormat: text # text|json|runner
 
     # number of manager pods, not build pods
@@ -976,62 +973,15 @@ gitlab_chart_values:
       name: "{{ gitlab_runner.name }}"
       executor: kubernetes
 
-      # NOTE: the .config chart value as a string
-      # can be Helm-templated, so be careful with
-      # Jinja2-templating using same {{ }} syntax
-      config: |
-        # https://docs.gitlab.com/runner/configuration/advanced-configuration#the-runners-section
-        [[runners]]
-          shell = "bash"
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/template_lookup.html
+      config: "{{ lookup('ansible.builtin.template', template_dir ~ '/gitlab/runners.toml.j2') }}"
 
-          # https://docs.gitlab.com/runner/configuration/advanced-configuration#the-runnerskubernetes-section
-          [runners.kubernetes]
-
-            # https://docs.gitlab.com/runner/install/kubernetes_helm_chart_configuration#run-with-non-root-user
-            # https://gitlab.com/gitlab-org/ci-cd/gitlab-runner-ubi-images/container_registry/1766433?orderBy=PUBLISHED_AT&sort=desc&search%5B%5D=v18
-            helper_image = "registry.gitlab.com/gitlab-org/ci-cd/gitlab-runner-ubi-images/gitlab-runner-helper-ocp:v18.3.0"
-
-            [runners.kubernetes.pod_security_context]
-              run_as_user = 59417
-              fs_group = 59417
-
-            # https://gitlab.com/gitlab-org/gitlab-runner/issues/38936
-            [[runners.kubernetes.pod_spec]]
-              name = "security"
-              patch = '''
-                securityContext:
-                  appArmorProfile:
-                    type: Localhost
-                    localhostProfile: buildah
-              '''
-              # https://docs.gitlab.com/runner/executors/kubernetes#strategic-patch-strategy
-              patch_type = "strategic"
-
-            # https://docs.gitlab.com/runner/executors/kubernetes#cpu-requests-and-limits
-            cpu_request = "500m"
-            # https://docs.gitlab.com/runner/executors/kubernetes#memory-requests-and-limits
-            memory_request = "8Gi"
-            # https://docs.gitlab.com/runner/executors/kubernetes#storage-requests-and-limits
-            ephemeral_storage_request = "20Gi"
-
-          # https://docs.gitlab.com/runner/configuration/advanced-configuration#the-runnerscaches3-section
-          [runners.cache]
-            Type = "s3"
-            Shared = true
-            Path = "runners"
-
-            [runners.cache.s3]
-              ServerAddress = "{{ minio_service_host }}"
-              BucketName = "{{ gitlab_buckets['cache'] }}"
-              BucketLocation = "{{ minio_region }}"
-              AuthenticationType = "access-key"
-              Insecure = false
       cache:
         secretName: "{{ gitlab_secrets['storage'] }}"
     certsSecretName: "{{ gitlab_secrets['certs'] }}"
 
     volumeMounts:
-      - name: custom-certs
+      - name: custom-certs # volume name hardcoded in chart
         mountPath: /usr/local/share/ca-certificates/ca.crt
         subPath: ca.crt
         readOnly: true
@@ -1052,6 +1002,31 @@ gitlab_chart_values:
 
     # https://docs.gitlab.com/runner/commands#signals
     terminationGracePeriodSeconds: 300
+
+    extraObjects:
+      # create ServiceAccount with cluster-admin role
+      # so build pods can deploy into other namespaces
+      - apiVersion: v1
+        kind: ServiceAccount
+        metadata: &sa-metadata
+          name: "{{ gitlab_release_name }}-gitlab-build"
+          labels:
+            app: '{% raw %}{{ include "gitlab-runner.fullname" . }}{% endraw %}'
+            chart: '{% raw %}{{ include "gitlab-runner.chart" . }}{% endraw %}'
+            heritage: '{% raw %}{{ .Release.Service }}{% endraw %}'
+            release: '{% raw %}{{ .Release.Name }}{% endraw %}'
+
+      - apiVersion: rbac.authorization.k8s.io/v1
+        kind: ClusterRoleBinding
+        metadata: *sa-metadata
+        roleRef:
+          apiGroup: rbac.authorization.k8s.io
+          kind: ClusterRole
+          name: cluster-admin
+        subjects:
+          - kind: ServiceAccount
+            name: "{{ gitlab_release_name }}-gitlab-build"
+            namespace: "{{ gitlab_namespace }}"
 
 gitlab_runner:
   name: default-runner

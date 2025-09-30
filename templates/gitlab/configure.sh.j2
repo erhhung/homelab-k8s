@@ -26,6 +26,7 @@ set -eo pipefail
 #   erhhung_gpg_pub_key
 #   gitlab_user_callouts[]
 #   gitlab_user_prefs.*
+#   gitlab_user_pins.*
 #   gitlab_app_settings.*
 #   gitlab_integrations.*
 #   gitlab_cicd_vars.*
@@ -339,6 +340,35 @@ user_prefs() {
     -d '_method=patch' "${args[@]}"
 }
 
+user_pins() {
+  _func_call "$@"
+
+  local panels=()
+{% for panel, menus in gitlab_user_pins.items() %}
+  panels+=({{ panel }})
+  local {{ panel }}_json='{{ {
+    'panel':         panel,
+    'menu_item_ids': menus,
+  } | to_json(separators=[',',':']) }}'
+{% endfor %}
+
+  local panel once
+  for panel in "${panels[@]}"; do
+    [ "$once" ] && printf ','
+    once=1
+
+    local -n json="${panel}_json"
+    run curl -s -X PUT  "$GITLAB_URL/-/users/pins" \
+      -H "$(csrf_header "$GITLAB_URL/homelab")" \
+      "${JSON_ARGS[@]}" -d "$json"
+  done
+}
+
+# remember to add to ~/.ssh/config:
+# Host gitlab.fourteeners.local
+#   IdentityFile ~/.ssh/erhhung
+#   User git
+
 add_ssh_key() {
   _func_call "$@"
 
@@ -467,8 +497,13 @@ EOT
     {
       "key": "{{ var.key }}",
       "variable_type": "env_var",
+      "typename": "CiInstanceVariable",
 {%   for attr, value in var.attrs.items() %}
-      "{{ attr }}": {{ value | to_json | replace('$','\$') }},
+{%     set value = value | to_json | replace('$','\$') %}
+      "{{ attr }}": {{ value }},
+{%     if attr == 'value' and 'secret_value' not in var.attrs %}
+      "secret_value": {{ value }},
+{%     endif %}
 {%   endfor %}
       "id": $(jq '.{{ var.key }} // null' <<< "$existing")
     }
@@ -507,7 +542,7 @@ EOT
     "input": {
       "runnerType": "INSTANCE_TYPE",
       "description": "{{ gitlab_runner.name }}",
-      "tagList": {{ gitlab_runner.tags | to_json }},
+      "tagList": {{ gitlab_runner.tags | to_json(separators=[',',':']) }},
       "locked": false,
       "paused": false,
       "runUntagged": true,
@@ -553,7 +588,7 @@ echo "‖        Login: $(root_login)"
 echo "‖      Erhhung: $(user_erhhung)"
 echo "‖      ‖    Group: $(group_homelab)"
 echo "‖      ‖   Popups: $(dismiss_popups)"
-echo "‖      ‖ Settings: $(user_settings),$(user_prefs)"
+echo "‖      ‖ Settings: $(user_settings),$(user_prefs),[$(user_pins)]"
 echo "‖      ‖ Pub Keys: $(add_ssh_key),$(add_gpg_key)"
 echo "‖        Login: $(root_login)"
 echo "‖       Popups: $(dismiss_popups)"

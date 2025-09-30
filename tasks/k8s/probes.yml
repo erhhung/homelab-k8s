@@ -130,11 +130,11 @@
       ansible.builtin.pause:
         prompt: Please wait...
         seconds: "{{ retry_delay }}"
-      when: retry_count | int < max_retries
+      when: retry_count | int <= max_retries
 
     - name: Retry configuring probes
       ansible.builtin.include_tasks: tasks/k8s/probes.yml # recursion
-      when: retry_count | int < max_retries
+      when: retry_count | int <= max_retries
 
     - name: Set retry_count to zero
       ansible.builtin.set_fact:
