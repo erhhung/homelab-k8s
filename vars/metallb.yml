@@ -94,14 +94,29 @@ metallb_chart_values:
 #                      route", action "Permit", and sequence "100"
 # FRR/BGP/Neighbors -> Use "ALLOW-ALL" route map for both inbound
 #                      and outbound peer filtering
+# FRR/BGP/Neighbors -> ✅ Per-neighbor Inbound Soft Reconfiguration
 # FRR/BGP/Advanced  -> ✅ Disable requirement to apply incoming
 #                         and outgoing filter to eBGP sessions
+
+# the floating bi-directional quick-apply rule with "sloppy" state type is
+# critical in our asymmetric network topology because VIPs are in different
+# subnet to force traffic to pfSense so it can perform ECMP load balancing
+# to cluster nodes; however, return traffic is on-link (in same subnet) to
+# client, so pfSense never sees packets, and would thus reject subsequent,
+# out-of-window ACKs from client had state type been "strict". with sloppy
+# state handling, pfSense relaxes TCP validation: it doesn't bind state to
+# specific interface, doesn't require full TCP handshake, tolerates missing
+# reverse traffic
 
 # pfSense diagnostic commands
 # ---------------------------
 # vtysh -c "show running-config"
 # vtysh -c "show ip bgp"
+# vtysh -c "show ip bgp summary"
+# vtysh -c "show ip bgp neighbors 192.168.0.171 received-routes"
 # vtysh -c "show ip route 192.168.4.222"
+# vtysh -c 'conf t' -c 'router bgp 64512' -c 'address-family ipv4 unicast' \
+#       -c 'maximum-paths 1' -c 'exit-address-family' -c 'end' -c 'write memory'
 # vtysh -c "clear ip bgp * soft in"
 
 # also see `netstat` commands:
