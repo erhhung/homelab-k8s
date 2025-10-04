@@ -1,0 +1,9 @@
+# rendered to /etc/rancher/k3s/registries.yaml:
+# https://docs.k3s.io/installation/private-registry
+
+mirrors:
+  docker.io:
+    endpoint:
+      - https://index.docker.io:443/v2
+    rewrite:
+      "^bitnami/(.+)": bitnamilegacy/$1

@@ -34,11 +34,10 @@ spec:
           volumeMounts:
             - name: scripts
               mountPath: /scripts
-          command:
-            - /bin/sh
-            - -c
+          command: ["sh"]
           args:
-            - |
+            - -c
+            - |-
               cat <<'EOF' > /scripts/nft.sh
               apk add --no-cache nftables
 
@@ -154,11 +153,10 @@ spec:
           imagePullPolicy: IfNotPresent
           securityContext: &privileged
             privileged: true
-          command:
-            - /bin/sh
-            - -c
+          command: ["sh"]
           args:
-            - |
+            - -c
+            - |-
               apk add --no-cache ethtool
               ethtool -K enX0 gro off gso off tso off lro off
               ethtool -k enX0 | grep offload
@@ -180,11 +178,10 @@ spec:
               value: preraw
             - name: PRIORITY
               value: "-400"
-          command:
-            - /bin/sh
-            - -c
+          command: ["sh"]
           args:
-            - |
+            - -c
+            - |-
               . /scripts/nft.sh
               ( set -e
 
@@ -220,11 +217,10 @@ spec:
               value: 192.168.4.0/24 # MetalLB VIP destination subnet
             - name: MSS_VALUE
               value: "1200"
-          command:
-            - /bin/sh
-            - -c
+          command: ["sh"]
           args:
-            - |
+            - -c
+            - |-
               . /scripts/nft.sh
               ( set -e
 
@@ -300,11 +296,10 @@ spec:
               value: "100"
             - name: ROUTE_PREF
               value: "10000" # after local:0, before main:32766
-          command:
-            - /bin/sh
-            - -c
+          command: ["sh"]
           args:
-            - |
+            - -c
+            - |-
               . /scripts/nft.sh
               ( set -e
 
@@ -355,9 +350,8 @@ spec:
         - name: sleeping
           image: alpine:latest
           imagePullPolicy: IfNotPresent
-          command: &sleep-command
-            - /bin/sleep
-            - infinity
+          command: ["sleep"]
+          args: ["infinity"]
           resources: &resources
             requests:
               cpu: 1m
@@ -368,5 +362,6 @@ spec:
           imagePullPolicy: IfNotPresent
           securityContext: *privileged
           volumeMounts: *mount-scripts
-          command: *sleep-command
+          command: ["sleep"]
+          args: ["infinity"]
           resources: *resources

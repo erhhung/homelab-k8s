@@ -37,6 +37,7 @@
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/uri_module.html
       ansible.builtin.uri:
         url: "{{ api_base }}"
+        timeout: 2
         # if Grafana hasn't been installed, status code
         # would be -1 for CERTIFICATE_VERIFY_FAILED due
         # to Nginx returning its default cert; it would

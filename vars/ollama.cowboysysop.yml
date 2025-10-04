@@ -116,11 +116,10 @@ ollama_chart_values:
                 # use official image as client
                 image: docker.io/ollama/ollama
                 imagePullPolicy: IfNotPresent
-                command:
-                  - bash
+                command: ["bash"]
                 args:
                   - -c
-                  - |
+                  - |-
                     (apt-get update; apt-get install curl -y) &> /dev/null
                     until curl -s $OLLAMA_HOST; do
                       echo 'Waiting for Ollama...'

@@ -6,8 +6,8 @@
     - vars/kubernetes.yml
     - vars/xcp.yml
   vars:
-    # targets can be overridden on command-line:
-    # ansible-playbook shutdownvms.yml -e targets=workers
+    # targets and pre-halt delay can be overridden on the command-line:
+    # ansible-playbook shutdownvms.yml -e targets=workers -e haltdelay=30
     targets: k8s_all
     # fail fast if host already appears to be shut down
     ansible_ssh_args: -o ConnectTimeout=1s -o ConnectionAttempts=1

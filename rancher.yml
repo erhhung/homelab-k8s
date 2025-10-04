@@ -77,10 +77,20 @@
     # required kubernetes>=24.2 package only in user virtualenv
     ansible_python_interpreter: "{{ venv_python_interpreter }}"
   tasks:
+    # docker.io/bitnami/* images are no longer maintained
+    # and have been migrated to docker.io/bitnamilegacy/*
+    - name: Configure containerd registries
+      become: true
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/template_module.html
+      ansible.builtin.template:
+        src: "{{ template_dir }}/k3s/containerd/registries.yaml.j2"
+        dest: /etc/rancher/k3s/registries.yaml
+        mode: "0644"
+      register: registries_yaml
+
     # https://docs.k3s.io/installation/packaged-components
     - name: Write HelmChartConfig manifests
       become: true
-      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/template_module.html
       ansible.builtin.template:
         src: "{{ template_dir }}/{{ item.src }}"
         dest: "{{ k3s_manifests_dir }}/{{ item.dest }}"
@@ -94,7 +104,9 @@
 
     - name: Restart k3s service
       # noqa no-handler
-      when: chart_configs.results | map(attribute='changed') is any
+      when: >-
+        registries_yaml is changed or
+        chart_configs.results | map(attribute='changed') is any
       become: true
       block:
         - name: Stop k3s service
@@ -271,148 +283,32 @@
         install_cli.rc != 9
 
     - name: Import RKE cluster using API
-      ansible.builtin.shell: |
-        # restart Bash and load .bash_aliases
-        # in order to use my custom functions
-        exec /bin/bash <<'EOF'
-        set -o pipefail
-
-        TOKEN_DESC="Ansible session"
-        ADMIN_PASS="{{ rancher_admin_pass }}"
-        # .bash_aliases sources .rancher_api
-        . .bash_aliases || exit $?
-
-        if [ "$ADMIN_PASS" ]; then
-          # if .rancher_api logged in with $ADMIN_PASS instead of
-          # $BOOTSTRAP_PASS, ADMIN_PASS would have been unset, so
-          # change the default password so user won`t be prompted
-          echo >&2 "Changing default password..."
-          rancher_api post "users?action=changepassword" @- <<EOT
-        {
-          "currentPassword": "$BOOTSTRAP_PASS",
-              "newPassword":     "$ADMIN_PASS"
-        }
-        EOT
-          echo "_CHANGED_ admin password set."
-        fi
-
-        # when .rancher_api (templates/rancher/api.sh.j2)
-        # was sourced above, it would have exported both
-        # cluster and project ID env vars if registered
-        cluster="{{ rke_cluster_name }}"
-        id_var="${cluster^^}_ID"
-        cluster_id="${!id_var}"
-
-        get_state() {
-          rancher_api get clusters/$cluster_id | \
-            jq -r '.state // empty'
-        }
-        if [ ! "$cluster_id" ]; then
-          # RKE cluster not imported yet
-          # import using the Rancher API
-          echo >&2 "Importing RKE cluster..."
-          cluster_id=$(rancher_api post clusters @- <<'EOT' | jq -r '.id // empty'
-        {
-          "import":      true,
-          "type":        "cluster",
-          "name":        "{{ rke_cluster_name }}",
-          "description": "{{ rke_cluster_desc }}"
-        }
-        EOT
-          )
-          [ "$cluster_id" ] || {
-            echo >&2 "Cluster import failed!"
-            exit 1
-          }
-          echo "_CHANGED_ cluster imported."
-          {
-          echo -n "Waiting for cluster state to be pending.."
-          until [ "$(get_state)" == pending ]; do
-            echo -n .
-            sleep 1
-          done
-          echo OK
-          }   >&2
-          export_variables
-        fi
-        # output ID for extraction
-        echo "CLUSTER=$cluster_id"
-
-        if [ "$(get_state)" != active ]; then
-          # get cluster registration manifest URL so
-          # it can be applied  on control plane node
-          echo >&2 "Getting registration manifest URL..."
-          reg_url=$(rancher_api get "clusters/$cluster_id/clusterregistrationtokens" | \
-            \
-            jq --arg baseUrl "$RANCHER_URL" -r '.data[] |
-              select(.name == "default-token") |
-                if (.manifestUrl // "") != "" then
-                  .manifestUrl
-                elif (.token // "") != "" then
-                  "\($baseUrl)/v3/import/\(.token)_\(.clusterId).yaml"
-                else empty
-                end
-              ')
-          # output registration URL for extraction
-          [ "$reg_url" ] && echo "REGISTER=$reg_url"
-        fi
-
-        # customize cluster appearance in the Rancher UI
-        echo >&2 "Applying Rancher UI customizations..."
-        rancher_api put "clusters/$cluster_id" @- <<'EOT' | \
-          jq -cM '.annotations | with_entries(select(.key | startswith("ui.rancher")))' >&2
-        {
-          "name": "{{ rke_cluster_name }}",
-          "annotations": {
-            "ui.rancher/badge-color":      "{{ ui_badge_color }}",
-            "ui.rancher/badge-icon-text":  "{{ ui_badge_icon }}",
-            "ui.rancher/badge-text":       "{{ ui_badge_text }}"
-          }
-        }
-        EOT
-
-        # perform CLI login if not already
-        config="$HOME/.rancher/cli2.json"
-        [ -f $config ] && \
-          [ "$(jq -r '.Servers[.CurrentServer].tokenKey // empty' $config)" ] || {
-
-          # request a long-lived token
-          echo >&2 "Requesting Rancher CLI token..."
-          token=$(get_token "CLI token")
-          id_var="${cluster^^}_DEFAULT_ID"
-
-          echo >&2 "Performing Rancher CLI login..."
-          rancher login "$RANCHER_URL" \
-            --skip-verify      \
-            --token   "$token" \
-            --context "${!id_var}"
-
-          echo "_CHANGED_ CLI logged in."
-        }
-        rancher_logout # delete $LOGIN_TOKEN
-        EOF
+      # noqa command-instead-of-shell
+      ansible.builtin.shell: |-
+        {{ lookup('ansible.builtin.template', template_dir ~ '/rancher/importrke.sh.j2') }}
       timeout: 600
       register: import_rke
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/search_test.html
       changed_when: import_rke.stdout is search('_CHANGED_')
+      # outputs CLUSTER and REGISTER
 
     - name: Save RKE registration URL
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/set_fact_module.html
       ansible.builtin.set_fact:
-        rke_cluster: >-
-          {% set lines = import_rke.stdout_lines | select('search','^CLUSTER=') | list -%}
+        rke_cluster: |-
+          {% set lines = import_rke.stdout_lines | select('search','^CLUSTER=') %}
           {{ lines[0].split('CLUSTER=')[1] if lines is truthy else none }}
         # used in cluster.yml
-        rke_reg_url: >-
-          {% set lines = import_rke.stdout_lines | select('search','^REGISTER=') | list -%}
+        rke_reg_url: |-
+          {% set lines = import_rke.stdout_lines | select('search','^REGISTER=') %}
           {{ lines[0].split('REGISTER=')[1] if lines is truthy else none }}
       when: import_rke.rc == 0
 
     - name: Show RKE registration URL
       vars:
-        is_defined: >-
-          rke_reg_url is defined and
-          rke_reg_url is truthy
+        is_defined: |
+          {{ rke_reg_url is defined and
+             rke_reg_url is truthy  }}
       ansible.builtin.debug:
         msg: |-
           rke_cluster: "{{ rke_cluster }}"

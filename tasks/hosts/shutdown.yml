@@ -1,6 +1,7 @@
 # pass the following vars:
-#   services [optional] list of services
-#   commands [optional] list of commands
+#   services  [optional] services to stop
+#   commands  [optional] ad-hoc commands
+#   haltdelay [optional] default=10 secs
 ---
 - name: Shut down host "{{ inventory_hostname }}"
   become: true
@@ -17,7 +18,7 @@
         - services is truthy
       failed_when: false
 
-    - name: Run commands
+    - name: Exec commands
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/command_module.html
       ansible.builtin.command: "{{ item }}"
       loop: "{{ commands }}"
@@ -26,6 +27,12 @@
         - commands is iterable
         - commands is truthy
       changed_when: true
+
+    - name: Delay shutdown
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/pause_module.html
+      ansible.builtin.pause:
+        prompt: Please wait...
+        seconds: "{{ haltdelay | default(10) }}"
 
     - name: Halt system
       # https://docs.ansible.com/ansible/latest/collections/community/general/shutdown_module.html

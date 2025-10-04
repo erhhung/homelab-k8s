@@ -148,11 +148,10 @@ keycloakx_chart_values:
     - name: bootstrap
       image: {{ postgresql_image }}
       imagePullPolicy: IfNotPresent
-      command:
-        - bash
+      command: ["bash"]
       args:
         - -c
-        - |
+        - |-
           set -eo pipefail
 
           # uses connection params added
@@ -316,7 +315,7 @@ keycloakx_chart_values:
 # https://grafana.com/grafana/dashboards/?search=Keycloak&dataSource=prometheus
 keycloak_grafana_dashboards:
   # https://grafana.com/grafana/dashboards/19659-keycloak-metrics-dashboard
-  - title: Keycloak Metrics Dashboard
+  - title: Keycloak Dashboard
     gnet_id: 19659
     tags:
       - keycloak

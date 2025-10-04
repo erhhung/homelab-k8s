@@ -423,11 +423,10 @@ openwebui_chart_values:
     - name: create-database
       image: "{{ postgresql_image }}"
       imagePullPolicy: IfNotPresent
-      command:
-        - bash
-        - -c
+      command: ["bash"]
       args:
-        - |
+        - -c
+        - |-
           # uses connection params added
           # by PG* environment variables
           db_found=$(psql -d postgres -tAc "
@@ -472,11 +471,10 @@ openwebui_chart_values:
       imagePullPolicy: IfNotPresent
       securityContext:
         runAsUser: 0
-      command:
-        - sh
-        - -c
+      command: ["sh"]
       args:
-        - |
+        - -c
+        - |-
           set -xe
           # copy our CA certs to standard extra certs dir
           cp /tls/ca.crt /usr/local/share/ca-certificates
@@ -503,11 +501,10 @@ openwebui_chart_values:
       imagePullPolicy: IfNotPresent
       securityContext:
         runAsUser: 0
-      command:
-        - sh
-        - -c
+      command: ["sh"]
       args:
-        - |
+        - -c
+        - |-
           set -ex
           cp -a /app/backend/open_webui/static/. /static
           chown -R 1000:1000 /static
