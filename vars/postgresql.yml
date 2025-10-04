@@ -27,7 +27,7 @@ postgresql_host_names: # 192.168.4.224
 # https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_filters.html#products
 postgresql_fqdns: "{{ postgresql_host_names | product(search_domains) | map('join','.') }}"
 
-pgpool_service_host: postgresql-pgpool.{{ postgresql_namespace }}.svc.{{ cluster_domain }}
+pgpool_service_host: "{{ postgresql_release_name }}-pgpool.{{ postgresql_namespace }}.svc.{{ cluster_domain }}"
 pgpool_service_port: 5432
 pgpool_service_url: postgresql://{{ pgpool_service_host }}:{{ pgpool_service_port }}
 
@@ -211,6 +211,86 @@ postgresql_chart_values:
         {%   set _ = pwds.append(pgpool_pass) -%}
         {% endfor -%}
         {{ pwds | join(';') }}
+
+    initContainers:
+      # make sure PgPool doesn't probe PostgreSQL nodes too
+      # early, which can cause failures like "Startup probe
+      # failed: Found inconsistencies in pgpool_status" but
+      # cluster nodes may still require StatefulSet rollout
+      # restart after underlying VMs started simultaneously
+      - name: wait-postgresql
+        image: '{% raw %}{{ include "postgresql-ha.postgresql.image" . }}{% endraw %}'
+        imagePullPolicy: IfNotPresent
+        command: ["bash"]
+        args:
+          - -c
+          - |-
+            set -eo pipefail
+
+            # wait for DNS + connections
+            hosts=(${BACKEND_HOSTS//,/ })
+
+            for host in "${hosts[@]}"; do
+              echo   "Waiting for $host to accept connections..."
+              until  getent hosts $host &> /dev/null; do sleep 1; done
+              until pg_isready -h $host &> /dev/null; do sleep 1; done
+              echo  OK
+            done
+
+            # wait for stable topology:
+            # 1 primary + n-1 replicas
+            tries=0
+
+            while true; do
+              echo "Waiting for a stable role topology..."
+               primary=0
+              replicas=0
+
+              for host in "${hosts[@]}"; do
+                role=$(psql -h $host -tAc "SELECT CASE WHEN pg_is_in_recovery() THEN 'r' ELSE 'p' END")
+                case "$role" in
+                  p)  ((primary++)) || true ;;
+                  r) ((replicas++)) || true ;;
+                esac
+              done
+
+              if [ $primary  -eq 1 ] && \
+            {%- raw %}
+                 [ $replicas -eq $(( ${#hosts[@]} - 1 )) ]; then
+            {% endraw %}
+                echo "Topology stable: 1 primary, $replicas replicas"
+                break
+              fi
+
+              ((tries++))  || true
+              if [ $tries -gt 60 ]; then
+                echo >&2 "Timed out waiting for stable topology."
+                exit 1
+              fi
+              sleep 2
+            done
+        env:
+          - name: BACKEND_HOSTS
+            # use full FQDNs of the StatefulSet
+            # pods backing the headless service
+            value: |-
+              {% set hosts = [] -%}
+              {% for i in range(postgresql_chart_values.postgresql.replicaCount) -%}
+              {%   set _ = hosts.append(postgresql_release_name ~ '-postgresql-' ~i~'.' ~
+                                        postgresql_release_name ~ '-postgresql-headless.' ~
+                                        postgresql_namespace    ~ '.svc.' ~ cluster_domain) -%}
+              {% endfor -%}
+              {{ hosts  | join(',') }}
+          - name: PGUSER
+            # NOTE: pgoolSrCheckUsername is misspelled in the Helm chart _helpers.tpl!
+            value: '{% raw %}{{ include "postgresql-ha.pgoolSrCheckUsername" . }}{% endraw %}'
+          - name: PGPASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: '{% raw %}{{ include "postgresql-ha.pgpoolSecretName" . }}{% endraw %}'
+                key: sr-check-password
+          - name: PGDATABASE
+            value: '{% raw %}{{ .Values.pgpool.srCheckDatabase }}{% endraw %}'
 
     sidecars:
       # https://github.com/pgpool/pgpool2_exporter
