@@ -486,11 +486,10 @@ gitlab_chart_values:
         - name: wait-redis
           image: wait4x/wait4x
           imagePullPolicy: IfNotPresent
-          command:
-            - sh
+          command: ["sh"]
           args:
             - -c
-            - |
+            - |-
               wait4x --interval 3s --timeout 0 redis \
                 "redis://:${REDIS_PASSWORD}@${REDIS_HOST}:${REDIS_PORT}"
           env:
@@ -511,11 +510,10 @@ gitlab_chart_values:
         - name: databases
           image: {{ postgresql_image }}
           imagePullPolicy: IfNotPresent
-          command:
-            - bash
+          command: ["bash"]
           args:
             - -c
-            - |
+            - |-
               # uses connection params added
               # by PG* environment variables
 
@@ -667,11 +665,10 @@ gitlab_chart_values:
         - name: wait-postgresql
           image: wait4x/wait4x
           imagePullPolicy: IfNotPresent
-          command:
-            - sh
+          command: ["sh"]
           args:
             - -c
-            - |
+            - |-
               set -e
               wait4x --interval 3s --timeout 0 postgresql \
                 "postgres://${POSTGRESQL_USERNAME}:${POSTGRESQL_PASSWORD}@${POSTGRESQL_HOST}:${POSTGRESQL_PORT}/${POSTGRESQL_DATABASE}?sslmode=disable"
@@ -955,6 +952,20 @@ gitlab_chart_values:
       runAsUser: 999
       fsGroup: 999
 
+    readinessProbe: &runner-probe
+      initialDelaySeconds: 30
+      periodSeconds: 60
+      timeoutSeconds: 5
+      successThreshold: 1
+      failureThreshold: 3
+    livenessProbe: *runner-probe
+
+    volumeMounts:
+      - name: custom-certs # volume name hardcoded in chart
+        mountPath: /usr/local/share/ca-certificates/ca.crt
+        subPath: ca.crt
+        readOnly: true
+
     # https://docs.gitlab.com/runner/configuration/advanced-configuration#the-global-section
     # max concurrent jobs,
     # each run in own pod
@@ -979,16 +990,6 @@ gitlab_chart_values:
       cache:
         secretName: "{{ gitlab_secrets['storage'] }}"
     certsSecretName: "{{ gitlab_secrets['certs'] }}"
-
-    volumeMounts:
-      - name: custom-certs # volume name hardcoded in chart
-        mountPath: /usr/local/share/ca-certificates/ca.crt
-        subPath: ca.crt
-        readOnly: true
-
-    # omit prometheus annotations
-    # in the default chart values
-    podAnnotations: {}
 
     service: # port 9252
       # for ServiceMonitor

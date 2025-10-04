@@ -199,6 +199,16 @@
             mode: "0644"
           register: cri_base_json
 
+    # docker.io/bitnami/* images are no longer maintained
+    # and have been migrated to docker.io/bitnamilegacy/*
+    - name: Configure containerd registries
+      become: true
+      ansible.builtin.template:
+        src: "{{ template_dir }}/rke2/containerd/registries.yaml.j2"
+        dest: /etc/rancher/rke2/registries.yaml
+        mode: "0644"
+      register: registries_yaml
+
     # increase kube-proxy livenessProbe failureThreshold
     # since it's causing frequent unhealthy pod restarts.
     # turns out not necessary as it's a Linux kernel bug:
@@ -324,6 +334,7 @@
       when: >-
         containerd_toml is changed  or
         cri_base_json   is changed  or
+        registries_yaml is changed  or
         kube_proxy_cr   is defined and
         kube_proxy_cr   is changed  or
         chart_configs   is defined and

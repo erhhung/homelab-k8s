@@ -274,10 +274,10 @@ opensearch_chart_values:
     # https://docs.opensearch.org/docs/latest/security/configuration/generate-certificates/#optional-generate-node-and-client-certificates
     - name: chmod-tls
       image: busybox
-      command:
-        - /bin/sh
+      command: ["sh"]
+      args:
         - -c
-        - |
+        - |-
           mkdir /extras/tls
           cd    /extras/tls
           for dir in node admin; do

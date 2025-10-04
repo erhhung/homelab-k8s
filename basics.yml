@@ -53,9 +53,24 @@
         locale_language != system_locale_linux
       changed_when: true
 
+    - name: Disable Linux memory swap space
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/shell_module.html
+      ansible.builtin.shell: |
+        [ -f /swap.img ] || exit 9 # no change
+
+        swapoff -a
+        rm -f /swap.img
+        sed -Ei '/\s+swap\s+/ s/^[^#]/# /' /etc/fstab
+      args:
+        executable: /bin/bash
+      register: disable_swap
+      changed_when: disable_swap.rc == 0
+      failed_when: >-
+        disable_swap.rc != 0 and
+        disable_swap.rc != 9
+
     # https://errantminds.net/servers-it/optimising-xcp-ng-performance-on-older-servers-domu-clock-source
     - name: Change VM clock source to "tsc"
-      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/shell_module.html
       ansible.builtin.shell: |
         GRUB=/etc/default/grub
         PARAMS=(clocksource=tsc tsc=reliable)

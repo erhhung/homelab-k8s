@@ -80,14 +80,15 @@
     - name: Parse snapshots JSON
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/set_fact_module.html
       # https://runebook.dev/en/articles/jinja/templates/index/jinja-filters.selectattr
+      # https://runebook.dev/en/articles/jinja/templates/index/jinja-filters.sort
       ansible.builtin.set_fact:
         # Ansible sort is stable,
         # so sort by date first
         snapshots: >
-          {{ jq_output.stdout | from_json  |
+          {{ jq_output.stdout |  from_json |
              selectattr('date', 'defined') |
              selectattr('host', 'defined') |
-             sort(attribute='date', reverse=True) |
+             sort(attribute='date', reverse=true) |
              sort(attribute='host') }}
       when: jq_output.stdout is defined
 
