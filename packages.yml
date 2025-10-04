@@ -88,6 +88,35 @@
           retries: 3
           delay: 5
 
+        - name: Clean downloaded Apt packages
+          ansible.builtin.apt:
+            autoremove: true
+            clean: true
+            purge: true
+          retries: 3
+          delay: 5
+
+        - name: Configure installed packages
+          ansible.builtin.shell: |
+            rc=9
+
+            bin=/usr/sbin/iotop-py
+            perm=$(stat -c %A $bin)
+            [[ "$perm" == *s* ]] || {
+              # set setuid bit so iotop
+              # can be run without sudo
+              chmod u+s $bin
+              rc=0
+            }
+            exit $rc
+          args:
+            executable: /bin/bash
+          register: config_pkgs
+          changed_when: config_pkgs.rc == 0
+          failed_when: >-
+            config_pkgs.rc != 0 and
+            config_pkgs.rc != 9
+
     # create virtualenv in user's home directory
     - name: Install required Pip packages
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/pip_module.html

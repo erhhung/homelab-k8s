@@ -24,19 +24,20 @@ install_apt_packages:
       - less
       - tree
       - htop
-      - lsof # used by custom Bash function "listening"
+      - iotop
+      - lsof # used by custom Bash function `listening`
       - rsync # required by ansible.posix.synchronize
       - unzip
-      - emacs-nox
+      - emacs-nox # yours truly's editor by muscle memory
       # iptables is required by Canal/Calico CNI in RKE2:
       # https://github.com/rancher/rke2/issues/4385#issuecomment-1738848974
       - iptables
-      - nftables
-      - ipset
+      #- nftables
+      #- ipset
       - dnsutils # provides nslookup/dig/host
       - iputils-ping
       - netcat-openbsd
-      - parted
+      - parted # used manually to expand local storage
       - open-iscsi # required by Longhorn storage engine
       - nfs-common # required by Longhorn storage engine
       - python3-pip
@@ -46,13 +47,14 @@ install_apt_packages:
       - jo
       - git # required by kubernetes.core.helm_plugin
       - helm # requires /etc/apt/sources.list.d/helm.sources
+      - skopeo # used to copy container images into Harbor
     hosts: "{{ groups['k8s_all'] }}"
 
   - packages:
       # useful tools to debug MetalLB routing issues
       - tcpdump
       - tshark
-      - conntrack
+      #- conntrack
     hosts: "{{ groups['cluster'] }}"
 
   # PPA packages below offer support for Intel client GPUs:
