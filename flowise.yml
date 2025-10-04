@@ -19,8 +19,46 @@
     create_ns: false
     release: "{{ flowise_release_name }}"
   pre_tasks:
+    - name: Get Flowise image tag
+      when: flowise_image.registry == harbor_container_registry
+      block:
+        - name: Clear tag_found fact
+          ansible.builtin.set_fact:
+            tag_found: ""
+
+        - name: Get Flowise image tag
+          vars:
+            repository: "{{ item }}"
+            # if flowise image tag is found, find flowise-worker using the same tag
+            verify_tag: "{{ tag_found if tag_found is truthy else flowise_image.tag | default('') }}"
+          # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
+          ansible.builtin.include_tasks: tasks/harbor/gettag.yml
+          loop:
+            - "{{ flowise_image.repository }}"
+            - "{{ flowise_image.repository }}-worker"
+          loop_control:
+            label: "{{ item | basename }}"
+          # sets repo_tag_found fact
+
+        - name: Show which image to deploy
+          vars:
+            image: "{{ flowise_image.registry }}/{{ flowise_image.repository }}"
+          # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/assert_module.html
+          ansible.builtin.assert:
+            that: repo_tag_found is truthy
+            success_msg: >-
+              Using image: {{ image }}:{{ repo_tag_found }}
+            fail_msg: >-
+              Image not found: {{ image -}}
+              {% if flowise_image.tag is defined -%}
+                :{{ flowise_image.tag }}
+              {% endif %}
+
+        - name: Set flowise_image_tag fact
+          ansible.builtin.set_fact:
+            flowise_image_tag: "{{ repo_tag_found }}"
+
     - name: Get the PostgreSQL image used
-      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
       ansible.builtin.include_tasks: tasks/postgresql/image.yml
       when: postgresql_image is not defined
   tasks:
@@ -66,11 +104,7 @@
       # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/helm_module.html
       kubernetes.core.helm:
         kubeconfig: "{{ kubeconfig }}"
-        # chart_repo_url: https://cowboysysop.github.io/charts
-        # use modified chart in our forked repo on branch "flowise-redis-tls"
-        # with support for TLS in wait-redis init containers as well as extra
-        # init containers (requires helm-git plugin)
-        chart_repo_url: git+https://github.com/erhhung/cowboysysop-charts@charts/flowise?ref=flowise-redis-tls
+        chart_repo_url: "{{ flowise_chart_repo_url }}"
         chart_ref: flowise
         chart_version: "{{ flowise_chart_version }}"
         release_name: "{{ flowise_release_name }}"
@@ -118,7 +152,7 @@
         method: POST
         url: "{{ api_base }}/auth/login"
         body_format: json
-        body:
+        body: &auth-body
           email: "{{ flowise_admin_user.email }}"
           password: "{{ flowise_admin_user.password }}"
         # if user doesn't exist, response will
@@ -137,8 +171,8 @@
             body:
               user:
                 type: pro
-                name: "{{ flowise_admin_user.name }}"
-                email: "{{ flowise_admin_user.email }}"
+                name: "{{       flowise_admin_user.name     }}"
+                email: "{{      flowise_admin_user.email    }}"
                 credential: "{{ flowise_admin_user.password }}"
             # unlike other "create" APIs, this
             # one actually returns correct 201
@@ -153,15 +187,12 @@
             method: POST
             url: "{{ api_base }}/auth/login"
             body_format: json
-            body:
-              email: "{{ flowise_admin_user.email }}"
-              password: "{{ flowise_admin_user.password }}"
+            body: *auth-body
           register: admin_reauth
 
     - name: Set admin auth_headers fact
       vars:
-        user: |
-          {{ admin_auth.json if admin_auth.json is defined else admin_reauth.json }}
+        user: "{{ admin_reauth.json if admin_reauth.json is defined else admin_auth.json }}"
         # uri result: .cookies is dictionary
         # and .cookies_string is ;-delimited
         # name=value pairs

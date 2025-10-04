@@ -5,7 +5,7 @@
   tags: install
   hosts: "{{ k3s_control_plane_host }}"
   gather_facts: false
-  vars_files: &vars_files
+  vars_files:
     - vars/kubernetes.yml
     - vars/storage.yml
     - vars/harbor.yml
@@ -127,13 +127,15 @@
   tags: configure
   hosts: "{{ k3s_control_plane_host }}"
   gather_facts: false
-  vars_files: *vars_files
+  vars_files:
+    - vars/kubernetes.yml
+    - vars/harbor.yml
   vars:
     # https://harbor.fourteeners.local/devcenter-api-2.0
     api_base: "{{ harbor_url }}/api/v2.0"
-    api_auth: admin:'{{ harbor_admin_pass }}'
-    uri_auth: &uri_auth
-      url_username: admin
+    api_auth: "{{ harbor_admin_user }}:{{ harbor_admin_pass }}"
+    uri_auth: &uri-auth
+      url_username: "{{ harbor_admin_user }}"
       url_password: "{{ harbor_admin_pass }}"
       force_basic_auth: true
   pre_tasks:
@@ -141,7 +143,7 @@
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/uri_module.html
       ansible.builtin.uri:
         url: "{{ api_base }}/configurations"
-        <<: *uri_auth
+        <<: *uri-auth
         return_content: true
       register: system_settings
 
@@ -167,7 +169,7 @@
       ansible.builtin.uri:
         method: PUT
         url: "{{ api_base }}/configurations"
-        <<: *uri_auth
+        <<: *uri-auth
         body_format: json
         body: "{{ settings }}"
       when: settings is truthy
@@ -181,7 +183,7 @@
       ansible.builtin.uri:
         method: PUT
         url: "{{ api_base }}/projects/{{ harbor_default_project }}"
-        <<: *uri_auth
+        <<: *uri-auth
         body_format: json
         body:
           metadata:
@@ -241,4 +243,107 @@
         create_users.rc != 0 and
         create_users.rc != 9 or
         create_users.stdout is search('errors')
+  any_errors_fatal: true
+
+- name: Copy images into Harbor
+  tags: copy
+  hosts: "{{ k3s_control_plane_host }}"
+  gather_facts: false
+  vars_files:
+    - vars/kubernetes.yml
+    - vars/harbor.yml
+  vars:
+    preamble: |-
+      # restart Bash and load .bash_aliases and .bash_secrets
+      exec /bin/bash -l <<'EOT'
+      # don`t load .rancher_api
+      ADMIN_PASS=none
+      . .bash_aliases
+      set -o pipefail
+  pre_tasks:
+    - name: Determine source images
+      # noqa risky-shell-pipe
+      ansible.builtin.shell: |
+        {{ preamble }}
+
+        images=({{ harbor_copy_images | join(' ') }})
+        sources=() registries=()
+
+        for image in "${images[@]}"; do
+          artifact="library/$(basename $image)"
+          tag="$(harbor artifact view $artifact -o yaml | \
+                yq '.payload.tags[].name')"
+          [ "$tag" ] && continue
+
+          sources+=($image)
+          registry=${image%%/*}
+          [[ " ${registries[*]} " == *" $registry "* ]] || \
+            registries+=($registry)
+        done
+
+        jo -p sources=$(jo -a -- <<< ""    "${sources[@]}") \
+           registries=$(jo -a -- <<< "" "${registries[@]}")
+        EOT
+      register: copy_info
+      changed_when: false
+
+    - name: Set source image facts
+      vars:
+        info: "{{ copy_info.stdout | from_json }}"
+      ansible.builtin.set_fact:
+        source_images: "{{ info.sources }}"
+        source_registries: "{{ info.registries }}"
+  tasks:
+    - name: Log in to registries
+      ansible.builtin.shell: |
+        {{ preamble }}
+
+        registries=(
+          {{ source_registries | join(' ') }}
+          {{ harbor_container_registry     }}
+        )
+        for registry in "${registries[@]}"; do
+          user={{ user_erhhung.username }}
+          pass=
+          case "$registry" in
+            docker.io) pass={{ docker_access_token }} ;;
+              ghcr.io) pass={{ github_access_token }} ;;
+              harbor*) pass={{ harbor_admin_pass   }} ;;
+          esac
+          [ "$pass" ] || {
+            echo "No credentials provided for $registry."
+            echo "Access will be public only."
+            continue
+          }
+          echo "Logging in to $registry..."
+          skopeo login $registry -u $user -p $pass
+          rc=0
+        done
+        exit ${rc-9}
+        EOT
+      register: reg_logins
+      when: source_registries is truthy
+      changed_when: reg_logins.rc == 0
+      failed_when: >-
+        reg_logins.rc != 0 and
+        reg_logins.rc != 9
+
+    - name: Copy image into Harbor
+      vars:
+        image: "{{ item | basename }}"
+        dest: "{{ harbor_container_registry }}/library/{{ image }}"
+      ansible.builtin.shell: |
+        {{ preamble }}
+
+        # https://github.com/containers/skopeo#copying-images
+        # https://github.com/containers/skopeo/tree/main/docs/skopeo-copy.1.md
+        skopeo copy --multi-arch system --retry-times 2 \
+          docker://{{ item }} \
+          docker://{{ dest }}
+        EOT
+      loop: "{{ source_images }}"
+      loop_control:
+        label: "{{ image }}"
+      timeout: 900
+      changed_when: true
   any_errors_fatal: true
