@@ -54,14 +54,14 @@
   ansible.builtin.import_playbook: velero.yml
   tags: velero
 
+- name: Include resource manifests playbook
+  ansible.builtin.import_playbook: manifests.yml
+  tags: manifests
+
 # Harbor depends on NFS storage provisioner
 - name: Include Harbor OCI registry playbook
   ansible.builtin.import_playbook: harbor.yml
   tags: harbor
-
-- name: Include resource manifests playbook
-  ansible.builtin.import_playbook: manifests.yml
-  tags: manifests
 
 - name: Include OpenSearch cluster playbook
   ansible.builtin.import_playbook: opensearch.yml

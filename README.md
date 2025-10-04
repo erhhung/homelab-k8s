@@ -81,13 +81,13 @@ All cluster services will be provisioned with TLS certificates from Erhhung's pr
     * Install on main RKE cluster using the [`longhorn`](https://longhorn.io/docs/latest/deploy/install/install-with-helm) Helm chart
 - [X] [NFS Dynamic Provisioner](https://computingforgeeks.com/configure-nfs-as-kubernetes-persistent-volume-storage) — create persistent volumes on NFS shares
     * Install on K3s and RKE clusters using the [`nfs-subdir-external-provisioner`](https://github.com/kubernetes-sigs/nfs-subdir-external-provisioner) Helm chart
-- [X] [Harbor Container Registry](https://goharbor.io/) — private OCI container and [Helm chart](https://goharbor.io/docs/main/working-with-projects/working-with-oci/working-with-helm-oci-charts) registry
-    * Install on K3s cluster using the [`harbor`](https://github.com/goharbor/harbor-helm) Helm chart
 - [X] [MinIO Object Storage](https://github.com/minio/minio) — S3-compatible object storage with console
     * Install on main RKE cluster using the [MinIO Operator](https://min.io/docs/minio/kubernetes/upstream/operations/install-deploy-manage/deploy-operator-helm.html) and [MinIO Tenant](https://min.io/docs/minio/kubernetes/upstream/operations/install-deploy-manage/deploy-minio-tenant-helm.html) Helm charts
 - [X] [Velero Backup & Restore](https://velero.io/docs/latest/basic-install) — back up and restore persistent volumes
     * Install on main RKE cluster using the [`velero`](https://github.com/vmware-tanzu/helm-charts/tree/main/charts/velero) Helm chart
     * [X] Install [Velero Dashboard](https://github.com/otwld/velero-ui) using the [`velero-ui`](https://github.com/otwld/helm-charts/tree/main/charts/velero-ui) Helm chart
+- [X] [Harbor Container Registry](https://goharbor.io/) — private OCI container and [Helm chart](https://goharbor.io/docs/main/working-with-projects/working-with-oci/working-with-helm-oci-charts) registry
+    * Install on K3s cluster using the [`harbor`](https://github.com/goharbor/harbor-helm) Helm chart
 - [X] [OpenSearch Logging Stack](https://opensearch.org/docs/latest) — aggregate and filter logs using OpenSearch and Fluent Bit
     * Install on main RKE cluster using the [`opensearch`](https://opensearch.org/docs/latest/install-and-configure/install-opensearch/helm) and [`opensearch-dashboards`](https://opensearch.org/docs/latest/install-and-configure/install-dashboards/helm) Helm charts
     * Instal Fluent Bit using the [`fluent-operator`](https://github.com/fluent/fluent-operator) Helm chart and `FluentBit` CR
@@ -152,21 +152,20 @@ ansible-vault view   $VAULTFILE
 
 |      Infrastructure Secrets       |    User Passwords
 |:---------------------------------:|:-------------------:
-| `ansible_become_pass`             | `rancher_admin_pass`
-| `github_access_token`             | `minio_root_pass`
-| `age_secret_key`                  | `minio_admin_pass`
-| `icloud_smtp.*`                   | `velero_admin_pass`
-| `k3s_token`                       | `harbor_admin_pass`
-| `rke2_token`                      | `opensearch_admin_pass`
-| `metallb_secret`                  | `keycloak_admin_pass`
-| `step_ca_provisioner_pass`        | `thanos_admin_pass`
-| `minio_client_pass`               | `grafana_admin_pass`
-| `velero_repo_pass`                | `gitlab_root_pass`
-| `velero_passphrase`               | `gitlab_user_pass`
-| `harbor_secret`                   | `argocd_admin_pass`
-| `dashboards_os_pass`              | `openwebui_admin_pass`
-| `fluent_os_pass`                  | `flowise_admin_pass`
-| `valkey_pass`                     |
+| `sudo_pass.*`                     | `rancher_admin_pass`
+| `icloud_smtp.*`                   | `minio_root_pass`
+| `docker_access_token`             | `minio_admin_pass`
+| `github_access_token`             | `velero_admin_pass`
+| `age_secret_key`                  | `harbor_admin_pass`
+| `metallb_secret`                  | `opensearch_admin_pass`
+| `step_ca_provisioner_pass`        | `keycloak_admin_pass`
+| `minio_client_pass`               | `thanos_admin_pass`
+| `velero_repo_pass`                | `grafana_admin_pass`
+| `velero_passphrase`               | `gitlab_root_pass`
+| `harbor_secret`                   | `gitlab_user_pass`
+| `dashboards_os_pass`              | `argocd_admin_pass`
+| `fluent_os_pass`                  | `openwebui_admin_pass`
+| `valkey_pass`                     | `flowise_admin_pass`
 | `postgresql_pass`                 |
 | `keycloak_db_pass`                |
 | `monitoring_pass`                 |
@@ -297,20 +296,22 @@ however, all privileged operations using `sudo` will require the password stored
     ```
 </details>
 
-11. <details><summary>Install <strong>Harbor</strong> OCI & Helm registry</summary><br/>
-
-    ```bash
-    ./play.sh harbor
-    ```
-</details>
-
-12. <details><summary>Create resources from manifest files</summary><br/>
+11. <details><summary>Create resources from manifest files</summary><br/>
 
     **IMPORTANT**: Resource manifests must specify the namespaces they wished to be installed  
     into because the playbook simply applies each one without targeting a specific namespace
 
     ```bash
     ./play.sh manifests
+    ```
+</details>
+
+12. <details><summary>Install <strong>Harbor</strong> OCI & Helm registry</summary><br/>
+
+    12.1. Automatically populate Harbor with select images from external registries
+
+    ```bash
+    ./play.sh harbor
     ```
 </details>
 

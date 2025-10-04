@@ -10,7 +10,7 @@ harbor_host_name: harbor # alias of "rancher"
 # https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_filters.html#products
 harbor_fqdn: "{{ [harbor_host_name] | product(search_domains) | map('join','.') | first }}"
 
-harbor_url: https://{{ harbor_fqdn }}
+harbor_url: https://{{ harbor_container_registry }}
 harbor_default_project: library
 
 harbor_secrets:
@@ -136,3 +136,8 @@ harbor_settings:
   session_timeout: 480 # minutes
   # Docker/Buildah sessions
   token_expiration: 120 # minutes
+
+# copy into Harbor
+harbor_copy_images:
+  # items must include the registry name
+  - ghcr.io/erhhung/al2023-devops:latest

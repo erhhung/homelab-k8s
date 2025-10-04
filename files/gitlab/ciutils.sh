@@ -165,16 +165,23 @@ buildah_push() {
   buildah rmi      $dest
 }
 
-# <kind> <namespace> <name> <container> <image>
+# <kind> <namespace>  <resource-name> \
+#   <container-type> <container-name> <image>
+# kind: Deployment|StatefulSet|DaemonSet
+# container-type: container|initContainer
 set_k8s_image() {
-  local kind=$1 namespace=$2 name=$3 container=$4 image=$5
-  local index=$(kubectl get $kind -n $namespace $name -o json | \
-    jq --arg container $container '.spec.template.spec.containers |
-      map(.name == $container) | index(true)')
-  kubectl patch $kind -n $namespace $name --type=json -p "$(cat <<JSON
+  local kind=$1 namespace=$2 resource_name=$3
+  local container_type=$4 container_name=$5 image=$6
+  local pink='\033[1;35m' clear='\033[0m'
+  echo -e "Image: $pink$image$clear"
+
+  local index=$(kubectl get $kind -n $namespace $resource_name -o json | \
+      jq --arg type $container_type --arg name $container_name  \
+        '.spec.template.spec[$type + "s"] | map(.name == $name) | index(true)')
+  kubectl patch $kind -n $namespace $resource_name --type=json -p "$(cat <<JSON
 [{
   "op":    "replace",
-  "path":  "/spec/template/spec/containers/$index/image",
+  "path":  "/spec/template/spec/${container_type}s/$index/image",
   "value": "$image"
 }]
 JSON

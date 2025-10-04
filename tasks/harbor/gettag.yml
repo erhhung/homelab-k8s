@@ -1,0 +1,64 @@
+# get the most recent tag of a repository in
+# Harbor or verify that the given tag exists
+#
+# pass the following vars:
+#   repository <required> [project/]{repository}
+#                         default project=library
+#   verify_tag [optional] specific tag to verify
+#                          (do NOT pass `omit`)
+# sets the following facts:
+#   repo_tag_found   most recent tag, verify_tag,
+#                    or "" if tag cannot be found
+---
+- name: Gather facts about controller
+  # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
+  ansible.builtin.include_tasks: tasks/localfacts.yml
+  when: local_python_interpreter is not defined
+
+- name: Include vars/harbor.yml
+  ansible.builtin.include_vars: vars/harbor.yml
+  when: harbor_url is not defined
+
+- name: List tags in repository
+  delegate_to: localhost
+  become: false
+  vars:
+    ansible_python_interpreter: "{{ local_python_interpreter }}"
+    parts: "{{ repository.split('/') }}"
+    project: "{{   parts[0] if parts | length > 1 else harbor_default_project }}"
+    repo_name: "{{ parts[1] if parts | length > 1 else repository }}"
+  # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/uri_module.html
+  ansible.builtin.uri:
+    url: "{{ harbor_url }}/api/v2.0/projects/{{ project }}/repositories/{{ repo_name }}/artifacts"
+    url_username: "{{ harbor_admin_user }}"
+    url_password: "{{ harbor_admin_pass }}"
+    force_basic_auth: true
+    return_content: true
+  register: repo_artifacts
+  retries: 3
+  delay: 1
+
+- name: Set repo_tag_found fact
+  vars:
+    repo_tags: |
+      {% set tags = [] %}
+      {% for artifact in repo_artifacts.json %}
+      {%   if artifact.type == 'IMAGE' %}
+      {%     for tag in artifact.tags  %}
+      {%       set _ = tags.append({
+                 'tag':  tag.name,
+                 'date': tag.push_time,
+               })   %}
+      {%     endfor %}
+      {%   endif %}
+      {% endfor  %}
+      {{ tags | sort(attribute='date', reverse=true)
+              |  map(attribute='tag') }}
+    verified: "{{ verify_tag | default('') in repo_tags }}"
+  # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/set_fact_module.html
+  ansible.builtin.set_fact:
+    repo_tag_found: >-
+      {{  verify_tag  if  verified else
+         repo_tags[0] if (verify_tag is not defined or
+                          verify_tag is not truthy) and
+                          repo_tags  is     truthy  else '' }}

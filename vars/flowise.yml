@@ -24,20 +24,31 @@ flowise_secrets:
   database: flowise-database-tls
   ingress: flowise-ingress-tls
 
+flowise_db_name: flowise
+flowise_db_user: flowise
+# use {{ pgpool_pass }}
+
 # use our image with support for DATABASE_TLS
 # and client certificate environment variables
 flowise_image:
   pullPolicy: Always
   registry: "{{ harbor_container_registry }}"
   repository: library/flowise
-  tag: latest
+  # either specify a tag or, if registry is Harbor,
+  # let Ansible task query the most recently pushed
+  # tag, which is not necessarily the tag "latest"
+  # tag: a2d19a55
 # flowise_image:
 #   pullPolicy: IfNotPresent
 #   repository: flowiseai/flowise
 
-flowise_db_name: flowise
-flowise_db_user: flowise
-# use {{ pgpool_pass }}
+# use modified Helm chart in our forked repo on branch
+# flowise-redis-tls with support for TLS in wait-redis
+# init containers, and support for extraInitContainers
+# requires installation of helm-git plugin:
+# https://github.com/aslafy-z/helm-git#usage
+flowise_chart_repo_url: git+https://github.com/erhhung/cowboysysop-charts@charts/flowise?ref=flowise-redis-tls
+# flowise_chart_repo_url: https://cowboysysop.github.io/charts
 
 # https://github.com/cowboysysop/charts/tree/master/charts/flowise
 flowise_chart_version: "6.0.0"
@@ -52,7 +63,11 @@ flowise_chart_values:
     type: Recreate
   revisionHistoryLimit: 2
 
-  image: "{{ flowise_image }}"
+  image:
+    pullPolicy: "{{ flowise_image.pullPolicy | default(omit) }}"
+    registry: "{{   flowise_image.registry   | default(omit) }}"
+    repository: "{{ flowise_image.repository | default(omit) }}"
+    tag: "{{ flowise_image.tag | default(flowise_image_tag | default(omit)) }}"
 
   extraEnvVars: &env # error|info|verbose|debug
     - name: LOG_LEVEL
@@ -177,13 +192,13 @@ flowise_chart_values:
     # add our private CA cert
     # into system trust store
     - name: update-ca-bundle
-      image: "{{ flowise_image.registry }}/{{ flowise_image.repository }}:{{ flowise_image.tag }}"
+      # use the same image (template expression) as the main container
+      image: '{% raw %}{{ include "common.images.image" (dict "imageRoot" .Values.image "global" .Values.global) }}{% endraw %}'
       imagePullPolicy: IfNotPresent
-      command:
-        - sh
+      command: ["sh"]
       args:
         - -c
-        - |
+        - |-
           set -xe
           # append our CA certs to the system CA bundle.
           # the new ca-certificates.crt will be mounted
@@ -209,11 +224,10 @@ flowise_chart_values:
     - name: create-dotenv
       image: busybox
       imagePullPolicy: IfNotPresent
-      command:
-        - sh
+      command: ["sh"]
       args:
         - -c
-        - |
+        - |-
           echo "Creating .env file for Flowise..."
           cert="$(base64 -w0 < /tls/tls.crt)"
            key="$(base64 -w0 < /tls/tls.key)"
@@ -271,10 +285,10 @@ flowise_chart_values:
     revisionHistoryLimit: 2
 
     image:
-      pullPolicy: "{{ flowise_image.pullPolicy }}"
-      registry: "{{ flowise_image.registry }}"
-      repository: "{{ flowise_image.repository }}-worker"
-      tag: "{{ flowise_image.tag }}"
+      pullPolicy: "{{ flowise_chart_values.image.pullPolicy }}"
+      registry: "{{   flowise_chart_values.image.registry   }}"
+      repository: "{{ flowise_chart_values.image.repository }}-worker"
+      tag: "{{        flowise_chart_values.image.tag }}"
 
     resources:
       requests:
@@ -308,11 +322,10 @@ flowise_chart_values:
               - name: create-database
                 image: "{{ postgresql_image }}"
                 imagePullPolicy: IfNotPresent
-                command:
-                  - bash
+                command: ["bash"]
                 args:
                   - -c
-                  - |
+                  - |-
                     # uses connection params added
                     # by PG* environment variables
                     db_found=$(psql -d postgres -tAc "
