@@ -29,9 +29,15 @@ gitlab_service_host: "{{ gitlab_release_name }}-webservice-default.{{
 gitlab_service_port: 8181 # https-workhorse
 gitlab_service_url: https://{{ gitlab_service_host }}:{{ gitlab_service_port }}
 
+gitlab_shell_host: "{{ gitlab_release_name }}-gitlab-shell.{{
+  gitlab_namespace }}.svc.{{ cluster_domain }}"
 # make sure port matches the one defined by
 # nginx_tcp_services in vars/kubernetes.yml
 gitlab_shell_port: 2222
+gitlab_shell_url: ssh://git@{{ gitlab_shell_host }}:{{ gitlab_shell_port }}
+
+gitlab_http_url: https://{{ gitlab_fqdns['gitlab'] }}
+gitlab_ssh_url: ssh://git@{{ gitlab_fqdns['gitlab'] }}:{{ gitlab_shell_port }}
 
 gitlab_secrets:
   # license: gitlab-license
@@ -45,7 +51,8 @@ gitlab_secrets:
   passwords: gitlab-passwords
   host-keys: gitlab-host-keys
   # shell/gitaly/praefect
-  tokens: gitlab-auth-tokens
+  auth: gitlab-auth-tokens
+  tokens: gitlab-access-tokens
   # reviewers/workhorse/kas
   shared: gitlab-shared-secrets
   rails: gitlab-rails-secrets
@@ -105,7 +112,7 @@ gitlab_omniauth_config:
       scope: user:email
 
 # https://gitlab.com/gitlab-org/charts/gitlab
-gitlab_chart_version: "9.3.1"
+gitlab_chart_version: "9.4.1"
 gitlab_release_name: gitlab
 
 # https://gitlab.com/gitlab-org/charts/gitlab/tree/master/values.yaml
@@ -206,7 +213,7 @@ gitlab_chart_values:
         secret: "{{ gitlab_secrets['host-keys'] }}"
       # https://docs.gitlab.com/charts/charts/gitlab/gitlab-shell#authtoken
       authToken:
-        secret: "{{ gitlab_secrets['tokens'] }}"
+        secret: "{{ gitlab_secrets['auth'] }}"
         key: shell
       # https://docs.gitlab.com/charts/charts/globals#tcp-proxy-protocol
       tcp:
@@ -219,7 +226,7 @@ gitlab_chart_values:
       enabled: true
 
       authToken:
-        secret: "{{ gitlab_secrets['tokens'] }}"
+        secret: "{{ gitlab_secrets['auth'] }}"
         key: gitaly
       # https://docs.gitlab.com/charts/charts/gitlab/gitaly#running-gitaly-over-tls
       tls: &node-tls
@@ -240,7 +247,7 @@ gitlab_chart_values:
       replaceInternalGitaly: true
 
       authToken:
-        secret: "{{ gitlab_secrets['tokens'] }}"
+        secret: "{{ gitlab_secrets['auth'] }}"
         key: praefect
       # https://docs.gitlab.com/charts/charts/gitlab/praefect#running-praefect-over-tls
       tls: *node-tls
@@ -358,7 +365,7 @@ gitlab_chart_values:
       class: "{{ rke_ingress_class }}"
       annotations:
         nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
-        nginx.ingress.kubernetes.io/ssl-passthrough: "true"
+        # nginx.ingress.kubernetes.io/ssl-passthrough: "true"
         # https://kubernetes.github.io/ingress-nginx/user-guide/nginx-configuration/annotations#custom-timeouts
         nginx.ingress.kubernetes.io/proxy-read-timeout: "1800"
         nginx.ingress.kubernetes.io/proxy-send-timeout: "1800"
@@ -697,6 +704,14 @@ gitlab_chart_values:
         enabled: true # expose port 8080
       tls: *node-tls # expose port 8081
 
+      trusted_proxies:
+        # do NOT add to workhorse.trustedCIDRsFor*
+        - 127.0.0.1/32
+        - 10.42.0.0/16
+        - 192.168.0.0/16
+        # https://tailscale.com/kb/1015/100.x-addresses
+        - 100.64.0.0/10
+
       workerTimeout: 60
       extraEnv:
         GITLAB_RAILS_RACK_TIMEOUT: "60"
@@ -748,6 +763,14 @@ gitlab_chart_values:
           secretName: "{{ gitlab_secrets['node-tls'] }}"
           caSecretName: "{{ gitlab_secrets['certs'] }}"
 
+        # see webservice.trusted_proxies below
+        trustedCIDRsForXForwardedFor: &xff-cidrs
+          - 10.42.0.0/16
+          - 192.168.0.0/16
+          # https://tailscale.com/kb/1015/100.x-addresses
+          - 100.64.0.0/10
+        trustedCIDRsForPropagation: *xff-cidrs
+
         readinessProbe: *ws-readiness
         livenessProbe: *ws-liveness
 
@@ -759,9 +782,16 @@ gitlab_chart_values:
               # port will be named "https-metrics-wh" while
               # ServiceMonitor hardcodes "http-metrics-wh"
               enabled: false
+
         metrics:
           enabled: true
-          serviceMonitor: *metrics-mon-http
+          serviceMonitor:
+            <<: *metrics-mon-http
+            endpointConfig:
+              <<: *metrics-ep-http
+              relabelings:
+                - sourceLabels: ["__meta_kubernetes_pod_container_name"]
+                  targetLabel: job
 
     # https://docs.gitlab.com/charts/charts/gitlab/sidekiq
     sidekiq:
@@ -1014,8 +1044,8 @@ gitlab_chart_values:
           labels:
             app: '{% raw %}{{ include "gitlab-runner.fullname" . }}{% endraw %}'
             chart: '{% raw %}{{ include "gitlab-runner.chart" . }}{% endraw %}'
-            heritage: '{% raw %}{{ .Release.Service }}{% endraw %}'
-            release: '{% raw %}{{ .Release.Name }}{% endraw %}'
+            heritage: "{% raw %}{{ .Release.Service }}{% endraw %}"
+            release: "{% raw %}{{ .Release.Name }}{% endraw %}"
 
       - apiVersion: rbac.authorization.k8s.io/v1
         kind: ClusterRoleBinding
@@ -1036,43 +1066,157 @@ gitlab_runner:
     - buildah
   max_timeout: 7200
 
+# =================================== Pipelines Exporter ===================================
+
+pipelines_exporter_namespace: "{{ gitlab_namespace }}"
+
+pipelines_exporter_secrets:
+  auth: gcpe-auth-tokens
+
+# https://github.com/mvisonneau/helm-charts/tree/main/charts/gitlab-ci-pipelines-exporter
+pipelines_exporter_chart_version: "0.3.5"
+pipelines_exporter_release_name: gitlab-pipelines-exporter
+
+# https://github.com/mvisonneau/helm-charts/tree/main/charts/gitlab-ci-pipelines-exporter/values.yaml
+pipelines_exporter_chart_values:
+  nameOverride: "{{ pipelines_exporter_release_name }}"
+  replicas: 1
+
+  # https://github.com/mvisonneau/gitlab-ci-pipelines-exporter/tree/main/docs/configuration_syntax.md
+  config:
+    server:
+      webhook:
+        enabled: true
+
+    gitlab:
+      url: "{{ gitlab_service_url }}"
+      # chart provides no way to
+      # add our trusted CA certs
+      enable_tls_verify: false
+
+    # monitor projects via wildcard
+    wildcards:
+      - owner:
+          name: homelab
+          kind: group # group|user
+
+    # project-specific overrides defined below
+    projects: "{{ pipelines_exporter_projects }}"
+
+  redis:
+    # only if configuring exporter for HA
+    # (data is held in memory by default)
+    enabled: false
+
+  ingress:
+    # only if exposing /webhook endpoint
+    enabled: false
+
+  gitlabSecret: "{{  pipelines_exporter_secrets['auth'] }}" #  gitlabToken
+  webhookSecret: "{{ pipelines_exporter_secrets['auth'] }}" # webhookToken
+
+  serviceMonitor:
+    enabled: true
+    labels:
+      release: "{{ monitoring_release_name }}"
+    endpoints:
+      - port: http
+        scheme: http
+        interval: 30s
+
+# project-specific overrides
+pipelines_exporter_projects:
+  - name: homelab/flowise
+    pull:
+      refs:
+        branches:
+          # default is only main and master
+          regexp: "^(?:redis-cluster-tls)$"
+
+# =================================== Grafana Dashboards ===================================
+
 # https://grafana.com/grafana/dashboards/?search=GitLab&dataSource=prometheus
 gitlab_grafana_dashboards:
   # https://grafana.com/grafana/dashboards/18927-gitlab-jihu-overview
   - title: GitLab / Overview
     gnet_id: 18927
     ds_var: DS_GITLAB_OMNIBUS
+
   # https://grafana.com/grafana/dashboards/18921-gitlab-jihu-rails
   - title: GitLab / Rails
     gnet_id: 18921
     ds_var: DS__GITLAB OMNIBUS
     tags: ["gitlab"]
+    jq_patches:
+      - (.templating.list[] | select(.name == "instance") | .definition) = ""
+      - >-
+        (.templating.list[] | select(.name == "instance") | .query.query) =
+          "label_values(up{job=~\"{{ gitlab_release_name }}-webservice-default\"}, instance)"
+      - >-
+        (.panels[] | select(.title | test("Rails Boot +Time")) | .targets[0].expr) =
+          "avg(gitlab_rails_boot_time_seconds{pid=~\"puma_master\"})"
+
   # https://grafana.com/grafana/dashboards/18917-gitlab-jihu-gitaly
   - title: GitLab / Gitaly
     gnet_id: 18917
     ds_var: DS__GITLAB OMNIBUS
     tags: ["gitlab"]
+    jq_patches:
+      - >-
+        del (.templating.list[] | select(.name == "job") |
+                     .options[] | select(.text == "gitaly"))
+      - >-
+        (.templating.list[] | select(.name == "job") |
+                 .options[] | select(.text == "praefect-gitaly")) |=
+        ("{{ gitlab_release_name }}-gitaly-default" as $str |
+         .text = $str | .value = $str)
+      - >-
+        (.templating.list[] | select(.name == "job") | .query) =
+         "{{ gitlab_release_name }}-gitaly-default"
+      - >-
+        (.panels[] | select(.title == "CPU") | .targets[0].expr) =
+          "rate(process_cpu_seconds_total{instance=~\"$instance\"}[$__interval])"
+      - (.panels[] | select(.title == "Stats")       | .options.text.valueSize) = 48
+      - (.panels[] | select(.title == "Git Version") | .options.text.valueSize) = 48
+
   # https://grafana.com/grafana/dashboards/18922-gitlab-jihu-redis
   - title: GitLab / Redis
     gnet_id: 18922
     ds_var: DS__GITLAB OMNIBUS
     tags: ["gitlab"]
+    jq_patches:
+      - >-
+        (.templating.list[] | select(.name == "instance") | .query.query) =
+          "label_values(up{job=\"{{ gitlab_release_name }}-redis-metrics\"}, instance)"
+
   # https://grafana.com/grafana/dashboards/18926-gitlab-jihu-workhorse
   - title: GitLab / Workhorse
     gnet_id: 18926
     ds_var: DS__GITLAB OMNIBUS
     tags: ["gitlab"]
+
   # https://grafana.com/grafana/dashboards/18925-gitlab-jihu-sidekiq
   - title: GitLab / Sidekiq
     gnet_id: 18925
     ds_var: DS__GITLAB OMNIBUS
     tags: ["gitlab"]
+    jq_patches:
+      - (.templating.list[] | select(.name == "instance") | .definition) = ""
+      - >-
+        (.templating.list[] | select(.name == "instance") | .query.query) =
+          "label_values(up{job=~\"{{ gitlab_namespace }}/gitlab-sidekiq\"}, instance)"
+      - >-
+        (.panels[] | select(.title == "Sidekiq Rss") | .targets[0].expr) =
+          "sum by(pid) (sidekiq_mem_total_bytes{instance=~\"$instance\"})"
+
   # https://grafana.com/grafana/dashboards/21662-gitlab-runner
   - title: GitLab / Runner
     gnet_id: 21662
     tags: ["gitlab", "runner"]
+
   # https://grafana.com/grafana/dashboards/18928-gitlab-jihu-ci-pipelines
-  - title: GitLab / CI Pipelines
+  # requires: https://github.com/mvisonneau/gitlab-ci-pipelines-exporter
+  - title: GitLab / Pipelines
     gnet_id: 18928
     ds_var: DS_GITLAB_OMNIBUS
     inputs:

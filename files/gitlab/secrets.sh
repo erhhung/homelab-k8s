@@ -75,6 +75,14 @@ redis: $(random 64 $ALPHA_NUM)
 EOT
 }
 
+# used for all GitLab webhooks to internal
+# endpoints, such as CI Pipelines Exporter
+webhook_token() {
+  cat <<EOT
+webhook: $(random 64 $ALPHA_NUM)
+EOT
+}
+
 # global.shell.hostKeys.secret:
 # https://docs.gitlab.com/charts/installation/secrets#ssh-host-keys
 host_keys() {
@@ -266,6 +274,7 @@ cat <<EOF > "$OUT_FILE"
 # in one or more secret creation tasks
 gitlab_secrets_data:
   $(redis_password)
+  $(webhook_token)
 
   gitlab-host-keys:
 $(host_keys | indent 4)

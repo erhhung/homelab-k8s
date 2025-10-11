@@ -18,16 +18,21 @@
       ansible.builtin.debug:
         var: facts
 
+    - name: Dump "ansible_date_time"
+      ansible.builtin.debug:
+        var: ansible_date_time
+
     - name: Dump "ansible_version"
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/debug_module.html
       ansible.builtin.debug:
         var: ansible_version
 
+    # output is usually empty!
     - name: Dump "ansible_local"
       ansible.builtin.debug:
         var: ansible_local
 
-    # this output is very long!
+    # output can be very long!
     - name: Dump "ansible_facts"
       ansible.builtin.debug:
         var: ansible_facts
@@ -355,7 +360,7 @@
           {% for meta in get_pods.resources | map(attribute='metadata') %}
           {%   set desc = meta.namespace ~'/'~ meta.name %}
           {#   use namespace() to create a scoped object #}
-          {#   https://jinja.palletsprojects.com/en/stable/templates/#assignments #}
+          {#   https://jinja.palletsprojects.com/en/stable/templates#assignments #}
           {%   set pod = namespace(desc=desc, found=false) %}
           {%   for regex in vcluster_pods %}
           {%     if not pod.found and pod.desc | ansible.builtin.regex_search(regex) %}
@@ -450,6 +455,32 @@
           {{ params | join('&') }}
       ansible.builtin.debug:
         var: query_string
+
+    # https://docs.ansible.com/ansible/latest/collections/community/general/docsite/filter_guide_working_with_times.html
+    - name: Debug datetime/timedelta
+      block:
+        # NOTE: ansible_date_time is defined only if gather_facts is
+        # true or the ansible.builtin.setup module is run explicitly
+        - name: Gather facts about date/time
+          # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/setup_module.html
+          ansible.builtin.setup:
+            gather_subset: date_time
+          when: ansible_date_time is not defined
+
+        - name: Get days until expiration
+          vars:
+            # IMPORTANT! date must be quoted or else Ansible converts
+            # it to _AnsibleTaggedDate object, which cannot be passed
+            # to ansible.builtin.to_datetime
+            expires: "2025-11-04"
+            # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/to_datetime_filter.html
+            # https://docs.python.org/3/library/datetime.html#datetime.datetime
+            # https://docs.python.org/3/library/datetime.html#timedelta-objects
+            dt_exp: "{{ expires                | ansible.builtin.to_datetime('%Y-%m-%d') }}"
+            dt_now: "{{ ansible_date_time.date | ansible.builtin.to_datetime('%Y-%m-%d') }}"
+            days_left: "{{ (dt_exp - dt_now).days }}" # noqa jinja[invalid]
+          ansible.builtin.debug:
+            var: days_left
 
 - name: Debug various Ansible filters
   tags: filters

@@ -50,6 +50,7 @@ All cluster services will be provisioned with TLS certificates from Erhhung's pr
 | https://rule.thanos.fourteeners.local <br/> https://store.thanos.fourteeners.local <br/> https://bucket.thanos.fourteeners.local <br/> https://compact.thanos.fourteeners.local | Thanos component status UIs
 |          https://kiali.fourteeners.local | Kiali console _(Keycloak SSO)_
 |         https://gitlab.fourteeners.local | GitLab web UI
+|  ssh://git@gitlab.fourteeners.local:2222 | GitLab SSH Git access
 | https://*.pages.gitlab.fourteeners.local | GitLab Pages websites
 |         https://argocd.fourteeners.local | Argo CD console
 |         https://qdrant.fourteeners.local | Qdrant dashboard
@@ -100,13 +101,14 @@ All cluster services will be provisioned with TLS certificates from Erhhung's pr
 - [X] [Prometheus Monitoring Stack](https://github.com/prometheus-operator/kube-prometheus) — Prometheus (via Operator), Thanos sidecar, and Grafana
     * Install on main RKE cluster using the [`kube-prometheus-stack`](https://github.com/prometheus-community/helm-charts/tree/main/charts/kube-prometheus-stack) Helm chart
     * [X] Add authentication to Prometheus and Alertmanager UIs using [`oauth2-proxy`](https://github.com/oauth2-proxy/oauth2-proxy) sidecar
-    * [X] Install other [Thanos components](https://thanos.io/tip/thanos/quick-tutorial.md/#querierquery) using Bitnami's [`thanos`](https://github.com/bitnami/charts/tree/main/bitnami/thanos) Helm chart for global querying
+    * [X] Install other [Thanos components](https://thanos.io/tip/thanos/quick-tutorial.md#querierquery) using Bitnami's [`thanos`](https://github.com/bitnami/charts/tree/main/bitnami/thanos) Helm chart for global querying
     * [ ] Enable the [OTLP receiver](https://prometheus.io/docs/guides/opentelemetry) endpoint for metrics _(when needed)_
 - [X] [Istio Service Mesh](https://istio.io/latest/about/service-mesh) with [Kiali Console](https://kiali.io/) — secure, observe, trace, and route traffic between workloads
     * Install on main RKE cluster using the [`istioctl`](https://istio.io/latest/docs/ambient/install/istioctl) CLI
-    * Install Kiali using the [`kiali-operator`](https://kiali.io/docs/installation/installation-guide/install-with-helm/#install-with-operator) Helm chart and `Kiali` CR
+    * Install Kiali using the [`kiali-operator`](https://kiali.io/docs/installation/installation-guide/install-with-helm#install-with-operator) Helm chart and `Kiali` CR
 - [X] [GitLab CI/CD Platform](https://gitlab.com/rluna-gitlab/gitlab-ce) — run CI/CD pipelines for local deployments
     * Install on main RKE cluster using the [`gitlab`](https://gitlab.com/gitlab-org/charts/gitlab) Helm chart
+    * [X] Install [GitLab CI Pipelines Exporter](https://github.com/mvisonneau/gitlab-ci-pipelines-exporter) using the [`gitlab-ci-pipelines-exporter`](https://github.com/mvisonneau/helm-charts/tree/main/charts/gitlab-ci-pipelines-exporter) Helm chart
 - [X] [Argo CD Declarative GitOps](https://argo-cd.readthedocs.io/) — manage deployment of personal projects
     * Install on main RKE cluster using the [`argo-cd`](https://github.com/argoproj/argo-helm/tree/main/charts/argo-cd) Helm chart
 - [ ] [Meshery Visual GitOps Platform](https://meshery.io/) — manage infrastructure visually and collaboratively
@@ -116,7 +118,7 @@ All cluster services will be provisioned with TLS certificates from Erhhung's pr
 - [X] [Kubernetes Metacontroller](https://metacontroller.github.io/metacontroller) — enable easy creation of custom controllers
     * Install on main RKE cluster using the [`metacontroller`](https://metacontroller.github.io/metacontroller/guide/helm-install.html) Helm chart
 - [X] [Ollama LLM Server](https://github.com/ollama/ollama) with [Ollama CLI](https://github.com/masgari/ollama-cli) — run LLMs on Kubernetes cluster
-    * Install on an Intel GPU node using the [`ollama`](https://github.com/cowboysysop/charts/tree/master/charts/ollama) Helm chart and [IPEX-LLM Ollama portable zip](https://github.com/intel/ipex-llm/blob/main/docs/mddocs/Quickstart/ollama_portable_zip_quickstart.md)
+    * Install on an Intel GPU node using the [`ollama`](https://github.com/cowboysysop/charts/tree/master/charts/ollama) Helm chart and [IPEX-LLM Ollama portable zip](https://github.com/intel/ipex-llm/tree/main/docs/mddocs/Quickstart/ollama_portable_zip_quickstart.md)
 - [X] [Open WebUI AI Platform](https://github.com/open-webui/open-webui) — extensible AI platform with Ollama integration and local RAG support
     * Install on main RKE cluster using the [`open-webui`](https://github.com/open-webui/helm-charts/tree/main/charts/open-webui) Helm chart
     * [X] Replace the default Chroma vector DB with [Qdrant](https://github.com/qdrant/qdrant) — install using the [`qdrant`](https://github.com/qdrant/qdrant-helm) Helm chart
@@ -136,7 +138,7 @@ All cluster services will be provisioned with TLS certificates from Erhhung's pr
 
 ## Ansible Vault
 
-The Ansible Vault password is stored in macOS Keychain under item "`Home-K8s`" for account "`ansible-vault`".
+<details><summary>The Ansible Vault password is stored in macOS Keychain under item "<code>Home-K8s</code>" for account "<code>ansible-vault</code>"</summary><br/>
 
 ```bash
 export ANSIBLE_CONFIG="./ansible.cfg"
@@ -146,6 +148,7 @@ ansible-vault create $VAULTFILE
 ansible-vault edit   $VAULTFILE
 ansible-vault view   $VAULTFILE
 ```
+</details>
 
 <details>
 <summary>Some variables stored in Ansible Vault <em>(there are many more)</em></summary><br/>
@@ -241,6 +244,8 @@ however, all privileged operations using `sudo` will require the password stored
     Install **RKE2** with a single control plane node and 5 worker nodes, all permitting workloads,  
     or RKE2 in HA mode with 3 control plane nodes and 3 worker nodes, all permitting workloads  
     _(in HA mode, the cluster will be accessible using a **virtual IP** address courtesy of `kube-vip`)_
+
+    5.1. Deploy another NGINX ingress controller for SSL passthrough
 
     ```bash
     ./play.sh cluster
@@ -378,46 +383,62 @@ however, all privileged operations using `sudo` will require the password stored
     ```
 </details>
 
-20. <details><summary>Install <strong>Argo CD</strong> GitOps delivery in <em><strong>HA</strong></em> mode</summary><br/>
+20. <details><summary>Install <strong>GitLab EE</strong> CI/CD Platform to build local images</summary><br/>
 
-    20.1. Configure Argo CD components to use the **Valkey** cluster for their caching needs
+    20.1. Import Erhhung's SSH and GPG public keys, and create the `Homelab` group  
+    20.2. Configure **Harbor** and **Slack** integrations, and access GitHub using OmniAuth  
+    20.3. Configure and deploy **Kubernetes runner** for building images using `buildah`  
+    20.4. Use [`al2023-devops`](https://github.com/erhhung/al2023-devops) as the build container and load common pre-build script  
+    20.5. Deploy **CI Pipelines Exporter** to export metrics and visualize them in Grafana
+
+    ```bash
+    ./play.sh gitlab
+    ```
+</details>
+
+21. <details><summary>Install <strong>Argo CD</strong> GitOps delivery in <em><strong>HA</strong></em> mode</summary><br/>
+
+    21.1. Configure Argo CD to use **Valkey** for caching  
+    21.2. Configure **GitLab** as an allowed SCM provider
 
     ```bash
     ./play.sh argocd
     ```
 </details>
 
-21. <details><summary>Install <strong>Metacontroller</strong> to create Operators</summary><br/>
+22. <details><summary>Install <strong>Metacontroller</strong> to create Operators</summary><br/>
 
     ```bash
     ./play.sh metacontroller
     ```
 </details>
 
-22. <details><summary>Install <strong>Qdrant</strong> vector database in <em><strong>HA</strong></em> mode</summary><br/>
+23. <details><summary>Install <strong>Qdrant</strong> vector database in <em><strong>HA</strong></em> mode</summary><br/>
 
     ```bash
     ./play.sh qdrant
     ```
 </details>
 
-23. <details><summary>Install <strong>Ollama</strong> LLM server with common models<br/> &nbsp; &nbsp; Install <strong>Open WebUI</strong> AI platform with <strong>Pipelines</strong></summary><br/>
+24. <details><summary>Install <strong>Ollama</strong> LLM server with common models<br/> &nbsp; &nbsp; Install <strong>Open WebUI</strong> AI platform with <strong>Pipelines</strong></summary><br/>
 
-    23.1. Create `Accounts` knowledge base, and then `Accounts` custom model that embeds that KB  
-    23.2. **NOTE**: Populate `Accounts` KB by running `./play.sh openwebui -t knowledge` separately
+    24.1. Create `Accounts` knowledge base, and then `Accounts` custom model that embeds that KB  
+    24.2. **NOTE**: Populate `Accounts` KB by running `./play.sh openwebui -t knowledge` separately
 
     ```bash
     ./play.sh ollama openwebui
     ```
 </details>
 
-24. <details><summary>Install <strong>Flowise</strong> AI platform and integrations</summary><br/>
+25. <details><summary>Install <strong>Flowise</strong> AI platform and integrations</summary><br/>
+
+    Current deployment uses local images in Harbor registry that were built by GitLab CI.
 
     ```bash
     ./play.sh flowise
     ```
 
-25. <details><summary>Create <strong>virtual Kubernetes clusters</strong> in RKE</summary><br/>
+26. <details><summary>Create <strong>virtual Kubernetes clusters</strong> in RKE</summary><br/>
 
     ```bash
     ./play.sh vclusters

@@ -12,13 +12,18 @@
 #         - name
 #           type
 #           value
-#       tags    [optional] additional tags
+#       tags       [optional] additional tags
+#       jq_patches [optional] jq queries list
 #   (following vars are default values for all
 #   dashboards unless overridden individually)
 #   filter      [optional] default .filter
 #   ds_var      [optional] default .ds_var
 #   inputs      [optional] default .inputs
 #   tags        [optional] default .tags
+#
+# IMPORTANT: if jq_patches are provided, it's
+# imperative that each query (executed as-is)
+# return the document root
 #
 # TODO: detect revision change due to change in
 # description filter and reimport the dashboard
@@ -57,8 +62,9 @@
     # https://istio.io/latest/docs/ops/integrations/grafana#option-2-import-from-grafanacom-into-an-existing-deployment
     - name: Import Grafana dashboard
       vars:
-        api_auth: "{{ admin_user }}:'{{ admin_pass }}'"
         existing: "{{ existing_dashboards.json | map(attribute='title') }}"
+        patches: "{{ item.jq_patches | default([]) }}"
+        api_auth: "{{ admin_user }}:'{{ admin_pass }}'"
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/shell_module.html
       ansible.builtin.shell: |
         set -eo pipefail
@@ -84,6 +90,20 @@
         [ "$tags" == "[]" ] || \
             json="$(jq ".tags += $tags" <<< "$json")"
 
+        {% if patches is truthy  %}
+        {%   for expr in patches %}
+        patch_{{ loop.index }}="$(cat <<'EOT'
+        {{ expr }}
+        EOT
+        )"
+        {%   endfor %}
+        for i in $(seq {{ patches | length }}); do
+          echo "Applying patch $i/{{ patches | length }}..."
+          patch_var="patch_$i"
+          json="$(jq "${!patch_var}" <<< "$json")"
+        done
+
+        {% endif %}
         ds_var='{{ item.ds_var | default(ds_var | default('DS_PROMETHEUS')) }}'
         inputs='{{ item.inputs | default(inputs | default([])) | to_json }}'
         inputs="$(jq --argjson  inputs "$inputs" '. + $inputs' <<EOT
@@ -104,12 +124,12 @@
         echo "$json"                   > "$file-dashboard.json"
         echo "$inputs"                 > "$file-inputs.json"
 
-        echo -e "Importing $desc...\n"
+        echo "Importing $desc..."
         jq -cM <<EOT | \
           curl -X POST -fku {{ api_auth }} -m 60   \
                -H 'Content-Type: application/json' \
             --no-progress-meter "${retry_opts[@]}" \
-            {{ api_base }}/dashboards/import -d @-
+            {{ api_base }}/dashboards/import -d @- | jq
         {
           "folderUid": "",
           "overwrite": true,
