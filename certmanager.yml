@@ -1,6 +1,6 @@
-# https://cert-manager.io/docs/
-# https://cert-manager.io/docs/installation/helm/
-# https://cert-manager.io/docs/configuration/issuers/
+# https://cert-manager.io/docs
+# https://cert-manager.io/docs/installation/helm
+# https://cert-manager.io/docs/configuration/issuers
 ---
 - name: Install Certificate Manager
   tags: install
@@ -40,7 +40,7 @@
         wait: true
   any_errors_fatal: true
 
-# https://cert-manager.io/docs/reference/cmctl/#manual-installation
+# https://cert-manager.io/docs/reference/cmctl#manual-installation
 # TIP: to force a renewal: cmctl renew -n <namespace> <certificate>
 - name: Install cert-manager CLI tool
   tags: cli

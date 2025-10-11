@@ -231,6 +231,7 @@
 
     - name: Create supplemental resources
       when: inventory_hostname == rke_control_plane_host
+      become: true
       vars:
         # required kubernetes>=24.2 package only in user virtualenv
         ansible_python_interpreter: "{{ venv_python_interpreter }}"
@@ -238,7 +239,6 @@
         # not sure exactly why kube-proxy doesn't already have
         # permissions to watch Service, EndpointSlice and Node
         - name: Create kube-proxy ClusterRole
-          become: true
           ansible.builtin.copy:
             # https://docs.rke2.io/advanced#auto-deploying-manifests
             dest: "{{ rke_manifests_dir }}/kube-proxy-clusterrole.yaml"
@@ -267,31 +267,9 @@
             create_ns: false
           ansible.builtin.include_tasks: tasks/k8s/secrets/tls.pki.yml
 
-        # https://kubernetes.github.io/ingress-nginx/user-guide/exposing-tcp-udp-services
-        - name: Create Nginx TCP/UDP ConfigMap
-          # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_module.html
-          kubernetes.core.k8s:
-            kubeconfig: "{{ rke_kubeconfig }}"
-            definition:
-              apiVersion: v1
-              kind: ConfigMap
-              metadata:
-                name: "{{ item.name }}"
-                namespace: kube-system
-              data: "{{ item.data }}"
-            validate:
-              fail_on_error: false
-            state: present
-          loop:
-            - name: "{{ nginx_tcp_configmap }}"
-              data: "{{ nginx_tcp_services }}"
-            - name: "{{ nginx_udp_configmap }}"
-              data: "{{ nginx_udp_services }}"
-          loop_control:
-            label: "{{ item.name }}"
-
         # also see templates/rke2/canal.yaml.j2
         - name: Patch Canal FelixConfiguration
+          become: false
           kubernetes.core.k8s:
             kubeconfig: "{{ rke_kubeconfig }}"
             api_version: crd.projectcalico.org/v1
@@ -308,27 +286,72 @@
           notify: Restart rke2-canal DaemonSet
 
         # https://docs.rke2.io/advanced#auto-deploying-manifests
-        - name: Write HelmChartConfig manifests
-          become: true
+        - name: Write HelmChartConfig manifest
           ansible.builtin.template:
             src: "{{ template_dir }}/{{ item.src }}"
-            dest: "{{ rke_manifests_dir }}/{{ item.dest }}"
+            dest: "{{ rke_manifests_dir }}/{{ item.dst }}"
             mode: "0664"
           loop:
             - src: rke2/canal.yaml.j2
-              dest: rke2-canal-config.yaml
+              dst: rke2-canal-config.yaml
             - src: rke2/coredns.yaml.j2
-              dest: rke2-coredns-config.yaml
+              dst: rke2-coredns-config.yaml
             - src: rke2/nginx.yaml.j2
-              dest: rke2-ingress-nginx-config.yaml
+              dst: rke2-ingress-nginx-config.yaml
+            - src: rke2/nginxpt.yaml.j2
+              dst: rke2-ingress-nginx-passthrough-config.yaml
           loop_control:
-            label: "{{ item.dest }}"
-          register: chart_configs
+            label: "{{ item.dst }}"
+          register: chart_config
 
-    # this task is known to fail for reasons not yet known,
-    # and manually restarting the rke2-server service also
-    # often doesn't work, but rebooting the node does work,
-    # followed by continuing from the rancher.yml playbook
+        - name: Duplicate HelmChart manifest
+          vars:
+            patches: "{{ item.yq_patches | default([]) }}"
+          ansible.builtin.shell: |
+            src="{{ item.src }}"
+            dst="{{ item.dst }}"
+
+            cd {{ rke_manifests_dir }}
+            NAME=${dst%.*} yq '.metadata.name = env(NAME)' $src > /tmp/$dst
+
+            {% if patches is truthy  %}
+            {%   for expr in patches %}
+            patch_{{ loop.index }}="$(cat <<'EOT'
+            {{ expr }}
+            EOT
+            )"
+            {%   endfor %}
+            for i in $(seq {{ patches | length }}); do
+              echo "Applying patch $i/{{ patches | length }}..."
+              patch_var="patch_$i"
+              yq -i "${!patch_var}" /tmp/$dst
+            done
+
+            {% endif %}
+            trap 'rm -f /tmp/$dst' EXIT
+            if [ -f $dst ] && diff -q $dst /tmp/$dst &> /dev/null; then
+              exit 9 # no change
+            fi
+            cp -f /tmp/$dst $dst
+          args:
+            executable: /bin/bash
+          loop:
+            - src: rke2-ingress-nginx.yaml
+              dst: rke2-ingress-nginx-passthrough.yaml
+              yq_patches:
+                # RKE patched ingress-nginx chart to include
+                # --watch-ingress-without-class=true if this
+                # setting is "ingress-nginx" (default value)
+                - .spec.set."global.systemDefaultIngressClass" = "{{ rke_ingress_class }}"
+                - .metadata.annotations."rke2.cattle.io/inject-cluster-config" = "false"
+          loop_control:
+            label: "{{ item.src }}"
+          register: copy_chart
+          changed_when: copy_chart.rc == 0
+          failed_when: >-
+            copy_chart.rc != 0 and
+            copy_chart.rc != 9
+
     - name: Restart {{ rke2_svc }} service
       # noqa no-handler
       when: >-
@@ -337,8 +360,10 @@
         registries_yaml is changed  or
         kube_proxy_cr   is defined and
         kube_proxy_cr   is changed  or
-        chart_configs   is defined and
-        chart_configs.results | map(attribute='changed') is any
+        chart_config    is defined and
+        chart_config.results | map(attribute='changed') is any or
+        copy_chart      is defined and
+        copy_chart.results   | map(attribute='changed') is any
       become: true
       block:
         - name: Stop {{ rke2_svc }} service

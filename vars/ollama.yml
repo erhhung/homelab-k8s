@@ -91,7 +91,7 @@ ollama_common_values:
     annotations:
       nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
       nginx.ingress.kubernetes.io/backend-protocol: HTTP
-      # https://kubernetes.github.io/ingress-nginx/user-guide/nginx-configuration/annotations/#custom-timeouts
+      # https://kubernetes.github.io/ingress-nginx/user-guide/nginx-configuration/annotations#custom-timeouts
       nginx.ingress.kubernetes.io/proxy-read-timeout: 10m
 
   # create LoadBalancer service to listen on non-TLS

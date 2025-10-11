@@ -256,16 +256,16 @@ openwebui_chart_values:
 
   # https://docs.openwebui.com/getting-started/env-configuration
   commonEnvVars:
-    # https://docs.openwebui.com/getting-started/env-configuration/#important-note-on-persistentconfig-environment-variables
+    # https://docs.openwebui.com/getting-started/env-configuration#important-note-on-persistentconfig-environment-variables
     - name: ENABLE_PERSISTENT_CONFIG
       value: "False"
     # enable API /docs
-    # https://docs.openwebui.com/getting-started/api-endpoints/#swagger-documentation-links
+    # https://docs.openwebui.com/getting-started/api-endpoints#swagger-documentation-links
     - name: ENV
       value: dev
     - name: USER_AGENT
       value: Open WebUI
-    # https://docs.openwebui.com/getting-started/env-configuration/#jwt_expires_in
+    # https://docs.openwebui.com/getting-started/env-configuration#jwt_expires_in
     - name: JWT_EXPIRES_IN
       value: 8h
     # Qdrant TLS certificate validation:
@@ -281,7 +281,7 @@ openwebui_chart_values:
     # must be defined in extraEnvVars!
     - name: WEBUI_URL
       value: https://{{ openwebui_fqdns | first }}
-    # https://docs.openwebui.com/getting-started/env-configuration/#cors_allow_origin
+    # https://docs.openwebui.com/getting-started/env-configuration#cors_allow_origin
     - name: CORS_ALLOW_ORIGIN
       value: https://{{ openwebui_fqdns | first }}
     # the two websocket vars below would have been automatically added
@@ -307,7 +307,7 @@ openwebui_chart_values:
       value: "True"
     - name: QDRANT_GRPC_PORT
       value: "{{ qdrant_grpc_port | string }}"
-    # https://qdrant.tech/documentation/concepts/storage/#vector-storage
+    # https://qdrant.tech/documentation/concepts/storage#vector-storage
     - name: QDRANT_ON_DISK
       value: "True"
     # https://qdrant.tech/documentation/concepts/collections
@@ -362,7 +362,7 @@ openwebui_chart_values:
     # storage provider for uploaded files
     # if local: /app/backend/data/uploads
     provider: s3 # local/s3/gcs/azure
-    # https://docs.openwebui.com/getting-started/env-configuration/#amazon-s3-storage
+    # https://docs.openwebui.com/getting-started/env-configuration#amazon-s3-storage
     s3:
       bucket: openwebui
       keyPrefix: uploads/
@@ -526,12 +526,12 @@ openwebui_chart_values:
     annotations:
       nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
       nginx.ingress.kubernetes.io/backend-protocol: HTTP
-      # https://kubernetes.github.io/ingress-nginx/user-guide/nginx-configuration/annotations/#custom-timeouts
+      # https://kubernetes.github.io/ingress-nginx/user-guide/nginx-configuration/annotations#custom-timeouts
       nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
       nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
       # allow uploading large files and prevent 413 (Entity
       # Too Large) errors; set to "0" to disable size limit:
-      # https://kubernetes.github.io/ingress-nginx/user-guide/nginx-configuration/annotations/#custom-max-body-size
+      # https://kubernetes.github.io/ingress-nginx/user-guide/nginx-configuration/annotations#custom-max-body-size
       nginx.ingress.kubernetes.io/proxy-body-size: 10m
     host: "{{ openwebui_fqdns[0] }}"
     additionalHosts: "{{ openwebui_fqdns[1:] }}"
@@ -539,7 +539,7 @@ openwebui_chart_values:
   extraResources: "{{ openwebui_extras | flatten }}"
 
 # user Settings > General > System prompt
-# https://docs.openwebui.com/features/workspace/prompts/#prompt-variables
+# https://docs.openwebui.com/features/workspace/prompts#prompt-variables
 openwebui_system_prompt: |-
   {% raw -%}
   Today is {{CURRENT_DATE}}, and the time is {{CURRENT_TIME}}.

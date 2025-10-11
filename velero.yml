@@ -73,7 +73,7 @@
         wait: true
   any_errors_fatal: true
 
-# https://velero.io/docs/latest/basic-install/#install-the-cli
+# https://velero.io/docs/latest/basic-install#install-the-cli
 - name: Install Velero client
   tags: client
   hosts: cluster

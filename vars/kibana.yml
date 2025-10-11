@@ -35,23 +35,18 @@ dashboards_chart_values:
   config:
     # https://github.com/opensearch-project/OpenSearch-Dashboards/tree/main/config/opensearch_dashboards.yml
     opensearch_dashboards.yml: |
-      {% raw -%}
-      server:
-        name: dashboards
-        host: "{{ .Values.serverHost }}"
-      {% endraw %}
-        # NOTE: ssl is under server level, not at
-        # top level as values.yaml seem to suggest
-        ssl:
-          enabled: true
-          certificate: /tls/tls.crt
-          key: /tls/tls.key
-      opensearch:
-        ssl: &ssl_cas
-          certificateAuthorities:
-            - /tls/ca.crt
-      data_source:
-        ssl: *ssl_cas
+      server.name: dashboards
+      server.host: {% raw %}{{ .Values.serverHost }}{% endraw %}
+      # https://docs.opensearch.org/latest/install-and-configure/install-dashboards/tls
+      server.ssl.enabled: true
+      server.ssl.certificate: /tls/tls.crt
+      server.ssl.key: /tls/tls.key
+      opensearch.ssl.certificateAuthorities: ["/tls/ca.crt"]
+      data_source.ssl.certificateAuthorities: ["/tls/ca.crt"]
+      opensearch_security.session.ttl: 28800000 # 8 hours
+      opensearch_security.session.keepalive: true
+      opensearch_security.cookie.ttl: 28800000
+      opensearch_security.cookie.secure: true
 
   secretMounts:
     - name: ingress-tls
@@ -74,7 +69,8 @@ dashboards_chart_values:
     ingressClassName: "{{ rke_ingress_class }}"
     annotations:
       nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
-      nginx.ingress.kubernetes.io/ssl-passthrough: "true"
+      # nginx.ingress.kubernetes.io/ssl-passthrough: "true"
+      nginx.ingress.kubernetes.io/backend-protocol: HTTPS
     hosts:
       - host: "{{ kibana_fqdn }}"
         paths:
@@ -85,7 +81,7 @@ dashboards_chart_values:
 
   plugins:
     enabled: true
-    # https://docs.opensearch.org/docs/latest/install-and-configure/install-dashboards/plugins/#available-plugins
+    # https://docs.opensearch.org/docs/latest/install-and-configure/install-dashboards/plugins#available-plugins
     installList: []
       # - dashboards-observability
 

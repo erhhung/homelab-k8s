@@ -126,10 +126,11 @@ cols() {
   done <<< "$table"
 }
 
-# show TCP ports currently in LISTEN state
-# (add lsof to /etc/sudoers with NOPASSWD)
+# show TCP ports in LISTEN state
 listening() {
-  \sudo lsof -nP -iTCP -sTCP:LISTEN +c0 | \
+  # lsof has setuid bit set, so
+  # it runs as root without sudo
+  lsof -nP -iTCP -sTCP:LISTEN +c0 | \
     awk 'NR>1 { # skip header line
            i = split($9, p, ":");
            printf  "%u %s\n", p[i], $1

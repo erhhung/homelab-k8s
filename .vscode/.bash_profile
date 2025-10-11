@@ -11,11 +11,12 @@ alias omp &> /dev/null || {
 export ANSIBLE_CONFIG="./ansible.cfg"
 export VAULTFILE="group_vars/all/vault.yml"
 
-alias av='ansible-vault '
-alias ev='av edit $VAULTFILE'
-alias vv='av view $VAULTFILE'
-alias ap='ansible-playbook'
 alias al='ansible-lint'
+alias ap='ansible-playbook'
+alias av='ansible-vault'
+
+ev() { ansible-vault edit "${1:-$VAULTFILE}"; }
+vv() { ansible-vault view "${1:-$VAULTFILE}"; }
 
 git_root() {
   local root

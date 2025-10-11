@@ -9,17 +9,17 @@ policy:
   states:
     - name: hot
       actions: []
-        # https://docs.opensearch.org/docs/latest/im-plugin/ism/policies/#rollover
+        # https://docs.opensearch.org/docs/latest/im-plugin/ism/policies#rollover
         # rollover: # requires setting up alias
         #   max_size: {{ log_index_max_size }}
-      # https://docs.opensearch.org/docs/latest/im-plugin/ism/policies/#transitions
+      # https://docs.opensearch.org/docs/latest/im-plugin/ism/policies#transitions
       transitions:
         - state_name: delete
           conditions:
             min_index_age: {{ log_index_max_age }}
     - name: delete
       actions:
-        # https://docs.opensearch.org/docs/latest/im-plugin/ism/policies/#delete
+        # https://docs.opensearch.org/docs/latest/im-plugin/ism/policies#delete
         - delete: {}
   ism_template:
     index_patterns:

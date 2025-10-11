@@ -1,5 +1,5 @@
 ---
-# https://istio.io/latest/docs/ops/best-practices/observability/
+# https://istio.io/latest/docs/ops/best-practices/observability
 #
 apiVersion: monitoring.coreos.com/v1
 kind: PrometheusRule
@@ -46,7 +46,7 @@ spec:
     - record: workload:istio_tcp_connections_closed_total
       expr: sum without(instance, kubernetes_namespace, kubernetes_pod_name) (istio_tcp_connections_closed_total)
 ---
-# https://tetrate.io/blog/how-to-configure-prometheus-operator-scrape-metrics-from-istio-1-6/
+# https://tetrate.io/blog/how-to-configure-prometheus-operator-scrape-metrics-from-istio-1-6
 #
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
@@ -112,7 +112,7 @@ spec:
 
       # https://training.promlabs.com/training/relabeling/introduction-to-relabeling/hidden-labels-and-metadata
       relabelings:
-        # https://prometheus.io/docs/prometheus/latest/configuration/configuration/#kubernetes_sd_config
+        # https://prometheus.io/docs/prometheus/latest/configuration/configuration#kubernetes_sd_config
         - sourceLabels: ["__meta_kubernetes_pod_node_name"]
           targetLabel: node
         - sourceLabels: ["__meta_kubernetes_pod_name"]

@@ -1,11 +1,11 @@
-# https://ansible.readthedocs.io/projects/lint/configuring/#ansible-lint-configuration
+# https://ansible.readthedocs.io/projects/lint/configuring#ansible-lint-configuration
 
 exclude_paths:
   - .ansible/
   - group_vars/all/vault.yml
   - vars/gitlab.secrets.yml
 
-# https://ansible.readthedocs.io/projects/lint/rules/
+# https://ansible.readthedocs.io/projects/lint/rules
 skip_list:
   - var-naming[pattern] # var not snake_case
   - name[casing] # start names in upper case

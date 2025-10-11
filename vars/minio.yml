@@ -259,7 +259,7 @@ minio_tenant_chart_values:
 
     # these are default values: if true, service types will be
     # LoadBalancer, which we don't need since we use Ingresses
-    # https://blog.min.io/expose-minio-eks/
+    # https://blog.min.io/expose-minio-eks
     exposeServices:
       minio: false
       console: false
@@ -285,7 +285,8 @@ minio_tenant_chart_values:
       ingressClassName: "{{ rke_ingress_class }}"
       annotations:
         nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
-        nginx.ingress.kubernetes.io/ssl-passthrough: "true"
+        # nginx.ingress.kubernetes.io/ssl-passthrough: "true"
+        nginx.ingress.kubernetes.io/backend-protocol: HTTPS
       # Helm template will create a
       # rule for wildcard subdomain
       host: "{{ minio_s3api_fqdn }}"

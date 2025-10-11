@@ -8,7 +8,7 @@ class FilterModule(object):
             "to_toml": self.to_toml,
         }
 
-    # https://www.iops.tech/blog/generate-toml-using-ansible-template/
+    # https://www.iops.tech/blog/generate-toml-using-ansible-template
     def to_toml(self, o):
         s = json.dumps(dict(o))
         d = json.loads(s)

@@ -17,13 +17,13 @@ postgresql_users:
 postgresql_superuser: erhhung
 
 postgresql_namespace: postgresql
-postgresql_host_names: # 192.168.4.224
+postgresql_host_names: # 192.168.4.225
   - postgresql
   - postgres
   - pg
 
 # remember to add postgresql.fourteeners.local (also postgres.
-# + pg.) to pfSense DNS using MetalLB virtual IP 192.168.4.224
+# + pg.) to pfSense DNS using MetalLB virtual IP 192.168.4.225
 # https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_filters.html#products
 postgresql_fqdns: "{{ postgresql_host_names | product(search_domains) | map('join','.') }}"
 
