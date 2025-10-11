@@ -50,7 +50,7 @@
   any_errors_fatal: true
 
 - name: Install required packages
-  tags: packages
+  tags: install
   hosts: k8s_all
   vars_files:
     - vars/packages.yml
@@ -98,16 +98,22 @@
 
         - name: Configure installed packages
           ansible.builtin.shell: |
+            set -eo pipefail
             rc=9
 
-            bin=/usr/sbin/iotop-py
-            perm=$(stat -c %A $bin)
-            [[ "$perm" == *s* ]] || {
-              # set setuid bit so iotop
-              # can be run without sudo
-              chmod u+s $bin
-              rc=0
-            }
+            # set binaries setuid bit so these
+            # commands can be run without sudo
+            cmds=(
+              lsof
+              iotop
+            )
+            for cmd in "${cmds[@]}"; do
+              bin=$(realpath $(command -v $cmd))
+              [[ "$(stat -c %A $bin)"  == *s* ]] || {
+                chmod u+s $bin
+                rc=0
+              }
+            done
             exit $rc
           args:
             executable: /bin/bash

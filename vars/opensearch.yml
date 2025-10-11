@@ -35,9 +35,9 @@ opensearch_secrets:
   security: opensearch-security
 
 # plugins.security in opensearch.yml
-# https://docs.opensearch.org/docs/latest/install-and-configure/configuring-opensearch/security-settings/
+# https://docs.opensearch.org/docs/latest/install-and-configure/configuring-opensearch/security-settings
 opensearch_security_plugin:
-  ssl: # https://docs.opensearch.org/docs/latest/security/configuration/generate-certificates/
+  ssl: # https://docs.opensearch.org/docs/latest/security/configuration/generate-certificates
     transport:
       # Java requires key file to be in PKCS#8 / PEM format:
       # openssl pkcs8 -topk8 -inform PEM -outform PEM -in tls.key \
@@ -88,7 +88,7 @@ opensearch_security_plugin:
 
 # opensearch-security Secret
 opensearch_security_config:
-  # https://opensearch.org/docs/latest/security/configuration/yaml/#internal_usersyml
+  # https://opensearch.org/docs/latest/security/configuration/yaml#internal_usersyml
   # bcrypt hash of plain-text password:
   # htpasswd -nbBC 11 "" "$ADMIN_PASS" | \
   #       tr -d ':\n' | sed 's/$2y/$2b/'
@@ -129,17 +129,17 @@ opensearch_security_config:
       reserved: true
       backend_roles: []
 
-  # https://opensearch.org/docs/latest/security/configuration/yaml/#rolesyml
+  # https://opensearch.org/docs/latest/security/configuration/yaml#rolesyml
   roles.yml: |
     _meta:
       type: roles
       config_version: 2
 
     kibana_system:
-      # https://docs.opensearch.org/docs/latest/security/access-control/default-action-groups/#cluster-level
+      # https://docs.opensearch.org/docs/latest/security/access-control/default-action-groups#cluster-level
       cluster_permissions:
         - cluster_monitor
-      # https://docs.opensearch.org/docs/latest/security/access-control/default-action-groups/#index-level
+      # https://docs.opensearch.org/docs/latest/security/access-control/default-action-groups#index-level
       index_permissions:
         - index_patterns:
             - "*"
@@ -183,8 +183,8 @@ opensearch_security_config:
           allowed_actions:
             - indices:monitor/stats
 
-  # https://opensearch.org/docs/latest/security/configuration/yaml/#roles_mappingyml
-  # https://opensearch.org/docs/latest/security/access-control/users-roles/#predefined-roles
+  # https://opensearch.org/docs/latest/security/configuration/yaml#roles_mappingyml
+  # https://opensearch.org/docs/latest/security/access-control/users-roles#predefined-roles
   roles_mapping.yml: |
     _meta:
       type: rolesmapping
@@ -239,7 +239,7 @@ opensearch_chart_values:
       cluster.name: {{ opensearch_cluster_name }}
       network.host: "0.0.0.0"
       plugins:
-        # https://opensearch.org/docs/latest/install-and-configure/configuring-opensearch/security-settings/
+        # https://opensearch.org/docs/latest/install-and-configure/configuring-opensearch/security-settings
         security:
           {# https://docs.ansible.com/ansible/latest/collections/ansible/builtin/to_nice_yaml_filter.html -#}
           {# https://tedboy.github.io/jinja2/templ14.html#indent -#}
@@ -270,8 +270,8 @@ opensearch_chart_values:
       subPath: tls
 
   extraInitContainers:
-    # https://docs.opensearch.org/docs/latest/security/configuration/index/
-    # https://docs.opensearch.org/docs/latest/security/configuration/generate-certificates/#optional-generate-node-and-client-certificates
+    # https://docs.opensearch.org/docs/latest/security/configuration/index
+    # https://docs.opensearch.org/docs/latest/security/configuration/generate-certificates#optional-generate-node-and-client-certificates
     - name: chmod-tls
       image: busybox
       command: ["sh"]
@@ -357,14 +357,15 @@ opensearch_chart_values:
     ingressClassName: "{{ rke_ingress_class }}"
     annotations:
       nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
-      nginx.ingress.kubernetes.io/ssl-passthrough: "true"
+      # nginx.ingress.kubernetes.io/ssl-passthrough: "true"
+      nginx.ingress.kubernetes.io/backend-protocol: HTTPS
     hosts: "{{ opensearch_fqdns }}"
 
   plugins:
     enabled: true
-    # https://docs.opensearch.org/docs/latest/install-and-configure/plugins/#available-plugins
+    # https://docs.opensearch.org/docs/latest/install-and-configure/plugins#available-plugins
     # additional: https://github.com/opensearch-project/OpenSearch/tree/main/plugins
-    # https://docs.opensearch.org/docs/latest/install-and-configure/plugins/
+    # https://docs.opensearch.org/docs/latest/install-and-configure/plugins
     installList:
       # - telemetry-otel
       # - repository-s3

@@ -60,7 +60,7 @@ thanos_probe:
 
 # ConfigMap is mounted in Query Frontend
 # container at /conf/tripper/config.yml:
-# https://thanos.io/tip/components/query-frontend.md/#recommended-downstream-tripper-configuration
+# https://thanos.io/tip/components/query-frontend.md#recommended-downstream-tripper-configuration
 thanos_tripper_config:
   config.yml: |-
     idle_conn_timeout:       10m
@@ -87,7 +87,7 @@ thanos_chart_values:
   # contains "http-config.yml" that this chart expects
   existingHttpConfigSecret: "{{ thanos_secrets['http-config'] }}"
 
-  # https://thanos.io/tip/thanos/storage.md/#s3
+  # https://thanos.io/tip/thanos/storage.md#s3
   # re-use MinIO config for Thanos sidecar from secret defined
   # in vars/monitoring.yml under prometheus_stack_chart_values.
   # prometheus.prometheusSpec.thanos.objectStorageConfig.secret
@@ -108,13 +108,13 @@ thanos_chart_values:
   # ======================================= Query =======================================
   #
   # https://thanos.io/tip/components/query.md
-  # https://github.com/bitnami/charts/tree/main/bitnami/thanos/#thanos-query-parameters
+  # https://github.com/bitnami/charts/tree/main/bitnami/thanos#thanos-query-parameters
   query:
     enabled: true
     replicaCount: 1
     revisionHistoryLimit: 2
 
-    # https://github.com/bitnami/charts/tree/main/bitnami/thanos/#resource-requests-and-limits
+    # https://github.com/bitnami/charts/tree/main/bitnami/thanos#resource-requests-and-limits
     # use a preset instead of explicitly configuring resources:
     # none, nano, micro, small, medium, large, xlarge, 2xlarge
     # https://github.com/bitnami/charts/tree/main/bitnami/common/templates/_resources.tpl
@@ -126,7 +126,7 @@ thanos_chart_values:
       sidecarsService: "{{ monitoring_release_name }}-thanos-discovery"
       sidecarsNamespace: "{{ monitoring_namespace }}"
 
-    # https://github.com/bitnami/charts/tree/main/bitnami/thanos/#securing-traffic-using-tls
+    # https://github.com/bitnami/charts/tree/main/bitnami/thanos#securing-traffic-using-tls
     grpc:
       server:
         tls:
@@ -177,9 +177,10 @@ thanos_chart_values:
       grpc: # in-cluster access only
         enabled: false
       ingressClassName: "{{ rke_ingress_class }}"
-      annotations:
+      annotations: &ingress-annotations
         nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
-        nginx.ingress.kubernetes.io/ssl-passthrough: "true"
+        # nginx.ingress.kubernetes.io/ssl-passthrough: "true"
+        nginx.ingress.kubernetes.io/backend-protocol: HTTPS
       # both .hostname and .tls are for single
       # FQDN, but since we have multiple FQDNs,
       # configure in .extraHosts and .extraTls
@@ -204,7 +205,7 @@ thanos_chart_values:
   # =================================== Query Frontend ==================================
   #
   # https://thanos.io/tip/components/query-frontend.md
-  # https://github.com/bitnami/charts/tree/main/bitnami/thanos/#thanos-query-frontend-parameters
+  # https://github.com/bitnami/charts/tree/main/bitnami/thanos#thanos-query-frontend-parameters
   queryFrontend:
     enabled: true
     replicaCount: 1
@@ -215,7 +216,7 @@ thanos_chart_values:
     # but setting .https.enabled creates other .Values.*
     # dependencies and unwanted volumeMounts:
     # https://github.com/bitnami/charts/tree/main/bitnami/thanos/templates/query-frontend/deployment.yaml
-    # https://thanos.io/tip/components/query-frontend.md/#flags
+    # https://thanos.io/tip/components/query-frontend.md#flags
     args: |
       {%- raw %}
       - query-frontend
@@ -268,7 +269,7 @@ thanos_chart_values:
   # ======================================= Ruler =======================================
   #
   # https://thanos.io/tip/components/rule.md
-  # https://github.com/bitnami/charts/tree/main/bitnami/thanos/#thanos-ruler-parameters
+  # https://github.com/bitnami/charts/tree/main/bitnami/thanos#thanos-ruler-parameters
   ruler:
     enabled: true
     replicaCount: 1
@@ -280,7 +281,7 @@ thanos_chart_values:
     #   .prometheusSpec.evaluationInterval
     evalInterval: 1m
 
-    # https://thanos.io/tip/components/rule.md/#configuring-rules
+    # https://thanos.io/tip/components/rule.md#configuring-rules
     config: |
       groups: []
 
@@ -303,11 +304,11 @@ thanos_chart_values:
     # externally accessible URL in alerts' "Source" field
     queryURL: https://{{ thanos_fqdns['query'] | first }}
 
-    # https://thanos.io/tip/components/rule.md/#alertmanager
+    # https://thanos.io/tip/components/rule.md#alertmanager
     alertmanagersConfig:
       alertmanagers:
         - api_version: v2
-          # https://thanos.io/tip/thanos/service-discovery.md/#thanos-ruler
+          # https://thanos.io/tip/thanos/service-discovery.md#thanos-ruler
           static_configs:
             - "{{ alertmanager_service_host }}:{{ alertmanager_service_port }}"
           scheme: https
@@ -318,7 +319,7 @@ thanos_chart_values:
               key_file: /tls/thanos/tls.key
               ca_file: /tls/thanos/ca.crt
 
-    # https://thanos.io/tip/components/rule.md/#flags
+    # https://thanos.io/tip/components/rule.md#flags
     extraFlags:
       # not sure why the chart doesn't
       # allow gRPC server TLS settings
@@ -340,9 +341,7 @@ thanos_chart_values:
     ingress:
       enabled: true
       ingressClassName: "{{ rke_ingress_class }}"
-      annotations:
-        nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
-        nginx.ingress.kubernetes.io/ssl-passthrough: "true"
+      annotations: *ingress-annotations
       # both .hostname and .tls are for single
       # FQDN, but since we have multiple FQDNs,
       # configure in .extraHosts and .extraTls
@@ -363,13 +362,13 @@ thanos_chart_values:
 
   # =================================== Store Gateway ===================================
   #
-  # https://thanos.io/tip/components/store.md/#index-cache
+  # https://thanos.io/tip/components/store.md#index-cache
   indexCacheConfig: |
     type: IN-MEMORY
     config:
       max_size: 128MB
 
-  # https://thanos.io/tip/components/store.md/#caching-bucket
+  # https://thanos.io/tip/components/store.md#caching-bucket
   bucketCacheConfig: |
     type: REDIS
     config:
@@ -386,7 +385,7 @@ thanos_chart_values:
       ttl: 24h # Valkey
 
   # https://thanos.io/tip/components/store.md
-  # https://github.com/bitnami/charts/tree/main/bitnami/thanos/#thanos-store-gateway-parameters
+  # https://github.com/bitnami/charts/tree/main/bitnami/thanos#thanos-store-gateway-parameters
   storegateway:
     enabled: true
     replicaCount: 1
@@ -394,7 +393,7 @@ thanos_chart_values:
 
     # shard using StatefulSet based on
     # time ranges or hashmod of blocks
-    # https://thanos.io/tip/components/store.md/#time-based-partitioning
+    # https://thanos.io/tip/components/store.md#time-based-partitioning
     sharded:
       enabled: false
 
@@ -447,9 +446,7 @@ thanos_chart_values:
       grpc: # in-cluster access only
         enabled: false
       ingressClassName: "{{ rke_ingress_class }}"
-      annotations:
-        nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
-        nginx.ingress.kubernetes.io/ssl-passthrough: "true"
+      annotations: *ingress-annotations
       # both .hostname and .tls are for single
       # FQDN, but since we have multiple FQDNs,
       # configure in .extraHosts and .extraTls
@@ -470,8 +467,8 @@ thanos_chart_values:
 
   # ===================================== Bucket Web ====================================
   #
-  # https://thanos.io/tip/components/tools.md/#bucket-web
-  # https://github.com/bitnami/charts/tree/main/bitnami/thanos/#thanos-bucket-web-parameters
+  # https://thanos.io/tip/components/tools.md#bucket-web
+  # https://github.com/bitnami/charts/tree/main/bitnami/thanos#thanos-bucket-web-parameters
   bucketweb:
     enabled: true
     replicaCount: 1
@@ -497,9 +494,7 @@ thanos_chart_values:
     ingress:
       enabled: true
       ingressClassName: "{{ rke_ingress_class }}"
-      annotations:
-        nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
-        nginx.ingress.kubernetes.io/ssl-passthrough: "true"
+      annotations: *ingress-annotations
       # both .hostname and .tls are for single
       # FQDN, but since we have multiple FQDNs,
       # configure in .extraHosts and .extraTls
@@ -521,7 +516,7 @@ thanos_chart_values:
   # ===================================== Compactor =====================================
   #
   # https://thanos.io/tip/components/compact.md
-  # https://github.com/bitnami/charts/tree/main/bitnami/thanos/#thanos-compactor-parameters
+  # https://github.com/bitnami/charts/tree/main/bitnami/thanos#thanos-compactor-parameters
   compactor:
     enabled: true
     revisionHistoryLimit: 2
@@ -574,9 +569,7 @@ thanos_chart_values:
     ingress:
       enabled: true
       ingressClassName: "{{ rke_ingress_class }}"
-      annotations:
-        nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
-        nginx.ingress.kubernetes.io/ssl-passthrough: "true"
+      annotations: *ingress-annotations
       # both .hostname and .tls are for single
       # FQDN, but since we have multiple FQDNs,
       # configure in .extraHosts and .extraTls
@@ -598,7 +591,7 @@ thanos_chart_values:
   # ====================================== Receive ======================================
   #
   # https://thanos.io/tip/components/receive.md
-  # https://github.com/bitnami/charts/tree/main/bitnami/thanos/#thanos-receive-parameters
+  # https://github.com/bitnami/charts/tree/main/bitnami/thanos#thanos-receive-parameters
   receive:
     enabled: false
   receiveDistributor:
@@ -606,7 +599,7 @@ thanos_chart_values:
 
   # ====================================== Metrics ======================================
   #
-  # https://github.com/bitnami/charts/tree/main/bitnami/thanos/#metrics-parameters
+  # https://github.com/bitnami/charts/tree/main/bitnami/thanos#metrics-parameters
   metrics:
     enabled: true
 

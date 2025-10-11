@@ -18,10 +18,10 @@
 apiVersion: install.istio.io/v1alpha1
 kind: IstioOperator
 spec:
-  # https://istio.io/latest/docs/reference/config/istio.mesh.v1alpha1/#MeshConfig
+  # https://istio.io/latest/docs/reference/config/istio.mesh.v1alpha1#MeshConfig
   meshConfig:
     enableTracing: true
-  # https://istio.io/latest/docs/reference/config/istio.operator.v1alpha1/#IstioComponentSetSpec
+  # https://istio.io/latest/docs/reference/config/istio.operator.v1alpha1#IstioComponentSetSpec
   components:
     ztunnel:
       k8s:

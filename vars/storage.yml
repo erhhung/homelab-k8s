@@ -27,7 +27,7 @@ longhorn_chart_version: "1.9.1"
 longhorn_release_name: longhorn
 
 # https://github.com/longhorn/charts/tree/v1.9.x/charts/longhorn/values.yaml
-# https://longhorn.io/docs/1.9.0/references/settings/
+# https://longhorn.io/docs/1.9.0/references/settings
 longhorn_chart_values:
   longhornUI:
     replicas: 1
@@ -140,7 +140,7 @@ nfs_provisioners:
       reclaimPolicy: Delete
       onDelete: delete
 
-# https://computingforgeeks.com/configure-nfs-as-kubernetes-persistent-volume-storage/
+# https://computingforgeeks.com/configure-nfs-as-kubernetes-persistent-volume-storage
 nfs_mount_opts: rw,nosuid,nodev,noexec,hard,timeo=600,retrans=3,rsize=32768,wsize=32768
 
 # https://grafana.com/grafana/dashboards/?search=Longhorn&dataSource=prometheus

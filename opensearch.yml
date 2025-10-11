@@ -1,7 +1,7 @@
-# https://docs.opensearch.org/docs/latest/opensearch/
-# https://docs.opensearch.org/docs/latest/dashboards/
+# https://docs.opensearch.org/docs/latest/opensearch
+# https://docs.opensearch.org/docs/latest/dashboards
 ---
-# https://docs.opensearch.org/docs/latest/install-and-configure/install-opensearch/helm/
+# https://docs.opensearch.org/docs/latest/install-and-configure/install-opensearch/helm
 - name: Install OpenSearch on RKE cluster
   tags: opensearch
   hosts: "{{ rke_control_plane_host }}"
@@ -162,7 +162,7 @@
       ansible.builtin.include_tasks: tasks/opensearch/security.yml
   any_errors_fatal: true
 
-# https://docs.opensearch.org/docs/latest/install-and-configure/install-dashboards/helm/
+# https://docs.opensearch.org/docs/latest/install-and-configure/install-dashboards/helm
 - name: Install OpenSearch Dashboards
   tags:
     - kibana

@@ -1,4 +1,4 @@
-# https://metacontroller.github.io/metacontroller/
+# https://metacontroller.github.io/metacontroller
 ---
 - name: Install Kubernetes Metacontroller
   tags: install

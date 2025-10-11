@@ -93,4 +93,4 @@ controlPlane:
       tls:
         - secretName: {{ tls_secret }}
           hosts: {{ [vcluster_fqdn] }}
-      ingressClassName: {{ rke_ingress_class }}
+      ingressClassName: {{ rke_ingress_pt_class }}

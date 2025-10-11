@@ -66,9 +66,11 @@ cd "$HOME"
 
 # rke2-ingress-nginx-controller default-ssl-certificate
 ./cert.sh --exp=365 \
-  ingress.fourteeners.local \
-    nginx.fourteeners.local \
-  192.168.4.222 \
+    ingress.fourteeners.local \
+  ingresspt.fourteeners.local \
+      nginx.fourteeners.local \
+    nginxpt.fourteeners.local \
+  192.168.4.22{2..3} \
   192.168.0.17{1..8}
 
 ./cert.sh --exp=365 \
@@ -97,7 +99,7 @@ cd "$HOME"
                es.fourteeners.local \
     \*.opensearch.svc.cluster.local \
     \*.opensearch.svc \
-    192.168.4.223
+    192.168.4.224
 
 ./cert.sh --kty=RSA \
           --exp=365 \
@@ -122,7 +124,7 @@ cd "$HOME"
              pg.fourteeners.local \
   \*.postgresql.svc.cluster.local \
   \*.postgresql.svc \
-  192.168.4.224
+  192.168.4.225
 
 ./cert.sh --exp=365 \
   erhhung erhhung@gmail.com

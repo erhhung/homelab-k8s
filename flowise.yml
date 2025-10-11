@@ -19,14 +19,14 @@
     create_ns: false
     release: "{{ flowise_release_name }}"
   pre_tasks:
-    - name: Get Flowise image tag
+    - name: Get image tag from Harbor
       when: flowise_image.registry == harbor_container_registry
       block:
-        - name: Clear tag_found fact
+        - name: Clear repo_tag_found fact
           ansible.builtin.set_fact:
-            tag_found: ""
+            repo_tag_found: ""
 
-        - name: Get Flowise image tag
+        - name: Get image tag from Harbor
           vars:
             repository: "{{ item }}"
             # if flowise image tag is found, find flowise-worker using the same tag
@@ -258,7 +258,7 @@
         # in provided function code
         func: |-
           {# use namespace() to create a scoped object #}
-          {# https://jinja.palletsprojects.com/en/stable/templates/#assignments #}
+          {# https://jinja.palletsprojects.com/en/stable/templates#assignments #}
           {% set ns = namespace(func=tool.func) %}
           {% for sub in item.func | default([]) %}
           {%   set ns.func = ns.func | regex_replace(sub.replace, sub.with) %}

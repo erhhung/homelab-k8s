@@ -2,7 +2,7 @@
 istio_version: "1.26.3"
 istio_bin_dir: /opt/istio/bin
 
-# https://istio.io/latest/docs/ambient/install/istioctl/#install-or-upgrade-the-kubernetes-gateway-api-crds
+# https://istio.io/latest/docs/ambient/install/istioctl#install-or-upgrade-the-kubernetes-gateway-api-crds
 # https://github.com/kubernetes-sigs/gateway-api/releases
 k8s_gateway_api_version: "1.3.0"
 k8s_gateway_api_crds_url: >-
@@ -24,7 +24,7 @@ kiali_secrets:
   openid: kiali-openid
   ingress: kiali-ingress-tls
 
-# https://kiali.io/docs/installation/installation-guide/install-with-helm/#install-with-operator
+# https://kiali.io/docs/installation/installation-guide/install-with-helm#install-with-operator
 kiali_operator_namespace: kiali-operator
 kiali_operator_chart_version: "2.13.0"
 
@@ -33,13 +33,13 @@ kiali_oidc_client_id: kiali
 # sso.fourteeners.local is same host as keycloak.fourteeners.local
 kiali_oidc_issuer_uri: https://sso.{{ homelab_domain }}/realms/homelab
 
-# https://kiali.io/docs/configuration/kialis.kiali.io/
+# https://kiali.io/docs/configuration/kialis.kiali.io
 kiali_cr_spec:
   # support SSO login using OIDC integration with Keycloak, but
   # disable namespace access control because that would require
   # the cluster to have already been connected with OIDC, which
   # isn't possible since Keycloak also runs in this RKE cluster
-  # https://kiali.io/docs/configuration/authentication/openid/#set-up-with-no-namespace-access-control-support
+  # https://kiali.io/docs/configuration/authentication/openid#set-up-with-no-namespace-access-control-support
   auth:
     strategy: openid
     openid:
@@ -53,16 +53,16 @@ kiali_cr_spec:
         - profile
       username_claim: name # purely informational
 
-  # https://kiali.io/docs/configuration/kialis.kiali.io/#.spec.identity
+  # https://kiali.io/docs/configuration/kialis.kiali.io#.spec.identity
   identity:
     cert_file: /tls/ingress/tls.crt
     private_key_file: /tls/ingress/tls.key
 
-  # https://kiali.io/docs/configuration/kialis.kiali.io/#.spec.deployment
+  # https://kiali.io/docs/configuration/kialis.kiali.io#.spec.deployment
   deployment:
     secret_name: "{{ kiali_secrets['openid'] }}"
 
-    # https://kiali.io/docs/configuration/kialis.kiali.io/#.spec.deployment.custom_secrets
+    # https://kiali.io/docs/configuration/kialis.kiali.io#.spec.deployment.custom_secrets
     custom_secrets:
       # cert referenced by identity.cert_file
       - name: "{{ kiali_secrets['ingress'] }}"
@@ -78,7 +78,7 @@ kiali_cr_spec:
     ingress:
       enabled: true
 
-      # https://kiali.io/docs/configuration/kialis.kiali.io/#.spec.deployment.ingress.override_yaml
+      # https://kiali.io/docs/configuration/kialis.kiali.io#.spec.deployment.ingress.override_yaml
       override_yaml:
         metadata:
           annotations:
@@ -121,7 +121,7 @@ kiali_cr_spec:
             {% endfor %}
             {{ rules  }}
 
-  # https://kiali.io/docs/configuration/kialis.kiali.io/#.spec.server
+  # https://kiali.io/docs/configuration/kialis.kiali.io#.spec.server
   server:
     port: 20001
     # web_* settings don't configure anything--
@@ -142,7 +142,7 @@ kiali_cr_spec:
         enabled: false
 
   external_services:
-    # https://kiali.io/docs/configuration/kialis.kiali.io/#.spec.external_services.prometheus
+    # https://kiali.io/docs/configuration/kialis.kiali.io#.spec.external_services.prometheus
     prometheus:
       is_core: true
       thanos_proxy:
@@ -155,7 +155,7 @@ kiali_cr_spec:
         ca_file: /tls/ingress/ca.crt
         type: none # or basic|bearer
 
-    # https://kiali.io/docs/configuration/kialis.kiali.io/#.spec.external_services.grafana
+    # https://kiali.io/docs/configuration/kialis.kiali.io#.spec.external_services.grafana
     grafana:
       enabled: true
       is_core: false
@@ -173,7 +173,7 @@ kiali_cr_spec:
       dashboards: |
         {{ istio_grafana_dashboards | map(attribute='title') | map('community.general.dict_kv', 'name') }}
 
-    # https://kiali.io/docs/configuration/kialis.kiali.io/#.spec.external_services.custom_dashboards
+    # https://kiali.io/docs/configuration/kialis.kiali.io#.spec.external_services.custom_dashboards
     custom_dashboards:
       enabled: true
       is_core: false
@@ -182,7 +182,7 @@ kiali_cr_spec:
       # use Istio's Prometheus
       # prometheus: ~
 
-    # https://kiali.io/docs/configuration/kialis.kiali.io/#.spec.external_services.tracing
+    # https://kiali.io/docs/configuration/kialis.kiali.io#.spec.external_services.tracing
     tracing:
       enabled: false
       is_core: false

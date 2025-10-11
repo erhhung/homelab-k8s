@@ -62,19 +62,19 @@
         secret_name: "{{ openwebui_secrets['env-vars'] }}"
         secret_data:
           # secret key used to sign JWTs:
-          # https://docs.openwebui.com/getting-started/env-configuration/#webui_secret_key
+          # https://docs.openwebui.com/getting-started/env-configuration#webui_secret_key
           WEBUI_SECRET_KEY: "{{ openwebui_secret_key }}"
-          # https://docs.openwebui.com/getting-started/env-configuration/#database-pool
+          # https://docs.openwebui.com/getting-started/env-configuration#database-pool
           DATABASE_URL: "{{ openwebui_postgresql_url }}"
-          # https://docs.openwebui.com/getting-started/env-configuration/#redis
+          # https://docs.openwebui.com/getting-started/env-configuration#redis
           REDIS_URL: "{{ openwebui_redis_url }}"
-          # https://docs.openwebui.com/getting-started/env-configuration/#qdrant
+          # https://docs.openwebui.com/getting-started/env-configuration#qdrant
           QDRANT_API_KEY: "{{ qdrant_api_key.read_write }}"
-          # https://docs.openwebui.com/getting-started/env-configuration/#s3_secret_access_key
+          # https://docs.openwebui.com/getting-started/env-configuration#s3_secret_access_key
           S3_SECRET_ACCESS_KEY: "{{ minio_client_pass }}"
           # Pipelines key must be first:
-          # https://docs.openwebui.com/getting-started/env-configuration/#openai_api_keys
-          # https://docs.openwebui.com/pipelines/#-quick-start-with-docker
+          # https://docs.openwebui.com/getting-started/env-configuration#openai_api_keys
+          # https://docs.openwebui.com/pipelines#-quick-start-with-docker
           OPENAI_API_KEYS: >-
             {% set keys = [openai_api_key] -%}
             {% if pipelines.enabled -%}
@@ -498,7 +498,7 @@
         acct_files: |
           {% set files  = [] %}
           {# use namespace() to create a scoped object #}
-          {# https://jinja.palletsprojects.com/en/stable/templates/#assignments #}
+          {# https://jinja.palletsprojects.com/en/stable/templates#assignments #}
           {% set ns = namespace(
                sorted=find_files.files | sort(attribute='mtime', reverse=true)) %}
           {% if limit|int > 0 and limit|int < ns.sorted | length %}

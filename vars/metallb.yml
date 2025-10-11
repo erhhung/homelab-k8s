@@ -10,12 +10,13 @@ metallb_vips:
   end: 192.168.4.240
 
   ingress: 192.168.4.222
-  opensearch: 192.168.4.223
-  postgresql: 192.168.4.224
+  ingress-pt: 192.168.4.223 # SSL passthrough
+  opensearch: 192.168.4.224
+  postgresql: 192.168.4.225
   # Valkey creates a LoadBalancer Service
   # for each node, so reserve 6 IPs total
   valkey: 192.168.4.231 # ..192.168.4.236
-  ollama: 192.168.4.225 # HTTP port 11434
+  ollama: 192.168.4.226 # HTTP port 11434
 
 metallb_namespace: metallb-system
 
@@ -56,7 +57,7 @@ metallb_chart_values:
 
     # native BGP implementation (as opposed to FRR) is
     # lighter weight and adequate for homelab use cases:
-    # https://metallb.universe.tf/concepts/bgp/#frr-mode
+    # https://metallb.universe.tf/concepts/bgp#frr-mode
     frr:
       enabled: false
 

@@ -9,11 +9,11 @@
 # (e.g. learning.vcluster.fourteeners.local) in pfSense that
 # resolve to the RKE control plane (cluster VIP in HA mode)
 # prior to provisioning
-vclusters: []
+vclusters:
   # - name: learning
   #   node: k8s6
-  # - name: testing
-  #   node: k8s5
+  - name: testing
+    node: k8s5
 
 vcluster_pv_sizes:
   etcd: 2Gi

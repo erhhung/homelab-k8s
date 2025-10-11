@@ -1,27 +1,34 @@
-# save rendered config as /var/lib/rancher/rke2/server/manifests/rke2-ingress-nginx-config.yaml
-# on an RKE2 server node, after which rke2-server service on that node must be restarted:
-# https://docs.rke2.io/helm#customizing-packaged-components-with-helmchartconfig
+# save rendered config as /var/lib/rancher/rke2/server/manifests/rke2-ingress-nginx-passthrough-config.yaml
+# however, chart won't be installed until corresponding HelmChart exists by
+# copying /var/lib/rancher/rke2/server/manifests/rke2-ingress-nginx.yaml to
+# rke2-ingress-nginx-passthrough.yaml and changing the .metadata.name value
 ---
 # https://docs.rke2.io/networking/networking_services#nginx-ingress-controller
 # https://github.com/kubernetes/ingress-nginx/tree/main/charts/ingress-nginx/values.yaml
 # https://github.com/rancher/rke2-charts/tree/main-source/packages/rke2-ingress-nginx/generated-changes/patch/values.yaml.patch
 # https://support.tools/rke2-ingress-nginx
 
+{% set chart_name = 'rke2-ingress-nginx-passthrough' -%}
+
 apiVersion: helm.cattle.io/v1
 kind: HelmChartConfig
 metadata:
-  name: rke2-ingress-nginx
+  name: {{ chart_name }}
   namespace: kube-system
 spec:
   valuesContent: |-
+    nameOverride: {{ chart_name }}
+    global:
+      systemDefaultIngressClass: {{ rke_ingress_class }}
+
     controller:
-      ingressClass: {{ rke_ingress_class }}
+      ingressClass: {{ rke_ingress_pt_class }}
       ingressClassResource:
-        name: {{ rke_ingress_class }}
+        name: {{ rke_ingress_pt_class }}
         enabled: true
-        default: true
-        controllerValue: k8s.io/ingress-{{ rke_ingress_class }}
-      watchIngressWithoutClass: true
+        default: false
+        controllerValue: k8s.io/ingress-{{ rke_ingress_pt_class }}
+      watchIngressWithoutClass: false
       ingressClassByName: true
 
       # https://kubernetes.github.io/ingress-nginx/user-guide/nginx-configuration/configmap
@@ -29,6 +36,7 @@ spec:
         # https://kubernetes.github.io/ingress-nginx/user-guide/nginx-configuration/configmap#log-format-upstream
         # https://kubernetes.github.io/ingress-nginx/user-guide/nginx-configuration/log-format
         # https://nginx.org/en/docs/varindex.html
+        log-format-escape-json: "true"
         log-format-upstream: >-
           {"time_ms": $msec, "remote_addr": "$remote_addr",
           "user_agent": "$http_user_agent", "host": "$http_host",
@@ -39,26 +47,13 @@ spec:
           "upstream_addr": "$upstream_addr",
           "upstream_connect_time": $upstream_connect_time,
           "upstream_response_time": $upstream_response_time}
-        log-format-escape-json: "true"
 
-        # log-format-upstream: >-
-        #   $remote_addr - $remote_user [$time_local] "$request" $status $body_bytes_sent
-        #   "$http_referer" "$http_user_agent" $request_length $request_time
-        #   [$proxy_upstream_name] $upstream_addr $upstream_status
-        #   $upstream_response_time $upstream_bytes_received
-
-        enable-real-ip: "true"
+        # Nginx will proxy requests to port 443 on
+        # each host to port 442 via PROXY protocol:
         # https://kubernetes.github.io/ingress-nginx/user-guide/nginx-configuration/configmap#use-proxy-protocol
-        use-proxy-protocol: "false"
-        # https://kubernetes.github.io/ingress-nginx/user-guide/nginx-configuration/configmap#use-forwarded-headers
-        use-forwarded-headers: "true"
-        # https://kubernetes.github.io/ingress-nginx/user-guide/nginx-configuration/configmap#compute-full-forwarded-for
-        compute-full-forwarded-for: "true"
+        use-proxy-protocol: "true"
         # https://kubernetes.github.io/ingress-nginx/user-guide/nginx-configuration/configmap#proxy-real-ip-cidr
-        proxy-real-ip-cidr: 192.168.0.0/16,100.64.0.0/10
-
-        # https://kubernetes.github.io/ingress-nginx/user-guide/nginx-configuration/configmap#enable-brotli
-        enable-brotli: "true"
+        proxy-real-ip-cidr: 127.0.0.1/32
 
         # https://kubernetes.github.io/ingress-nginx/user-guide/nginx-configuration/configmap#proxy-read-timeout
         proxy-read-timeout: "600"
@@ -77,45 +72,29 @@ spec:
         proxy-next-upstream: "off"
         proxy-next-upstream-tries: "1"
 
-        # https://kubernetes.github.io/ingress-nginx/user-guide/nginx-configuration/configmap#keep-alive
-        keep-alive: "125"
-        keep-alive-requests: "50"
-
-        # https://kubernetes.github.io/ingress-nginx/user-guide/nginx-configuration/configmap#http-snippet
-        http-snippet: |
-          # set custom variable $request_origin = $http_origin
-          # if Origin header provided, or else $scheme://$host
-          # https://nginx.org/en/docs/http/ngx_http_map_module.html
-          map $http_origin $request_origin {
-            default "$scheme://$host";
-            "~*" $http_origin;
-          }
-
-        # allow annotation group ServerSnippet (risk: Critical) in
-        # my homelab environment, but likely bad security practice
-        # https://kubernetes.github.io/ingress-nginx/user-guide/nginx-configuration/configmap#annotations-risk-level
-        # https://kubernetes.github.io/ingress-nginx/user-guide/nginx-configuration/annotations-risk
-        annotations-risk-level: Critical
-
-      # allow nginx.ingress.kubernetes.io/*-snippet
-      # annotations, such as ones added by Keycloak
-      allowSnippetAnnotations: true
-
       # https://kubernetes.github.io/ingress-nginx/user-guide/cli-arguments
       extraArgs:
         default-ssl-certificate: kube-system/{{ nginx_tls_secret }}
 
-      priorityClassName: {{ priority_classes['critical'] }}
+        # don't listen on 80 because SSL redirect is not possible:
+        # https://github.com/kubernetes/ingress-nginx/issues/14030
+        http-port: 8180
+
+        # --enable-ssl-passthrough allows the vCluster
+        # ingress controller to generate and serve the
+        # proper certificate for Kubernetes API server:
+        # https://www.vcluster.com/docs/vcluster/manage/accessing-vcluster#expose-vcluster
+        enable-ssl-passthrough: ""
 
       resources:
         requests:
-          cpu: 25m
-          memory: 256Mi
+          cpu: 10m
+          memory: 128Mi
 
       hostPort:
         enabled: false
-      hostNetwork: false
-      dnsPolicy: ClusterFirst
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
 
       service:
         # chart default value is enabled, but RKE2 patched
@@ -123,18 +102,15 @@ spec:
         # enabled so that MetalLB can assign it virtual IP
         enabled: true
 
-        enableHttp: true
+        # HTTP port is not usable because use-proxy-protocol
+        # for SSL passthrough requires PROXY request headers
+        enableHttp: false
         enableHttps: true
 
         annotations:
           # replaces deprecated .spec.loadBalancerIP field
-          metallb.universe.tf/loadBalancerIPs: "{{ metallb_vips['ingress'] }}"
+          metallb.universe.tf/loadBalancerIPs: "{{ metallb_vips['ingress-pt'] }}"
 
         # prevent kube-proxy from re-spraying traffic to all
         # nodes since pfSense is already doing that via ECMP
         externalTrafficPolicy: Local
-
-    # additional TCP/UDP ports to expose
-    # on external service and Nginx pods
-    tcp: {{ nginx_tcp_services }}
-    udp: {{ nginx_udp_services }}

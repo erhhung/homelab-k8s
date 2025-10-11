@@ -101,9 +101,9 @@ thanos_metrics_auth:
     name: "{{ monitoring_secrets['credentials'] }}"
     key: thanos-metrics-password
 
-# https://prometheus.io/docs/alerting/latest/configuration/
+# https://prometheus.io/docs/alerting/latest/configuration
 # https://github.com/prometheus/alertmanager/tree/main/doc/examples/simple.yml
-# https://prometheus-operator.dev/docs/developer/alerting/#using-alertmanagerconfig-resources
+# https://prometheus-operator.dev/docs/developer/alerting#using-alertmanagerconfig-resources
 # https://fabianlee.org/2022/07/03/prometheus-external-template-for-alertmanager-html-email-with-kube-prometheus-stack
 alertmanager_config:
   global:
@@ -123,11 +123,11 @@ alertmanager_config:
 
   receivers:
     - name: erhhung-email
-      # https://prometheus.io/docs/alerting/latest/configuration/#email_config
+      # https://prometheus.io/docs/alerting/latest/configuration#email_config
       email_configs:
         - to: "{{ user_erhhung.email }}"
     - name: homelab-slack
-      # https://prometheus.io/docs/alerting/latest/configuration/#slack_config
+      # https://prometheus.io/docs/alerting/latest/configuration#slack_config
       slack_configs:
         - channel: "#alerts"
           api_url: "{{ slack_webhook_url.alerts }}"
@@ -135,7 +135,7 @@ alertmanager_config:
     # aka /dev/null
     - name: "null"
 
-  # https://prometheus.io/docs/alerting/latest/configuration/#route
+  # https://prometheus.io/docs/alerting/latest/configuration#route
   route:
     group_by:
       - namespace
@@ -151,7 +151,7 @@ alertmanager_config:
         continue: true # send to Slack as well if enabled
       - receiver: "{{ 'homelab-slack' if slack_alerts_enabled else 'null' }}"
 
-  # https://prometheus.io/docs/alerting/latest/configuration/#inhibit_rule
+  # https://prometheus.io/docs/alerting/latest/configuration#inhibit_rule
   inhibit_rules:
     - source_matchers:
         - severity = critical
@@ -187,7 +187,7 @@ monitoring_oidc_issuer_uri: https://sso.{{ homelab_domain }}/realms/homelab
 # https://github.com/oauth2-proxy/oauth2-proxy/releases
 monitoring_oauth2_proxy_version: "7.12.0"
 
-# https://oauth2-proxy.github.io/oauth2-proxy/configuration/overview/#general-provider-options
+# https://oauth2-proxy.github.io/oauth2-proxy/configuration/overview#general-provider-options
 # https://oauth2-proxy.github.io/oauth2-proxy/configuration/providers/keycloak_oidc
 # (references "redis_service_url" var from vars/valkey.yml)
 monitoring_oauth2_proxy_config: |
@@ -265,8 +265,8 @@ prometheus_stack_chart_values:
 
   # ======================================== Operator ========================================
   #
-  # https://prometheus-operator.dev/docs/
-  # https://prometheus-operator.dev/docs/getting-started/installation/#install-using-helm-chart
+  # https://prometheus-operator.dev/docs
+  # https://prometheus-operator.dev/docs/getting-started/installation#install-using-helm-chart
   prometheusOperator:
     enabled: true
     tls:
@@ -294,7 +294,7 @@ prometheus_stack_chart_values:
 
   # ======================================= Prometheus =======================================
   #
-  # https://prometheus.io/docs/prometheus/latest/configuration/configuration/
+  # https://prometheus.io/docs/prometheus/latest/configuration/configuration
   prometheus:
     enabled: true
     agentMode: false
@@ -380,7 +380,7 @@ prometheus_stack_chart_values:
 
       # https://prometheus.io/docs/prometheus/latest/feature_flags
       enableFeatures:
-        # https://prometheus.io/docs/prometheus/latest/feature_flags/#concurrent-evaluation-of-independent-rules
+        # https://prometheus.io/docs/prometheus/latest/feature_flags#concurrent-evaluation-of-independent-rules
         - concurrent-rule-eval
 
       # allow default "pull" model only
@@ -507,7 +507,7 @@ prometheus_stack_chart_values:
       thanos: # ThanosSpec
         objectStorageConfig:
           # create secret containing MinIO credentials:
-          # https://thanos.io/tip/thanos/storage.md/#s3
+          # https://thanos.io/tip/thanos/storage.md#s3
           secret:
             type: S3
             config:
@@ -586,9 +586,10 @@ prometheus_stack_chart_values:
         - secretName: "{{ monitoring_secrets['prometheus'] }}"
           hosts: "{{ monitoring_fqdns['prometheus'] }}"
       ingressClassName: "{{ rke_ingress_class }}"
-      annotations:
+      annotations: &ingress-annotations
         nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
-        nginx.ingress.kubernetes.io/ssl-passthrough: "true"
+        # nginx.ingress.kubernetes.io/ssl-passthrough: "true"
+        nginx.ingress.kubernetes.io/backend-protocol: HTTPS
       hosts: "{{ monitoring_fqdns['prometheus'] }}"
       paths: ["/"]
       pathType: Prefix
@@ -658,7 +659,7 @@ prometheus_stack_chart_values:
 
   # ====================================== Alertmanager ======================================
   #
-  # https://prometheus.io/docs/alerting/alertmanager/
+  # https://prometheus.io/docs/alerting/alertmanager
   alertmanager:
     enabled: true
 
@@ -776,7 +777,7 @@ prometheus_stack_chart_values:
 
     # ===END=== alertmanagerSpec
 
-    # https://prometheus.io/docs/alerting/latest/configuration/
+    # https://prometheus.io/docs/alerting/latest/configuration
     config: "{{ alertmanager_config }}"
 
     service:
@@ -798,9 +799,7 @@ prometheus_stack_chart_values:
         - secretName: "{{ monitoring_secrets['alertmanager'] }}"
           hosts: "{{ monitoring_fqdns['alertmanager'] }}"
       ingressClassName: "{{ rke_ingress_class }}"
-      annotations:
-        nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
-        nginx.ingress.kubernetes.io/ssl-passthrough: "true"
+      annotations: *ingress-annotations
       hosts: "{{ monitoring_fqdns['alertmanager'] }}"
       paths: ["/"]
       pathType: Prefix
@@ -813,7 +812,7 @@ prometheus_stack_chart_values:
 
   # ======================================== Grafana ========================================
   #
-  # https://prometheus.io/docs/visualization/grafana/
+  # https://prometheus.io/docs/visualization/grafana
   grafana: # subchart values
     enabled: true
 
@@ -833,17 +832,17 @@ prometheus_stack_chart_values:
       userKey: grafana-admin-username
       passwordKey: grafana-admin-password
 
-    # https://docs.grafana.org/installation/configuration/
+    # https://docs.grafana.org/installation/configuration
     grafana.ini:
       # maps at this level correspond to INI file sections:
       # https://github.com/grafana/helm-charts/tree/main/charts/grafana/templates/_config.tpl
       server:
-        # https://grafana.com/docs/grafana/latest/setup-grafana/set-up-https/#configure-grafana-https-and-restart-grafana
-        # https://grafana.com/docs/grafana/latest/setup-grafana/configure-grafana/#server
+        # https://grafana.com/docs/grafana/latest/setup-grafana/set-up-https#configure-grafana-https-and-restart-grafana
+        # https://grafana.com/docs/grafana/latest/setup-grafana/configure-grafana#server
         protocol: https
         cert_file: /tls/server/tls.crt
         cert_key: /tls/server/tls.key
-      # https://grafana.com/docs/grafana/latest/setup-grafana/configure-grafana/#security
+      # https://grafana.com/docs/grafana/latest/setup-grafana/configure-grafana#security
       security:
         admin_user: "{{ user_erhhung.username }}"
         admin_email: "{{ user_erhhung.email }}"
@@ -908,8 +907,8 @@ prometheus_stack_chart_values:
       notifiers:
         enabled: false
 
-    # https://grafana.com/docs/grafana/latest/administration/provisioning/#datasources
-    # https://boredconsultant.com/2022/06/27/Grafana-Datasource-With-Custom-CA-Certificate/
+    # https://grafana.com/docs/grafana/latest/administration/provisioning#datasources
+    # https://boredconsultant.com/2022/06/27/Grafana-Datasource-With-Custom-CA-Certificate
     additionalDataSources:
       - name: Prometheus
         type: prometheus
@@ -930,7 +929,7 @@ prometheus_stack_chart_values:
           tlsAuthWithCACert: true
           # need to provide basic auth credentials using
           # Authorization header (.secureJsonData value):
-          # https://grafana.com/docs/grafana/latest/administration/provisioning/#custom-http-headers-for-data-sources
+          # https://grafana.com/docs/grafana/latest/administration/provisioning#custom-http-headers-for-data-sources
           httpHeaderName1: Authorization
         secureJsonData:
           tlsCACert: "{{ ca_certificates | join('\n') }}"
@@ -1143,7 +1142,7 @@ prometheus_stack_chart_values:
 
         # https://training.promlabs.com/training/relabeling/introduction-to-relabeling/hidden-labels-and-metadata
         relabelings:
-          # https://prometheus.io/docs/prometheus/latest/configuration/configuration/#kubernetes_sd_config
+          # https://prometheus.io/docs/prometheus/latest/configuration/configuration#kubernetes_sd_config
           - sourceLabels: ["__meta_kubernetes_pod_node_name"]
             targetLabel: node
 
@@ -1257,7 +1256,7 @@ grafana_admin_settings:
 # additional_scrape_configs allows supplying additional Prometheus scrape configurations.
 # Scrape configurations are appended to the configurations generated by the Prometheus
 # Operator. Job configurations must have form specified in the Prometheus documentation:
-# https://prometheus.io/docs/prometheus/latest/configuration/configuration/#scrape_config
+# https://prometheus.io/docs/prometheus/latest/configuration/configuration#scrape_config
 # additional_scrape_configs can be defined as a list or as a templated string.
 #
 # As scrape configs are appended, the user is responsible to ensure they're valid.
@@ -1310,7 +1309,7 @@ additional_scrape_configs:
 # additional_alertmanager_configs allows supplying additional Alertmanager job configurations.
 # Alertmanager configurations are appended to the configurations generated by the Prometheus
 # Operator. Job configurations must have the form specified in the Prometheus documentation:
-# https://prometheus.io/docs/prometheus/latest/configuration/configuration/#alertmanager_config
+# https://prometheus.io/docs/prometheus/latest/configuration/configuration#alertmanager_config
 #
 # As Alertmanager configs are appended, the user is responsible to ensure they're valid.
 # Note that using this feature may break Prometheus upgrades, so it's advised to review

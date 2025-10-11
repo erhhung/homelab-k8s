@@ -36,8 +36,8 @@
                 {{ 'ambient' if enabled | default(true) else null }}
         state: patched
 
-    # https://istio.io/latest/docs/ambient/usage/waypoint/#deploy-a-waypoint-proxy
-    # https://ambientmesh.io/docs/setup/configure-waypoints/
+    # https://istio.io/latest/docs/ambient/usage/waypoint#deploy-a-waypoint-proxy
+    # https://ambientmesh.io/docs/setup/configure-waypoints
     - name: >-
         {{ 'Deploy' if enabled | default(true) else 'Delete' }}
         Waypoint proxy via Gateway API
@@ -45,7 +45,7 @@
         kubeconfig: "{{ kubeconfig }}"
         namespace: "{{ apps_ns }}"
         definition:
-          # https://kubernetes.io/docs/concepts/services-networking/gateway/#api-kind-gateway
+          # https://kubernetes.io/docs/concepts/services-networking/gateway#api-kind-gateway
           apiVersion: gateway.networking.k8s.io/v1
           kind: Gateway
           metadata:
@@ -67,7 +67,7 @@
         #   fail_on_error: false
         state: "{{ 'present' if enabled | default(true) else 'absent' }}"
 
-    # https://istio.io/latest/docs/ambient/usage/waypoint/#useawaypoint
+    # https://istio.io/latest/docs/ambient/usage/waypoint#useawaypoint
     - name: (Un)label resources for Waypoint proxy
       kubernetes.core.k8s:
         kubeconfig: "{{ kubeconfig }}"

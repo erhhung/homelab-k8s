@@ -91,7 +91,7 @@ fluent_operator_chart_values:
 
       # https://training.promlabs.com/training/relabeling/introduction-to-relabeling/hidden-labels-and-metadata
       relabelings:
-        # https://prometheus.io/docs/prometheus/latest/configuration/configuration/#kubernetes_sd_config
+        # https://prometheus.io/docs/prometheus/latest/configuration/configuration#kubernetes_sd_config
         - sourceLabels: ["__meta_kubernetes_pod_node_name"]
           targetLabel: node
 

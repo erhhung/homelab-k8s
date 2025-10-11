@@ -1,5 +1,5 @@
-# https://cert-manager.io/docs/usage/certificate/#creating-certificate-resources
-# https://cert-manager.io/docs/usage/ingress/#supported-annotations
+# https://cert-manager.io/docs/usage/certificate#creating-certificate-resources
+# https://cert-manager.io/docs/usage/ingress#supported-annotations
 ---
 apiVersion: cert-manager.io/v1
 kind: Certificate
@@ -28,7 +28,7 @@ spec:
     kind: StepClusterIssuer
     group: certmanager.step.sm
 
-  # https://cert-manager.io/docs/usage/certificate/#issuance-triggers
+  # https://cert-manager.io/docs/usage/certificate#issuance-triggers
   duration: {{ days | default(30) * 24 }}h
   renewBeforePercentage: 10
 
@@ -42,7 +42,7 @@ spec:
     size: {{ key_size | default(256)  if algorithm | default('ECDSA') == 'ECDSA'
       else   key_size | default(2048) if algorithm                    == 'RSA'
       else   omit }}
-    # https://cert-manager.io/docs/usage/certificate/#issuance-behavior-rotation-of-the-private-key
+    # https://cert-manager.io/docs/usage/certificate#issuance-behavior-rotation-of-the-private-key
     rotationPolicy: Always
 
 {% if der_key is defined and
@@ -52,8 +52,8 @@ spec:
 {% endif %}
 
   isCA: false
-  # https://cert-manager.io/docs/usage/certificate/#x509-key-usages-and-extended-key-usages
-  # https://cert-manager.io/docs/reference/api-docs/#cert-manager.io/v1.KeyUsage
+  # https://cert-manager.io/docs/usage/certificate#x509-key-usages-and-extended-key-usages
+  # https://cert-manager.io/docs/reference/api-docs#cert-manager.io/v1.KeyUsage
   usages: {{ usages }}
 
   commonName: {{ cn }}

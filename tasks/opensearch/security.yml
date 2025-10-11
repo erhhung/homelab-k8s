@@ -11,7 +11,7 @@
   # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
   ansible.builtin.include_tasks: tasks/k8s/waitready.yml
 
-# https://docs.opensearch.org/docs/latest/security/configuration/security-admin/
+# https://docs.opensearch.org/docs/latest/security/configuration/security-admin
 # it is sufficient to run securityadmin.sh on a single pod
 # because the config is stored in the .opendistro_security
 # index, which gets replicated to all other nodes

@@ -18,13 +18,13 @@ qdrant_service_url: https://{{ qdrant_release_name }}.{{ qdrant_namespace }}.svc
 qdrant_secrets:
   node-tls: qdrant-node-tls # inter-node and ingress
 
-# https://qdrant.tech/documentation/guides/configuration/#configuration-options
+# https://qdrant.tech/documentation/guides/configuration#configuration-options
 qdrant_config:
   # https://qdrant.tech/documentation/guides/telemetry
   telemetry_disabled: true
   log_level: DEBUG
 
-  # https://qdrant.tech/documentation/guides/distributed_deployment/#enabling-distributed-mode-in-self-hosted-qdrant
+  # https://qdrant.tech/documentation/guides/distributed_deployment#enabling-distributed-mode-in-self-hosted-qdrant
   cluster:
     enabled: true
     p2p:
@@ -47,7 +47,7 @@ qdrant_config:
     # with "remote error: tls: certificate required"
     verify_https_client_certificate: false
     # use JWT for auth whereby API key is signing key:
-    # https://qdrant.tech/documentation/guides/security/#granular-access-control-with-jwt
+    # https://qdrant.tech/documentation/guides/security#granular-access-control-with-jwt
     jwt_rbac: true
 
   tls:

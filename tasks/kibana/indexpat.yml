@@ -20,7 +20,7 @@
   become: false
   vars:
     ansible_python_interpreter: "{{ local_python_interpreter }}"
-    # https://opensearch-project.github.io/OpenSearch-Dashboards/docs/openapi/saved_objects/
+    # https://opensearch-project.github.io/OpenSearch-Dashboards/docs/openapi/saved_objects
     saved_objs_url: "{{ kibana_api_url }}/saved_objects"
     uri_params: &uri_params
       url_username: admin
