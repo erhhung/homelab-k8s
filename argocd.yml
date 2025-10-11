@@ -1,5 +1,5 @@
-# https://argo-cd.readthedocs.io/en/stable/getting_started/
-# https://argo-cd.readthedocs.io/en/stable/operator-manual/installation/
+# https://argo-cd.readthedocs.io/en/stable/getting_started
+# https://argo-cd.readthedocs.io/en/stable/operator-manual/installation
 ---
 - name: Install Argo CD GitOps tool
   tags: install
@@ -8,6 +8,7 @@
   vars_files:
     - vars/kubernetes.yml
     - vars/valkey.yml
+    - vars/gitlab.yml
     - vars/monitoring.yml
     - vars/argocd.yml
   vars:
@@ -17,8 +18,28 @@
     secret_ns: "{{ argocd_namespace }}"
     create_ns: false
     release: "{{ argocd_release_name }}"
+  pre_tasks:
+    - name: Get CA certificates from PKI
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
+      ansible.builtin.include_tasks: tasks/pki/cacerts.yml
+      when: ca_certificates is not defined
+
+    - name: Get GitLab shell known hosts
+      vars:
+        ssh_host: "{{ gitlab_fqdns['gitlab'] }}"
+        ssh_port: "{{ gitlab_shell_port }}"
+      ansible.builtin.include_tasks: tasks/hosts/knownhosts.yml
+      # sets known_hosts fact
+
+    - name: Set gitlab_known_hosts fact
+      vars:
+        # since we're using non-standard SSH port, first field is [host]:port
+        svc_hosts: "{{ known_hosts | map('regex_replace', '^[^:]+', '['~ gitlab_shell_host ~']') }}"
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/set_fact_module.html
+      ansible.builtin.set_fact:
+        gitlab_known_hosts: "{{ (known_hosts + svc_hosts) | join('\n') }}"
   tasks:
-    # https://argo-cd.readthedocs.io/en/stable/operator-manual/tls/#tls-certificates-used-by-argocd-server
+    # https://argo-cd.readthedocs.io/en/stable/operator-manual/tls#tls-certificates-used-by-argocd-server
     - name: Create Argo CD ingress secret
       vars:
         secret_name: "{{ argocd_secrets['server'] }}"
@@ -29,7 +50,6 @@
           - "{{ argocd_fqdn }}"
           - "*.{{ argocd_namespace }}.svc.{{ cluster_domain }}"
           - "*.{{ argocd_namespace }}.svc"
-      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
       ansible.builtin.include_tasks: tasks/k8s/secrets/tls.step.yml
 
     - name: Create Valkey password secret

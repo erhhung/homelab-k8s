@@ -1,0 +1,160 @@
+# verify (and rotate if necessary)
+# or create personal access token
+#
+# pass the following vars:
+#   token      [optional] existing PAT
+#   pat_name   [required] unless existing PAT given
+#   pat_desc   [optional] description for new PAT
+#   pat_owner  [optional] default=root
+#   scopes     [optional] default=[api,self_rotate]
+#   days       [optional] default=360
+# sets the following facts:
+#   gitlab_token   active PAT to use
+---
+- name: Gather facts about date/time
+  # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/setup_module.html
+  ansible.builtin.setup:
+    gather_subset: date_time
+  when: ansible_date_time is not defined
+
+- name: Gather facts about controller
+  # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
+  ansible.builtin.include_tasks: tasks/localfacts.yml
+  when: local_python_interpreter is not defined
+
+- name: Include vars/gitlab.yml
+  ansible.builtin.include_vars: vars/gitlab.yml
+  when: gitlab_http_url is not defined
+
+- name: Verify, rotate, or create PAT
+  delegate_to: localhost
+  become: false
+  vars:
+    ansible_python_interpreter: "{{ local_python_interpreter }}"
+    # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/to_datetime_filter.html
+    today: "{{ ansible_date_time.date | ansible.builtin.to_datetime('%Y-%m-%d') }}"
+    api_base: "{{ gitlab_http_url }}/api/v4"
+  block:
+    - name: Get existing PAT if given
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/uri_module.html
+      ansible.builtin.uri:
+        # https://docs.gitlab.com/api/personal_access_tokens
+        url: "{{ api_base }}/personal_access_tokens/self"
+        headers: &self-auth-headers
+          PRIVATE-TOKEN: "{{ token }}"
+        # status=401 if PAT doesn't
+        # exist or has been revoked
+        status_code: [200, 401]
+        return_content: true
+      register: existing_pat
+      when:
+        - token is defined
+        - token is truthy
+
+    - name: Need to create/rotate PAT?
+      vars:
+        # rotate PAT if expires in 14 days or less
+        # (14 days matches the filter in GitLab UI)
+        min_days: 14
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/set_fact_module.html
+      ansible.builtin.set_fact:
+        needs_create: >-
+          {{ existing_pat.status is not defined or
+             existing_pat.status == 401 }}
+        needs_rotate: >-
+          {{ existing_pat.status          is defined and
+             existing_pat.status == 200              and
+             existing_pat.json.expires_at is defined and
+            (existing_pat.json.expires_at | ansible.builtin.to_datetime('%Y-%m-%d')
+             - today).days <= min_days }}
+
+    - name: Get PAT with admin rights
+      delegate_to: "{{ rke_control_plane_host }}"
+      vars:
+        # required kubernetes>=24.2 package only in user virtualenv
+        ansible_python_interpreter: "{{ venv_python_interpreter }}"
+      # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_info_module.html
+      kubernetes.core.k8s_info:
+        kubeconfig: "{{ rke_kubeconfig }}"
+        api_version: v1
+        kind: Secret
+        name: "{{ gitlab_secrets['tokens'] }}"
+        namespace: "{{ gitlab_namespace }}"
+      register: pats_info
+      when: needs_create
+
+    - name: Ensure admin PAT available
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/assert_module.html
+      ansible.builtin.assert:
+        that:
+          - pats_info.resources is truthy
+          - "'admin' in pats_info.resources[0].data"
+        fail_msg: Admin PAT not available
+      when: needs_create
+
+    - name: Get user ID of PAT owner
+      vars: &admin-auth-vars
+        admin_pat: "{{ pats_info.resources[0].data['admin'] | b64decode }}"
+      ansible.builtin.uri:
+        url: "{{ api_base }}/users?username={{ pat_owner | default('root') }}"
+        headers: &admin-auth-headers
+          PRIVATE-TOKEN: "{{ admin_pat }}"
+        return_content: true
+      register: users_info
+      when: needs_create
+
+    - name: Ensure PAT owner exists
+      ansible.builtin.assert:
+        that:
+          - users_info.json is defined
+          - users_info.json is truthy
+        fail_msg: User "{{ pat_owner | default('root') }}" not found
+      when: needs_create
+
+    - name: Create "{{ pat_name }}" PAT
+      vars:
+        <<: *admin-auth-vars
+        owner_id: "{{ users_info.json[0].id }}"
+        expires: "{{ '%Y-%m-%d' | strftime(today.timestamp() + days | default(360) * 86400) }}"
+      ansible.builtin.uri:
+        # https://docs.gitlab.com/api/user_tokens#create-a-personal-access-token-for-a-user
+        url: "{{ api_base }}/users/{{ owner_id }}/personal_access_tokens"
+        method: POST
+        headers: *admin-auth-headers
+        body_format: json
+        body:
+          name: "{{ pat_name }}"
+          description: "{{ pat_desc | default(omit) }}"
+          scopes: "{{ scopes | default(['api','self_rotate']) }}"
+          expires_at: "{{ expires }}"
+        status_code: 201
+      register: create_pat
+      when: needs_create
+
+    - name: >-
+        Rotate {{     '"'~ pat_name ~'"' if pat_name is defined        else
+        '"'~ existing_pat.json.name ~'"' if existing_pat.status == 200 else
+        'existing' }} PAT
+      vars:
+        # give new PAT same expiry duration as existing
+        dt_expires: "{{ existing_pat.json.expires_at      | ansible.builtin.to_datetime('%Y-%m-%d') }}"
+        dt_created: "{{ existing_pat.json.created_at[:10] | ansible.builtin.to_datetime('%Y-%m-%d') }}"
+        exp_secs: "{{ (dt_expires - dt_created).total_seconds() }}" # noqa jinja[invalid]
+        expires: "{{ '%Y-%m-%d' | strftime(today.timestamp() + exp_secs) }}"
+      ansible.builtin.uri:
+        # https://docs.gitlab.com/api/personal_access_tokens#self-rotate
+        url: "{{ api_base }}/personal_access_tokens/self/rotate"
+        method: POST
+        headers: *self-auth-headers
+        body_format: json
+        body:
+          expires_at: "{{ expires }}"
+      register: rotate_pat
+      when: needs_rotate
+
+    - name: Set gitlab_token fact
+      ansible.builtin.set_fact:
+        gitlab_token: >-
+          {{ create_pat.json.token if needs_create and create_pat.status == 201 else
+             rotate_pat.json.token if needs_rotate and rotate_pat.status == 200 else token }}
+  any_errors_fatal: true

@@ -6,15 +6,16 @@ set -eo pipefail
 # and REST API calls as the web UI. tasks
 # performed include:
 #
-# 1. add user "erhhung" besides root account
-# 2. set new user password and user settings
-# 3. create "Homelab" group owned by Erhhung
-# 4. dismiss new user pop-ups and callouts
-# 5. add Erhhung's SSH and GPG public keys
-# 6. set app settings defined in vars file
-# 7. add integrations defined in vars file
-# 8. set  CI/CD vars  defined in vars file
-# 9. register GitLab Runner and emit token
+#  1. add user "erhhung" besides root account
+#  2. set new user password and user settings
+#  3. create "Homelab" group owned by Erhhung
+#  4. dismiss new user pop-ups and callouts
+#  5. add Erhhung's SSH and GPG public keys
+#  6. set app settings defined in vars file
+#  7. add integrations defined in vars file
+#  8. set  CI/CD vars  defined in vars file
+#  9. generate  admin personal access token
+# 10. register GitLab Runner and emit token
 #
 # pass the following variables:
 #   site_base
@@ -41,6 +42,7 @@ mkdir -p "$TEMP_DIR"
  REFERER_HTML="$TEMP_DIR/referer.html"
 RESPONSE_HTML="$TEMP_DIR/response.html"
 RESPONSE_JSON="$TEMP_DIR/response.json"
+     PAT_JSON="$TEMP_DIR/pat.json"
   RUNNER_JSON="$TEMP_DIR/runner.json"
 
 AUTH_ARGS=(
@@ -136,7 +138,7 @@ erhhung_login() {
 # gitlab_login <user> <password>
 gitlab_login() {
   _func_call "$@"
-  rm -f "$AUTH_USER" "$COOKIE_JAR"
+  rm -f $AUTH_USER $COOKIE_JAR
 
   local page_url user="$1" pass="$2"
   page_url="$GITLAB_URL/users/sign_in"
@@ -148,7 +150,7 @@ gitlab_login() {
 
   printf "$status"
   [ "$status" == 302 ] || return
-  printf "$user" > "$AUTH_USER"
+  printf "$user" > $AUTH_USER
 }
 
 # create primary user besides the root account
@@ -485,7 +487,7 @@ cicd_vars() {
 EOT
   local existing="$(jq '[.data.ciVariables.nodes[] | {
     (.key): .id | capture("/(?<x>\\d+)$").x | tonumber
-    }] | add' "$RESPONSE_JSON")"
+    }] | add' $RESPONSE_JSON)"
 
   printf ','
   run curl -sX PATCH  "$url_base/ci/variables" \
@@ -514,10 +516,43 @@ EOT
 EOT
 }
 
-# requires root user credentials
+admin_pat() {
+  _func_call "$@"
+  rm -f $PAT_JSON
+
+  local api_url page_url exists scopes date expires
+  api_url="$GITLAB_URL/api/v4/personal_access_tokens?search=admin&state=active"
+  page_url="$GITLAB_URL/-/user_settings/personal_access_tokens"
+  run curl -s          "$api_url"   \
+    -H "$(csrf_header "$page_url")" \
+    "${JSON_ARGS[@]}"
+
+  exists=$(jq -r 'map(select(.name == "admin" and .active))
+      | length' $RESPONSE_JSON)
+  [ "$exists" -eq 0 ] || return 0
+
+  # https://docs.gitlab.com/user/profile/personal_access_tokens#personal-access-token-scopes
+  scopes="$(jo -a api write_repository manage_runner self_rotate admin_mode sudo)"
+  date=$(command -v gdate || command -v date) # GNU `date` required
+  expires=$($date -d "$($date +%Y-%m-01) +1 year -1 day" +%Y-%m-%d)
+
+  printf ','
+  run curl -s         "$page_url"   \
+    -H "$(csrf_header "$page_url")" \
+    "${JSON_ARGS[@]}" -d @- <<EOT
+{
+  "name":        "admin",
+  "scopes":      $scopes,
+  "expires_at": "$expires"
+}
+EOT
+  jq '(.active_access_tokens[] | select(.name == "admin")) + {token}' \
+    $RESPONSE_JSON > $PAT_JSON
+}
+
 register_runner() {
   _func_call "$@"
-  rm -f "$RUNNER_JSON"
+  rm -f $RUNNER_JSON
 
   run curl -s         "$GITLAB_URL/api/graphql" \
     -H "$(csrf_header "$GITLAB_URL/admin/runners")" \
@@ -527,10 +562,10 @@ register_runner() {
   "query": "query getRunners() {runners {nodes {id description creationState}}}"
 }
 EOT
-  local exists="$(jq -r '.data.runners.nodes | map(
+  local exists=$(jq -r '.data.runners.nodes | map(
     select(.description == "{{ gitlab_runner.name }}")
-    ) | length' "$RESPONSE_JSON")"
-  [ "$exists" == 0 ] || return 0
+    ) | length' $RESPONSE_JSON)
+  [ "$exists" -eq 0 ] || return 0
 
   printf ','
   run curl -s         "$GITLAB_URL/api/graphql" \
@@ -557,7 +592,7 @@ EOT
   eval "$(jq -r '.data.runnerCreate.runner | "
     local reg_url=\"\(.ephemeralRegisterUrl)\"
     local runner_id=\"\(.id)\"
-    "' "$RESPONSE_JSON")"
+    "' $RESPONSE_JSON)"
   echo >&2 "runner_id: $runner_id"
   echo >&2 "  reg_url: $reg_url"
 
@@ -581,7 +616,7 @@ EOT
       name:  .description,
       token: .ephemeralAuthenticationToken
     }
-  }' "$RESPONSE_JSON" > "$RUNNER_JSON"
+  }' $RESPONSE_JSON > $RUNNER_JSON
 }
 
 echo "‖        Login: $(root_login)"
@@ -595,13 +630,18 @@ echo "‖       Popups: $(dismiss_popups)"
 echo "‖     Settings: $(user_settings),$(user_prefs),[$(app_settings)]"
 echo "‖ Integrations: $(integrations)"
 echo "‖   CI/CD Vars: $(cicd_vars)"
+echo "‖    Admin PAT: $(admin_pat)"
 echo "‖       Runner: $(register_runner)"
-[ -f "$RUNNER_JSON" ] || exit 0
 
-eval "$(jq -r '.runner | "
-  runner_id=\"\(.id)\"
-  runner_name=\"\(.name)\"
-  runner_token=\"\(.token)\"
-  "' < "$RUNNER_JSON")"
-echo "$runner_name ID: $runner_id"
-echo  "RUNNER_TOKEN=$runner_token"
+if [ -f $PAT_JSON ]; then
+  echo "ADMIN_PAT=$(jq -r .token $PAT_JSON)"
+fi
+if [ -f $RUNNER_JSON ]; then
+  eval "$(jq -r '.runner | "
+    runner_id=\"\(.id)\"
+    runner_name=\"\(.name)\"
+    runner_token=\"\(.token)\"
+    "' < $RUNNER_JSON)"
+  echo "$runner_name ID: $runner_id"
+  echo  "RUNNER_TOKEN=$runner_token"
+fi

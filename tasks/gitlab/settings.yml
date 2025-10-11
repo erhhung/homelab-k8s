@@ -36,7 +36,7 @@
         referer: "{{ site_base }}/admin"
         cookies_in: "{{ cookie_jar }}"
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
-      ansible.builtin.include_tasks: tasks/gitlab/csrftoken.yml
+      ansible.builtin.include_tasks: tasks/gitlab/tokens/csrf.yml
       # sets facts: csrf_token, page_html, cookie_jar
 
     # currently not working because earlier GET

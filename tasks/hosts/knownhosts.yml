@@ -1,0 +1,46 @@
+# get SSH known_hosts entries for host
+#
+# pass the following vars:
+#   ssh_host  <required> name or IP
+#   ssh_port  [optional] default=22
+#   key_types [optional] default=[ecdsa,ed25519,rsa]
+# sets the following facts:
+#   known_hosts  list of known_hosts lines
+#                ordered by given key types
+---
+- name: Gather facts about controller
+  # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
+  ansible.builtin.include_tasks: tasks/localfacts.yml
+  when: local_python_interpreter is not defined
+
+- name: Get SSH known_hosts entries
+  delegate_to: localhost
+  become: false
+  block:
+    - name: Get ssh-keyscan output
+      vars:
+        ansible_python_interpreter: "{{ local_python_interpreter }}"
+        ssh_port: "{{ ssh_port | default(22) }}"
+        # man ssh-keyscan
+        default_types:
+          - ecdsa
+          - ed25519
+          - rsa
+        types: "{{ [key_types | default(default_types)] | flatten }}"
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/shell_module.html
+      ansible.builtin.shell: |
+        set -eo pipefail
+
+        for type in {{ types | join(' ') }}; do
+          ssh-keyscan -t $type -p {{ ssh_port }} {{ ssh_host }} 2> /dev/null | egrep -v '^#'
+        done
+      args:
+        executable: "{{ local_bash_interpreter }}"
+      register: ssh_keyscan
+      changed_when: false
+
+    - name: Set known_hosts fact
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/set_fact_module.html
+      ansible.builtin.set_fact:
+        known_hosts: "{{ ssh_keyscan.stdout_lines }}"
+  any_errors_fatal: true

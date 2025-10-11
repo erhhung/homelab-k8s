@@ -50,7 +50,7 @@ gitlab_app_settings:
 
     # Settings > General > Sign-in restrictions
     application_setting[after_sign_out_path]:
-      value: https://{{ gitlab_fqdns['gitlab'] }}/
+      value: "{{ gitlab_http_url }}/users/sign_in"
       # if no other property provided,
       # current value is in value="X"
       # attribute BEFORE name="{key}"

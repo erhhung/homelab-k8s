@@ -11,19 +11,28 @@ argocd_fqdn: "{{ [argocd_host_name] | product(search_domains) | map('join','.') 
 
 argocd_secrets:
   # secret name "argocd-server-tls" is hardcoded and expected:
-  # https://argo-cd.readthedocs.io/en/stable/operator-manual/tls/#tls-certificates-used-by-argocd-server
+  # https://argo-cd.readthedocs.io/en/stable/operator-manual/tls#tls-certificates-used-by-argocd-server
   server: argocd-server-tls
   valkey: argocd-valkey
 
 # common command-line options not provided in chart values under .externalRedis
 # (used by argocd-server, argocd-application-controller and argocd-repo-server):
-# https://argo-cd.readthedocs.io/en/stable/operator-manual/server-commands/argocd-server/
+# https://argo-cd.readthedocs.io/en/stable/operator-manual/server-commands/argocd-server
 argocd_redis_options:
   - --redis-use-tls
   # /tls/valkey is mounted into relevant pods
   - --redis-ca-certificate=/tls/valkey/ca.crt
   - --redis-client-certificate=/tls/valkey/tls.crt
   - --redis-client-key=/tls/valkey/tls.key
+
+argocd_allowed_scms:
+  - https://github.com
+  - https://gitlab.com
+  - https://bitbucket.org
+  - "{{ gitlab_http_url    }}" # external URL
+  - "{{ gitlab_ssh_url     }}" # external URL
+  - "{{ gitlab_service_url }}" # cluster  URL
+  - "{{ gitlab_shell_url   }}" # cluster  URL
 
 # https://github.com/argoproj/argo-helm/tree/main/charts/argo-cd
 argocd_chart_version: "8.2.5"
@@ -42,13 +51,13 @@ argocd_chart_values:
 
   configs:
     # "argocd-cm" ConfigMap:
-    # https://argo-cd.readthedocs.io/en/stable/operator-manual/argocd-cm-yaml/
+    # https://argo-cd.readthedocs.io/en/stable/operator-manual/argocd-cm-yaml
     # all values under .configs.cm are written into ConfigMap
     cm:
       # allow users to exec into app pods from the Argo CD UI:
-      # https://argo-cd.readthedocs.io/en/stable/operator-manual/rbac/#the-exec-resource
+      # https://argo-cd.readthedocs.io/en/stable/operator-manual/rbac#the-exec-resource
       exec.enabled: true
-      # https://argo-cd.readthedocs.io/en/stable/user-guide/status-badge/
+      # https://argo-cd.readthedocs.io/en/stable/user-guide/status-badge
       statusbadge.enabled: true
       # enable anonymous user with default role
       # permissions specified in argocd-rbac-cm
@@ -59,7 +68,7 @@ argocd_chart_values:
       accounts.erhhung: apiKey
 
     # "argocd-secret" Secret:
-    # https://argo-cd.readthedocs.io/en/stable/operator-manual/argocd-secret-yaml/
+    # https://argo-cd.readthedocs.io/en/stable/operator-manual/argocd-secret-yaml
     secret:
       createSecret: true
       githubSecret: "{{ github_access_token }}"
@@ -70,7 +79,7 @@ argocd_chart_values:
         {{ argocd_admin_pass | ansible.builtin.password_hash('bcrypt',
                                salt=bcrypt_salt, rounds=bcrypt_rounds) }}
       argocdServerAdminPasswordMtime: &argocd_pass_mtime |-
-        2025-05-26T00:00:00Z
+        2025-10-01T00:00:00Z
       extra:
         # key for signing JWT tokens
         server.secretkey: "{{ argocd_signing_key }}"
@@ -80,12 +89,22 @@ argocd_chart_values:
         accounts.erhhung.passwordMtime: *argocd_pass_mtime
 
     # "argocd-tls-certs-cm" ConfigMap:
-    # https://argo-cd.readthedocs.io/en/stable/operator-manual/argocd-tls-certs-cm-yaml/
+    # https://argo-cd.readthedocs.io/en/stable/operator-manual/declarative-setup#repositories-using-self-signed-tls-certificates-or-are-signed-by-custom-ca
+    # https://argo-cd.readthedocs.io/en/stable/operator-manual/argocd-tls-certs-cm-yaml
     tls:
       # certs of Git repositories
       # (required, even if empty)
       create: true
-      certificates: {}
+      certificates: "{{ {
+        gitlab_fqdns['gitlab']: ca_certificates[1],
+        gitlab_service_host:    ca_certificates[1],
+        } }}"
+
+    # "argocd-ssh-known-hosts-cm" ConfigMap
+    # https://argo-cd.readthedocs.io/en/stable/operator-manual/declarative-setup#ssh-known-host-public-keys
+    ssh:
+      # known hosts of in-cluster GitLab
+      extraHosts: "{{ gitlab_known_hosts }}"
 
     # "argocd-gpg-keys-cm" ConfigMap
     gpg:
@@ -98,7 +117,7 @@ argocd_chart_values:
         B9C45C9F62942408: "{{ lookup('ansible.builtin.file', 'files/erhhung/erhhung.asc', rstrip=false) }}"
 
     # "argocd-cmd-params-cm" ConfigMap:
-    # https://argo-cd.readthedocs.io/en/stable/operator-manual/argocd-cmd-params-cm-yaml/
+    # https://argo-cd.readthedocs.io/en/stable/operator-manual/argocd-cmd-params-cm-yaml
     params:
       server.log.format: json
       server.log.level: warn
@@ -117,14 +136,11 @@ argocd_chart_values:
       reposerver.parallelism.limit: 2
       application.namespaces: "*"
       applicationsetcontroller.namespaces: "*"
-      # https://argo-cd.readthedocs.io/en/stable/operator-manual/applicationset/Appset-Any-Namespace/#scm-providers-secrets-consideration
-      applicationsetcontroller.allowed.scm.providers: "{{
-        ['github.com', 'gitlab.com', 'bitbucket.org'] |
-        map('regex_replace','^','https://') | join(',')
-        }}"
-      # https://argo-cd.readthedocs.io/en/stable/operator-manual/applicationset/Appset-Any-Namespace/#tokenref-restrictions
+      # https://argo-cd.readthedocs.io/en/stable/operator-manual/applicationset/Appset-Any-Namespace#scm-providers-secrets-consideration
+      applicationsetcontroller.allowed.scm.providers: "{{ argocd_allowed_scms | join(',') }}"
+      # https://argo-cd.readthedocs.io/en/stable/operator-manual/applicationset/Appset-Any-Namespace#tokenref-restrictions
       applicationsetcontroller.enable.tokenref.strict.mode: true
-      # https://argo-cd.readthedocs.io/en/stable/operator-manual/applicationset/Progressive-Syncs/#enabling-progressive-syncs
+      # https://argo-cd.readthedocs.io/en/stable/operator-manual/applicationset/Progressive-Syncs#enabling-progressive-syncs
       applicationsetcontroller.enable.progressive.syncs: true
 
   redis:
@@ -142,14 +158,14 @@ argocd_chart_values:
     replicas: 2
 
     # extra args plus Redis options:
-    # https://argo-cd.readthedocs.io/en/stable/operator-manual/server-commands/argocd-server/
+    # https://argo-cd.readthedocs.io/en/stable/operator-manual/server-commands/argocd-server
     extraArgs: |
       {{ [
          ] + argocd_redis_options }}
 
     # "argocd-server-tls" Secret
     # will be created by Ansible
-    # https://argo-cd.readthedocs.io/en/stable/operator-manual/tls/#tls-certificates-used-by-argocd-server
+    # https://argo-cd.readthedocs.io/en/stable/operator-manual/tls#tls-certificates-used-by-argocd-server
     # https://github.com/argoproj/argo-helm/tree/main/charts/argo-cd/templates/argocd-configs/argocd-server-tls-secret.yaml
     certificateSecret:
       enabled: false
@@ -182,7 +198,8 @@ argocd_chart_values:
       ingressClassName: "{{ rke_ingress_class }}"
       annotations:
         nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
-        nginx.ingress.kubernetes.io/ssl-passthrough: "true"
+        # nginx.ingress.kubernetes.io/ssl-passthrough: "true"
+        nginx.ingress.kubernetes.io/backend-protocol: HTTPS
 
     # this metrics config is shared by all components
     metrics: &metrics
@@ -201,7 +218,7 @@ argocd_chart_values:
     revisionHistoryLimit: 2
 
     # extra args plus Redis options:
-    # https://argo-cd.readthedocs.io/en/stable/operator-manual/server-commands/argocd-application-controller/
+    # https://argo-cd.readthedocs.io/en/stable/operator-manual/server-commands/argocd-application-controller
     extraArgs: |
       {{ [
          ] + argocd_redis_options }}
@@ -225,7 +242,7 @@ argocd_chart_values:
     replicas: 2
 
     # extra args plus Redis options:
-    # https://argo-cd.readthedocs.io/en/stable/operator-manual/server-commands/argocd-repo-server/
+    # https://argo-cd.readthedocs.io/en/stable/operator-manual/server-commands/argocd-repo-server
     extraArgs: |
       {{ [
          ] + argocd_redis_options }}

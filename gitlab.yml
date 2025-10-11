@@ -280,9 +280,10 @@
     - vars/harbor.yml
     - vars/gitlab.yml
     - vars/gitlab.configure.yml
+    - vars/kubernetes.yml
   vars:
     config_method: shell # uri|shell
-    site_base: https://{{ gitlab_fqdns['gitlab'] }}
+    site_base: "{{ gitlab_http_url }}"
     # using YAML anchors allows re-evaluation of
     # facts in tasks to use their current values
     auth_headers_: &auth-headers
@@ -321,7 +322,7 @@
         - name: Get CSRF token from page
           vars:
             referer: "{{ site_base }}/"
-          ansible.builtin.include_tasks: tasks/gitlab/csrftoken.yml
+          ansible.builtin.include_tasks: tasks/gitlab/tokens/csrf.yml
           # sets facts: csrf_token, page_html, cookie_jar
 
         - name: Authenticate as root user
@@ -376,7 +377,24 @@
       register: configure_sh
       changed_when: configure_sh.stdout is search(':.*(302|200)')
       failed_when: configure_sh.stdout is search(':.*(422|500)') or configure_sh.rc != 0
-      # outputs RUNNER_TOKEN
+      # outputs ADMIN_PAT and RUNNER_TOKEN
+
+    - name: Create GitLab PATs secret
+      delegate_to: "{{ rke_control_plane_host }}"
+      when: config_method == 'shell'
+      vars:
+        <<: *vars
+        admin_pat: |-
+          {% set lines = configure_sh.stdout_lines | select('search','^ADMIN_PAT=') %}
+          {{ lines[0].split('ADMIN_PAT=')[1] if lines is truthy else none }}
+      block:
+        - name: Create GitLab PATs secret
+          vars:
+            secret_name: "{{ gitlab_secrets['tokens'] }}"
+            secret_data:
+              admin: "{{ admin_pat }}"
+          ansible.builtin.include_tasks: tasks/k8s/secrets/generic.yml
+          when: admin_pat is truthy
 
     - name: Set the runner_token fact
       when: config_method == 'shell'
@@ -438,5 +456,63 @@
           spec:
             replicas: 1
         state: patched
+        wait: true
+  any_errors_fatal: true
+
+# https://grafana.com/grafana/dashboards/18928-gitlab-jihu-ci-pipelines
+# https://github.com/mvisonneau/gitlab-ci-pipelines-exporter
+- name: Install Pipelines Exporter
+  tags: exporter
+  hosts: "{{ rke_control_plane_host }}"
+  gather_facts: false
+  vars_files:
+    - vars/kubernetes.yml
+    - vars/monitoring.yml
+    - vars/gitlab.secrets.yml
+    - vars/gitlab.yml
+  vars: *vars
+  pre_tasks:
+    - name: Get exporter PAT if exists
+      kubernetes.core.k8s_info:
+        kubeconfig: "{{ kubeconfig }}"
+        api_version: v1
+        kind: Secret
+        name: "{{ pipelines_exporter_secrets['auth'] }}"
+        namespace: "{{ secret_ns }}"
+      register: exporter_pat
+  tasks:
+    # https://github.com/mvisonneau/gitlab-ci-pipelines-exporter/tree/main/docs/configuration_syntax.md
+    - name: Verify/rotate or create PAT
+      vars:
+        token: >-
+          {{ exporter_pat.resources[0].data['gitlabToken'] | b64decode
+          if exporter_pat.resources is truthy else none }}
+        pat_name: pipelines-exporter
+        scopes:
+          - api
+          - read_repository
+          - self_rotate
+      ansible.builtin.include_tasks: tasks/gitlab/tokens/pat.yml
+      # sets fact: gitlab_token
+
+    - name: Create exporter auth secret
+      vars:
+        secret_name: "{{ pipelines_exporter_secrets['auth'] }}"
+        secret_data:
+          gitlabToken: "{{ gitlab_token }}"
+          webhookToken: "{{ gitlab_secrets_data['webhook'] }}"
+      ansible.builtin.include_tasks: tasks/k8s/secrets/generic.yml
+
+    - name: Install exporter Helm chart
+      kubernetes.core.helm:
+        kubeconfig: "{{ kubeconfig }}"
+        chart_repo_url: https://charts.visonneau.fr
+        chart_ref: gitlab-ci-pipelines-exporter
+        chart_version: "{{ pipelines_exporter_chart_version }}"
+        release_name: "{{ pipelines_exporter_release_name }}"
+        release_namespace: "{{ pipelines_exporter_namespace }}"
+        release_values: "{{ pipelines_exporter_chart_values }}"
+        history_max: "{{ helm_max_history }}"
+        atomic: true
         wait: true
   any_errors_fatal: true

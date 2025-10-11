@@ -17,14 +17,14 @@ git_root() {
 
 # <section> <title>
 section_start() {
-  # https://docs.gitlab.com/ee/ci/jobs/#custom-collapsible-sections
-  local section=$1 title="${*:2}" erase_eol='\033[0K' blue='\033[1;34m' clear='\033[0m'
+  # https://docs.gitlab.com/ci/jobs/job_logs#custom-collapsible-sections
+  local section=$1 title="${*:2}" erase_eol='\e[0K' blue='\e[1;34m' clear='\e[0m'
   echo -e "${erase_eol}section_start:$(date +%s):${section}[collapsed=true]\r${erase_eol}$blue===== $title =====$clear"
 }
 
 # <section>
 section_end() {
-  local section=$1 erase_eol='\033[0K'
+  local section=$1 erase_eol='\e[0K'
   echo -e "${erase_eol}section_end:$(date +%s):$section\r$erase_eol"
 }
 
@@ -131,7 +131,7 @@ npm_install() {
   npm config set loglevel warn
 
   if ! npm install --no-fund "$@"; then
-    local red='\033[0;31m' clear='\033[0m'
+    local red='\e[0;31m' clear='\e[0m'
     echo -e "\n$red===== Debug Log =====$clear"
     cat ~/.npm/_logs/*.log
     return 1
@@ -172,7 +172,7 @@ buildah_push() {
 set_k8s_image() {
   local kind=$1 namespace=$2 resource_name=$3
   local container_type=$4 container_name=$5 image=$6
-  local pink='\033[1;35m' clear='\033[0m'
+  local pink='\e[1;35m' clear='\e[0m'
   echo -e "Image: $pink$image$clear"
 
   local index=$(kubectl get $kind -n $namespace $resource_name -o json | \
@@ -202,7 +202,7 @@ wait_k8s_job() (
 # sleep for post-mortem
 # debugging if job fails
 _ci_debug() {
-  local rc=$? red='\033[0;31m' clear='\033[0m'
+  local rc=$? red='\e[0;31m' clear='\e[0m'
   ((rc)) || return 0
 
   echo -e "\n$red===== Job Failed =====$clear"
