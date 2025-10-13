@@ -55,4 +55,4 @@
       changed_when: false
       retries: 60
       delay: 5
-  any_errors_fatal: true
+  any_errors_fatal: false
