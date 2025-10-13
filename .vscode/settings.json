@@ -6,5 +6,19 @@
       "args": ["--rcfile", ".vscode/.bash_profile"],
       "icon": "terminal-bash"
     }
+  },
+  "files.associations": {
+    "*.json*.j2": "json",
+    "*.yaml*.j2": "yaml",
+    "*.yml*.j2": "yaml",
+    "*.xml*.j2": "xml",
+    "*.toml*.j2": "toml",
+    "*.conf.j2": "properties",
+    "*.ini.j2": "ini",
+    "*.sql.j2": "sql",
+    "*.nginx.j2": "nginx",
+    "*.sh.j2": "shellscript",
+    "*.js.j2": "javascript",
+    "*.py.j2": "python"
   }
 }
