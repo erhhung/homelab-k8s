@@ -93,6 +93,9 @@
             autoremove: true
             clean: true
             purge: true
+          # otherwise always
+          # reports "changed"
+          changed_when: false
           retries: 3
           delay: 5
 

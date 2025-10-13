@@ -78,8 +78,10 @@ rke_ingress_class: nginx
 rke_ingress_pt_class: nginx-passthrough
 
 # remember to create ingress.pem with SANs:
-#  ingress.fourteeners.local
-#    nginx.fourteeners.local
+#    ingress.fourteeners.local
+#  ingresspt.fourteeners.local
+#      nginx.fourteeners.local
+#    nginxpt.fourteeners.local
 #  192.168.4.222..223
 #  192.168.0.171..178
 nginx_tls_secret: rke2-ingress-nginx-default-tls

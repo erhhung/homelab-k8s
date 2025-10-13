@@ -172,6 +172,10 @@
   vars_files: *vars_files
   vars:
     kubeconfig: "{{ rke_kubeconfig }}"
+  pre_tasks:
+    - name: Is the monitoring stack ready?
+      ansible.builtin.include_tasks: tasks/monitoring/stackready.yml
+      when: monitoring_stack_ready is not defined
   tasks:
     - name: Create Dashboards ingress secret
       vars:

@@ -546,8 +546,7 @@ admin_pat() {
   "expires_at": "$expires"
 }
 EOT
-  jq '(.active_access_tokens[] | select(.name == "admin")) + {token}' \
-    $RESPONSE_JSON > $PAT_JSON
+  mv -f $RESPONSE_JSON $PAT_JSON
 }
 
 register_runner() {
@@ -635,6 +634,7 @@ echo "‖       Runner: $(register_runner)"
 
 if [ -f $PAT_JSON ]; then
   echo "ADMIN_PAT=$(jq -r .token $PAT_JSON)"
+  rm -f $PAT_JSON
 fi
 if [ -f $RUNNER_JSON ]; then
   eval "$(jq -r '.runner | "
@@ -644,4 +644,5 @@ if [ -f $RUNNER_JSON ]; then
     "' < $RUNNER_JSON)"
   echo "$runner_name ID: $runner_id"
   echo  "RUNNER_TOKEN=$runner_token"
+  rm -f $RUNNER_JSON
 fi

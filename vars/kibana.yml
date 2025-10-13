@@ -36,7 +36,7 @@ dashboards_chart_values:
     # https://github.com/opensearch-project/OpenSearch-Dashboards/tree/main/config/opensearch_dashboards.yml
     opensearch_dashboards.yml: |
       server.name: dashboards
-      server.host: {% raw %}{{ .Values.serverHost }}{% endraw %}
+      server.host: {% raw %}{{ .Values.serverHost }}{% endraw +%}
       # https://docs.opensearch.org/latest/install-and-configure/install-dashboards/tls
       server.ssl.enabled: true
       server.ssl.certificate: /tls/tls.crt
