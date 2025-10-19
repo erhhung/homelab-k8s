@@ -1,0 +1,63 @@
+# download Apt repository GPG
+# key and create sources.list
+# (requires gather_facts=true)
+#
+# pass the following vars:
+#   source:        <required> source  specs
+#     keyring:     <required> keyring specs
+#       file       <required> name under /usr/share/keyrings
+#       url        <required> GPG key URL
+#     sources:     <required> sources specs
+#       file       <required> name under /etc/apt/sources.list.d
+#       types      [optional] default=deb
+#       uris       <required> Apt repo URIs
+#       suites     [optional] default={os-release}
+#       components [optional] default=main
+#       arch       [optional] default={host-arch}
+---
+- name: Configure Apt sources
+  become: true
+  vars:
+    os_release: "{{ ansible_facts['distribution_release'] }}"
+    uname_arch: "{{ ansible_facts['architecture'] }}"
+    architecture: >-
+      {{ 'arm64' if uname_arch == 'aarch64' else
+         'amd64' if uname_arch ==  'x86_64' else 'amd64' }}
+    keyring_file: /usr/share/keyrings/{{ source.keyring.file }}
+    sources_file: /etc/apt/sources.list.d/{{ source.sources.file }}
+  block:
+    - name: Is Apt repo configured?
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/stat_module.html
+      ansible.builtin.stat:
+        path: "{{ item }}"
+      loop:
+        - "{{ keyring_file }}"
+        - "{{ sources_file }}"
+      register: file_stat
+
+    - name: Download keyring file
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/shell_module.html
+      ansible.builtin.shell: |
+        set -o pipefail
+
+        curl -fsSL "{{ source.keyring.url }}" | \
+          gpg --dearmor > "{{ keyring_file }}"
+      args:
+        executable: /bin/bash
+      when: not file_stat.results[0].stat.exists
+      changed_when: true
+
+    - name: Add to sources.list.d
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/copy_module.html
+      ansible.builtin.copy:
+        dest: "{{ sources_file }}"
+        content: |
+          Types: {{ source.sources.types | default('deb') }}
+          URIs: {{ source.sources.uris }}
+          Suites: {{ source.sources.suites | default(os_release) }}
+          Components: {{ source.sources.components | default('main') }}
+          Architectures: {{ source.sources.arch | default(architecture) }}
+          Signed-By: {{ keyring_file }}
+        mode: "0644"
+      when: not file_stat.results[1].stat.exists
+  any_errors_fatal: true

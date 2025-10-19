@@ -17,7 +17,7 @@
         # scripts so that kubectl is in PATH
         exec /bin/bash -l <<'EOT'
         # set MC_CONFIG_DIR
-        . ~/.bash_aliases
+        . .bash_aliases
         set -o pipefail
 
         secret_name="prometheus-{{ monitoring_release_name }}-prometheus"

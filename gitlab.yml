@@ -12,6 +12,7 @@
     - vars/storage.yml
     - vars/minio.yml
     - vars/monitoring.yml
+    # gitlab_secrets_data.*
     - vars/gitlab.secrets.yml
     - vars/gitlab.yml
   vars: &vars

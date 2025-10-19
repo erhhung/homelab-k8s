@@ -1,10 +1,30 @@
-# Install packages not included in
-# Ubuntu 24.04 minimal installation
+# install packages not included by default
+# in the Ubuntu 24.04 minimal installation
 
 # see installed packages:
 # apt list --installed
 
-add_apt_repositories:
+# see tasks/packages/apt/sources.yml
+# for item specs and default values
+apt_sources:
+  # https://helm.sh/docs/intro/install#from-apt-debianubuntu
+  - keyring:
+      file: helm-archive-keyring.gpg
+      url: https://packages.buildkite.com/helm-linux/helm-debian/gpgkey
+    sources:
+      file: helm.sources
+      uris: https://packages.buildkite.com/helm-linux/helm-debian/any
+      suites: any
+
+  # https://developer.hashicorp.com/vault/install#linux
+  - keyring:
+      file: hashicorp-archive-keyring.gpg
+      url: https://apt.releases.hashicorp.com/gpg
+    sources:
+      file: hashicorp.sources
+      uris: https://apt.releases.hashicorp.com
+
+apt_repositories:
   - repos:
       # https://dgpu-docs.intel.com/driver/client/overview.html
       - ppa:kobuk-team/intel-graphics
@@ -15,7 +35,7 @@ add_apt_repositories:
       - k8s5
       - k8s6
 
-install_apt_packages:
+apt_packages:
   - packages:
       - linux-modules-extra-{{ ansible_kernel }} # GPU drivers
       - apt-transport-https
@@ -78,7 +98,7 @@ install_apt_packages:
 
 # packages will be installed under
 # virtualenv ansible_user_dir/.venv
-install_pip_packages:
+pip_packages:
   - PyYAML
   - jsonpatch
   - kubernetes # required by kubernetes.core.k8s
@@ -86,6 +106,6 @@ install_pip_packages:
 
 # {name, path, state} all fields optional:
 # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/helm_plugin_module.html
-install_helm_plugins:
+helm_plugins:
   - path: https://github.com/databus23/helm-diff
   - path: https://github.com/aslafy-z/helm-git

@@ -59,14 +59,14 @@
   any_errors_fatal: true
 
 # https://github.com/goharbor/harbor-cli#installation
-- name: Install Harbor CLI utility
+- name: Install Harbor CLI tool
   tags: cli
   hosts: k8s_all
   gather_facts: false
   vars_files:
     - vars/harbor.yml
   tasks:
-    - name: Install Harbor CLI utility
+    - name: Install Harbor CLI tool
       become: true
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/shell_module.html
       ansible.builtin.shell: |
@@ -90,15 +90,13 @@
         executable: /bin/bash
       register: install_cli
       changed_when: install_cli.rc == 0
-      failed_when: >-
-        install_cli.rc != 0 and
-        install_cli.rc != 9
+      failed_when: install_cli.rc not in [0,9]
 
     # https://github.com/goharbor/harbor-cli/tree/main/doc/cli-config/_index.md
     # https://github.com/goharbor/harbor-cli/tree/main/doc/cli-encryption/_index.md
     - name: Configure Harbor CLI login
       ansible.builtin.shell: |
-        # restart Bash and load .bash_aliases and .bash_secrets
+        # restart Bash and load .bash_aliases
         exec /bin/bash -l <<'EOT'
         . .bash_aliases
         set -o pipefail
@@ -109,8 +107,11 @@
 
         [ "$HARBOR_ENCRYPTION_KEY" ] || {
           export HARBOR_ENCRYPTION_KEY=$(openssl rand -base64 32)
-          cat <<EOF >> .bash_secrets
-        export HARBOR_ENCRYPTION_KEY="$HARBOR_ENCRYPTION_KEY"
+          rm -rf "$HOME/.harbor"
+
+          # BASH_ENV_DIR is set in .bash_aliases
+          cat <<EOF > "$BASH_ENV_DIR/harbor.env"
+        HARBOR_ENCRYPTION_KEY="$HARBOR_ENCRYPTION_KEY"
         EOF
         }
         harbor login {{ harbor_url }} --context-name admin \
@@ -118,9 +119,7 @@
         EOT
       register: config_cli
       changed_when: config_cli.rc == 0
-      failed_when: >-
-        config_cli.rc != 0 and
-        config_cli.rc != 9
+      failed_when: config_cli.rc not in [0,9]
   any_errors_fatal: true
 
 - name: Configure Harbor registry
@@ -240,8 +239,7 @@
       register: create_users
       changed_when: create_users.rc == 0
       failed_when: >-
-        create_users.rc != 0 and
-        create_users.rc != 9 or
+        create_users.rc not in [0,9] or
         create_users.stdout is search('errors')
   any_errors_fatal: true
 
@@ -254,7 +252,7 @@
     - vars/harbor.yml
   vars:
     preamble: |-
-      # restart Bash and load .bash_aliases and .bash_secrets
+      # restart Bash and load .bash_aliases
       exec /bin/bash -l <<'EOT'
       # don`t load .rancher_api
       ADMIN_PASS=none
@@ -281,8 +279,8 @@
             registries+=($registry)
         done
 
-        jo -p sources=$(jo -a -- <<< ""    "${sources[@]}") \
-           registries=$(jo -a -- <<< "" "${registries[@]}")
+        jo -p sources="$(jo -a -- <<< ""    "${sources[@]}")" \
+           registries="$(jo -a -- <<< "" "${registries[@]}")"
         EOT
       register: copy_info
       changed_when: false
@@ -324,9 +322,7 @@
       register: reg_logins
       when: source_registries is truthy
       changed_when: reg_logins.rc == 0
-      failed_when: >-
-        reg_logins.rc != 0 and
-        reg_logins.rc != 9
+      failed_when: reg_logins.rc not in [0,9]
 
     - name: Copy image into Harbor
       vars:

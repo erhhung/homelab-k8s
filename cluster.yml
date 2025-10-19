@@ -155,9 +155,7 @@
         EOT
       register: install_cli
       changed_when: install_cli.rc == 0
-      failed_when: >-
-        install_cli.rc != 0 and
-        install_cli.rc != 9
+      failed_when: install_cli.rc not in [0,9]
   any_errors_fatal: true
 
 - name: Configure RKE2 cluster
@@ -224,9 +222,7 @@
     #     yq -i "$prop = {{ failure_threshold }}" kube-proxy.yaml
     #   register: patch_pod
     #   changed_when: patch_pod.rc == 0
-    #   failed_when: >-
-    #     patch_pod.rc != 0 and
-    #     patch_pod.rc != 9
+    #   failed_when: patch_pod.rc not in [0,9]
     #   notify: Restart kube-proxy static pod
 
     - name: Create supplemental resources
@@ -348,9 +344,7 @@
             label: "{{ item.src }}"
           register: copy_chart
           changed_when: copy_chart.rc == 0
-          failed_when: >-
-            copy_chart.rc != 0 and
-            copy_chart.rc != 9
+          failed_when: copy_chart.rc not in [0,9]
 
     - name: Restart {{ rke2_svc }} service
       # noqa no-handler
