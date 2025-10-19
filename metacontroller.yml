@@ -107,9 +107,7 @@
         EOT
       register: kustomize
       changed_when: kustomize.rc == 0
-      failed_when: >-
-        kustomize.rc != 0 and
-        kustomize.rc != 9
+      failed_when: kustomize.rc not in [0,9]
 
     - name: Create Metacontroller ServiceMonitor
       vars:

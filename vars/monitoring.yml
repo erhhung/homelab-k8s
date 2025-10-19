@@ -245,6 +245,10 @@ metric_scraper_tls_config:
   # will not contain IP SANs to cover all pod IPs
   insecureSkipVerify: true
 
+# label on ConfigMaps/Secrets to watch for
+# Grafana dashboards (must have value "1")
+grafana_dashboard_label: grafana_dashboard
+
 # https://github.com/prometheus-community/helm-charts/tree/main/charts/kube-prometheus-stack
 prometheus_stack_chart_version: "77.5.0"
 monitoring_release_name: prometheus-stack
@@ -284,10 +288,10 @@ prometheus_stack_chart_values:
     resources:
       requests:
         cpu: 10m
-        memory: 24Mi
+        memory: 64Mi
       limits:
         cpu: 50m
-        memory: 96Mi
+        memory: 128Mi
 
     serviceMonitor:
       selfMonitor: true
@@ -876,18 +880,31 @@ prometheus_stack_chart_values:
         cpu: 500m
         memory: 1Gi
 
+    # run sidecars to watch for ConfigMaps and/or
+    # Secrets containing dashboards/data sources:
     # https://github.com/kiwigrid/k8s-sidecar
     sidecar:
       dashboards:
         enabled: true
+
+        # list of namespaces to watch; "ALL" to watch
+        # all; null to watch only Grafana's namespace
+        searchNamespace: ALL
+        resource: both # configmap|secret|both
+        # resource selector label and value
+        label: "{{ grafana_dashboard_label }}"
+        labelValue: "1"
+
         env: &sidecar_env
           REQ_SKIP_TLS_VERIFY: "true"
           PYTHONWARNINGS: ignore:Unverified HTTPS request
         reloadURL: https://localhost:3000/api/admin/provisioning/dashboards/reload
+        # auto-migrate old table panels
         enableNewTablePanelSyntax: true
 
       datasources:
-        enabled: true
+        enabled: false
+
         env: *sidecar_env
         reloadURL: https://localhost:3000/api/admin/provisioning/datasources/reload
         # disable default (Prometheus) data source because its endpoint URL in
@@ -1014,7 +1031,7 @@ prometheus_stack_chart_values:
     resources:
       requests:
         cpu: 10m
-        memory: 32Mi
+        memory: 64Mi
       limits:
         cpu: 50m
         memory: 128Mi

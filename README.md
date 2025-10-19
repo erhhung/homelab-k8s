@@ -49,7 +49,8 @@ All cluster services will be provisioned with TLS certificates from Erhhung's pr
 |         https://thanos.fourteeners.local | Thanos Query UI
 | https://rule.thanos.fourteeners.local <br/> https://store.thanos.fourteeners.local <br/> https://bucket.thanos.fourteeners.local <br/> https://compact.thanos.fourteeners.local | Thanos component status UIs
 |          https://kiali.fourteeners.local | Kiali console _(Keycloak SSO)_
-|         https://gitlab.fourteeners.local | GitLab web UI
+|          https://vault.fourteeners.local | Vault UI
+|         https://gitlab.fourteeners.local | GitLab UI
 |  ssh://git@gitlab.fourteeners.local:2222 | GitLab SSH Git access
 | https://*.pages.gitlab.fourteeners.local | GitLab Pages websites
 |         https://argocd.fourteeners.local | Argo CD console
@@ -106,6 +107,8 @@ All cluster services will be provisioned with TLS certificates from Erhhung's pr
 - [X] [Istio Service Mesh](https://istio.io/latest/about/service-mesh) with [Kiali Console](https://kiali.io/) — secure, observe, trace, and route traffic between workloads
     * Install on main RKE cluster using the [`istioctl`](https://istio.io/latest/docs/ambient/install/istioctl) CLI
     * Install Kiali using the [`kiali-operator`](https://kiali.io/docs/installation/installation-guide/install-with-helm#install-with-operator) Helm chart and `Kiali` CR
+- [X] [HashiCorp Vault](https://github.com/hashicorp/vault) and [External Secrets Operator](https://external-secrets.io/) — secure secrets management and synchronization
+    * Install on main RKE cluster using the [`vault`](https://github.com/hashicorp/vault-helm) and [`external-secrets`](https://external-secrets.io/latest/introduction/getting-started#installing-with-helm) Helm charts
 - [X] [GitLab CI/CD Platform](https://gitlab.com/rluna-gitlab/gitlab-ce) — run CI/CD pipelines for local deployments
     * Install on main RKE cluster using the [`gitlab`](https://gitlab.com/gitlab-org/charts/gitlab) Helm chart
     * [X] Install [GitLab CI Pipelines Exporter](https://github.com/mvisonneau/gitlab-ci-pipelines-exporter) using the [`gitlab-ci-pipelines-exporter`](https://github.com/mvisonneau/helm-charts/tree/main/charts/gitlab-ci-pipelines-exporter) Helm chart
@@ -164,12 +167,12 @@ ansible-vault view   $VAULTFILE
 | `step_ca_provisioner_pass`        | `keycloak_admin_pass`
 | `minio_client_pass`               | `thanos_admin_pass`
 | `velero_repo_pass`                | `grafana_admin_pass`
-| `velero_passphrase`               | `gitlab_root_pass`
-| `harbor_secret`                   | `gitlab_user_pass`
-| `dashboards_os_pass`              | `argocd_admin_pass`
-| `fluent_os_pass`                  | `openwebui_admin_pass`
-| `valkey_pass`                     | `flowise_admin_pass`
-| `postgresql_pass`                 |
+| `velero_passphrase`               | `vault_admin_pass`
+| `harbor_secret`                   | `gitlab_root_pass`
+| `dashboards_os_pass`              | `gitlab_user_pass`
+| `fluent_os_pass`                  | `argocd_admin_pass`
+| `valkey_pass`                     | `openwebui_admin_pass`
+| `postgresql_pass`                 | `flowise_admin_pass`
 | `keycloak_db_pass`                |
 | `monitoring_pass`                 |
 | `monitoring_oidc_client_secret.*` |
@@ -200,9 +203,11 @@ however, all privileged operations using `sudo` will require the password stored
 
 1. <details><summary>Install required packages</summary><br/>
 
-    1.1. **Tools** — `emacs`, `jq`, `yq`, `git`, and `helm`  
-    1.2. **Python** — Pip packages in user **virtualenv**  
-    1.3. **Helm** — Helm plugins: e.g. `helm-diff`
+    1.1. **Tools** — `lsof`, `jq`, `yq`, `git`, `helm`, etc.  
+    1.2. **Drivers** — NFS and Intel client GPU drivers  
+    1.3. **Python** — Ansible packages in **virtual env**  
+    1.4. **Helm** — plugins like `helm-diff`, `helm-git`  
+    1.5. **Debugging** — Tools like `tcpdump`, `tshark`
 
     ```bash
     ./play.sh packages
@@ -242,8 +247,8 @@ however, all privileged operations using `sudo` will require the password stored
 5. <details><summary>Provision <strong>Kubernetes cluster</strong> with <strong>RKE</strong> on 6 nodes</summary><br/>
 
     Install **RKE2** with a single control plane node and 5 worker nodes, all permitting workloads,  
-    or RKE2 in HA mode with 3 control plane nodes and 3 worker nodes, all permitting workloads  
-    _(in HA mode, the cluster will be accessible using a **virtual IP** address courtesy of `kube-vip`)_
+    RKE2 in HA mode with 3 control plane nodes and 3 worker nodes, all permitting workloads.  
+    _Cluster will be accessible using a **virtual IP** address provisioned by `kube-vip` in HA mode._
 
     5.1. Deploy another NGINX ingress controller for SSL passthrough
 
@@ -293,8 +298,9 @@ however, all privileged operations using `sudo` will require the password stored
     10.2. Install Longhorn storage components  
     10.3. Install NFS dynamic PV provisioner  
     10.4. Install MinIO tenant using NFS PVs  
-    10.5. Install Velero using MinIO as target  
-    10.6. Install Velero Dashboard
+    10.5. Create MinIO buckets, users, groups  
+    10.6. Install Velero using MinIO as target  
+    10.7. Install Velero Dashboard
 
     ```bash
     ./play.sh storage minio velero
@@ -383,54 +389,66 @@ however, all privileged operations using `sudo` will require the password stored
     ```
 </details>
 
-20. <details><summary>Install <strong>GitLab EE</strong> CI/CD Platform to build local images</summary><br/>
+20. <details><summary>Install <strong>HashiCorp Vault</strong> in <em><strong>HA</strong></em> mode<br/> &nbsp; &nbsp; Install <strong>External Secrets Operator</strong></summary><br/>
 
-    20.1. Import Erhhung's SSH and GPG public keys, and create the `Homelab` group  
-    20.2. Configure **Harbor** and **Slack** integrations, and access GitHub using OmniAuth  
-    20.3. Configure and deploy **Kubernetes runner** for building images using `buildah`  
-    20.4. Use [`al2023-devops`](https://github.com/erhhung/al2023-devops) as the build container and load common pre-build script  
-    20.5. Deploy **CI Pipelines Exporter** to export metrics and visualize them in Grafana
+    20.1. Initialize Vault cluster and unseal cluster pods  
+    20.2. Create policies, `Userpass` accounts, k8s roles  
+    20.3. Create `KV` mounts and populate secrets data  
+    20.4. Create ESO's `ClusterSecretStore` for Vault
+
+    ```bash
+    ./play.sh vault externalsecrets
+    ```
+</details>
+
+21. <details><summary>Install <strong>GitLab EE</strong> CI/CD Platform to build local images</summary><br/>
+
+    21.1. Import Erhhung's SSH and GPG public keys, and create the `Homelab` group  
+    21.2. Configure **Harbor** and **Slack** integrations, and access GitHub using OmniAuth  
+    21.3. Configure and deploy **Kubernetes runner** for building images using `buildah`  
+    21.4. Use [`al2023-devops`](https://github.com/erhhung/al2023-devops) as the build container and load common pre-build script  
+    21.5. Deploy **CI Pipelines Exporter** to export metrics and visualize them in Grafana
 
     ```bash
     ./play.sh gitlab
     ```
 </details>
 
-21. <details><summary>Install <strong>Argo CD</strong> GitOps delivery in <em><strong>HA</strong></em> mode</summary><br/>
+22. <details><summary>Install <strong>Argo CD</strong> GitOps delivery in <em><strong>HA</strong></em> mode</summary><br/>
 
-    21.1. Configure Argo CD to use **Valkey** for caching  
-    21.2. Configure **GitLab** as an allowed SCM provider
+    22.1. Configure Argo CD to use **Valkey** for caching  
+    22.2. Configure **GitLab** as an allowed SCM provider
 
     ```bash
     ./play.sh argocd
     ```
 </details>
 
-22. <details><summary>Install <strong>Metacontroller</strong> to create Operators</summary><br/>
+23. <details><summary>Install <strong>Metacontroller</strong> to create Operators</summary><br/>
 
     ```bash
     ./play.sh metacontroller
     ```
 </details>
 
-23. <details><summary>Install <strong>Qdrant</strong> vector database in <em><strong>HA</strong></em> mode</summary><br/>
+24. <details><summary>Install <strong>Qdrant</strong> vector database in <em><strong>HA</strong></em> mode</summary><br/>
 
     ```bash
     ./play.sh qdrant
     ```
 </details>
 
-24. <details><summary>Install <strong>Ollama</strong> LLM server with common models<br/> &nbsp; &nbsp; Install <strong>Open WebUI</strong> AI platform with <strong>Pipelines</strong></summary><br/>
+25. <details><summary>Install <strong>Ollama</strong> LLM server with common models<br/> &nbsp; &nbsp; Install <strong>Open WebUI</strong> AI platform with <strong>Pipelines</strong></summary><br/>
 
-    24.1. Create `Accounts` knowledge base, and then `Accounts` custom model that embeds that KB  
-    24.2. **NOTE**: Populate `Accounts` KB by running `./play.sh openwebui -t knowledge` separately
+    25.1. Create `Accounts` knowledge base, and then `Accounts` custom model that embeds that KB  
+    25.2. **NOTE**: Populate `Accounts` KB by running `./play.sh openwebui -t knowledge` separately
 
     ```bash
     ./play.sh ollama openwebui
     ```
 </details>
 
-25. <details><summary>Install <strong>Flowise</strong> AI platform and integrations</summary><br/>
+26. <details><summary>Install <strong>Flowise</strong> AI platform and integrations</summary><br/>
 
     Current deployment uses local images in Harbor registry that were built by GitLab CI.
 
@@ -438,7 +456,7 @@ however, all privileged operations using `sudo` will require the password stored
     ./play.sh flowise
     ```
 
-26. <details><summary>Create <strong>virtual Kubernetes clusters</strong> in RKE</summary><br/>
+27. <details><summary>Create <strong>virtual Kubernetes clusters</strong> in RKE</summary><br/>
 
     ```bash
     ./play.sh vclusters

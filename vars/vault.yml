@@ -1,0 +1,289 @@
+# vault_admin_pass: {vault.yml}
+
+vault_namespace: vault
+vault_host_name: vault # alias of "ingress"
+
+# remember to add  vault.fourteeners.local to pfSense DNS
+# as an alias of ingress.fourteeners.local: 192.168.4.222
+# https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_filters.html#products
+vault_fqdn: "{{ [vault_host_name] | product(search_domains) | map('join','.') | first }}"
+
+vault_url: https://{{ vault_fqdn }}
+
+vault_service_host: "{{ vault_release_name }}-active.{{ vault_namespace }}.svc.{{ cluster_domain }}"
+vault_service_port: 8200
+vault_service_url: "https://{{ vault_service_host }}:{{ vault_service_port }}"
+
+vault_secrets:
+  node-tls: vault-node-tls # inter-node and ingress
+  unseal: vault-unseal-keys # unsealKeys & rootToken
+
+# https://github.com/hashicorp/vault-helm
+# https://developer.hashicorp.com/vault/docs/deploy/kubernetes/helm
+vault_chart_version: "0.31.0"
+vault_release_name: vault
+
+# https://github.com/hashicorp/vault-helm/tree/main/values.yaml
+vault_chart_values:
+  global:
+    # use TLS listener
+    tlsDisable: false
+
+    serverTelemetry:
+      # assumes the monitoring stack is already deployed;
+      # requires top-level serverTelemetry.serviceMonitor
+      # config at bottom
+      prometheusOperator: true
+
+  server:
+    enabled: true
+
+    logLevel: info # trace|debug|info|warn|error
+    logFormat: standard # standard|json
+
+    standalone:
+      enabled: false
+    ha:
+      enabled: true
+      replicas: 3
+
+      # https://developer.hashicorp.com/vault/docs/configuration#api_addr
+      # null: full URL will use pod IP address
+      apiAddr: null
+      # https://developer.hashicorp.com/vault/docs/configuration#cluster_addr
+      # null: https://$(HOSTNAME).{{ template "vault.fullname" . }}-internal:8201
+      clusterAddr: null
+
+      raft:
+        # use Raft integrated storage (persistent volumes)
+        enabled: true
+        # let Vault generate and store
+        # random UUIDs as node raft ID
+        setNodeId: false
+
+        # https://developer.hashicorp.com/vault/docs/configuration
+        config: |-
+          ui = true
+
+          # https://developer.hashicorp.com/vault/docs/configuration/listener/tcp
+          listener "tcp" {
+            address         = "[::]:8200"
+            cluster_address = "[::]:8201"
+
+            tls_cert_file      = "/tls/tls.crt"
+            tls_key_file       = "/tls/tls.key"
+            tls_client_ca_file = "/tls/ca.crt"
+
+            # allow unauthenticated metrics access
+            # (necessary for Prometheus Operator)
+            telemetry {
+              unauthenticated_metrics_access = true
+            }
+          }
+
+          # https://developer.hashicorp.com/vault/docs/configuration/storage/raft
+          storage "raft" {
+            # path should match server.dataStorage.mountPath
+            path = "/vault/data"
+
+            # https://developer.hashicorp.com/vault/docs/configuration/storage/raft#retry_join-stanza
+            retry_join {
+              # pod 0 will be initialized and unsealed first as leader
+              leader_api_addr = "https://{{ vault_release_name }}-0.{{
+                vault_release_name }}-internal:{{ vault_service_port }}"
+              leader_ca_cert_file = "/tls/ca.crt"
+            }
+          }
+
+          # https://developer.hashicorp.com/vault/docs/configuration/service-registration/kubernetes
+          service_registration "kubernetes" {}
+
+          # https://developer.hashicorp.com/vault/docs/configuration/telemetry
+          telemetry {
+            prometheus_retention_time = "30s"
+            disable_hostname = true
+          }
+
+          # disabling mlock is strongly recommended if using integrated storage:
+          # https://developer.hashicorp.com/vault/docs/configuration#parameters
+          # (NOTE: Helm template automatically appends this setting right here)
+
+    volumes:
+      - name: node-tls
+        secret:
+          secretName: "{{ vault_secrets['node-tls'] }}"
+
+    volumeMounts:
+      - name: node-tls
+        mountPath: /tls
+        readOnly: true
+
+    # https://developer.hashicorp.com/vault/docs/configuration/storage
+    dataStorage: &storage
+      enabled: true
+      storageClass: "{{ storage_classes['default'] }}"
+      # min XFS volume size is 300Mi
+      size: 384Mi
+
+    # use same specs for audit as for data,
+    # but PVC mount path will be different:
+    # https://developer.hashicorp.com/vault/docs/audit
+    auditStorage: *storage
+
+    persistentVolumeClaimRetentionPolicy:
+      whenScaled: Retain
+      whenDeleted: Delete
+
+    # StatefulSet update strategy
+    updateStrategyType: OnDelete
+
+    # bind Vault server's SA to the system:auth-delegator
+    # cluster role to enable Kubernetes auth using SA JWT
+    authDelegator:
+      enabled: true
+
+    priorityClassName: "{{ priority_classes['critical'] }}"
+
+    resources:
+      requests:
+        cpu: 50m
+        memory: 128Mi
+
+    # https://developer.hashicorp.com/vault/tutorials/kubernetes/kubernetes-raft-deployment-guide#configure-vault-helm-chart
+    # https://developer.hashicorp.com/vault/api-docs/system/health
+    readinessProbe:
+      enabled: true
+      # return 2xx for uninitialized or sealed vault to allow
+      # successful Helm install, before manual initialization
+      # and unsealing are performed
+      path: /v1/sys/health?standbyok=true&sealedcode=204&uninitcode=204
+    livenessProbe:
+      enabled: true
+      path: /v1/sys/health?standbyok=true
+      initialDelaySeconds: 60
+
+    service:
+      enabled: true
+      active:
+        # enable the vault-active service in
+        # HA mode, which selects the cluster
+        # leader pod
+        enabled: true
+      standby:
+        # enable the vault-standby service
+        # in HA mode, which selects cluster
+        # follower pods
+        enabled: true
+
+    ingress:
+      enabled: true
+      # route to vault-active Service
+      # instead of vault-ui in HA mode
+      activeService: true
+      tls:
+        - secretName: "{{ vault_secrets['node-tls'] }}"
+          hosts: "{{ [vault_fqdn] }}"
+      ingressClassName: "{{ rke_ingress_class }}"
+      annotations:
+        nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+        # nginx.ingress.kubernetes.io/ssl-passthrough: "true"
+        nginx.ingress.kubernetes.io/backend-protocol: HTTPS
+      pathType: Prefix
+      hosts:
+        - host: "{{ vault_fqdn }}"
+          paths: ["/"]
+
+  ui:
+    # this enabled setting only controls whether
+    # a separate Service is created, not whether
+    # the feature is enabled--that is controlled
+    # by `ui = true` in the config HCL
+    enabled: false
+
+  # https://developer.hashicorp.com/vault/docs/deploy/kubernetes/injector
+  injector:
+    # disable for now, and use External
+    # Secrets to sync Secrets from Vault
+    enabled: false
+
+  csi:
+    # install secrets-store-csi-driver-provider-vault DaemonSet?
+    # (requires separate secrets-store-csi-driver installation:
+    # https://secrets-store-csi-driver.sigs.k8s.io/getting-started/installation.html)
+    enabled: false
+
+  # https://developer.hashicorp.com/vault/docs/configuration/telemetry
+  # https://developer.hashicorp.com/vault/docs/internals/telemetry
+  serverTelemetry:
+    serviceMonitor:
+      enabled: true
+      interval: 30s
+      selectors:
+        release: "{{ monitoring_release_name }}"
+      tlsConfig: "{{ metric_scraper_tls_config }}"
+      # unauthenticated_metrics_access is set to true
+      # in the listener, so no credentials are needed
+      authorization: {}
+
+# all mounts will be created
+# using KV secrets engine v2
+# but versioning is disabled
+vault_kv_mounts:
+  prod: kv-prod
+
+# https://developer.hashicorp.com/vault/docs/concepts/policies
+# https://developer.hashicorp.com/vault/docs/concepts/policies#capabilities
+vault_policies:
+  admin:
+    - path: "*"
+      capabilities:
+        - create
+        - read
+        - update
+        - patch
+        - delete
+        - list
+        - sudo
+  # KV secrets engine v2 stores secret values
+  # under data/ and info for listing/undelete
+  # under metadata/
+  kv-read: |
+    {% set stanzas = [] %}
+    {% for mount in vault_kv_mounts.values() %}
+    {%   set _ = stanzas.append({
+           'path': mount ~ '/data/*',
+           'capabilities': ['read']
+         }) %}
+    {%   set _ = stanzas.append({
+           'path': mount ~ '/metadata/*',
+           'capabilities': ['list','read']
+         }) %}
+    {% endfor  %}
+    {{ stanzas }}
+
+# Userpass auth method does not support
+# roles--policies are attached directly:
+# https://developer.hashicorp.com/vault/docs/auth/userpass#configuration
+# https://developer.hashicorp.com/vault/api-docs/auth/userpass#create-update-user
+vault_users:
+  erhhung:
+    password: "{{ vault_admin_pass }}"
+    # "default" policy always applied
+    policies:
+      - admin
+
+# roles for Kubernetes auth method:
+# https://developer.hashicorp.com/vault/docs/auth/kubernetes#configuration
+# https://developer.hashicorp.com/vault/api-docs/auth/kubernetes#create-update-role
+vault_roles:
+  eso: # External Secrets Operator
+    sa_names: "{{ eso_release_name }}"
+    sa_namespaces: "{{ eso_namespace }}"
+    audience: vault
+    # all properties with token_ prefix
+    # will be passed to role API as-is:
+    token_type: service
+    token_policies:
+      - kv-read
+    # renew every hour until revoked
+    token_period: 1h

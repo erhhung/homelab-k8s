@@ -1,0 +1,191 @@
+# run Job to initialize and unseal Vault on initial
+# install if external endpoint returns 503 because
+# vault-active service has no leader pod to map to
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: vault-bootstrap
+---
+# Job will require role to create Secrets
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: vault-bootstrap-secrets
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs:
+      - get
+      - create
+      - patch
+      - update
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: vault-bootstrap-secrets
+subjects:
+  - kind: ServiceAccount
+    name: vault-bootstrap
+    namespace: {{ vault_namespace }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: vault-bootstrap-secrets
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ vault_release_name }}-bootstrap
+spec:
+  template:
+    spec:
+      serviceAccountName: vault-bootstrap
+      restartPolicy: OnFailure
+      containers:
+        - name: bootstrap
+          image: alpine:latest
+          imagePullPolicy: IfNotPresent
+          command: ["sh"]
+          args:
+            - -c
+            - |-
+              apk add --no-cache curl jq yq kubectl &> /dev/null
+
+              # https://developer.hashicorp.com/vault/api-docs/system/health
+              # returns {initialized,sealed,...}
+              sys_health() {
+                curl $CURL_OPTS $API_BASE/sys/health | jq
+              }
+              is_initialized() {
+                [ "$(sys_health | jq -r .initialized)" == true ]
+              }
+              is_sealed() {
+                [ "$(sys_health | jq -r .sealed)" == true ]
+              }
+              timestamp() {
+                printf "[%s]" $(date +%H:%M:%S)
+              }
+
+              # [pod-index]
+              wait_for_pod() {
+                local i=${1:-0}
+                until [ "$(sys_health)" ]; do
+                  printf "%s Waiting for Vault pod %d...\n" $(timestamp) $i
+                  sleep 4.6
+                done
+                printf "%s Vault pod %d is available. ✓\n" $(timestamp) $i
+              }
+              wait_for_pod
+
+              # https://developer.hashicorp.com/vault/api-docs/system/init
+              # returns {root_token,keys,keys_base64}
+              init_vault() {
+                curl $CURL_OPTS $API_BASE/sys/init -d @- <<JSON
+              {
+                "secret_shares":    $SECRET_SHARES,
+                "secret_threshold": $SECRET_THRESHOLD
+              }
+              JSON
+              }
+
+              if ! is_initialized; then
+                printf "\n%s Initializing Vault...\n" $(timestamp)
+                result="$(init_vault)"
+
+                token=$(echo "$result" | jq -r .root_token)
+                [ "$token" ] || {
+                  echo "Vault initialization failed:"
+                  echo "${result:-n/a}"
+                  exit 1
+                }
+
+                printf "%s Saving unseal keys...\n" $(timestamp)
+                cat <<EOF > /tmp/secret.yaml
+              apiVersion: v1
+              kind: Secret
+              metadata:
+                name: {{ vault_secrets['unseal'] }}
+              type: Opaque
+              EOF
+                echo "$result" | yq -pj '{
+                  "data": {
+                    "unsealKeys": (.keys_base64 | @yaml | @base64),
+                    "rootToken":  (.root_token          | @base64)
+                  }
+                }' >> /tmp/secret.yaml
+                kubectl apply -f /tmp/secret.yaml -n {{ vault_namespace }}
+              fi
+              printf "%s Vault is initialized. ✓\n" $(timestamp)
+
+              # returns keys in base64 format, one per line
+              get_unseal_keys() {
+                kubectl get secret {{ vault_secrets['unseal'] }} \
+                                -n {{ vault_namespace }} -o yaml |
+                   yq '.data.unsealKeys | @base64d | @yamld | .[]'
+              }
+
+              # https://developer.hashicorp.com/vault/api-docs/system/unseal
+              # returns {initialized,sealed,progress,...}
+              unseal_vault() {
+                sleep 1.1 # give Vault time to sync
+                curl $CURL_OPTS $API_BASE/sys/unseal -d @- <<JSON
+              {
+                "key": "$1"
+              }
+              JSON
+              }
+
+              api_base="$API_BASE"
+              last_pod=$(echo "$NUM_REPLICAS - 1" | bc)
+              unset keys
+
+              for n in $(seq 0 $last_pod); do
+                export API_BASE="${api_base//-0./-$n.}"
+                echo; [ $n -ge 1 ] && wait_for_pod $n
+
+                if is_sealed; then
+                  printf "%s Unsealing Vault on pod %d...\n" $(timestamp) $n
+                  [ "$keys" ] || keys="$(get_unseal_keys)"
+                  i=1; unset unsealed
+
+                  while read key; do
+                    printf "%s Using unseal key %d: " $(timestamp) $i
+                    result="$(unseal_vault $key)"
+                    [ "$result" ] || {
+                      echo false; break
+                    }
+                    unsealed=$(echo "$result" | jq -r '.sealed | not')
+                    echo $unsealed; [ "$unsealed" == true ] && break
+
+                    i=$(echo "$i + 1" | bc)
+                  done < <(echo "$keys")
+                else
+                  unsealed=true
+                fi
+
+                [ "$unsealed" == true ] || {
+                  echo "Failed to unseal Vault on pod $n:"
+                  echo "${result:-n/a}"
+                  exit 1
+                }
+                printf "%s Vault unsealed on pod %d. ✓\n" $(timestamp) $n
+              done
+          env:
+            - name: API_BASE
+              value: >-
+                https://{{ vault_release_name }}-0.{{ vault_release_name
+                }}-internal.{{ vault_namespace }}.svc.{{ cluster_domain
+                }}:{{ vault_service_port }}/v1
+            - name: CURL_OPTS
+              value: --insecure --silent --fail-with-body --connect-timeout 1
+            - name: NUM_REPLICAS
+              value: "{{ vault_chart_values.server.ha.replicas | string }}"
+            - name: SECRET_SHARES
+              value: "5"
+            - name: SECRET_THRESHOLD
+              value: "3"
+  activeDeadlineSeconds: 300
+  backoffLimit: 3 # 3 retries
+  ttlSecondsAfterFinished: 600

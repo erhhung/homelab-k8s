@@ -65,9 +65,7 @@
         executable: /bin/bash
       register: disable_swap
       changed_when: disable_swap.rc == 0
-      failed_when: >-
-        disable_swap.rc != 0 and
-        disable_swap.rc != 9
+      failed_when: disable_swap.rc not in [0,9]
 
     # https://errantminds.net/servers-it/optimising-xcp-ng-performance-on-older-servers-domu-clock-source
     - name: Change VM clock source to "tsc"
@@ -83,9 +81,7 @@
         executable: /bin/bash
       register: update_grub
       changed_when: update_grub.rc == 0
-      failed_when: >-
-        update_grub.rc != 0 and
-        update_grub.rc != 9
+      failed_when: update_grub.rc not in [0,9]
 
     - name: Adjust Linux kernel parameters
       # https://docs.ansible.com/ansible/latest/collections/ansible/posix/sysctl_module.html
@@ -201,9 +197,7 @@
         ' /etc/hosts
       register: etc_hosts
       changed_when: etc_hosts.rc == 0
-      failed_when: >-
-        etc_hosts.rc != 0 and
-        etc_hosts.rc != 9
+      failed_when: etc_hosts.rc not in [0,9]
 
     - name: Add static entries to /etc/hosts
       vars:

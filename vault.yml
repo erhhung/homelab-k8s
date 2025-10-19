@@ -1,0 +1,333 @@
+# https://developer.hashicorp.com/vault/docs
+# https://developer.hashicorp.com/vault/docs/deploy/kubernetes
+# https://developer.hashicorp.com/vault/tutorials/kubernetes/kubernetes-raft-deployment-guide
+---
+- name: Install Vault on RKE cluster
+  tags: install
+  hosts: "{{ rke_control_plane_host }}"
+  gather_facts: false
+  vars_files:
+    - vars/kubernetes.yml
+    - vars/monitoring.yml
+    - vars/storage.yml
+    - vars/vault.yml
+  vars:
+    # required kubernetes>=24.2 package only in user virtualenv
+    ansible_python_interpreter: "{{ venv_python_interpreter }}"
+    kubeconfig: "{{ rke_kubeconfig }}"
+    secret_ns: "{{ vault_namespace }}"
+    create_ns: false
+    release: "{{ vault_release_name }}"
+  tasks:
+    - name: Create Vault node secret
+      vars:
+        secret_name: "{{ vault_secrets['node-tls'] }}"
+        create_ns: true
+        cert_name: vault-node
+        sans_:
+          - vault-node
+          - "{{ vault_fqdn }}"
+          - "*.{{ vault_namespace }}.svc.{{ cluster_domain }}"
+          - "*.{{ vault_namespace }}.svc"
+          - |
+            {% set sans = [] %}
+            {% for i in range(0, vault_chart_values.server.ha.replicas)  %}
+            {%   set _ = sans.append(release ~'-'~ i ~'.vault-internal') %}
+            {% endfor %}
+            {{ sans   }}
+        sans: "{{ sans_ | flatten }}"
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
+      ansible.builtin.include_tasks: tasks/k8s/secrets/tls.step.yml
+
+    - name: Create monitoring scraper secret
+      ansible.builtin.include_tasks: tasks/monitoring/scraper.yml
+
+    - name: Install Vault Helm chart
+      # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/helm_module.html
+      kubernetes.core.helm:
+        kubeconfig: "{{ kubeconfig }}"
+        chart_repo_url: https://helm.releases.hashicorp.com
+        chart_ref: vault
+        chart_version: "{{ vault_chart_version }}"
+        release_name: "{{ vault_release_name }}"
+        release_namespace: "{{ vault_namespace }}"
+        release_values: "{{ vault_chart_values }}"
+        history_max: "{{ helm_max_history }}"
+        atomic: true
+        wait: true
+
+    - name: Check if Vault is sealed
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/uri_module.html
+      ansible.builtin.uri:
+        # https://developer.hashicorp.com/vault/api-docs/system/health
+        url: "{{ vault_url }}/v1/sys/health"
+        status_code:
+          - 200 # initialized, unsealed, and active
+          - 429 # unsealed and standby
+          - 474 # standby but cannot connect to active
+          - 501 # not initialized
+          - 503 # sealed
+      register: seal_check
+      retries: 10
+      delay: 3
+
+    - name: Bootstrap Vault if sealed
+      vars:
+        definitions: "{{ lookup('ansible.builtin.template',
+          template_dir ~ '/vault/bootstrap.yaml.j2') }}"
+      # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_module.html
+      kubernetes.core.k8s:
+        kubeconfig: "{{ kubeconfig }}"
+        namespace: "{{ vault_namespace }}"
+        definition: "{{ definitions }}"
+        state: present
+      when: >-
+        seal_check.status in [501,503]   or
+        seal_check.json   is defined    and
+        (not seal_check.json.initialized or
+             seal_check.json.sealed)
+      notify: Wait until bootstrap done
+  handlers:
+    - name: Wait until bootstrap done
+      # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_info_module.html
+      kubernetes.core.k8s_info:
+        kubeconfig: "{{ kubeconfig }}"
+        api_version: batch/v1
+        kind: Job
+        name: "{{ vault_release_name }}-bootstrap"
+        namespace: "{{ vault_namespace }}"
+      register: job_info
+      until:
+        - job_info.resources is defined
+        - job_info.resources is truthy
+        - job_info.resources[0].status.completionTime is defined
+      failed_when: >-
+        job_info.resources is not defined or
+        job_info.resources is     falsy   or
+        job_info.resources[0].status.succeeded == 0
+      retries: 20
+      delay: 15
+  any_errors_fatal: true
+
+# https://developer.hashicorp.com/vault/install
+- name: Install Vault CLI tool
+  tags: cli
+  hosts: cluster
+  gather_facts: false
+  vars_files:
+    - vars/vault.yml
+  tasks:
+    # NOTE: this Apt install requires that the HashiCorp
+    # GPG keyring and Apt sources list be pre-configured
+    # (see apt_sources[] definition in vars/packages.yml)
+    - name: Install Vault CLI tool
+      become: true
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/apt_module.html
+      ansible.builtin.apt:
+        name: vault
+        state: present
+        update_cache: true
+        force_apt_get: true
+        install_recommends: false
+      retries: 3
+      delay: 5
+
+    - name: Log in to Vault by CLI
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/shell_module.html
+      ansible.builtin.shell: |
+        # restart Bash and load .bash_aliases
+        exec /bin/bash -l <<'EOT'
+        . .bash_aliases
+        set -o pipefail
+
+        [ -f ~/.vault-token ] && exit 9 # no change
+        export VAULT_ADDR="{{ vault_url }}"
+
+        # BASH_ENV_DIR is set in .bash_aliases
+        cat <<EOF > "$BASH_ENV_DIR/vault.env"
+        VAULT_ADDR="$VAULT_ADDR"
+        VAULT_FORMAT="yaml"
+        EOF
+
+        kubectl get secret {{ vault_secrets['unseal'] }} \
+             -n {{ vault_namespace }} -o json | \
+          jq -r '.data.rootToken | @base64d'  | \
+          vault login -no-print  -
+        EOT
+      register: config_cli
+      changed_when: config_cli.rc == 0
+      failed_when: config_cli.rc not in [0,9]
+  any_errors_fatal: true
+
+# https://developer.hashicorp.com/vault/docs/concepts/policies
+# https://developer.hashicorp.com/vault/docs/auth/kubernetes
+# https://developer.hashicorp.com/vault/docs/auth/userpass
+- name: Configure Vault authentication
+  tags: auth
+  hosts: rke_any
+  gather_facts: false
+  vars_files:
+    - vars/kubernetes.yml
+    - vars/externalsecrets.yml
+    - vars/vault.yml
+  tasks:
+    - name: Create policies/users/roles
+      ansible.builtin.shell: |
+        # set VAULT_ADDR
+        . .bash_aliases
+        set -eo pipefail
+
+        # get list of enabled auth methods:
+        methods="$(vault auth list -format=json | jq -r 'keys[]')"
+
+        # first, enable Kubernetes auth in order to
+        # create role for External Secrets Operator
+        grep -q '^kubernetes/' <<< "$methods" || {
+          echo >&2 "Enabling Kubernetes auth"
+          # https://developer.hashicorp.com/vault/docs/auth/kubernetes#configuration
+          vault auth enable kubernetes
+
+          # https://developer.hashicorp.com/vault/api-docs/auth/kubernetes#configure-method
+          vault write auth/kubernetes/config \
+            kubernetes_host="https://kubernetes.default.svc.{{ cluster_domain }}"
+        }
+        grep -q '^userpass/' <<< "$methods" || {
+          echo >&2 "Enabling Userpass auth"
+          vault auth enable userpass
+
+          # https://support.hashicorp.com/hc/en-us/articles/360001922527-Configuring-a-Default-UI-Auth-Method
+          # https://developer.hashicorp.com/vault/api-docs/system/auth#tune-auth-method
+          vault write sys/auth/userpass/tune listing_visibility=unauth
+        }
+
+        # get list of existing policies:
+        policies="$(vault policy list -format=json | jq -r '.[]' || true)"
+        {% for name, stanzas in vault_policies.items() %}
+
+        grep -q '^{{ name }}$' <<< "$policies" || {
+          echo >&2 "Creating policy: {{ name  }}"
+          vault policy write {{ name }} - <<'EOT'
+        {%   for policy in stanzas %}
+        {%     set capabilities = policy.capabilities | to_json(separators=[',',':']) %}
+        path "{{ policy.path }}" {
+          capabilities = {{ capabilities }}
+        }
+        {%   endfor %}
+        EOT
+          rc=0
+        }
+        {% endfor %}
+
+        # get list of existing users:
+        users="$(vault list -format=json auth/userpass/users | jq -r '.[]' || true)"
+
+        {%- for name, user in vault_users.items() +%}
+        {# https://docs.ansible.com/ansible/latest/collections/ansible/builtin/union_filter.html #}
+        {% set policies = user.policies | default([]) |
+                  ansible.builtin.union(['default'])  |
+                  join(',') %}
+
+        grep -q '^{{ name }}$' <<< "$users" || {
+          echo >&2 "Creating user: {{ name  }}"
+          vault write auth/userpass/users/{{ name }} \
+            password='{{ user.password }}' \
+            policies='{{      policies }}'
+          rc=0
+        }
+        {% endfor %}
+
+        # get list of existing roles:
+        roles="$(vault list -format=json auth/kubernetes/role | jq -r '.[]' || true)"
+        {% for name, role in vault_roles.items() %}
+        {%   set sa_names      = [role.sa_names]      | flatten | join(',') %}
+        {%   set sa_namespaces = [role.sa_namespaces] | flatten | join(',') %}
+
+        grep -q '^{{ name }}$' <<< "$roles" || {
+          echo >&2 "Creating role: {{ name  }}"
+
+          # https://developer.hashicorp.com/vault/api-docs/auth/kubernetes#create-update-role
+          vault write auth/kubernetes/role/{{  name  }}  \
+            bound_service_account_names='{{ sa_names }}' \
+            bound_service_account_namespaces='{{ sa_namespaces }}' \
+        {%   if role.audience is defined %}
+            audience='{{ role.audience   }}' \
+        {%   endif %}
+        {%   for key, value in role.items() %}
+        {%     if key.startswith('token_')  %}
+            {{ key }}='{{ [value] | flatten | join(',') }}' \
+        {%     endif %}
+        {%   endfor  %}
+        ; rc=0
+        }
+        {% endfor %}
+        exit ${rc-9}
+      args:
+        executable: /bin/bash
+      register: vault_create
+      changed_when: vault_create.rc == 0
+      failed_when: vault_create.rc not in [0,9]
+  any_errors_fatal: true
+
+- name: Populate Vault with secret data
+  tags: data
+  hosts: rke_any
+  gather_facts: false
+  vars_files:
+    - vars/vault.yml
+    # vault_secrets_data.*
+    - vars/vault.secrets.yml
+  tasks:
+    - name: Write secrets data to KV mounts
+      ansible.builtin.shell: |
+        # set VAULT_ADDR
+        . .bash_aliases
+        set -eo pipefail
+
+        # get list of KV mounts:
+        mounts="$(vault secrets list -format=json | \
+          jq -r 'to_entries[] | select(.value.type == "kv") | .key')"
+        {% for name in vault_kv_mounts.values() %}
+
+        grep -q '^{{ name }}/' <<< "$mounts" || {
+          echo  >&2 "Creating mount: {{ name }}"
+          vault secrets enable -path={{ name }} -version=2 kv
+          vault write {{ name }}/config \
+            max-versions=1 \
+            delete-version-after=0s \
+            cas-required=false
+          rc=0
+        }
+        {% endfor %}
+
+        # vault_secrets_data is a dictionary
+        # where top-level keys are KV mounts,
+        # second-level keys are secret paths,
+        # third-level are individual KV pairs
+
+        {%- for mount, secrets in vault_secrets_data.items() +%}
+        {%   if mount in vault_kv_mounts.values() %}
+        {%     for path, pairs in secrets.items() %}
+
+        json_="$(vault kv get -format=json \
+          {{ mount }}/{{ path }} 2> /dev/null | \
+             jq -cM '.data.data' || true)"
+        json="$(cat <<'JSON'
+        {{ pairs | to_json(separators=[',',':']) }}
+        JSON
+        )"
+        if [ "$json_" != "$json" ]; then
+          echo >&2  "Writing secret: {{ mount }}/{{ path }}"
+          vault kv put -format=table {{ mount }}/{{ path }} \
+             - <<< "$json" | sed -n '2p' # show second line
+          rc=0
+        fi
+        {%     endfor %}
+        {%   endif    %}
+        {% endfor     %}
+        exit ${rc-9}
+      args:
+        executable: /bin/bash
+      register: vault_data
+      changed_when: vault_data.rc == 0
+      failed_when: vault_data.rc not in [0,9]
+  any_errors_fatal: true

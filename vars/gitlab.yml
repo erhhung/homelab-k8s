@@ -626,7 +626,7 @@ gitlab_chart_values:
       resources:
         requests:
           cpu: 10m
-          memory: 32Mi
+          memory: 64Mi
 
       # NOTE: metrics are not supported if
       # using default SSH daemon "openssh"
@@ -649,7 +649,7 @@ gitlab_chart_values:
       resources:
         requests:
           cpu: 50m
-          memory: 128Mi
+          memory: 256Mi
 
       metrics: *metrics-smon-http
 
@@ -661,7 +661,7 @@ gitlab_chart_values:
       resources:
         requests:
           cpu: 50m
-          memory: 64Mi
+          memory: 128Mi
 
       metrics: *metrics-smon-http
 
@@ -901,7 +901,7 @@ gitlab_chart_values:
       resources:
         requests:
           cpu: 50m
-          memory: 32Mi
+          memory: 64Mi
 
     metrics:
       enabled: true
@@ -1102,6 +1102,11 @@ pipelines_exporter_chart_values:
 
     # project-specific overrides defined below
     projects: "{{ pipelines_exporter_projects }}"
+
+  resources:
+    requests:
+      cpu: 10m
+      memory: 32Mi
 
   redis:
     # only if configuring exporter for HA

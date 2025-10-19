@@ -148,8 +148,7 @@
       register: import_dashboard
       changed_when: import_dashboard.rc == 0
       failed_when: >-
-        import_dashboard.rc != 0 and
-        import_dashboard.rc != 9 or
+        import_dashboard.rc not in [0,9] or
         import_dashboard.stdout is search('failed')
       retries: 3
       delay: 5

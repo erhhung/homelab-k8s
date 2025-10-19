@@ -1,54 +1,4 @@
 ---
-# https://helm.sh/docs/intro/install#from-apt-debianubuntu
-- name: Configure Helm Apt repository
-  tags: configure
-  hosts: k8s_all
-  become: true
-  vars:
-    keyring: /usr/share/keyrings/helm.gpg
-    srcs_list: /etc/apt/sources.list.d/helm.sources
-  pre_tasks:
-    - name: Get machine architecture
-      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/set_fact_module.html
-      ansible.builtin.set_fact:
-        machine_arch: "{{ 'arm64' if ansible_facts['architecture'] == 'aarch64' else 'amd64' }}"
-
-    - name: Is Apt repo configured?
-      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/stat_module.html
-      ansible.builtin.stat:
-        path: "{{ item }}"
-      loop:
-        - "{{ keyring }}"
-        - "{{ srcs_list }}"
-      register: apt_repo
-  tasks:
-    - name: Download Helm keyring file
-      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/shell_module.html
-      ansible.builtin.shell: |
-        set -o pipefail
-
-        curl -fsSL https://packages.buildkite.com/helm-linux/helm-debian/gpgkey | \
-          gpg --dearmor | tee {{ keyring }} > /dev/null
-      args:
-        executable: /bin/bash
-      when: not apt_repo.results[0].stat.exists
-      changed_when: true
-
-    - name: Create Helm sources list
-      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/copy_module.html
-      ansible.builtin.copy:
-        dest: "{{ srcs_list }}"
-        content: |
-          Types: deb
-          URIs: https://packages.buildkite.com/helm-linux/helm-debian/any/
-          Suites: any
-          Components: main
-          Architectures: {{ machine_arch }}
-          Signed-By: {{ keyring }}
-        mode: "0644"
-      when: not apt_repo.results[1].stat.exists
-  any_errors_fatal: true
-
 - name: Install required packages
   tags: install
   hosts: k8s_all
@@ -58,13 +8,21 @@
     - name: Install required Apt packages
       become: true
       block:
-        - name: Add required Apt repositories
+        - name: Configure Apt package sources
+          # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
+          ansible.builtin.include_tasks: tasks/packages/apt/sources.yml
+          loop: "{{ apt_sources }}"
+          loop_control:
+            loop_var: source
+            label: "{{ source.sources.file }}"
+
+        - name: Add Apt package repositories
           # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/apt_repository_module.html
           ansible.builtin.apt_repository:
             repo: "{{ item[1] }}"
             state: present
           # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/subelements_filter.html
-          loop: "{{ add_apt_repositories | ansible.builtin.subelements('repos') }}"
+          loop: "{{ apt_repositories | ansible.builtin.subelements('repos') }}"
           loop_control:
             label: "{{ item[0].hosts | join(',') ~'|'~ item[1] }}"
           when: inventory_hostname in item[0].hosts
@@ -81,7 +39,7 @@
             update_cache: true
             force_apt_get: true
             install_recommends: false
-          loop: "{{ install_apt_packages }}"
+          loop: "{{ apt_packages }}"
           loop_control:
             label: "{{ item.hosts | join(',') ~'|...' }}"
           when: inventory_hostname in item.hosts
@@ -100,6 +58,7 @@
           delay: 5
 
         - name: Configure installed packages
+          # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/shell_module.html
           ansible.builtin.shell: |
             set -eo pipefail
             rc=9
@@ -122,15 +81,13 @@
             executable: /bin/bash
           register: config_pkgs
           changed_when: config_pkgs.rc == 0
-          failed_when: >-
-            config_pkgs.rc != 0 and
-            config_pkgs.rc != 9
+          failed_when: config_pkgs.rc not in [0,9]
 
     # create virtualenv in user's home directory
     - name: Install required Pip packages
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/pip_module.html
       ansible.builtin.pip:
-        name: "{{ install_pip_packages }}"
+        name: "{{ pip_packages }}"
         state: present
         virtualenv: "{{ ansible_user_virtualenv }}"
 
@@ -142,7 +99,7 @@
         plugin_name: "{{ item.name | default(omit) }}"
         plugin_path: "{{ item.path | default(omit) }}"
         state: "{{ item.state | default('present') }}"
-      loop: "{{ install_helm_plugins }}"
+      loop: "{{ helm_plugins }}"
   any_errors_fatal: true
 
 - name: Install apps from GitHub releases
@@ -166,7 +123,8 @@
         mkdir -p /tmp/yq
         ( cd     /tmp/yq
 
-          ARCH={{ machine_arch }} # amd64 or arm64
+          ARCH=$(uname -m | sed -e 's/aarch64/arm64/' \
+                                -e  's/x86_64/amd64/')
           curl -fsSL "$REL/download/yq_linux_$ARCH.tar.gz" | \
             tar -xz --no-same-owner
           cp ./yq_linux_$ARCH /usr/bin/yq
@@ -177,9 +135,7 @@
         executable: /bin/bash
       register: install_yq
       changed_when: install_yq.rc == 0
-      failed_when: >-
-        install_yq.rc != 0 and
-        install_yq.rc != 9
+      failed_when: install_yq.rc not in [0,9]
 
     - name: Install Fastfetch from GitHub
       ansible.builtin.shell: |
@@ -201,7 +157,5 @@
         executable: /bin/bash
       register: install_ff
       changed_when: install_ff.rc == 0
-      failed_when: >-
-        install_ff.rc != 0 and
-        install_ff.rc != 9
+      failed_when: install_ff.rc not in [0,9]
   any_errors_fatal: true

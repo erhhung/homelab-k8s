@@ -151,7 +151,7 @@
 
 # https://min.io/docs/minio/linux/reference/minio-mc-admin.html#installation
 - name: Install MinIO client
-  tags: client
+  tags: cli
   hosts: cluster
   gather_facts: false
   vars_files: *vars_files
@@ -181,9 +181,7 @@
         executable: /bin/bash
       register: install_cli
       changed_when: install_cli.rc == 0
-      failed_when: >-
-        install_cli.rc != 0 and
-        install_cli.rc != 9
+      failed_when: install_cli.rc not in [0,9]
 
     - name: Configure mc CLI tool
       vars:
@@ -192,7 +190,7 @@
         root_user: "{{ minio_tenant_chart_values.tenant.configSecret }}"
       ansible.builtin.shell: |
         # set MC_CONFIG_DIR
-        . ~/.bash_aliases
+        . .bash_aliases
         set -o pipefail
 
         mkdir -p "$MC_CONFIG_DIR"
@@ -220,9 +218,7 @@
         executable: /bin/bash
       register: config_mc
       changed_when: config_mc.rc == 0
-      failed_when: >-
-        config_mc.rc != 0 and
-        config_mc.rc != 9
+      failed_when: config_mc.rc not in [0,9]
   any_errors_fatal: true
 
 # https://min.io/docs/minio/linux/operations/monitoring/collect-minio-metrics-using-prometheus.html
@@ -319,9 +315,7 @@
           register: fix_configs
           when: scrape_configs.resources is truthy
           changed_when: fix_configs.rc == 0
-          failed_when: >-
-            fix_configs.rc != 0 and
-            fix_configs.rc != 9
+          failed_when: fix_configs.rc not in [0,9]
   any_errors_fatal: true
 
 - name: Create MinIO buckets/users/groups
@@ -333,16 +327,17 @@
     - name: Create buckets/users/groups
       ansible.builtin.shell: |
         # set MC_CONFIG_DIR
-        . ~/.bash_aliases
-        set -o pipefail
+        . .bash_aliases
+        set -eo pipefail
 
         # get list of existing buckets:
         # https://min.io/docs/minio/linux/reference/minio-mc/mc-ls.html
-        buckets="$(mc ls local --json | jq -r .key)"
+        buckets="$(mc ls local --json | jq -r '.key')"
         {% for bucket in minio_buckets | flatten %}
 
-        grep -q "^{{ bucket.name }}/$" <<< "$buckets" || {
+        grep -q '^{{ bucket.name }}/' <<< "$buckets" || {
           # https://min.io/docs/minio/linux/reference/minio-mc/mc-mb.html
+          echo >&2 "Creating bucket: {{ bucket.name }}"
           mc mb {{ bucket.options | join(' ') if
                    bucket.options is defined and
                    bucket.options is truthy }} \
@@ -353,10 +348,11 @@
 
         # get list of existing policies:
         # https://min.io/docs/minio/linux/reference/minio-mc-admin/mc-admin-policy-list.html
-        policies="$(mc admin policy list local --json | jq -r .policy)"
+        policies="$(mc admin policy list local --json | jq -r '.policy')"
         {% for name, policy in minio_policies.items() %}
 
-        grep -q "^{{ name }}$" <<< "$policies" || {
+        grep -q '^{{ name }}$' <<< "$policies" || {
+          echo >&2 "Creating policy: {{ name }}"
           {% set doc = {
                'Version':  '2012-10-17',
                'Statement': policy.Statement
@@ -364,7 +360,7 @@
           # https://min.io/docs/minio/linux/reference/minio-mc-admin/mc-admin-policy-create.html
           # only takes path to JSON file
           mc admin policy create local \
-              {{ name }} <(cat <<'EOF'
+            {{ name }} <(cat <<'EOF'
         {{ doc | to_json }}
         EOF
           )
@@ -374,51 +370,52 @@
 
         # get list of existing users:
         # https://min.io/docs/minio/linux/reference/minio-mc-admin/mc-admin-user-list.html
-        users="$(mc admin user list local --json | jq -r .accessKey)"
+        users="$(mc admin user list local --json | jq -r '.accessKey')"
         {% for access_key, user in minio_users.items() %}
 
-        grep -q "^{{ access_key }}$" <<< "$users" || {
+        grep -q '^{{ access_key }}$' <<< "$users" || {
           # https://min.io/docs/minio/linux/reference/minio-mc-admin/mc-admin-user-add.html
-          mc admin user add local {{ access_key }} '{{ user.secret_key }}'
+          echo >&2 "Creating user: {{ access_key }}"
+          mc admin user add local  {{ access_key }} \
+            '{{ user.secret_key }}'
           rc=0
 
           {% if user.policies is defined and user.policies %}
           # https://min.io/docs/minio/linux/reference/minio-mc-admin/mc-admin-policy-attach.html
-          mc admin policy attach local       \
-             {{ user.policies | join(' ') }} \
-              --user {{ access_key }}
+          mc admin policy attach local \
+            {{ user.policies | join(' ') }} \
+             --user {{ access_key }}
           {% endif %}
         }
         {% endfor %}
 
         # get list of existing groups:
         # https://min.io/docs/minio/linux/reference/minio-mc-admin/mc-admin-group.html#mc.admin.group.ls
-        groups="$(mc admin group list local --json | jq -r .groups[])"
+        groups="$(mc admin group list local --json | jq -r '.groups[]')"
         {% for name, group in minio_groups.items() %}
 
-        grep -q "^{{ name }}$" <<< "$groups" || {
+        grep -q '^{{ name }}$' <<< "$groups" || {
           # cannot create a group with no members, so
           # must create after users have been created:
           # https://min.io/docs/minio/linux/reference/minio-mc-admin/mc-admin-group.html#mc.admin.group.add
-          mc admin group add local {{ name }} \
-              {{ group.members | join(' ') }}
+          echo >&2 "Creating group: {{ name }}"
+          mc admin group add local  {{ name }} \
+            {{ group.members | join(' ') }}
           rc=0
 
           {% if group.policies is defined and group.policies %}
-          mc admin policy attach local        \
-             {{ group.policies | join(' ') }} \
-              --group {{ name }}
+          mc admin policy attach local \
+            {{ group.policies | join(' ') }} \
+             --group {{ name }}
           {% endif %}
         }
         {% endfor %}
         exit ${rc-9}
       args:
         executable: /bin/bash
-      register: mc_create
-      changed_when: mc_create.rc == 0
-      failed_when: >-
-        mc_create.rc != 0 and
-        mc_create.rc != 9
+      register: minio_create
+      changed_when: minio_create.rc == 0
+      failed_when: minio_create.rc not in [0,9]
   any_errors_fatal: true
 
 - name: Configure MinIO dashboards

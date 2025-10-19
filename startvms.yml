@@ -42,9 +42,7 @@
       loop: "{{ resolved_hosts }}"
       register: poweron_vms
       changed_when: poweron_vms.rc == 0
-      failed_when: >-
-        poweron_vms.rc != 0 and
-        poweron_vms.rc != 9
+      failed_when: poweron_vms.rc not in [0,9]
 
     - name: Wait until hosts reachable
       delegate_to: "{{ item }}"

@@ -75,7 +75,7 @@
 
 # https://velero.io/docs/latest/basic-install#install-the-cli
 - name: Install Velero client
-  tags: client
+  tags: cli
   hosts: cluster
   gather_facts: false
   become: true
@@ -102,9 +102,7 @@
         executable: /bin/bash
       register: install_cli
       changed_when: install_cli.rc == 0
-      failed_when: >-
-        install_cli.rc != 0 and
-        install_cli.rc != 9
+      failed_when: install_cli.rc not in [0,9]
   any_errors_fatal: true
 
 - name: Configure Velero dashboards

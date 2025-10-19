@@ -37,6 +37,11 @@ rke2_server_options:
   - |-
     etcd-arg:
       - listen-metrics-urls=http://127.0.0.1:2381,http://{{ hostvars[inventory_hostname].ansible_host }}:2381
+  # https://docs.rke2.io/advanced#control-plane-component-resource-requestslimits
+  - |-
+    control-plane-resource-requests:
+      - kube-apiserver-cpu=250m
+      - kube-apiserver-memory=2Gi
 
 # additional RKE2 agent configuration options
 # https://docs.rke2.io/reference/linux_agent_config
@@ -47,6 +52,7 @@ rke2_server_node_taints: [] # allow control plane to run workloads
 # - CriticalAddonsOnly=true:NoExecute # workloads on workers only
 rke2_agent_node_taints: []
 
+rke2_kube_apiserver_args: []
 # enable Prometheus scraping
 # TIP: shell into any pod and run
 # the "kube-*" binary with --help

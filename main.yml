@@ -100,6 +100,15 @@
   ansible.builtin.import_playbook: istio.yml
   tags: istio
 
+- name: Include HashiCorp Vault playbook
+  ansible.builtin.import_playbook: vault.yml
+  tags: vault
+
+# ESO depends on Vault
+- name: Include External Secrets playbook
+  ansible.builtin.import_playbook: externalsecrets.yml
+  tags: externalsecrets
+
 # GitLab depends on PostgreSQL, MinIO, Harbor
 - name: Include GitLab CI/CD stack playbook
   ansible.builtin.import_playbook: gitlab.yml

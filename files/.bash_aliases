@@ -285,6 +285,27 @@ alias ff='_fastfetch'
 # ip output in color
 alias ip='ip -c=auto'
 
+# export environment variables
+# in ~/.bash_env.d/*.env files
+envs() {
+  # expand to nothing if
+  # there are no matches
+  shopt -s nullglob
+  local file line
+
+  for file in "$BASH_ENV_DIR"/*.env; do
+    while read -r line; do
+      # skip comment, blank or invalid lines
+      # (variable names must be capitalized)
+      [[ "$line" =~ ^[A-Z_].*$ ]] || continue
+      eval "export $line"
+    done < "$file"
+  done
+}
+
+export BASH_ENV_DIR="$HOME/.bash_env.d"
+mkdir -p "$BASH_ENV_DIR" && envs
+
 venv() {
   local activate="$HOME/.venv/bin/activate"
   [ -f "$activate" ] && \
@@ -344,9 +365,6 @@ rmevicted() {
     | "kubectl delete pods \(.metadata.name) -n \(.metadata.namespace)"' \
     | xargs -n 1 -r bash -c
 }
-
-[ -f "$HOME/.bash_secrets" ] && \
-   . "$HOME/.bash_secrets"
 
 # only installed on Rancher host
 command -v rancher &> /dev/null && \
