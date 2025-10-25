@@ -5,7 +5,6 @@
 #   repository <required> [project/]{repository}
 #                         default project=library
 #   verify_tag [optional] specific tag to verify
-#                          (do NOT pass `omit`)
 # sets the following facts:
 #   repo_tag_found   most recent tag, verify_tag,
 #                    or "" if tag cannot be found
@@ -60,5 +59,6 @@
     repo_tag_found: >-
       {{  verify_tag  if  verified else
          repo_tags[0] if (verify_tag is not defined or
+                          verify_tag        == omit or
                           verify_tag is not truthy) and
                           repo_tags  is     truthy  else '' }}
