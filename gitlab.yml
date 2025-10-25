@@ -263,6 +263,55 @@
       loop_control:
         label: "{{ item.name }}"
 
+    - name: >-
+        {{ 'Enable' if enabled else 'Disable' }}
+        Istio service mesh
+      vars:
+        enabled: "{{ gitlab_use_mesh  }}"
+        apps_ns: "{{ gitlab_namespace }}"
+        global_: "{{ gitlab_chart_values.global }}"
+        storages: "{{ global_.praefect.virtualStorages }}"
+        services:
+          # names without gitlab- prefix
+          - praefect
+          - gitaly-{{ storages[0].name }}
+          - webservice-default
+          - gitlab-shell
+          - gitlab-pages
+          - gitlab-pages-metrics
+          - gitlab-runner
+          - gitlab-exporter
+          - pipelines-exporter
+          # don't use Waypoint proxy for Redis because
+          # it's only for L7 (HTTP/HTTP2/gRPC) traffic
+          - redis-metrics
+        resources: |
+          {% set res = [] %}
+          {% for svc in services %}
+          {%   set _ = res.append({
+                 'kind': 'Service',
+                 'name':  gitlab_release_name ~'-'~ svc,
+               })   %}
+          {% endfor %}
+          {{ res    }}
+      ansible.builtin.include_tasks: tasks/istio/mesh.yml
+      # sets service_mesh_crds_installed fact
+
+    # add ServiceEntry and DestinationRule
+    - name: Configure service mesh rules
+      vars:
+        state: "{{ 'present' if gitlab_use_mesh else 'absent' }}"
+        definition: "{{ lookup('ansible.builtin.template',
+          template_dir ~ '/gitlab/mesh.yaml.j2') }}"
+      # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_module.html
+      kubernetes.core.k8s:
+        kubeconfig: "{{ kubeconfig }}"
+        definition: "{{ definition }}"
+        namespace: "{{ gitlab_namespace }}"
+        state: "{{ state }}"
+        apply: true
+      when: service_mesh_crds_installed
+
     - name: Wait until Praefect is ready
       ansible.builtin.include_tasks: tasks/gitlab/praefectready.yml
 
@@ -430,7 +479,6 @@
       when: token is truthy
 
     - name: Create CI scripts ConfigMap
-      # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_module.html
       kubernetes.core.k8s:
         kubeconfig: "{{ kubeconfig }}"
         definition:

@@ -21,7 +21,7 @@
     check_crd: servicemonitors.monitoring.coreos.com
     api_base: "{{ grafana_url }}/api"
   block:
-    - name: Check crd/{{ check_crd }}
+    - name: Does CustomResourceDefinition exist?
       vars:
         # required kubernetes>=24.2 package only in user virtualenv
         ansible_python_interpreter: "{{ venv_python_interpreter }}"
@@ -33,7 +33,7 @@
         name: "{{ check_crd }}"
       register: crd_info
 
-    - name: Check if Grafana API server is reachable
+    - name: Is Grafana API server reachable?
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/uri_module.html
       ansible.builtin.uri:
         url: "{{ api_base }}"
@@ -47,7 +47,7 @@
         status_code: [-1, 401, 404, 502]
       register: grafana_api
 
-    - name: Set output facts about stack readiness
+    - name: Set facts about stack readiness
       vars:
         crds_installed: "{{ crd_info.resources is truthy }}"
         grafana_online: "{{ grafana_api.status == 401    }}"

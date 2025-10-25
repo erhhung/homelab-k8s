@@ -54,8 +54,9 @@ apt_packages:
       - iptables
       #- nftables
       #- ipset
-      - dnsutils # provides nslookup/dig/host
+      - dnsutils # nslookup/dig/host
       - iputils-ping
+      - net-tools # netstat/ifconfig/arp/route
       - netcat-openbsd
       - parted # used manually to expand local storage
       - open-iscsi # required by Longhorn storage engine
