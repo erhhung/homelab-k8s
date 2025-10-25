@@ -86,9 +86,9 @@
         json="$(curl -fsSL "${retry_opts[@]}" "$revs_url/$rev/download")"
         json="$(jq 'del(.id) | .title = "{{ item.title }}"' <<< "$json")"
 
-        tags='{{ item.tags | default(tags | default([])) | to_json }}'
-        [ "$tags" == "[]" ] || \
-            json="$(jq ".tags += $tags" <<< "$json")"
+        tags='{{ item.tags | default(tags | default([])) | to_json(separators=[',',':']) }}'
+        [ "$tags" == "[]" ] || json="$(jq ".tags += $tags" <<< "$json")"
+        json="$(jq '.tags |= map(ascii_downcase)' <<< "$json")"
 
         {% if patches is truthy  %}
         {%   for expr in patches %}
@@ -105,7 +105,7 @@
 
         {% endif %}
         ds_var='{{ item.ds_var | default(ds_var | default('DS_PROMETHEUS')) }}'
-        inputs='{{ item.inputs | default(inputs | default([])) | to_json }}'
+        inputs='{{ item.inputs | default(inputs | default([])) | to_json(separators=[',',':']) }}'
         inputs="$(jq --argjson  inputs "$inputs" '. + $inputs' <<EOT
         [{
           "name":     "$ds_var",
