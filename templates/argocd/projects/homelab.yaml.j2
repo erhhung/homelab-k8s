@@ -1,0 +1,21 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: homelab
+spec:
+  description: Homelab Project
+  sourceRepos:
+    - {{ gitlab_ssh_url     }}/homelab/**
+    - {{ gitlab_http_url    }}/homelab/**
+    - {{ gitlab_shell_url   }}/homelab/**
+    - {{ gitlab_service_url }}/homelab/**
+    - https://github.com/erhhung/*
+  destinations:
+    - server: {{ kube_api_url }}
+      namespace: '*'
+  clusterResourceWhitelist:
+    - group: '*'
+      kind: '*'
+  namespaceResourceWhitelist:
+    - group: '*'
+      kind: '*'

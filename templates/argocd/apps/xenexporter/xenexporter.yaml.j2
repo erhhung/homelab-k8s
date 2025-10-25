@@ -1,0 +1,25 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: xen-exporter
+  annotations:
+    # custom annotation used in Argo CD sync notification templates
+    source.repoURL.http: "{{ gitlab_http_url }}/homelab/xen-exporter"
+spec:
+  project: homelab
+  source:
+    # location of app's Kubernetes deployment manifests
+    # kubectl explain application.spec.source --recursive
+    repoURL: {{ gitlab_ssh_url }}/homelab/xen-exporter.git
+    # targetRevision can be branch, tag, or (short) hash
+    targetRevision: main
+    path: overlays/homelab
+  destination:
+    server: {{ kube_api_url }}
+    namespace: xen-exporter
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

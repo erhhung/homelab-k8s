@@ -140,19 +140,17 @@
         . .bash_aliases
         set -o pipefail
 
-        [ -f ~/.vault-token ] && exit 9 # no change
-        export VAULT_ADDR="{{ vault_url }}"
+        [ "$VAULT_TOKEN" ] && exit 9 # no change
+        token=$(kubectl get secret {{ vault_secrets['unseal'] }} \
+          -n {{ vault_namespace }} -o json | \
+          jq -r '.data.rootToken | @base64d')
 
         # BASH_ENV_DIR is set in .bash_aliases
         cat <<EOF > "$BASH_ENV_DIR/vault.env"
-        VAULT_ADDR="$VAULT_ADDR"
+        VAULT_ADDR="{{ vault_url }}"
+        VAULT_TOKEN="$token"
         VAULT_FORMAT="yaml"
         EOF
-
-        kubectl get secret {{ vault_secrets['unseal'] }} \
-             -n {{ vault_namespace }} -o json | \
-          jq -r '.data.rootToken | @base64d'  | \
-          vault login -no-print  -
         EOT
       register: config_cli
       changed_when: config_cli.rc == 0
@@ -189,7 +187,7 @@
 
           # https://developer.hashicorp.com/vault/api-docs/auth/kubernetes#configure-method
           vault write auth/kubernetes/config \
-            kubernetes_host="https://kubernetes.default.svc.{{ cluster_domain }}"
+            kubernetes_host="{{ kube_api_url }}"
         }
         grep -q '^userpass/' <<< "$methods" || {
           echo >&2 "Enabling Userpass auth"

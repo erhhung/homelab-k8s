@@ -1,0 +1,55 @@
+# create Argo CD resources like AppProject
+# and Application from manifests/templates
+# (**/*.yaml, **/*.yaml.j2; ignores **/.*)
+#
+# pass the following vars:
+#   kubeconfig <required> path to kubeconfig
+#   cr_kind    <required> resource kind to find
+#   base_dir   <required> base dir of manifests
+---
+- name: Gather facts about controller
+  # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
+  ansible.builtin.include_tasks: tasks/localfacts.yml
+  when: local_python_interpreter is not defined
+
+- name: Create {{ cr_kind }} resources
+  block:
+    - name: Find {{ cr_kind }} manifests
+      delegate_to: localhost
+      vars:
+        ansible_python_interpreter: "{{ local_python_interpreter }}"
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/find_module.html
+      ansible.builtin.find:
+        paths: "{{ base_dir }}"
+        follow: true
+        recurse: true
+        patterns:
+          - "*.yaml"
+          - "*.yaml.j2"
+        excludes: [".*"]
+        contains: >-
+          kind: {{ cr_kind }}
+      register: find_files
+
+    - name: Create {{ cr_kind }} resource
+      vars:
+        # required kubernetes>=24.2 package only in user virtualenv
+        ansible_python_interpreter: "{{ venv_python_interpreter }}"
+        sorted: "{{ find_files.files | map(attribute='path') | sort }}"
+        definitions: |
+          {% set defs = [] %}
+          {% for file in sorted %}
+          {%   set yaml = lookup('ansible.builtin.template', file) %}
+          {%   set _ = defs.append(yaml | from_yaml) %}
+          {% endfor %}
+          {{ defs   }}
+      # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_module.html
+      kubernetes.core.k8s:
+        kubeconfig: "{{ kubeconfig }}"
+        definition: "{{ item }}"
+        namespace: "{{ argocd_namespace }}"
+        state: present
+      loop: "{{ definitions }}"
+      loop_control:
+        label: "{{ item.metadata.name }}"
+  any_errors_fatal: true
