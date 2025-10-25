@@ -29,7 +29,8 @@ flowise_db_user: flowise
 # use {{ pgpool_pass }}
 
 # use our image with support for DATABASE_TLS
-# and client certificate environment variables
+# and client certificate environment variables:
+# https://github.com/erhhung/flowise/tree/redis-cluster-tls
 flowise_image:
   pullPolicy: Always
   registry: "{{ harbor_container_registry }}"
@@ -45,7 +46,7 @@ flowise_image:
 # use modified Helm chart in our forked repo on branch
 # flowise-redis-tls with support for TLS in wait-redis
 # init containers, and support for extraInitContainers
-# requires installation of helm-git plugin:
+# * requires installation of helm-git plugin:
 # https://github.com/aslafy-z/helm-git#usage
 flowise_chart_repo_url: git+https://github.com/erhhung/cowboysysop-charts@charts/flowise?ref=flowise-redis-tls
 # flowise_chart_repo_url: https://cowboysysop.github.io/charts
@@ -100,22 +101,32 @@ flowise_chart_values:
     existingSecretKeyPassword: postgresql-password
 
   # couldn't get cluster mode working on external
-  # Redis, so just use dedicated instance for now
+  # Redis, so just use dedicated instance for now:
+  # https://github.com/cowboysysop/charts/tree/master/charts/redis/values.yaml
   redis:
     enabled: true
-    # values for cowboysysop/redis subchart:
-    # https://github.com/cowboysysop/charts/tree/master/charts/redis/values.yaml
+
+    image:
+      repository: bitnami/redis
+      tag: 8.2.1-debian-12-r0
     master:
+      revisionHistoryLimit: 2
+
       persistence:
         enabled: true
         storageClass: "{{ storage_classes['default'] }}"
         accessModes: ["ReadWriteOnce"]
-        size: 512Mi
+        size: 384Mi
 
       persistentVolumeClaimRetentionPolicy:
         enabled: true
         whenScaled: Retain
         whenDeleted: Delete
+
+      resources:
+        requests:
+          cpu: 25m
+          memory: 32Mi
 
   externalRedis:
     # mode=queue

@@ -1,0 +1,35 @@
+{% set redis_host = gitlab_release_name ~'-redis-master.'~ gitlab_namespace ~'.svc.'~ cluster_domain %}
+{% set redis_port = 6379 %}
+---
+# https://istio.io/latest/docs/reference/config/networking/service-entry
+apiVersion: networking.istio.io/v1
+kind: ServiceEntry
+metadata:
+  name: gitlab-redis
+spec:
+  hosts:
+    - {{ redis_host }}
+  location: MESH_INTERNAL
+  resolution: DNS
+  ports:
+    - name: redis
+      number: {{ redis_port }}
+      protocol: TCP
+  exportTo:
+    - .
+---
+# https://istio.io/latest/docs/reference/config/networking/destination-rule
+apiVersion: networking.istio.io/v1
+kind: DestinationRule
+metadata:
+  name: gitlab-redis
+spec:
+  host: {{ redis_host }}
+  trafficPolicy:
+    portLevelSettings:
+      - port:
+          number: {{ redis_port }}
+        tls:
+          mode: DISABLE
+  exportTo:
+    - .

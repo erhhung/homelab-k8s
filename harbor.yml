@@ -83,8 +83,15 @@
         }
         ARCH=$(uname -m | sed -e 's/aarch64/arm64/' \
                               -e  's/x86_64/amd64/')
-        curl -fsSL "$REL/download/harbor-cli_${VER#v}_linux_$ARCH.tar.gz" | \
-          tar -xz --no-same-owner harbor-cli
+        tarball="$REL/download/harbor-cli_${VER#v}_linux_$ARCH.tar.gz"
+
+        # this project is known to create a new release but fail to
+        # attach asset files for download, so first ensure that the
+        # tarball actually exists
+        status=$(curl -sLI -o /dev/null -w '%{http_code}' "$tarball")
+        [[ "$status" -eq 404 && "$ver" ]] && exit 9 # skip upgrade
+
+        curl -fsSL "$tarball" | tar -xz --no-same-owner harbor-cli
         mv -f harbor-cli harbor
       args:
         executable: /bin/bash
@@ -326,7 +333,8 @@
 
     - name: Copy image into Harbor
       vars:
-        image: "{{ item | basename }}"
+        # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/basename_filter.html
+        image: "{{ item | ansible.builtin.basename }}"
         dest: "{{ harbor_container_registry }}/library/{{ image }}"
       ansible.builtin.shell: |
         {{ preamble }}

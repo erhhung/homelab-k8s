@@ -8,6 +8,12 @@
 # shellcheck disable=SC2206 # Quote to avoid word splitting
 # shellcheck disable=SC2207 # Prefer mapfile to split output
 
+# https://wiki.archlinux.org/title/XDG_Base_Directory
+export XDG_CONFIG_HOME="$HOME/.config"
+export XDG_CACHE_HOME="$HOME/.cache"
+export XDG_DATA_HOME="$HOME/.local/share"
+export XDG_STATE_HOME="$HOME/.local/state"
+
 alias sudo='sudo -E '
 alias cdd='cd "$OLDPWD"'
 alias ll='ls -alFG'
@@ -284,6 +290,7 @@ alias ff='_fastfetch'
 
 # ip output in color
 alias ip='ip -c=auto'
+alias arp='arp -a'
 
 # export environment variables
 # in ~/.bash_env.d/*.env files

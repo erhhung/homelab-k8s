@@ -188,6 +188,7 @@ gitlab_chart_values:
     # https://docs.gitlab.com/administration/redis/replication_and_failover_external
     # https://docs.gitlab.com/charts/charts/globals#configure-redis-settings
     redis:
+      scheme: rediss
       auth:
         enabled: true
         secret: "{{ gitlab_secrets['passwords'] }}"
@@ -382,9 +383,8 @@ gitlab_chart_values:
     # https://docs.gitlab.com/charts/charts/globals#outgoing-email
     email:
       display_name: GitLab
-      from: "{{ icloud_smtp.from_email }}"
-      reply_to: "{{ icloud_smtp.from_email |
-        regex_replace('^[^@]+', 'noreply') }}"
+      from: GitLab <{{ icloud_smtp.from_email }}>
+      reply_to: "{{ icloud_smtp.noreply_email }}"
 
     # https://docs.gitlab.com/charts/installation/command-line-options#outgoing-email-configuration
     smtp:
@@ -497,8 +497,16 @@ gitlab_chart_values:
           args:
             - -c
             - |-
+              # can`t use "?skip_verify" URL param yet, so will have
+              # to add our private CA cert to the system trust store:
+              # https://github.com/wait4x/wait4x/issues/458
+              cat /etc/ssl/certs/ca-certificates.crt /tls/ca.crt > /tmp/ca-bundle.crt
+
+              # set well-known env var used by Go apps
+              export SSL_CERT_FILE=/tmp/ca-bundle.crt
+
               wait4x --interval 3s --timeout 0 redis \
-                "redis://:${REDIS_PASSWORD}@${REDIS_HOST}:${REDIS_PORT}"
+                "rediss://:${REDIS_PASSWORD}@${REDIS_HOST}:${REDIS_PORT}"
           env:
             {% raw -%}
             - name: REDIS_HOST
@@ -511,6 +519,12 @@ gitlab_chart_values:
                 secretKeyRef:
                   name: {{ gitlab_secrets['passwords'] }}
                   key: redis
+          volumeMounts:
+            # reuse volume created by chart
+            - name: custom-ca-certificates
+              mountPath: /tls/ca.crt
+              subPath: ca.crt
+              readOnly: true
 
         # create the main 'gitlab' database as well as
         # the 'praefect' database if they do not exist
@@ -872,12 +886,21 @@ gitlab_chart_values:
     # have a PostgreSQL HA cluster deployed
     install: false
 
+  # https://github.com/bitnami/charts/tree/main/bitnami/redis/values.yaml
   redis:
     # install single-instance via subchart because
     # GitLab doesn't support Redis in cluster mode:
     # https://docs.gitlab.com/administration/redis/replication_and_failover_external
     # https://docs.gitlab.com/charts/architecture/decisions#redis
     install: true
+
+    tls:
+      enabled: true
+      authClients: false # don't require mTLS
+      existingSecret: "{{ gitlab_secrets['node-tls'] }}"
+      certFilename: tls.crt
+      certKeyFilename: tls.key
+      certCAFilename: ca.crt
     auth:
       existingSecret: "{{ gitlab_secrets['passwords'] }}"
       existingSecretKey: redis
@@ -887,12 +910,18 @@ gitlab_chart_values:
     sentinel:
       enabled: false
 
+    image:
+      repository: bitnami/redis
+      tag: 8.2.1-debian-12-r0
     master:
+      revisionHistoryLimit: 2
+
       persistence:
         enabled: true
         storageClass: "{{ storage_classes['default'] }}"
         accessModes: ["ReadWriteOnce"]
-        size: 512Mi
+        size: 384Mi
+
       persistentVolumeClaimRetentionPolicy:
         enabled: true
         whenScaled: Retain
@@ -1065,6 +1094,9 @@ gitlab_runner:
     - linux
     - buildah
   max_timeout: 7200
+
+# Istio service mesh?
+gitlab_use_mesh: true
 
 # =================================== Pipelines Exporter ===================================
 

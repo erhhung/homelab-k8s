@@ -1,0 +1,46 @@
+# check if Istio Operator and Gateway API CRDs
+# are installed so that service mesh resources
+# can be created
+#
+# pass the following vars:
+#   kubeconfig  [optional] default=<RKE>
+# sets the following facts:
+#   service_mesh_crds_installed: true/false
+---
+- name: Are service mesh CRDs installed?
+  become: false
+  vars:
+    check_crds:
+      # if these exist, others should also
+      - serviceentries.networking.istio.io
+      - gateways.gateway.networking.k8s.io
+  block:
+    - name: Does CustomResourceDefinition exist?
+      vars:
+        # required kubernetes>=24.2 package only in user virtualenv
+        ansible_python_interpreter: "{{ venv_python_interpreter }}"
+      # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_info_module.html
+      kubernetes.core.k8s_info:
+        kubeconfig: "{{ kubeconfig | default(rke_kubeconfig) }}"
+        api_version: apiextensions.k8s.io/v1
+        kind: CustomResourceDefinition
+        name: "{{ item }}"
+      register: crd_info
+      loop: "{{ check_crds }}"
+      loop_control:
+        label: "{{ item | split('.') | first }}"
+
+    - name: Set service_mesh_crds_installed fact
+      vars:
+        crds_installed: |
+          {% set crds = [] %}
+          {% for info in crd_info.results  %}
+          {%   if info.resources is truthy %}
+          {%     set _ = crds.append(info.resources[0]) %}
+          {%   endif %}
+          {% endfor  %}
+          {{ crds | length == check_crds | length }}
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/set_fact_module.html
+      ansible.builtin.set_fact:
+        service_mesh_crds_installed: "{{ crds_installed }}"
+  any_errors_fatal: true
