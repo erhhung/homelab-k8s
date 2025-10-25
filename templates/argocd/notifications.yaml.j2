@@ -1,0 +1,47 @@
+# these text blocks are referenced by template.*
+# configs under .notifications.templates section
+
+# https://argo-cd.readthedocs.io/en/stable/operator-manual/notifications/templates#functions
+email-sync-status: |-
+  {% raw -%}
+  email:
+    subject: "Application {{ .app.metadata.name }} sync status: {{ .app.status.sync.status }}"
+  message: |-
+    <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;">
+      <tr>
+        <td style="text-align:right; padding:2px 8px; white-space:nowrap;">Application:</td>
+        <td style="padding:2px 0; font-weight:bold;">
+          <a href="{{ .context.argocdUrl }}/applications/argocd/{{ .app.metadata.name }}">{{ .app.metadata.name }}</a>
+        </td>
+      </tr>
+      <tr>
+        <td style="text-align:right; padding:2px 8px; white-space:nowrap;">Repository:</td>
+        <td style="padding:2px 0; font-weight:bold;">
+          <a href="{{ or (and .app.metadata.annotations (index .app.metadata.annotations "source.repoURL.http")) (call .repo.RepoURLToHTTPS .app.spec.source.repoURL) }}">{{ call .repo.FullNameByRepoURL .app.spec.source.repoURL }}</a>
+        </td>
+      </tr>
+      <tr>
+        <td style="text-align:right; padding:2px 8px; white-space:nowrap;">Sync Status:</td>
+        <td style="padding:2px 0; font-weight:bold;">{{ .app.status.sync.status }}</td>
+      </tr>
+    </table>
+  {%- endraw %}
+
+# https://docs.slack.dev/messaging/sending-messages-using-incoming-webhooks#advanced_message_formatting
+slack-sync-status: |-
+  {% raw -%}
+  webhook:
+    slack:
+      method: POST
+      body: |-
+        {
+          "text": "Application {{ .app.metadata.name }} sync status: {{ .app.status.sync.status }}",
+          "blocks": [{
+            "type": "section",
+            "text": {
+              "type": "mrkdwn",
+              "text": "*Application*: *<{{ .context.argocdUrl }}/applications/argocd/{{ .app.metadata.name }}|{{ .app.metadata.name }}>*\n*Repository*: *<{{ or (and .app.metadata.annotations (index .app.metadata.annotations "source.repoURL.http")) (call .repo.RepoURLToHTTPS .app.spec.source.repoURL) }}|{{ call .repo.FullNameByRepoURL .app.spec.source.repoURL }}>*\n*Sync Status*: *{{ .app.status.sync.status }}*"
+            }
+          }]
+        }
+  {%- endraw %}
