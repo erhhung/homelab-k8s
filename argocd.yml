@@ -19,8 +19,37 @@
     create_ns: false
     release: "{{ argocd_release_name }}"
   pre_tasks:
+    - name: Get image tag from Harbor
+      when: argocd_image.registry == harbor_container_registry
+      # use our image with support for Redis cluster
+      block:
+        - name: Get image tag from Harbor
+          vars:
+            repository: "{{ argocd_image.repository }}"
+            verify_tag: "{{ argocd_image.tag | default(omit) }}"
+          # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
+          ansible.builtin.include_tasks: tasks/harbor/gettag.yml
+          # sets repo_tag_found fact
+
+        - name: Show which image to deploy
+          vars:
+            image: "{{ argocd_image.registry }}/{{ argocd_image.repository }}"
+          # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/assert_module.html
+          ansible.builtin.assert:
+            that: repo_tag_found is truthy
+            success_msg: >-
+              Using image: {{ image }}:{{ repo_tag_found }}
+            fail_msg: >-
+              Image not found: {{ image -}}
+              {% if argocd_image.tag is defined -%}
+                :{{ argocd_image.tag }}
+              {% endif %}
+
+        - name: Set argocd_image_tag fact
+          ansible.builtin.set_fact:
+            argocd_image_tag: "{{ repo_tag_found }}"
+
     - name: Get CA certificates from PKI
-      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
       ansible.builtin.include_tasks: tasks/pki/cacerts.yml
       when: ca_certificates is not defined
 
@@ -34,10 +63,25 @@
     - name: Set gitlab_known_hosts fact
       vars:
         # since we're using non-standard SSH port, first field is [host]:port
+        # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/regex_replace_filter.html
         svc_hosts: "{{ known_hosts | map('regex_replace', '^[^:]+', '['~ gitlab_shell_host ~']') }}"
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/set_fact_module.html
       ansible.builtin.set_fact:
+        # contains entries for both external and in-cluster FQDNs
         gitlab_known_hosts: "{{ (known_hosts + svc_hosts) | join('\n') }}"
+
+    - name: Get GitLab PAT if it exists
+      # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_info_module.html
+      kubernetes.core.k8s_info:
+        kubeconfig: "{{ kubeconfig }}"
+        api_version: v1
+        kind: Secret
+        # "argocd-repo-creds-" is Argo CD's fixed prefix;
+        # "gitlab-external-http" is suffix key defined in
+        # argocd_chart_values.configs.credentialTemplates
+        name: argocd-repo-creds-gitlab-external-http
+        namespace: "{{ secret_ns }}"
+      register: gitlab_pat
   tasks:
     # https://argo-cd.readthedocs.io/en/stable/operator-manual/tls#tls-certificates-used-by-argocd-server
     - name: Create Argo CD ingress secret
@@ -59,11 +103,24 @@
           redis-password: "{{ valkey_pass }}"
       ansible.builtin.include_tasks: tasks/k8s/secrets/generic.yml
 
+    - name: Verify/rotate or create PAT
+      vars:
+        token: >-
+          {{ gitlab_pat.resources[0].data['password'] | b64decode
+          if gitlab_pat.resources is truthy else none }}
+        pat_name: argocd
+        pat_owner: "{{ user_erhhung.username }}"
+        scopes:
+          - read_repository
+          - self_rotate
+        fact_name: argocd_gitlab_pat
+      ansible.builtin.include_tasks: tasks/gitlab/tokens/pat.yml
+
     - name: Install Argo CD Helm chart
       # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/helm_module.html
       kubernetes.core.helm:
         kubeconfig: "{{ kubeconfig }}"
-        chart_repo_url: https://argoproj.github.io/argo-helm
+        chart_repo_url: "{{ argocd_chart_repo_url }}"
         chart_ref: argo-cd
         chart_version: "{{ argocd_chart_version }}"
         release_name: "{{ argocd_release_name }}"
@@ -78,21 +135,101 @@
         {{ 'Enable' if enabled else 'Disable' }}
         Istio service mesh
       vars:
-        enabled: "{{ argocd_use_mesh }}"
+        enabled: "{{ argocd_use_mesh  }}"
         apps_ns: "{{ argocd_namespace }}"
         services:
-          - argocd-server
-          - argocd-applicationset-controller
-          - argocd-commit-server
-          - argocd-repo-server
+          # names without argocd- prefix
+          - server
+          - applicationset-controller
+          - commit-server
+          - repo-server
         resources: |
           {% set res = [] %}
           {% for svc in services %}
-          {%  set _ = res.append({
-                'kind':'Service',
-                'name': svc
-              }) %}
+          {%   set _ = res.append({
+                 'kind': 'Service',
+                 'name':  argocd_release_name ~'-'~ svc,
+               })   %}
           {% endfor %}
-          {{ res }}
+          {{ res    }}
       ansible.builtin.include_tasks: tasks/istio/mesh.yml
+  any_errors_fatal: true
+
+- name: Install Argo CD CLI tool
+  tags: cli
+  hosts: cluster
+  gather_facts: false
+  vars_files:
+    - vars/argocd.yml
+  tasks:
+    # https://argo-cd.readthedocs.io/en/stable/cli_installation#download-with-curl
+    - name: Install Argo CD CLI tool
+      become: true
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/shell_module.html
+      ansible.builtin.shell: |
+        cd /usr/local/bin
+        set -o pipefail
+
+        REL="https://github.com/argoproj/argo-cd/releases/latest"
+        VER=$(curl -Is $REL | sed -En 's/^location:.+\/tag\/(.+)\r$/\1/p')
+
+        # check if latest version already installed
+        command -v argocd &> /dev/null && {
+          ver=$(v=(`argocd version --client --short`); echo ${v[1]%+*})
+          [ "$ver" == "$VER" ] && exit 9 # no change
+        }
+        ARCH=$(uname -m | sed -e 's/aarch64/arm64/' \
+                              -e  's/x86_64/amd64/')
+        curl -fsSLo argocd "$REL/download/argocd-linux-$ARCH"
+        chmod +x argocd
+      args:
+        executable: /bin/bash
+      register: install_cli
+      changed_when: install_cli.rc == 0
+      failed_when: install_cli.rc not in [0,9]
+
+    - name: Log in to Argo CD by CLI
+      ansible.builtin.shell: |
+        # set $XDG vars
+        . .bash_aliases
+
+        [ -f "$XDG_CONFIG_HOME/argocd/config" ] && exit 9 # no change
+        argocd login {{ argocd_fqdn }} --grpc-web --name default \
+          --username admin --password '{{ argocd_admin_pass }}'
+      args:
+        executable: /bin/bash
+      register: config_cli
+      changed_when: config_cli.rc == 0
+      failed_when: config_cli.rc not in [0,9]
+  any_errors_fatal: true
+
+- name: Configure projects/apps
+  tags: configure
+  hosts: "{{ rke_control_plane_host }}"
+  gather_facts: false
+  vars_files:
+    - vars/kubernetes.yml
+    - vars/gitlab.yml
+    - vars/argocd.yml
+  vars:
+    kubeconfig: "{{ rke_kubeconfig }}"
+    argocd_dir: "{{ template_dir }}/argocd"
+  tasks:
+    - name: Configure AppProjects
+      vars:
+        cr_kind: AppProject
+        base_dir: "{{ argocd_dir }}/projects"
+      ansible.builtin.include_tasks: tasks/argocd/crs.yml
+
+    - name: Configure Applications
+      vars:
+        cr_kind: Application
+        base_dir: "{{ argocd_dir }}/apps"
+      ansible.builtin.include_tasks: tasks/argocd/crs.yml
+
+    # dashboards for Argo CD and deployed applications
+    - name: Import Grafana dashboards
+      vars:
+        dashboards: "{{ argocd_grafana_dashboards }}"
+      ansible.builtin.include_tasks: tasks/grafana/dashboards.yml
   any_errors_fatal: true

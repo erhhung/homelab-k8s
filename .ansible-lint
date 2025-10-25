@@ -3,7 +3,7 @@
 exclude_paths:
   - .ansible/
   - group_vars/all/vault.yml
-  - vars/gitlab.secrets.yml
+  - vars/*.secrets.yml
 
 # https://ansible.readthedocs.io/projects/lint/rules
 skip_list:

@@ -644,6 +644,21 @@
       ansible.builtin.debug:
         var: policies
 
+    - name: Debug fileglob lookup
+      vars:
+        base_dir: "{{ template_dir }}/argocd/projects"
+        # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/fileglob_lookup.html
+        # https://docs.ansible.com/ansible/latest/plugins/lookup.html#forcing-lookups-to-return-lists-query-and-wantlist-true
+        manifests: "{{ query('ansible.builtin.fileglob', base_dir ~ '/*.yaml*') |
+          map('ansible.builtin.basename') | select('search', '^[^.].+') }}"
+      ansible.builtin.debug:
+        var: item
+      # names not sorted by default
+      loop: "{{ manifests | sort }}"
+      loop_control:
+        # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/regex_replace_filter.html
+        label: "{{ item | ansible.builtin.regex_replace('\\.yaml(\\.j2)?$', '') }}"
+
 - name: Ansible quirks and behaviors
   tags: quirks
   hosts: localhost

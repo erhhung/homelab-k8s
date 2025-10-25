@@ -1,0 +1,12 @@
+# use non-default project instead:
+# https://argo-cd.readthedocs.io/en/stable/user-guide/projects#the-default-project
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: default
+spec:
+  sourceRepos: []
+  destinations: []
+  namespaceResourceBlacklist:
+    - group: '*'
+      kind: '*'
