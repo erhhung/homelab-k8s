@@ -93,7 +93,7 @@ gitlab_integrations:
 
   slack:
     service[active]: "true"
-    service[webhook]: "{{ slack_webhook_url.gitlab }}"
+    service[webhook]: "{{ slack_webhook_url['gitlab'] }}"
     service[username]: GitLab
     service[push_events]: "false"
     service[tag_push_events]: "false"

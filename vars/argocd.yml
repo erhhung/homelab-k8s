@@ -1,6 +1,10 @@
 # argocd_admin_pass:   {vault.yml}
 # github_access_token: {vault.yml}
 
+# send notifications or just drop
+email_notifications_enabled: false
+slack_notifications_enabled: true
+
 argocd_namespace: argocd
 argocd_host_name: argocd # alias of "ingress"
 
@@ -24,6 +28,10 @@ argocd_redis_options:
   - --redis-ca-certificate=/tls/valkey/ca.crt
   - --redis-client-certificate=/tls/valkey/tls.crt
   - --redis-client-key=/tls/valkey/tls.key
+  # option supported only in forked repo
+  # containing merged upstream PR #14001:
+  # https://github.com/erhhung/argocd/tree/redis-cluster
+  - --redis-cluster-mode
 
 argocd_allowed_scms:
   - https://github.com
@@ -34,13 +42,35 @@ argocd_allowed_scms:
   - "{{ gitlab_service_url }}" # cluster  URL
   - "{{ gitlab_shell_url   }}" # cluster  URL
 
+# use our image with support for Redis cluster:
+# https://github.com/erhhung/argo-cd/tree/redis-cluster
+argocd_image:
+  pullPolicy: Always
+  registry: "{{ harbor_container_registry }}"
+  repository: library/argocd
+  # either specify a tag or, if registry is Harbor,
+  # let Ansible task query the most recently pushed
+  # tag, which is not necessarily the tag "latest"
+  # tag: cc0df98f
+# argocd_image:
+#   pullPolicy: IfNotPresent
+#   repository: quay.io/argoproj/argocd
+
+# use modified Helm chart in our forked repo on branch
+# argo-cd-redis-cluster with support for Redis cluster
+# * requires installation of helm-git plugin:
+# https://github.com/aslafy-z/helm-git#usage
+argocd_chart_repo_url: git+https://github.com/erhhung/argo-helm@charts/argo-cd?ref=argo-cd-redis-cluster
+# argocd_chart_repo_url: https://argoproj.github.io/argo-helm
+
 # https://github.com/argoproj/argo-helm/tree/main/charts/argo-cd
-argocd_chart_version: "8.2.5"
+argocd_chart_version: "9.0.3"
 argocd_release_name: argocd
 
 # https://github.com/argoproj/argo-helm/tree/main/charts/argo-cd/values.yaml
 argocd_chart_values:
   crds:
+    install: true
     keep: false # delete on uninstall
 
   global:
@@ -48,45 +78,76 @@ argocd_chart_values:
     domain: "{{ argocd_fqdn }}"
     networkPolicy:
       create: false
+    image:
+      imagePullPolicy: "{{ argocd_image.pullPolicy | default(omit) }}"
+      repository: >-
+        {% if argocd_image.repository is defined -%}
+        {%   if argocd_image.registry is defined -%}
+        {{      argocd_image.registry }}/{{ argocd_image.repository -}}
+        {%   else  -%}
+        {{      argocd_image.repository -}}
+        {%   endif -%}
+        {% else    -%}
+        {{   omit  -}}
+        {% endif    %}
+      tag: "{{ argocd_image.tag | default(argocd_image_tag | default(omit)) }}"
 
   configs:
     # "argocd-cm" ConfigMap:
     # https://argo-cd.readthedocs.io/en/stable/operator-manual/argocd-cm-yaml
     # all values under .configs.cm are written into ConfigMap
     cm:
-      # allow users to exec into app pods from the Argo CD UI:
-      # https://argo-cd.readthedocs.io/en/stable/operator-manual/rbac#the-exec-resource
-      exec.enabled: true
-      # https://argo-cd.readthedocs.io/en/stable/user-guide/status-badge
-      statusbadge.enabled: true
+      # admin user only has login capability
+      # by default, so add another user with
+      # apiKey capability to use CLI
+      accounts.erhhung: apiKey,login
+
       # enable anonymous user with default role
       # permissions specified in argocd-rbac-cm
-      users.anonymous.enabled: true
-      # user "admin" only has "login" capability by default;
-      # add another local user with "apiKey" capability for
-      # using the Argo CD CLI
-      accounts.erhhung: apiKey
+      users.anonymous.enabled: false
+      # token expiration duration
+      users.session.duration: 24h
+
+      # interval for checking manifest updates in repository:
+      # 0=disabled; actual timeout includes additional jitter
+      timeout.reconciliation: 120s
+      # max random time added to timeout
+      timeout.reconciliation.jitter: 30s
+
+      # allow users to exec into pods from the Argo CD UI:
+      # https://argo-cd.readthedocs.io/en/stable/operator-manual/rbac#the-exec-resource
+      exec.enabled: true
+
+      # https://argo-cd.readthedocs.io/en/stable/user-guide/status-badge
+      statusbadge.enabled: true
+
+    # "argocd-rbac-cm" ConfigMap:
+    # https://argo-cd.readthedocs.io/en/stable/operator-manual/rbac
+    # https://argo-cd.readthedocs.io/en/stable/operator-manual/argocd-rbac-cm-yaml
+    rbac:
+      policy.csv: |
+        # make myself an admin
+        g, erhhung, role:admin
 
     # "argocd-secret" Secret:
     # https://argo-cd.readthedocs.io/en/stable/operator-manual/argocd-secret-yaml
     secret:
-      createSecret: true
       githubSecret: "{{ github_access_token }}"
       # bcrypt hash of plain-text password:
       # htpasswd -nbBC 11 "" $ARGOCD_PASS | \
       #       tr -d ':\n' | sed 's/$2y/$2b/'
-      argocdServerAdminPassword: &argocd_pass >-
+      argocdServerAdminPassword: &admin-pass >-
         {{ argocd_admin_pass | ansible.builtin.password_hash('bcrypt',
                                salt=bcrypt_salt, rounds=bcrypt_rounds) }}
-      argocdServerAdminPasswordMtime: &argocd_pass_mtime |-
+      argocdServerAdminPasswordMtime: &admin-pass-mtime >-
         2025-10-01T00:00:00Z
       extra:
         # key for signing JWT tokens
         server.secretkey: "{{ argocd_signing_key }}"
         # set password of additional
         # users created in argocd-cm
-        accounts.erhhung.password: *argocd_pass
-        accounts.erhhung.passwordMtime: *argocd_pass_mtime
+        accounts.erhhung.password: *admin-pass
+        accounts.erhhung.passwordMtime: *admin-pass-mtime
 
     # "argocd-tls-certs-cm" ConfigMap:
     # https://argo-cd.readthedocs.io/en/stable/operator-manual/declarative-setup#repositories-using-self-signed-tls-certificates-or-are-signed-by-custom-ca
@@ -94,7 +155,6 @@ argocd_chart_values:
     tls:
       # certs of Git repositories
       # (required, even if empty)
-      create: true
       certificates: "{{ {
         gitlab_fqdns['gitlab']: ca_certificates[1],
         gitlab_service_host:    ca_certificates[1],
@@ -116,9 +176,32 @@ argocd_chart_values:
         # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/file_lookup.html
         B9C45C9F62942408: "{{ lookup('ansible.builtin.file', 'files/erhhung/erhhung.asc', rstrip=false) }}"
 
+    # "argocd-repo-creds-*" Secrets:
+    # https://argo-cd.readthedocs.io/en/stable/user-guide/private-repositories#credentials
+    credentialTemplates:
+      # keys are Secret name suffixes
+      gitlab-external-ssh: &ssh-creds
+        url: "{{ gitlab_ssh_url }}"
+        # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/unvault_lookup.html
+        sshPrivateKey: "{{ lookup('ansible.builtin.unvault', 'files/erhhung/erhhung.pem') }}"
+
+      gitlab-external-http: &http-creds
+        url: "{{ gitlab_http_url }}"
+        username: "{{ user_erhhung.username }}"
+        password: "{{ argocd_gitlab_pat }}"
+
+      gitlab-internal-ssh:
+        <<: *ssh-creds
+        url: "{{ gitlab_shell_url }}"
+      gitlab-internal-http:
+        <<: *http-creds
+        url: "{{ gitlab_service_url }}"
+
     # "argocd-cmd-params-cm" ConfigMap:
     # https://argo-cd.readthedocs.io/en/stable/operator-manual/argocd-cmd-params-cm-yaml
     params:
+      # .format: json|text
+      # .level: debug|info|warn|error
       server.log.format: json
       server.log.level: warn
       controller.log.format: json
@@ -130,7 +213,12 @@ argocd_chart_values:
       applicationsetcontroller.log.format: json
       applicationsetcontroller.log.level: info
       notificationscontroller.log.format: json
-      notificationscontroller.log.level: info
+      notificationscontroller.log.level: debug
+
+      # option supported only in forked repo
+      # containing merged upstream PR #14001:
+      # https://github.com/erhhung/argocd/tree/redis-cluster
+      redis.cluster.mode: true
 
       controller.ignore.normalizer.jq.timeout: 2s
       reposerver.parallelism.limit: 2
@@ -265,6 +353,82 @@ argocd_chart_values:
       # ServiceMonitor for commit server?
 
   notifications:
+    enabled: true
+
+    # "argocd-notifications-secret" Secret
+    secret:
+      items:
+        # values can be referenced in
+        # notifiers using $key syntax
+        icloud-smtp-user: "{{ icloud_smtp.username }}"
+        icloud-smtp-pass: "{{ icloud_smtp.passwords['argocd'] }}"
+        slack-webhook-url: "{{ slack_webhook_url['argocd'] }}"
+
+    # user-defined context variables that can be referenced
+    # in notification templates: {{ .context.environment }}
+    # https://argo-cd.readthedocs.io/en/stable/operator-manual/notifications/templates#defining-user-defined-context
+    # NOTE: Helm chart adds context.argocdUrl automatically
+    context:
+      environment: prod
+
+    # "argocd-notifications-cm" ConfigMap:
+    # https://argo-cd.readthedocs.io/en/stable/operator-manual/notifications/services/overview
+    notifiers:
+      # https://argo-cd.readthedocs.io/en/stable/operator-manual/notifications/services/email
+      service.email.icloud: |
+        host: {{ icloud_smtp.host }}
+        port: {{ icloud_smtp.port }}
+        username: $icloud-smtp-user
+        password: $icloud-smtp-pass
+        from: Argo CD <{{ icloud_smtp.from_email }}>
+        html: true
+
+      # https://argo-cd.readthedocs.io/en/stable/operator-manual/notifications/services/webhook#send-slack
+      service.webhook.slack: |
+        url: $slack-webhook-url
+        headers:
+          - name: Content-Type
+            value: application/json
+
+    # https://argo-cd.readthedocs.io/en/stable/operator-manual/notifications/templates
+    templates:
+      template.email-sync-status: |
+        {{ (lookup('ansible.builtin.template',
+              template_dir ~ '/argocd/notifications.yaml.j2') |
+            from_yaml)['email-sync-status'] }}
+      template.slack-sync-status: |
+        {{ (lookup('ansible.builtin.template',
+              template_dir ~ '/argocd/notifications.yaml.j2') |
+            from_yaml)['slack-sync-status'] }}
+
+    # https://argo-cd.readthedocs.io/en/stable/operator-manual/notifications/subscriptions
+    subscriptions:
+      - triggers: ["on-sync-status-change"]
+        recipients: |
+          {% set svcs = [] %}
+          {% if email_notifications_enabled %}
+          {%   set _ = svcs.append('icloud:' ~ user_erhhung.email) %}
+          {% endif %}
+          {% if slack_notifications_enabled %}
+          {%   set _ = svcs.append('slack:#argocd') %}
+          {% endif %}
+          {{ svcs  }}
+
+    # https://argo-cd.readthedocs.io/en/stable/operator-manual/notifications/triggers
+    # NOTE: the `app` object in `app.status.sync.status` is the Application resource
+    triggers:
+      trigger.on-sync-status-change: |
+        - description: Application sync status has changed
+          # https://pkg.go.dev/github.com/redhat-developer/kam/pkg/pipelines/argocd/v1alpha1#SyncStatusCode
+          when: app.status.sync.status in ['Synced','OutOfSync','Unknown']
+          send:
+            {% if email_notifications_enabled -%}
+            - email-sync-status
+            {%- endif -%}
+            {% if slack_notifications_enabled -%}
+            - slack-sync-status
+            {%- endif -%}
+
     resources: *resources
     metrics: *metrics
 
@@ -275,3 +439,25 @@ argocd_chart_values:
 
 # Istio service mesh?
 argocd_use_mesh: true
+
+# =================================== Grafana Dashboards ===================================
+
+# https://grafana.com/grafana/dashboards/?search=ArgoCD&dataSource=prometheus
+argocd_grafana_dashboards:
+  # https://grafana.com/grafana/dashboards/19993-argocd-operational-overview
+  - title: Argo CD / Operational / Overview
+    gnet_id: 19993
+  # https://grafana.com/grafana/dashboards/19974-argocd-application-overview
+  - title: Argo CD / Applications / Overview
+    gnet_id: 19974
+  # https://grafana.com/grafana/dashboards/19975-argocd-notifications-overview
+  - title: Argo CD / Notifications / Overview
+    gnet_id: 19975
+
+  # additional dashboards for Argo CD applications:
+  # https://grafana.com/grafana/dashboards/16588-xen
+  - title: XCP-ng Dashboard
+    gnet_id: 16588
+    tags:
+      - xcp-ng
+      - vm
