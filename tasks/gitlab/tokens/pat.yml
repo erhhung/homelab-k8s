@@ -8,8 +8,10 @@
 #   pat_owner  [optional] default=root
 #   scopes     [optional] default=[api,self_rotate]
 #   days       [optional] default=360
+#   fact_name  [optional] fact to store active PAT
+#                         default=gitlab_token
 # sets the following facts:
-#   gitlab_token   active PAT to use
+#   {fact_name}  active PAT to use
 ---
 - name: Gather facts about date/time
   # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/setup_module.html
@@ -33,6 +35,7 @@
     ansible_python_interpreter: "{{ local_python_interpreter }}"
     # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/to_datetime_filter.html
     today: "{{ ansible_date_time.date | ansible.builtin.to_datetime('%Y-%m-%d') }}"
+    pat_fact: "{{ fact_name | default('gitlab_token') }}"
     api_base: "{{ gitlab_http_url }}/api/v4"
   block:
     - name: Get existing PAT if given
@@ -152,9 +155,9 @@
       register: rotate_pat
       when: needs_rotate
 
-    - name: Set gitlab_token fact
+    - name: Set {{ pat_fact }} fact
       ansible.builtin.set_fact:
-        gitlab_token: >-
+        "{{ pat_fact }}": >-
           {{ create_pat.json.token if needs_create and create_pat.status == 201 else
              rotate_pat.json.token if needs_rotate and rotate_pat.status == 200 else token }}
   any_errors_fatal: true
