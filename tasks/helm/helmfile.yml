@@ -1,0 +1,232 @@
+# install the specified Helm chart by using the Kustomize function
+# of Helmfile, as well as its ability to add a subchart dependency
+# (bedag/raw) so that extra resources (including pre-created ones)
+# like TLS certificate secrets can be included in the Helm release
+#
+# pass the following vars:
+#   kubeconfig   <required> kubeconfig path
+#   repo_name    <required> repository name
+#   repo_url     <required> repository URL
+#   chart_name   <required> chart name
+#   chart_ver    <required> chart version
+#   release      <required> release name
+#   release_ns   <required> release namespace
+#   values       <required> chart values dict
+#   patches:     [optional] kustomize patches
+#     merge_patches  [optional] list flatten(1)
+#     json_patches   [optional] list flatten(1)
+#     transformers   [optional] list flatten(1)
+#   extras:      [optional] adoptees flatten(1)
+#     - <apiVersion> <kind> <name> pre-created (string)
+#     - {apiVersion,  kind,  ...}  full object (dict)
+#   history_max  [optional] default=`helm_max_history`
+#   atomic       [optional] default=true
+#   wait         [optional] default=true
+#   wait_jobs    [optional] default=false
+#   wait_timeout [optional] default=600
+#   task_timeout [optional] default=900
+#
+# https://helmfile.readthedocs.io/en/latest/advanced-features#adhoc-kustomization-of-helm-charts
+# https://github.com/helmfile/helmfile/tree/main/test/advanced/helmfile.yaml
+---
+- name: Gather facts about the cluster
+  ansible.builtin.include_tasks: tasks/k8s/clusterfacts.yml
+  when: kubernetes_version is not defined
+
+- name: Install Helm chart using Helmfile
+  become: false
+  vars:
+    # required kubernetes>=24.2 package only in user virtualenv
+    ansible_python_interpreter: "{{ venv_python_interpreter }}"
+
+    temp_dir: /tmp/helmfile/{{ release }}
+    values_file: "{{ temp_dir }}/values.yaml"
+    helmfile_file: "{{ temp_dir }}/helmfile.yaml"
+
+    # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/flatten_filter.html
+    extras_: "{{ extras  | default([]) | flatten(1) }}"
+    objects: "{{ extras_ | select('mapping') }}"
+    adoptees: |
+      {% set resources = [] %}
+      {% for resource in extras_ | select('string') %}
+      {%   set parts = resource  | regex_replace('\\s+',' ') | split(' ') %}
+      {%   set _     = resources.append({
+              'apiVersion': parts[0],
+              'kind':       parts[1],
+              'name':       parts[2] if parts[1] != 'Certificate' else
+                            parts[2]  | regex_replace('-tls$', '')
+            })   %}
+      {% endfor %}
+      {{ resources }}
+  block:
+    - name: Write chart values file
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/shell_module.html
+      ansible.builtin.shell: |
+        set -o pipefail
+        mkdir -p {{ temp_dir }}
+        jq <<'JSON' | yq -pj -oy > {{ values_file }}
+        {{ values | to_json(separators=[',',':']) }}
+        JSON
+      args:
+        executable: /bin/bash
+      changed_when: false
+
+    - name: Create Helmfile manifest
+      vars:
+        # https://helmfile.readthedocs.io/en/latest#configuration
+        helmfile:
+          # providing cluster and API versions allows offline
+          # rendering of chart templates that use conditional
+          # logic on $.Capabilities.{KubeVersion,APIVersions}
+          kubeVersion: "{{ kubernetes_version.with_minor }}"
+          apiVersions: "{{ kubernetes_apis.kinds }}"
+
+          # use wrapper script to sanitize chart templates
+          # (dedup keys) before running `kustomize build`
+          # (see templates/packages/scripts/kustomize.sh)
+          kustomizeBinary: /usr/local/bin/kustomize.sh
+
+          repositories:
+            - name: "{{ repo_name }}"
+              url: "{{  repo_url  }}"
+            # https://github.com/bedag/helm-charts/tree/master/charts/raw
+            - name: bedag
+              url: https://bedag.github.io/helm-charts
+
+          helmDefaults:
+            historyMax: "{{    history_max  | default(helm_max_history) }}"
+            cleanupOnFail: "{{ atomic       | default(true)  }}"
+            wait: "{{          wait         | default(true)  }}"
+            waitForJobs: "{{   wait_jobs    | default(false) }}"
+            timeout: "{{       wait_timeout | default(600)   }}"
+
+          releases:
+            - name: "{{ release }}"
+              namespace: "{{ release_ns }}"
+              chart: "{{ repo_name }}/{{ chart_name }}"
+              version: "{{ chart_ver }}"
+
+              # https://helmfile.readthedocs.io/en/latest/advanced-features#adhoc-kustomization-of-helm-charts
+              strategicMergePatches: "{{ patches.merge_patches | default([]) | flatten(1) }}"
+              jsonPatches: "{{           patches.json_patches  | default([]) | flatten(1) }}"
+              transformers: "{{          patches.transformers  | default([]) | flatten(1) }}"
+
+              # https://helmfile.readthedocs.io/en/latest/advanced-features#adding-dependencies-without-forking-the-chart
+              dependencies:
+                - chart: bedag/raw
+                  version: 2.0.2
+                  alias: extras
+
+              values:
+                - "{{ values_file }}"
+                # https://github.com/bedag/helm-charts/tree/master/charts/raw#examples
+                # https://github.com/bedag/helm-charts/tree/master/charts/raw/values.yaml
+                - extras: # subchart alias
+                    resources: "{{ objects }}"
+                    # adoptees: "{{ adoptees }}"
+                    # templates:
+                    #   # this doesn't work because Helmfile invokes `helm template`
+                    #   # to check for changes before applying, but lookup function
+                    #   # always returns nil during `helm template` (cluster access
+                    #   # not allowed)
+                    #   - |-
+                    #     {% raw -%}
+                    #     {{- range $_, $r := .Values.adoptees }}
+                    #     {{- $ns    := $.Release.Namespace    }}
+                    #     {{- $api   := $r.apiVersion          }}
+                    #     {{- $api_  := regexSplit "/" $api -1 }}
+                    #     {{- if gt (len $api_) 1 }}
+                    #     {{-   $api_ = printf ".%s.%s" (index $api_ 1)
+                    #                                   (index $api_ 0) }}
+                    #     {{- else }}
+                    #     {{-   $api_ = "" }}
+                    #     {{- end }}
+                    #     {{- $kind  := $r.kind }}
+                    #     {{- $name  := $r.name }}
+                    #     {{- $obj   := lookup $api $kind $ns $name }}
+                    #     {{- if not $obj }}
+                    #     {{-   fail (printf "Resource not found: %s%s/%s in %s namespace"
+                    #                   (lower $kind) $api_ $name $ns) }}
+                    #     {{- end }}
+                    #     {{- $meta := index $obj  "metadata"    }}
+                    #     {{- $anno := index $meta "annotations" }}
+                    #     {{- $_    := unset $anno "kubectl.kubernetes.io/last-applied-configuration" }}
+                    #     {{- $_    := unset $meta "creationTimestamp" }}
+                    #     {{- $_    := unset $meta "generation"        }}
+                    #     {{- $_    := unset $meta "managedFields"     }}
+                    #     {{- $_    := unset $meta "resourceVersion"   }}
+                    #     {{- $_    := unset $meta "uid"    }}
+                    #     {{- $_    := unset $obj  "status" }}
+                    #     ---
+                    #     # Adopt existing {{ $kind }}/{{ $name }}
+                    #     {{ $obj | toYaml }}
+                    #     {{- end }}
+                    #     {%- endraw %}
+      ansible.builtin.shell: |
+        set -o pipefail
+        jq <<'JSON' | yq -pj -oy > {{ helmfile_file }}
+        {{ helmfile | to_json(separators=[',',':']) }}
+        JSON
+      args:
+        executable: /bin/bash
+      changed_when: false
+
+    - name: Insert adopted resources
+      ansible.builtin.shell: |
+        # run Bash and source /etc/profile.d
+        # scripts so that kubectl is in PATH
+        exec /bin/bash -l <<'EOT'
+        set -eo pipefail
+
+        canonicalize() {
+          jq 'del(.status)
+            | .metadata |= (
+                if .annotations then
+                   .annotations |= del(."kubectl.kubernetes.io/last-applied-configuration")
+                end
+              | del(.creationTimestamp)
+              | del(.generation)
+              | del(.managedFields)
+              | del(.resourceVersion)
+              | del(.uid)
+              )'
+        }
+        while read name; do
+          jq '.releases[0].values[1].extras.resources += [input]' \
+            <(yq -oj {{ helmfile_file }}) \
+            <(kubectl get $name -n {{ release_ns }} -o json | canonicalize) \
+            | yq -pj | sponge {{ helmfile_file }}
+        done < <(
+          # convert JSON array of {apiVersion,kind,name}
+          # objects into array of "kind[.apiGroup]/name"
+          cat <<'JSON' | jq -r '.[] |
+            "\(
+               .kind | ascii_downcase
+            )\(
+              (.apiVersion | split("/")) as $api |
+              if ($api | length) > 1 then ".\($api[1]).\($api[0])" else "" end
+            )/\(
+               .name
+            )"'
+        {{ adoptees | to_json(separators=[',',':']) }}
+        JSON
+        )
+        EOT
+      when: adoptees is truthy
+      changed_when: false
+
+    - name: Install {{ chart_name }} Helm chart
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/command_module.html
+      ansible.builtin.command:
+        chdir: "{{ temp_dir }}"
+        argv:
+          - helmfile
+          - --kubeconfig={{ kubeconfig }}
+          - apply
+          # return exit code 2 if changes were
+          # detected AND applied successfully
+          - --detailed-exitcode
+      register: helmfile_apply
+      changed_when: helmfile_apply.rc == 2
+      failed_when: helmfile_apply.rc not in [0,2]
+  any_errors_fatal: true

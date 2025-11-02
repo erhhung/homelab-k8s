@@ -1,0 +1,46 @@
+# gather facts about specified Kubernetes cluster
+#
+# pass the following vars:
+#   kubeconfig  <required> path to kubeconfig file
+# sets the following facts:
+#   kubernetes_version  {full,major,minor,with_minor,with_patch}
+#   kubernetes_apis     {spec,kinds}
+---
+- name: Gather cluster facts
+  become: false
+  block:
+    - name: Get cluster info
+      vars:
+        # required kubernetes>=24.2 package only in user virtualenv
+        ansible_python_interpreter: "{{ venv_python_interpreter }}"
+      # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_cluster_info_module.html
+      kubernetes.core.k8s_cluster_info:
+        kubeconfig: "{{ kubeconfig }}"
+      register: cluster_info
+
+    - name: Set cluster facts
+      vars:
+        ver: "{{ cluster_info.version.server.kubernetes }}"
+        apis: "{{ cluster_info.apis }}"
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/set_fact_module.html
+      ansible.builtin.set_fact:
+        # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/regex_replace_filter.html
+        kubernetes_version:
+          # with v prefix and +* suffix
+          full: "{{ ver.gitVersion }}"
+          major: "{{ ver.major }}"
+          minor: "{{ ver.minor }}"
+          with_minor: "{{ ver.major }}.{{ ver.minor }}"
+          with_patch: "{{ ver.gitVersion | ansible.builtin.regex_replace('^v?([^+]+).*$','\\1') }}"
+        # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_cluster_info_module.html#return-values
+        kubernetes_apis:
+          spec: "{{ apis }}"
+          kinds: |
+            {% set result = [] %}
+            {% for ver, kinds in apis.items() %}
+            {%   for kind in kinds.keys()     %}
+            {%     set _ = result.append(ver ~'/'~ kind) %}
+            {%   endfor %}
+            {% endfor   %}
+            {{ result | sort }}
+  any_errors_fatal: true

@@ -35,6 +35,9 @@ certmanager_chart_values:
         cpu: 10m
         memory: 64Mi
 
+  # https://cert-manager.io/docs/usage/certificate#cleaning-up-secrets-when-certificates-are-deleted
+  enableCertificateOwnerRef: true
+
   # create Helm post-install hook Job that waits
   # for the webhook endpoint to become available
   startupapicheck:

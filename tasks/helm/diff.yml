@@ -3,14 +3,14 @@
 # is required; returns true if release missing
 #
 # pass the following vars:
-#   kubeconfig   <required> kubeconfig path
-#   repo_name    <required> repository name
-#   repo_url     <required> repository URL
-#   chart_name   <required> chart name
-#   chart_ver    <required> chart version
-#   release      <required> release name
-#   release_ns   <required> release namespace
-#   values_json  <required> chart values JSON
+#   kubeconfig  <required> kubeconfig path
+#   repo_name   <required> repository name
+#   repo_url    <required> repository URL
+#   chart_name  <required> chart name
+#   chart_ver   <required> chart version
+#   release     <required> release name
+#   release_ns  <required> release namespace
+#   values      <required> chart values dict
 # sets the following facts:
 #   release_exists whether the release exists
 #   needs_upgrade  whether upgrade is needed
@@ -21,16 +21,18 @@
   vars:
     # required kubernetes>=24.2 package only in user virtualenv
     ansible_python_interpreter: "{{ venv_python_interpreter }}"
+    temp_dir: /tmp/helmdiff/{{ release }}
+    values_file: "{{ temp_dir }}/values.yaml"
   block:
     - name: Check if release exists
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/command_module.html
       ansible.builtin.command:
         argv:
           - helm
-          - hist
           - --kubeconfig={{ kubeconfig }}
-          - -n={{ release_ns }}
+          - hist
           - "{{ release }}"
+          - -n={{ release_ns }}
       register: helm_hist
       changed_when: false
       failed_when: false
@@ -38,11 +40,9 @@
     - name: Set release_exists fact
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/set_fact_module.html
       ansible.builtin.set_fact:
-        release_exists: "{{
-          helm_hist.rc == 0 and
-          helm_hist.stdout is search('REVISION')
-          }}"
-        values_file: /tmp/{{ release }}-values.yaml
+        release_exists: >-
+          {{ helm_hist.rc == 0 and
+             helm_hist.stdout is search('REVISION') }}
 
     - name: Add Helm chart repository
       # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/helm_repository_module.html
@@ -57,9 +57,10 @@
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/shell_module.html
       ansible.builtin.shell: |
         set -o pipefail
-        jq <<'EOF' | yq -pj -oy > {{ values_file }}
-        {{ values_json }}
-        EOF
+        mkdir -p {{ temp_dir }}
+        jq <<'JSON' | yq -pj -oy > {{ values_file }}
+        {{ values | to_json(separators=[',',':']) }}
+        JSON
       args:
         executable: /bin/bash
       when: release_exists
@@ -69,11 +70,11 @@
       ansible.builtin.command:
         argv:
           - helm
+          - --kubeconfig={{ kubeconfig }}
           - diff
           - upgrade
-          - --kubeconfig={{ kubeconfig }}
-          - -n={{ release_ns }}
           - "{{ release }}"
+          - -n={{ release_ns }}
           - "{{ repo_name }}/{{ chart_name }}"
           - --version={{ chart_ver }}
           - -f={{ values_file }}
@@ -84,10 +85,9 @@
 
     - name: Set needs_upgrade fact
       ansible.builtin.set_fact:
-        needs_upgrade: "{{
-          not release_exists or
-          helm_diff.stdout is search('has changed:')
-          }}"
+        needs_upgrade: >-
+          {{ not release_exists or
+             helm_diff.stdout is search('has changed') }}
 
     - name: Delete temp values file
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/file_module.html
@@ -102,5 +102,5 @@
       ansible.builtin.debug:
         msg: |-
           release_exists: {{ release_exists }}
-           needs_upgrade: {{ needs_upgrade }}
+           needs_upgrade: {{ needs_upgrade  }}
   any_errors_fatal: true
