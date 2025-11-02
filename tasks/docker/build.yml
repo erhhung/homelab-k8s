@@ -21,15 +21,15 @@
     ansible_python_interpreter: "{{ local_python_interpreter }}"
     # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/basename_filter.html
     local_name: "{{ image_name | ansible.builtin.basename }}:{{ image_tag | default('latest') }}"
-    local_image: "{{ local_name | regex_replace(':latest$','') }}"
+    local_image: "{{ local_name | ansible.builtin.regex_replace(':latest$','') }}"
     remote_name: "{{ harbor_container_registry }}/library/{{ local_name }}"
-    remote_image: "{{ remote_name | regex_replace(':latest$','') }}"
+    remote_image: "{{ remote_name | ansible.builtin.regex_replace(':latest$','') }}"
   block:
     - name: Build Docker image "{{ local_image }}"
       # https://docs.ansible.com/ansible/latest/collections/community/docker/docker_image_build_module.html
       community.docker.docker_image_build:
         platform: "{{ platforms | default([local_machine_arch]) |
-          map('ansible.builtin.regex_replace', '^', 'linux/') }}"
+          map('regex_replace', '^', 'linux/') }}"
         dockerfile: "{{ dockerfile | default(omit) }}"
         path: "{{ playbook_dir ~'/'~ context_dir }}"
         name: "{{ local_name }}"

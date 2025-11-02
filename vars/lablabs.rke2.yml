@@ -1,16 +1,16 @@
 # https://github.com/lablabs/ansible-role-rke2#role-variables
 
-rke2_cluster_group_name: cluster
+rke2_cluster_group_name: rke_cluster
 rke2_servers_group_name: "{{ rke_control_plane_group }}"
 rke2_agents_group_name: "{{ rke_workers_group }}"
 
 # https://github.com/rancher/rke2/releases
-rke2_version: v1.32.7+rke2r1
+rke2_version: v1.32.7+rke2r1 # 7/24/2025
 rke2_architecture: amd64
 
 # rke2_token: {vault.yml}
 
-rke2_cluster_domain: cluster.local # don't change default!
+rke2_cluster_domain: "{{ cluster_domain }}" # don't change!
 # remember to add homelab.fourteeners.local to pfSense DNS!
 rke2_additional_sans: |
   {% set cp_hosts = groups[rke_control_plane_group] %}
@@ -32,7 +32,7 @@ rke2_service_cidr: ["10.43.0.0/16"]
 # - "option: value"
 rke2_server_options:
   - "write-kubeconfig: /etc/rancher/rke2/rke2.yaml"
-  - "write-kubeconfig-mode: 0644"
+  - 'write-kubeconfig-mode: "0644"'
   # enable Prometheus scraping
   - "etcd-expose-metrics: true"
   - |-

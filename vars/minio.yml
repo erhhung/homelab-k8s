@@ -192,8 +192,8 @@ minio_tenant_chart_values:
     # https://min.io/docs/minio/kubernetes/upstream/reference/operator-crd.html#pool
     pools:
       - name: "{{ minio_pool_name }}"
-        # servers = StatefulSet replicas (4 minimum)
-        servers: "{{ groups['cluster'] | length }}"
+        # servers = # StatefulSet replicas (4 minimum)
+        servers: "{{ groups['rke_cluster'] | length }}"
         volumesPerServer: 1
         size: 10Gi # per volume
         storageClassName: "{{ storage_classes['nfs'] }}"

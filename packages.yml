@@ -108,54 +108,23 @@
   gather_facts: false
   become: true
   tasks:
-    - name: Install mikefarah/yq from GitHub
-      ansible.builtin.shell: |
-        set -o pipefail
-
-        REL="https://github.com/mikefarah/yq/releases/latest"
-        VER=$(curl -Is $REL | sed -En 's/^location:.+\/tag\/v(.+)\r$/\1/p')
-
-        # check if latest version already installed
-        command -v yq &> /dev/null && {
-          ver=$(v=(`yq --version`); echo ${v[-1]#v})
-          [ "$ver" == "$VER" ] && exit 9 # no change
-        }
-        mkdir -p /tmp/yq
-        ( cd     /tmp/yq
-
-          ARCH=$(uname -m | sed -e 's/aarch64/arm64/' \
-                                -e  's/x86_64/amd64/')
-          curl -fsSL "$REL/download/yq_linux_$ARCH.tar.gz" | \
-            tar -xz --no-same-owner
-          cp ./yq_linux_$ARCH /usr/bin/yq
-          ./install-man-page.sh
-
-        ); rm -rf /tmp/yq
+    - name: Install app using GitHub release
+      vars:
+        base_dir: "{{ template_dir }}/packages/scripts"
+        # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/fileglob_lookup.html
+        # https://docs.ansible.com/ansible/latest/plugins/lookup.html#forcing-lookups-to-return-lists-query-and-wantlist-true
+        scripts: "{{ query('ansible.builtin.fileglob', base_dir ~ '/*.sh*') |
+          map('ansible.builtin.basename') | select('search', '^[^.].+') }}"
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/template_lookup.html
+      ansible.builtin.shell: "{{ lookup('ansible.builtin.template', base_dir ~'/'~ item) }}"
       args:
         executable: /bin/bash
-      register: install_yq
-      changed_when: install_yq.rc == 0
-      failed_when: install_yq.rc not in [0,9]
-
-    - name: Install Fastfetch from GitHub
-      ansible.builtin.shell: |
-        set -o pipefail
-
-        REL="https://github.com/fastfetch-cli/fastfetch/releases/latest"
-        VER=$(curl -Is $REL | sed -En 's/^location:.+\/tag\/(.+)\r$/\1/p')
-
-        # check if latest version already installed
-        command -v fastfetch &> /dev/null && {
-          ver=$(v=(`fastfetch --version`); echo ${v[1]})
-          [ "$ver" == "$VER" ] && exit 9 # no change
-        }
-        ARCH=$(uname -m | sed -e 's/x86_64/amd64/') # or aarch64
-        curl -fsSL "$REL/download/fastfetch-linux-$ARCH.tar.gz" | \
-          tar -xz -C / --no-same-owner --strip-components=1 \
-            fastfetch-linux-$ARCH
-      args:
-        executable: /bin/bash
-      register: install_ff
-      changed_when: install_ff.rc == 0
-      failed_when: install_ff.rc not in [0,9]
+      # names not sorted by default
+      loop: "{{ scripts | sort }}"
+      loop_control:
+        # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/regex_replace_filter.html
+        label: "{{ item | ansible.builtin.regex_replace('\\.sh(\\.j2)?$', '') }}"
+      register: install_app
+      changed_when: install_app.rc == 0
+      failed_when: install_app.rc not in [0,9]
   any_errors_fatal: true

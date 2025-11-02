@@ -112,7 +112,7 @@
 # https://developer.hashicorp.com/vault/install
 - name: Install Vault CLI tool
   tags: cli
-  hosts: cluster
+  hosts: rke_cluster
   gather_facts: false
   vars_files:
     - vars/vault.yml

@@ -1,4 +1,4 @@
-pki_host: "{{ groups['_pki'] | first }}"
+pki_host: "{{ groups['pki_any'] | first }}"
 
 # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/env_lookup.html
 ansible_ssh_private_key_file: "{{ lookup('ansible.builtin.env', 'HOME') }}/.ssh/{{
@@ -23,7 +23,7 @@ search_domains:
 # IP addresses of RKE cluster nodes
 cluster_node_ips: |
   {% set ips = [] %}
-  {% for host in groups['cluster'] %}
+  {% for host in groups['rke_cluster'] %}
   {%   set _ = ips.append(hostvars[host].ansible_host) %}
   {% endfor %}
   {{ ips }}

@@ -4,7 +4,7 @@
 # https://docs.rke2.io/install/quickstart
 - name: Install RKE2 using role
   tags: rke2
-  hosts: cluster
+  hosts: rke_cluster
   become: true
   vars_files:
     - vars/basics.yml
@@ -78,7 +78,7 @@
   tags:
     - kubectl
     - kubeconfig
-  hosts: cluster
+  hosts: rke_cluster
   gather_facts: false
   become: true
   vars_files: *vars_files
@@ -160,7 +160,7 @@
 
 - name: Configure RKE2 cluster
   tags: configure
-  hosts: cluster
+  hosts: rke_cluster
   vars_files:
     - vars/basics.yml
     - vars/kubernetes.yml
@@ -278,7 +278,7 @@
                 # the MTU interface pattern. To use auto-MTU, set
                 # mtuIfacePattern to match your host's interfaces
                 # https://docs.tigera.io/calico/latest/reference/resources/felixconfig#mtuIfacePattern
-                mtuIfacePattern: "{{ host_pif | regex_replace('[0-9]$','[0-9]') }}"
+                mtuIfacePattern: "{{ host_pif | ansible.builtin.regex_replace('[0-9]$','[0-9]') }}"
           notify: Restart rke2-canal DaemonSet
 
         # https://docs.rke2.io/advanced#auto-deploying-manifests
@@ -424,7 +424,8 @@
               {% set nodes = {} %}
               {% for label in additional_node_labels %}
               {%   for node in label.nodes %}
-              {%     set _ = nodes.setdefault(node, {}).update({label.label: label.value}) %}
+              {%     set _ = nodes.setdefault(node, {}).update(
+                               {label.label: label.value}) %}
               {%   endfor %}
               {% endfor %}
               {{ nodes  }}
@@ -437,7 +438,7 @@
               metadata:
                 labels: "{{ labels_by_node[item] }}"
             state: patched
-          loop: "{{ groups['cluster'] }}"
+          loop: "{{ groups['rke_cluster'] }}"
           when: item in labels_by_node
 
         - name: Apply registration manifest

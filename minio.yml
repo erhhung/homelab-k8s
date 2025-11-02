@@ -152,7 +152,7 @@
 # https://min.io/docs/minio/linux/reference/minio-mc-admin.html#installation
 - name: Install MinIO client
   tags: cli
-  hosts: cluster
+  hosts: rke_cluster
   gather_facts: false
   vars_files: *vars_files
   tasks:
@@ -360,9 +360,9 @@
           # https://min.io/docs/minio/linux/reference/minio-mc-admin/mc-admin-policy-create.html
           # only takes path to JSON file
           mc admin policy create local \
-            {{ name }} <(cat <<'EOF'
-        {{ doc | to_json }}
-        EOF
+            {{ name }} <(cat <<'JSON'
+        {{ doc | to_json(separators=[',',':']) }}
+        JSON
           )
           rc=0
         }

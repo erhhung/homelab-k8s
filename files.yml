@@ -37,7 +37,7 @@
         src: "{{ template_dir }}/rancher/api.sh.j2"
         dest: "{{ ansible_user_dir }}/.rancher_api"
         mode: "0644"
-      when: inventory_hostname == 'rancher'
+      when: inventory_hostname == k3s_control_plane_host
       notify: Touch copied files
   handlers:
     - name: Touch copied files

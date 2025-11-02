@@ -436,7 +436,7 @@
           # will set {ssl:true} and clobber our
           # additionalConfig object {ssl:{...}}
           ssl: false
-          additionalConfig: "{{ postgres_ssl_config | to_json }}"
+          additionalConfig: "{{ postgres_ssl_config | to_json(separators=[',',':']) }}"
           namespace: accounts
           tableName: upsert_records
           sourceIdKey: source
@@ -586,7 +586,7 @@
               loaderId: textFile
               loaderName: "*.txt Files"
               loaderConfig:
-                txtFile: "{{ text_files | to_json }}"
+                txtFile: "{{ text_files | to_json(separators=[',',':']) }}"
               splitterId: recursiveCharacterTextSplitter
               splitterName: Recursive Character Text Splitter
               splitterConfig:
@@ -733,8 +733,8 @@
                template_dir ~ j2_path,
                variable_start_string='[%',
                variable_end_string='%]',
-               template_vars=item.vars)
-           | from_yaml | to_json }}
+               template_vars=item.vars) |
+             from_yaml | to_json(separators=[',',':']) }}
       ansible.builtin.uri:
         method: PUT
         url: "{{ api_base }}/chatflows/{{ chatflow.id }}"

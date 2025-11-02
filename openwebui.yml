@@ -36,8 +36,7 @@
               - helm
               - show
               - chart
-              - --repo
-              - "{{ chart_repo_url }}"
+              - --repo={{ chart_repo_url }}
               - "{{ chart_ref }}"
               - --version
               - "{{ openwebui_chart_version }}"

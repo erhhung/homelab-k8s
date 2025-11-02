@@ -125,7 +125,7 @@
 # Kubernetes local persistent volumes
 - name: Create LV for Longhorn PVs
   tags: lvs
-  hosts: cluster
+  hosts: rke_cluster
   become: true
   vars_files:
     - vars/storage.yml
@@ -286,7 +286,7 @@
     # required kubernetes>=24.2 package only in user virtualenv
     ansible_python_interpreter: "{{ venv_python_interpreter }}"
     # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/ternary_filter.html
-    cluster: "{{ (inventory_hostname == k3s_control_plane_host) | ternary('k3s','rke') }}"
+    cluster: "{{ (inventory_hostname in groups['k3s_cluster']) | ternary('k3s','rke') }}"
     provisioners: "{{ nfs_provisioners | selectattr('cluster', '==', cluster) }}"
   tasks:
     - name: Install NFS provisioner Helm chart
