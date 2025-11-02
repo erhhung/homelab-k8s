@@ -1,12 +1,12 @@
 rke_ha_mode: true # deploy 3 control plane nodes with kube-vip
-rke_control_plane_group: "{{ 'control_plane_ha' if rke_ha_mode else 'control_plane' }}"
-rke_workers_group: "{{ 'workers_ha' if rke_ha_mode else 'workers' }}"
+rke_control_plane_group: "{{ 'rke_control_plane_ha' if rke_ha_mode else 'rke_control_plane' }}"
+rke_workers_group: "{{ 'rke_workers_ha' if rke_ha_mode else 'rke_workers' }}"
 
 # control plane hosts
-k3s_control_plane_host: rancher
+k3s_control_plane_host: "{{ groups['k3s_control_plane']     | first }}"
 rke_control_plane_host: "{{ groups[rke_control_plane_group] | first }}"
 
-cluster_domain: cluster.local
+cluster_domain: cluster.local # don't change!
 kube_api_url: https://kubernetes.default.svc
 
 # K3s and RKE clusters
@@ -17,7 +17,7 @@ additional_node_labels:
   # with roles: "control-plane", "etcd", and "master")
   - label: node-role.kubernetes.io/worker
     value: "true"
-    nodes: "{{ groups['cluster'] }}"
+    nodes: "{{ groups['rke_cluster'] }}"
 
   # k8s6 has the most memory and ephemeral storage
   - label: node-role.kubernetes.io/runner

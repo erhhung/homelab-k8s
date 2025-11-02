@@ -157,7 +157,7 @@
 
 - name: Install Argo CD CLI tool
   tags: cli
-  hosts: cluster
+  hosts: rke_cluster
   gather_facts: false
   vars_files:
     - vars/argocd.yml

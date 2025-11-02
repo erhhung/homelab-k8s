@@ -16,7 +16,7 @@
     # required kubernetes>=24.2 package only in user virtualenv
     ansible_python_interpreter: "{{ venv_python_interpreter }}"
     # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/ternary_filter.html
-    cluster: "{{ (inventory_hostname == k3s_control_plane_host) | ternary('k3s','rke') }}"
+    cluster: "{{ (inventory_hostname in groups['k3s_cluster']) | ternary('k3s','rke') }}"
     kubeconfig: "{{ vars[cluster ~'_kubeconfig'] }}"
   pre_tasks:
     - name: Is the monitoring stack ready?

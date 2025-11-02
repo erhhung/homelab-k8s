@@ -127,15 +127,18 @@ All cluster services will be provisioned with TLS certificates from Erhhung's pr
     * [X] Replace the default Chroma vector DB with [Qdrant](https://github.com/qdrant/qdrant) — install using the [`qdrant`](https://github.com/qdrant/qdrant-helm) Helm chart
 - [X] [Flowise Agentic Workflows](https://flowiseai.com/) — build AI agents using visual workflows
     * Install on main RKE cluster using the [`flowise`](https://github.com/cowboysysop/charts/tree/master/charts/flowise) Helm chart
+- [ ] [Backstage Developer Portal](https://backstage.io/) — software catalog and developer portal
+- [ ] [SonarQube Automated Code Reviews](https://docs.sonarsource.com/sonarqube-community-build) — run static code analysis during CI/CD pipelines
+    * Install on main RKE cluster using the [`sonarqube`](https://docs.sonarsource.com/sonarqube-community-build/server-installation/on-kubernetes-or-openshift/installing-helm-chart) Helm chart
 - [ ] [OpenTelemetry Collector](https://opentelemetry.io/docs/collector) with [Jaeger UI](https://www.jaegertracing.io/) — telemetry collector agent and distributed tracing backend
     * Install on main RKE cluster using the [OpenTelemetry Collector](https://opentelemetry.io/docs/platforms/kubernetes/helm/collector) Helm chart
     * Install Jaeger using the [Jaeger](https://github.com/jaegertracing/helm-charts/tree/main/charts/jaeger) Helm chart
-- [ ] [Backstage Developer Portal](https://backstage.io/) — software catalog and developer portal
 - [ ] [NATS](https://docs.nats.io/) — high performance message queues (Kafka alternative) with [JetStream](https://docs.nats.io/nats-concepts/jetstream) for persistence
 
 ## To-Do Tasks
 
 - [X] Migrate manually provisioned certificates and secrets to ones issued by `cert-manager` with auto-rotation
+- [ ] Switch the CNI on the RKE2 cluster from Canal to Cilium and install Hubble web UI to visualize L3/L4 traffic
 - [ ] Identify and upload additional sources of personal documents into Open WebUI knowledge base collections
 - [ ] Automate creation of DNS records in pfSense via custom Ansible module that invokes pfSense REST APIs
 

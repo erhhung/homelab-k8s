@@ -76,7 +76,7 @@
 # https://velero.io/docs/latest/basic-install#install-the-cli
 - name: Install Velero client
   tags: cli
-  hosts: cluster
+  hosts: rke_cluster
   gather_facts: false
   become: true
   tasks:

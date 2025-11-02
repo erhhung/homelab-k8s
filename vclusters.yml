@@ -11,7 +11,7 @@
   pre_tasks:
     - name: List existing vClusters
       vars:
-        keep: "{{ vclusters | map(attribute='name') | to_json }}"
+        keep: "{{ vclusters | map(attribute='name') | to_json(separators=[',',':']) }}"
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/shell_module.html
       ansible.builtin.shell: |
         # run Bash and source /etc/profile.d

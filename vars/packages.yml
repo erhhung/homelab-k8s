@@ -48,6 +48,7 @@ apt_packages:
       - lsof # used by custom Bash function `listening`
       - rsync # required by ansible.posix.synchronize
       - unzip
+      - moreutils # sponge/pee/ts/ifne
       - emacs-nox # yours truly's editor by muscle memory
       # iptables is required by Canal/Calico CNI in RKE2:
       # https://github.com/rancher/rke2/issues/4385#issuecomment-1738848974
@@ -76,7 +77,7 @@ apt_packages:
       - tcpdump
       - tshark
       #- conntrack
-    hosts: "{{ groups['cluster'] }}"
+    hosts: "{{ groups['rke_cluster'] }}"
 
   # PPA packages below offer support for Intel client GPUs:
   # https://dgpu-docs.intel.com/driver/client/overview.html

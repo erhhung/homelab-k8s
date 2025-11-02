@@ -120,8 +120,8 @@
       failed_when:
         - install_istio.rc not in [0,9]
         - install_istio.stderr is not search('installed successfully')
-      # wait for plenty of DaemonSet pods to redeploy
-      timeout: "{{ 300 * groups['cluster'] | length }}"
+      # wait until plenty of DaemonSet pods have redeployed
+      timeout: "{{ 300 * groups['rke_cluster'] | length }}"
   any_errors_fatal: true
 
 - name: Install Kiali web console

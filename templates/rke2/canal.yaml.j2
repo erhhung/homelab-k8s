@@ -14,4 +14,4 @@ spec:
   valuesContent: |-
     flannel:
       iface: {{ host_pif }}
-      regexIface: {{ host_pif | regex_replace('[0-9]$','[0-9]') }}
+      regexIface: {{ host_pif | ansible.builtin.regex_replace('[0-9]$','[0-9]') }}

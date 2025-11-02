@@ -130,8 +130,7 @@
           ansible.builtin.command:
             argv:
               - kubectl
-              - --kubeconfig
-              - "{{ user_kubeconfig }}"
+              - --kubeconfig={{ user_kubeconfig }}
               - config
               - unset
               # 'x' prefix defined by create.yml
