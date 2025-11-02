@@ -9,13 +9,14 @@ set -eo pipefail
 #  1. add user "erhhung" besides root account
 #  2. set new user password and user settings
 #  3. create "Homelab" group owned by Erhhung
-#  4. dismiss new user pop-ups and callouts
-#  5. add Erhhung's SSH and GPG public keys
-#  6. set app settings defined in vars file
-#  7. add integrations defined in vars file
-#  8. set  CI/CD vars  defined in vars file
-#  9. generate  admin personal access token
-# 10. register GitLab Runner and emit token
+#  4. set group settings defined in vars file
+#  5. dismiss new user pop-ups and callouts
+#  6. add Erhhung's SSH and GPG public keys
+#  7. set app settings defined in vars file
+#  8. add integrations defined in vars file
+#  9. set  CI/CD vars  defined in vars file
+# 10. generate  admin personal access token
+# 11. register GitLab Runner and emit token
 #
 # pass the following variables:
 #   site_base
@@ -28,6 +29,7 @@ set -eo pipefail
 #   gitlab_user_callouts[]
 #   gitlab_user_prefs.*
 #   gitlab_user_pins.*
+#   gitlab_group_settings.*
 #   gitlab_app_settings.*
 #   gitlab_integrations.*
 #   gitlab_cicd_vars.*
@@ -291,6 +293,46 @@ group_homelab() {
   "group_id":     "$group_id"
 }
 EOT
+}
+
+# use owner credentials
+# group_settings <group>
+group_settings() {
+  _func_call "$@"
+
+  local group=$1 groups=() section sections=()
+{% for g_name, group in gitlab_group_settings.items() %}
+  groups+=({{ g_name }})
+{%   for s_name, section in group.items() %}
+  sections+=({{ g_name }}:{{ s_name }})
+{%     set name = g_name ~'_'~ s_name.replace('/','_') %}
+  local {{ name }}_args=(
+{%     for key, value in section.items() %}
+    -d '{{ key }}={{ value }}'
+{%     endfor %}
+  )
+{%   endfor %}
+{% endfor %}
+  local s_name once url_base page_url referer token
+  url_base="$GITLAB_URL/groups/$group/-/settings"
+
+  for section in "${sections[@]}"; do
+    [[ "$section" == "$group:"* ]] || continue
+    [ "$once" ] && printf ','
+    once=1
+
+    s_name="${section#*:}"
+    page_url="$url_base/$s_name"
+    referer="$url_base/${s_name%/*}"
+    token="$(csrf_token "$referer")"
+    local -n args="${group}_${s_name//\//_}_args"
+
+    run curl -s "$page_url" \
+      "${HTML_ARGS[@]}"  \
+      -d '_method=patch' \
+      -d "authenticity_token=$token" \
+      "${args[@]}"
+  done
 }
 
 # requires admin user credentials
@@ -620,7 +662,7 @@ EOT
 
 echo "‖        Login: $(root_login)"
 echo "‖      Erhhung: $(user_erhhung)"
-echo "‖      ‖    Group: $(group_homelab)"
+echo "‖      ‖    Group: [$(group_homelab)],[$(group_settings homelab)]"
 echo "‖      ‖   Popups: $(dismiss_popups)"
 echo "‖      ‖ Settings: $(user_settings),$(user_prefs),[$(user_pins)]"
 echo "‖      ‖ Pub Keys: $(add_ssh_key),$(add_gpg_key)"

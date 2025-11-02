@@ -168,100 +168,229 @@
       ansible.builtin.include_tasks: tasks/monitoring/scraper.yml
 
     - name: Install GitLab stack Helm chart
-      # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/helm_module.html
-      kubernetes.core.helm:
-        kubeconfig: "{{ kubeconfig }}"
-        chart_repo_url: https://charts.gitlab.io
-        chart_ref: gitlab
-        chart_version: "{{ gitlab_chart_version }}"
-        release_name: "{{ gitlab_release_name }}"
-        release_namespace: "{{ gitlab_namespace }}"
-        release_values: "{{ gitlab_chart_values }}"
-        history_max: "{{ helm_max_history }}"
-        # this is too large a deplopyment to
-        # expect everything to be perfect in
-        # one go, so allow manual retries
-        atomic: false
-        wait: true
-        wait_timeout: 15m0s # requires wait=true
-      # bootstrapping empty databases could take
-      # a long time, with webservice and sidekiq
-      # pods having to restart a few times
-      timeout: 1200
-      # after container probes have been patched
-      # by the next task, Helm upgrade fails due
-      # to conflicting probe handlers, so ignore
-      # just that specific error
-      register: helm_install
-      failed_when: >-
-        helm_install is failed and helm_install.stderr is not search(
-        'httpGet: Forbidden: may not specify more than 1 handler type')
-
-    # default 3s timeout for readiness and liveness
-    # probes are too optimistic for our environment
-    - name: Patch GitLab container probes
       vars:
-        res_kind: "{{ item.kind }}"
-        res_name: "{{ gitlab_release_name }}-{{ item.name }}"
-        res_ns: "{{ gitlab_namespace }}"
-        probes: "{{ item.probes }}"
         global_: "{{ gitlab_chart_values.global }}"
         storages: "{{ global_.praefect.virtualStorages }}"
         zoekt: "{{ gitlab_chart_values['gitlab-zoekt'] }}"
-      ansible.builtin.include_tasks: tasks/k8s/probes.yml
-      when: item.when | default(true)
-      loop:
-        - kind: StatefulSet
-          # resource name minus gitlab- prefix
-          name: gitaly-{{ storages[0].name }}
-          probes:
-            gitaly:
-              readinessProbe: &probe
-                periodSeconds: 10
-                timeoutSeconds: 5
-              livenessProbe: *probe
-        # the workhorse container probes had been
-        # "exec /scripts/healthcheck", which sent
-        # a non-HTTPS "GET / HTTP/1.1" request to
-        # /dev/tcp/127.0.0.1/8181
-        - kind: Deployment
-          name: webservice-default
-          probes:
-            gitlab-workhorse:
-              readinessProbe:
-                httpGet:
-                  path: /-/readiness
-                  port: 8181
-                  scheme: HTTPS
-                exec: OMIT # mark for removal
-              livenessProbe:
-                httpGet:
-                  path: /-/liveness
-                  port: 8181
-                  scheme: HTTPS
-                exec: OMIT # mark for removal
-        # the Zoekt chart templates only set each
-        # probe's httpGet property, leaving other
-        # properties as defaults without a way to
-        # override them in values file
-        - kind: StatefulSet
-          name: gitlab-zoekt
-          probes:
-            zoekt-indexer: &zoekt-container
-              readinessProbe: *probe
-              livenessProbe: *probe
-            zoekt-webserver: *zoekt-container
-            zoekt-internal-gateway: *zoekt-container
-          when: "{{ zoekt.install }}"
-        - kind: Deployment
-          name: gitlab-zoekt-gateway
-          probes:
-            zoekt-external-gateway:
-              readinessProbe: *probe
-              livenessProbe: *probe
-          when: "{{ zoekt.install }}"
-      loop_control:
-        label: "{{ item.name }}"
+        probe: &probe
+          periodSeconds: 10
+          timeoutSeconds: 5
+        probes: &probes
+          readinessProbe: *probe
+          livenessProbe: *probe
+
+        # === Inputs ===
+        repo_name: gitlab
+        repo_url: https://charts.gitlab.io
+        chart_name: gitlab
+        chart_ver: "{{ gitlab_chart_version }}"
+        release_ns: "{{ gitlab_namespace }}"
+        values: "{{ gitlab_chart_values }}"
+
+        patches:
+          merge_patches:
+            - apiVersion: apps/v1
+              kind: StatefulSet
+              metadata:
+                name: "{{ gitlab_release_name }}-gitaly-{{ storages[0].name }}"
+                namespace: "{{ gitlab_namespace }}" # required
+              spec:
+                template:
+                  spec:
+                    containers:
+                      - name: gitaly
+                        <<: *probes
+            - apiVersion: apps/v1
+              kind: Deployment
+              metadata:
+                name: "{{ gitlab_release_name }}-webservice-default"
+                namespace: "{{ gitlab_namespace }}" # required
+              spec:
+                template:
+                  spec:
+                    containers:
+                      - name: gitlab-workhorse
+                        readinessProbe:
+                          exec: null
+                          httpGet: &http-get
+                            path: /-/readiness
+                            port: 8181
+                            scheme: HTTPS
+                        livenessProbe:
+                          exec: null
+                          httpGet:
+                            <<: *http-get
+                            path: /-/liveness
+            - |
+              {% set patches = [] %}
+              {% if zoekt.install %}
+              {%   set _ = patches.append({
+                     'apiVersion': 'apps/v1',
+                     'kind':       'StatefulSet',
+                     'metadata': {
+                       'name':      gitlab_release_name ~ '-gitlab-zoekt',
+                       'namespace': gitlab_namespace,
+                     },
+                     'spec': {
+                       'template': {
+                         'spec': {
+                           'containers': [
+                             {'name': 'zoekt-indexer'},
+                             {'name': 'zoekt-webserver'},
+                             {'name': 'zoekt-internal-gateway'},
+                           ] | map('ansible.builtin.combine', probes)
+                         }
+                       }
+                     }
+                   }) %}
+              {%   set _ = patches.append({
+                     'apiVersion': 'apps/v1',
+                     'kind':       'Deployment',
+                     'metadata': {
+                       'name':      gitlab_release_name ~ '-gitlab-zoekt-gateway',
+                       'namespace': gitlab_namespace,
+                     },
+                     'spec': {
+                       'template': {
+                         'spec': {
+                           'containers': [
+                             {'name': 'zoekt-external-gateway'},
+                           ] | map('ansible.builtin.combine', probes)
+                         }
+                       }
+                     }
+                   })    %}
+              {% endif   %}
+              {{ patches }}
+
+          # https://github.com/helmfile/helmfile/tree/main/test/advanced/helmfile.yaml
+          # json_patches:
+          #   - target:
+          #       group: apps
+          #       version: v1
+          #       kind: Deployment
+          #       name: "{{ gitlab_release_name }}-webservice-default"
+          #       namespace: "{{ gitlab_namespace }}"
+          #     patch:
+          #       - op: remove # container: gitlab-workhorse
+          #         path: /spec/template/spec/containers/1/readinessProbe/exec
+          #       - op: remove # container: gitlab-workhorse
+          #         path: /spec/template/spec/containers/1/livenessProbe/exec
+
+        extras: # adopt externally created resources into Helm release
+          - cert-manager.io/v1 Certificate {{ gitlab_secrets['node-tls']      }}
+          - cert-manager.io/v1 Certificate {{ gitlab_secrets['database']      }}
+          - cert-manager.io/v1 Certificate {{ postgresql_secrets['superuser'] }}
+          - cert-manager.io/v1 Certificate {{ monitoring_secrets['scraper']   }}
+          - v1 Secret {{ gitlab_secrets['certs']     }}
+          - v1 Secret {{ gitlab_secrets['storage']   }}
+          - v1 Secret {{ gitlab_secrets['omniauth']  }}
+          - v1 Secret {{ gitlab_secrets['passwords'] }}
+          - |- # will be flattened
+            {% set secrets = [] %}
+            {% for name, data in gitlab_secrets_data.items() %}
+            {%   if name is search('^gitlab-') %}
+            {%     set _ = secrets.append('v1 Secret ' ~ name) %}
+            {%   endif %}
+            {% endfor  %}
+            {{ secrets }}
+
+        # this deplopyment is too large to expect
+        # everything to be perfect in one run, so
+        # allow for manual retries
+        atomic: false
+        # bootstrapping empty databases could take
+        # a long time, with webservice and sidekiq
+        # pods having to restart a few times
+        wait_timeout: 900
+        task_timeout: 1200
+      ansible.builtin.include_tasks: tasks/helm/helmfile.yml
+
+    # - name: Install GitLab stack Helm chart
+    #   # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/helm_module.html
+    #   kubernetes.core.helm:
+    #     kubeconfig: "{{ kubeconfig }}"
+    #     chart_repo_url: https://charts.gitlab.io
+    #     chart_ref: gitlab
+    #     chart_version: "{{ gitlab_chart_version }}"
+    #     release_name: "{{ gitlab_release_name }}"
+    #     release_namespace: "{{ gitlab_namespace }}"
+    #     release_values: "{{ gitlab_chart_values }}"
+    #     history_max: "{{ helm_max_history }}"
+    #     # this is too large a deplopyment to
+    #     # expect everything to be perfect in
+    #     # one go, so allow manual retries
+    #     atomic: false
+    #     wait: true
+    #     wait_timeout: 15m0s # requires wait=true
+    #   # bootstrapping empty databases could take
+    #   # a long time, with webservice and sidekiq
+    #   # pods having to restart a few times
+    #   timeout: 1200
+    #   # after container probes have been patched
+    #   # by the next task, Helm upgrade fails due
+    #   # to conflicting probe handlers, so ignore
+    #   # just that specific error
+    #   register: helm_install
+    #   failed_when: >-
+    #     helm_install is failed and helm_install.stderr is not search(
+    #     'httpGet: Forbidden: may not specify more than 1 handler type')
+
+    # # default 3s timeout for readiness and liveness
+    # # probes are too optimistic for our environment
+    # - name: Patch GitLab container probes
+    #   vars:
+    #     res_kind: "{{ item.kind }}"
+    #     res_name: "{{ gitlab_release_name }}-{{ item.name }}"
+    #     res_ns: "{{ gitlab_namespace }}"
+    #     probes: "{{ item.probes }}"
+    #     global_: "{{ gitlab_chart_values.global }}"
+    #     storages: "{{ global_.praefect.virtualStorages }}"
+    #     zoekt: "{{ gitlab_chart_values['gitlab-zoekt'] }}"
+    #   ansible.builtin.include_tasks: tasks/k8s/probes.yml
+    #   when: item.when | default(true)
+    #   loop:
+    #     - kind: StatefulSet
+    #       # resource name minus gitlab- prefix
+    #       name: gitaly-{{ storages[0].name }}
+    #       probes:
+    #         gitaly: *probes
+    #     # the workhorse container probes had been
+    #     # "exec /scripts/healthcheck", which sent
+    #     # a non-HTTPS "GET / HTTP/1.1" request to
+    #     # /dev/tcp/127.0.0.1/8181
+    #     - kind: Deployment
+    #       name: webservice-default
+    #       probes:
+    #         gitlab-workhorse:
+    #           readinessProbe:
+    #             httpGet:
+    #               <<: *http-get
+    #               path: /-/readiness
+    #             exec: OMIT # mark for removal
+    #           livenessProbe:
+    #             httpGet:
+    #               <<: *http-get
+    #               path: /-/liveness
+    #             exec: OMIT # mark for removal
+    #     # the Zoekt chart templates only set each
+    #     # probe's httpGet property, leaving other
+    #     # properties as defaults without a way to
+    #     # override them in values file
+    #     - kind: StatefulSet
+    #       name: gitlab-zoekt
+    #       probes:
+    #         zoekt-indexer: *probes
+    #         zoekt-webserver: *probes
+    #         zoekt-internal-gateway: *probes
+    #       when: "{{ zoekt.install }}"
+    #     - kind: Deployment
+    #       name: gitlab-zoekt-gateway
+    #       probes:
+    #         zoekt-external-gateway: *probes
+    #       when: "{{ zoekt.install }}"
+    #   loop_control:
+    #     label: "{{ item.name }}"
 
     - name: >-
         {{ 'Enable' if enabled else 'Disable' }}

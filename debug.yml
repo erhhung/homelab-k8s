@@ -1,20 +1,46 @@
 ---
 - name: Show local and remote facts
   tags: facts
-  hosts: control_plane
+  hosts:
+    - "{{ k3s_control_plane_host }}"
+    - "{{ rke_control_plane_host }}"
   gather_facts: true
+  vars_files:
+    - vars/kubernetes.yml
+  vars:
+    # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/ternary_filter.html
+    cluster: "{{ (inventory_hostname in groups['k3s_cluster']) | ternary('K3s','RKE') }}"
+    cp_host: "{{ vars[cluster | lower ~'_control_plane_host'] }}"
   pre_tasks:
     - name: Gather facts about controller
+      run_once: true
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
       ansible.builtin.include_tasks: tasks/localfacts.yml
+
+    - name: Gather facts about {{ cluster }} cluster
+      when: inventory_hostname == cp_host
+      vars:
+        kubeconfig: "{{ vars[cluster | lower ~'_kubeconfig'] }}"
+      ansible.builtin.include_tasks: tasks/k8s/clusterfacts.yml
   tasks:
     - name: Show controller facts
+      run_once: true
       vars:
         facts:
-          - local_python_interpreter: "{{ local_python_interpreter }}"
-          - local_bash_interpreter: "{{ local_bash_interpreter }}"
-          - local_machine_arch: "{{ local_machine_arch }}"
-          - local_tz_offset: "{{ local_tz_offset }}"
+          local_python_interpreter: "{{ local_python_interpreter }}"
+          local_bash_interpreter: "{{ local_bash_interpreter }}"
+          local_machine_arch: "{{ local_machine_arch }}"
+          local_tz_offset: "{{ local_tz_offset }}"
+      ansible.builtin.debug:
+        var: facts
+
+    - name: Show {{ cluster }} cluster facts
+      when: inventory_hostname == cp_host
+      vars:
+        facts:
+          kubernetes_version: "{{ kubernetes_version }}"
+          # list of CRDs can be very long!
+          kubernetes_apis: "{{ kubernetes_apis }}"
       ansible.builtin.debug:
         var: facts
 
@@ -38,6 +64,7 @@
         var: ansible_facts
 
     - name: Format current time
+      run_once: true
       vars:
         # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/strftime_filter.html
         time_now: "{{ '%Y-%m-%dT%H:%M:%S' | strftime() }}{{ local_tz_offset.in_hh_mm }}"
@@ -52,19 +79,19 @@
     - name: Show inventory groups
       ansible.builtin.debug:
         msg: |-
-          groups['all']:              {{ groups['all'] }}
-          groups['k8s_all']:          {{ groups['k8s_all'] }}
-          groups['cluster']:          {{ groups['cluster'] }}
-          groups['control_plane']:    {{ groups['control_plane'] }}
-          groups['control_plane_ha']: {{ groups['control_plane_ha'] }}
-          groups['workers']:          {{ groups['workers'] }}
-          groups['workers_ha']:       {{ groups['workers_ha'] }}
+          groups['all']:                  {{ groups['all']     }}
+          groups['k8s_all']:              {{ groups['k8s_all'] }}
+          groups['rke_cluster']:          {{ groups['rke_cluster'] }}
+          groups['rke_control_plane']:    {{ groups['rke_control_plane']    }}
+          groups['rke_control_plane_ha']: {{ groups['rke_control_plane_ha'] }}
+          groups['rke_workers']:          {{ groups['rke_workers']    }}
+          groups['rke_workers_ha']:       {{ groups['rke_workers_ha'] }}
 
     - name: Generate cluster FQDNs
       vars:
         rke_cluster_name: homelab
         rke_fqdns: >
-          {{ ([rke_cluster_name] + groups['control_plane']) |
+          {{ ([rke_cluster_name] + groups['rke_control_plane']) |
                product(search_domains) | map('join','.') }}
       ansible.builtin.debug:
         msg: |-
@@ -78,7 +105,7 @@
           - query
           - rule
           - store
-        thanos_pqdns: "{{ thanos_hosts | map('regex_replace', '$', '.'~ subdomain) }}"
+        thanos_pqdns: "{{ thanos_hosts | map('regex_replace', '$', '.'~ subdomain)  }}"
         thanos_fqdns: "{{ thanos_pqdns | product(search_domains) | map('join', '.') }}"
       ansible.builtin.debug:
         var: thanos_fqdns
@@ -114,7 +141,7 @@
 
 - name: Show certificates on CA server
   tags: certs
-  hosts: _pki
+  hosts: pki_any
   gather_facts: false
   tasks:
     - name: Fetch cert file
@@ -161,13 +188,14 @@
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/shell_module.html
       ansible.builtin.shell: |
         set -o pipefail
-        jq <<'EOF' | yq -pj -oy > /tmp/{{ item.dest }}
+        jq <<'JSON' | yq -pj -oy > /tmp/{{ item.dest }}
         {{ item.json }}
-        EOF
+        JSON
       args:
         executable: /bin/bash
       loop:
-        - json: "{{ harbor_chart_values | to_json }}"
+        # must serialize to JSON outside of shell script before loop begins
+        - json: "{{ harbor_chart_values | to_json(separators=[',',':']) }}"
           dest: values-harbor.yaml
       loop_control:
         label: "{{ item.dest }}"
@@ -506,6 +534,31 @@
       loop_control:
         label: "{{ item[0] }}"
 
+    - name: Filter list by item type
+      vars:
+        original:
+          - foo
+          - 123
+          - bar
+          - foo: bar
+          - 45.67
+          - true
+          - baz
+        # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/string_test.html
+        strings: "{{  original | select('string')  }}"
+        integers: "{{ original | select('integer') }}"
+        floats: "{{   original | select('float')   }}"
+        booleans: "{{ original | select('boolean') }}"
+        mappings: "{{ original | select('mapping') }}"
+      ansible.builtin.debug:
+        msg: |-
+          original: {{ original }}
+           strings: {{ strings  }}
+          integers: {{ integers }}
+            floats: {{ floats   }}
+          booleans: {{ booleans }}
+          mappings: {{ mappings }}
+
     - name: Debug dict2items filter
       vars:
         users:
@@ -649,7 +702,8 @@
         base_dir: "{{ template_dir }}/argocd/projects"
         # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/fileglob_lookup.html
         # https://docs.ansible.com/ansible/latest/plugins/lookup.html#forcing-lookups-to-return-lists-query-and-wantlist-true
-        manifests: "{{ query('ansible.builtin.fileglob', base_dir ~ '/*.yaml*') |
+        manifests:
+          "{{ query('ansible.builtin.fileglob', base_dir ~ '/*.yaml*') |
           map('ansible.builtin.basename') | select('search', '^[^.].+') }}"
       ansible.builtin.debug:
         var: item

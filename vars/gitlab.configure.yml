@@ -79,6 +79,14 @@ gitlab_app_settings:
     application_setting[allow_local_requests_from_web_hooks_and_services]:
       value: 1
 
+# form POST /groups/{group}/-/settings/{section}
+gitlab_group_settings:
+  homelab: # {group}
+    ci_cd: # {section}
+      group[allow_runner_registration_token]: "false"
+    ci_cd/update_auto_devops:
+      group[auto_devops_enabled]: 0
+
 # form POST /admin/application_settings/integrations/{service}
 gitlab_integrations:
   # when activated, global environment variables HARBOR_URL, HARBOR_OCI, HARBOR_HOST,

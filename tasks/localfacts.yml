@@ -1,8 +1,8 @@
-# gathers facts about the Ansible controller host
+# gather facts about the Ansible controller host
 #
 # sets the following facts:
 #   local_python_interpreter `which python3` output
-#   local_tz_offset          {in_hours, in_seconds}
+#   local_tz_offset          {in_hours,in_seconds}
 ---
 - name: Gather controller facts
   delegate_to: localhost
