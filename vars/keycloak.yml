@@ -13,6 +13,8 @@ keycloak_host_names: # aliases of "ingress"
 keycloak_fqdns: "{{ keycloak_host_names | product(search_domains) | map('join','.') }}"
 
 keycloak_secrets:
+  # keycloakx-passwords Secret will be
+  # created automatically by the chart
   passwords: keycloakx-passwords
   database: keycloakx-database-tls
   ingress: keycloakx-ingress-tls
@@ -53,7 +55,7 @@ keycloak_sql_gz_b64: keycloak.sql.gz.b64
 # has been pre-baked into the SQL script
 
 # https://github.com/codecentric/helm-charts/tree/master/charts/keycloakx
-keycloakx_chart_version: "7.0.1"
+keycloakx_chart_version: "7.1.4"
 keycloakx_release_name: keycloakx
 
 # https://github.com/codecentric/helm-charts/tree/master/charts/keycloakx/values.yaml
@@ -308,9 +310,8 @@ keycloakx_chart_values:
     labels:
       release: "{{ monitoring_release_name }}"
     interval: 60s # not heavily used service
-    # tlsConfig will be patched in via task (monitoring-scraper-tls
-    # Secret must be recreated in the Keycloak namespace where this
-    # ServiceMonitor resides)
+    # not shown in values.yaml but in template
+    tlsConfig: "{{ metric_scraper_tls_config }}"
 
 # https://grafana.com/grafana/dashboards/?search=Keycloak&dataSource=prometheus
 keycloak_grafana_dashboards:

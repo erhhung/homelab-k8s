@@ -76,14 +76,13 @@
       vars:
         vcluster_fqdn: "{{ vcluster.name }}.{{ vcluster_domain }}"
         vcluster_ns: vcluster-{{ vcluster.name }}
-        tls_secret: vc-tls-{{ vcluster.name }}
+        tls_secret: vc-{{ vcluster.name }}-tls
       block:
         - name: Create vCluster ingress secret
           vars:
             secret_name: "{{ tls_secret }}"
             secret_ns: "{{ vcluster_ns }}"
             cert_name: "{{ vcluster_ns }}"
-            release: "{{ vcluster.name }}"
             sans: ["{{ vcluster_fqdn }}"]
           # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
           ansible.builtin.include_tasks: tasks/k8s/secrets/tls.step.yml
@@ -91,21 +90,54 @@
         - name: Install vCluster Helm chart
           vars:
             # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/template_lookup.html
-            values: "{{ lookup('ansible.builtin.template', template_dir ~ '/vcluster.yaml.j2') }}"
-          # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/helm_module.html
-          kubernetes.core.helm:
-            kubeconfig: "{{ kubeconfig }}"
-            chart_repo_url: https://charts.loft.sh
+            values_: "{{ lookup('ansible.builtin.template', template_dir ~ '/vcluster.yaml.j2') }}"
+
+            # === Inputs ===
+            tmpdir_name: vcluster-{{ vcluster.name }}
+            repo_name: vcluster
+            repo_url: https://charts.loft.sh
             chart_ref: vcluster
-            chart_version: "{{ vcluster_chart_version }}"
-            release_name: "{{ vcluster.name }}"
-            release_namespace: "{{ vcluster_ns }}"
-            release_values: "{{ values | from_yaml }}"
-            history_max: "{{ helm_max_history }}"
-            atomic: true
-            wait: true
-          timeout: 300
-          register: helm_install
+            chart_ver: "{{ vcluster_chart_version }}"
+            release: "{{ vcluster.name }}"
+            release_ns: "{{ vcluster_ns }}"
+            values: "{{ values_ | from_yaml }}"
+
+            patches:
+              # vCluster Helm chart creates a config Secret with "config.yaml"
+              # key and value {{ .Values | toYaml }}, but since we adopt extra
+              # resources using bedag/raw subchart, .exxtraas gets included in
+              # the config.yaml, which the controller cannot unmarshal. So use
+              # a post-renderer to remove .exxtraas from the Secret
+              post_renderers:
+                - |
+                  #!/usr/bin/env bash
+                  set -euo pipefail
+
+                  echo >&2 "$0"
+                  yaml="$(cat)"
+
+                  # https://github.com/loft-sh/vcluster/tree/main/chart/templates/config-secret.yaml
+                  export NAME="vc-config-{{ vcluster.name }}"
+
+                  config="$(yq 'select(
+                    .kind == "Secret" and .metadata.name == env(NAME)
+                    ) | .data."config.yaml" // "" | @base64d' <<< "$yaml")"
+
+                  if [ "$config" ]; then
+                    # delete subchart values that
+                    # aren't spec for config.yaml
+                    CONFIG="$(yq 'del(.exxtraas)' <<< "$config")" \
+                      yq 'with(select(
+                        .kind == "Secret" and .metadata.name == env(NAME)
+                        ); .data."config.yaml" = (strenv(CONFIG) | @base64)
+                        )' <<< "$yaml"
+                  else
+                    echo "$yaml"
+                  fi
+
+            extras: # adopt extra resources into Helm release
+              - cert-manager.io/v1 Certificate {{ vcluster_ns }}
+          ansible.builtin.include_tasks: tasks/helm/helmfile.yml
 
         - name: Fetch vCluster kubeconfig
           # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_info_module.html
@@ -132,4 +164,3 @@
           # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/fail_module.html
           ansible.builtin.fail:
             msg: Failed to create vCluster "{{ vcluster.name }}"!
-  any_errors_fatal: true

@@ -5,7 +5,6 @@
 - name: Install Valkey on RKE cluster
   tags: install
   hosts: "{{ rke_control_plane_host }}"
-  gather_facts: false
   vars_files:
     - vars/kubernetes.yml
     - vars/metallb.yml
@@ -13,10 +12,11 @@
     - vars/monitoring.yml
     - vars/valkey.yml
   vars:
+    # required kubernetes>=24.2 package only in user virtualenv
+    ansible_python_interpreter: "{{ venv_python_interpreter }}"
     kubeconfig: "{{ rke_kubeconfig }}"
     secret_ns: "{{ valkey_namespace }}"
     create_ns: false
-    release: "{{ valkey_release_name }}"
   pre_tasks:
     - name: Is the monitoring stack ready?
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
@@ -46,25 +46,21 @@
 
     - name: Install Valkey cluster Helm chart
       vars:
-        # required kubernetes>=24.2 package only in user virtualenv
-        ansible_python_interpreter: "{{ venv_python_interpreter }}"
-      # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/helm_module.html
-      kubernetes.core.helm:
-        kubeconfig: "{{ kubeconfig }}"
-        chart_repo_url: https://charts.bitnami.com/bitnami
+        repo_name: bitnami
+        repo_url: https://charts.bitnami.com/bitnami
         chart_ref: valkey-cluster
-        chart_version: "{{ valkey_chart_version }}"
-        release_name: "{{ valkey_release_name }}"
-        release_namespace: "{{ valkey_namespace }}"
-        release_values: "{{ valkey_chart_values }}"
-        history_max: "{{ helm_max_history }}"
-        atomic: true
-        wait: true
-      timeout: 600
+        chart_ver: "{{ valkey_chart_version }}"
+        release: "{{ valkey_release_name }}"
+        release_ns: "{{ valkey_namespace }}"
+        values: "{{ valkey_chart_values }}"
+
+        extras: # adopt extra resources into Helm release
+          - cert-manager.io/v1 Certificate {{ valkey_secrets['node-tls'] }}
+          - v1 Secret {{ valkey_secrets['password'] }}
+      ansible.builtin.include_tasks: tasks/helm/helmfile.yml
 
     - name: Import Grafana dashboards
       vars:
         dashboards: "{{ valkey_grafana_dashboards }}"
       ansible.builtin.include_tasks: tasks/grafana/dashboards.yml
       when: grafana_api_server_online | default(true)
-  any_errors_fatal: true

@@ -7,10 +7,10 @@
 #   repo_name   <required> repository name
 #   repo_url    <required> repository URL
 #   chart_name  <required> chart name
-#   chart_ver   <required> chart version
+#   chart_ver   [optional] chart version
 #   release     <required> release name
 #   release_ns  <required> release namespace
-#   values      <required> chart values dict
+#   values      [optional] chart values dict
 # sets the following facts:
 #   release_exists whether the release exists
 #   needs_upgrade  whether upgrade is needed
@@ -21,7 +21,7 @@
   vars:
     # required kubernetes>=24.2 package only in user virtualenv
     ansible_python_interpreter: "{{ venv_python_interpreter }}"
-    temp_dir: /tmp/helmdiff/{{ release }}
+    temp_dir: /tmp/helmdiff/{{ chart_name }}
     values_file: "{{ temp_dir }}/values.yaml"
   block:
     - name: Check if release exists
@@ -56,10 +56,20 @@
     - name: Write chart values file
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/shell_module.html
       ansible.builtin.shell: |
-        set -o pipefail
+        set -eo pipefail
+
         mkdir -p {{ temp_dir }}
-        jq <<'JSON' | yq -pj -oy > {{ values_file }}
-        {{ values | to_json(separators=[',',':']) }}
+
+        # properly quote boolean strings like on/off/yes/no
+        # because Helm, unlike yq, adheres to YAML 1.1 spec,
+        # and will parse these as booleans if left unquoted
+        jq <<'JSON' | yq -pj '(.. |
+          select( tag == "!!str" and
+            (downcase == "on" or downcase == "off" or
+             downcase == "no" or downcase == "yes")
+          )) |= . style = "double"
+           '  > {{ values_file }}
+        {{ values | default('---') | to_json(separators=[',',':']) }}
         JSON
       args:
         executable: /bin/bash
@@ -67,7 +77,7 @@
       changed_when: false
 
     - name: Run "helm diff upgrade"
-      ansible.builtin.command:
+      vars:
         argv:
           - helm
           - --kubeconfig={{ kubeconfig }}
@@ -76,18 +86,22 @@
           - "{{ release }}"
           - -n={{ release_ns }}
           - "{{ repo_name }}/{{ chart_name }}"
-          - --version={{ chart_ver }}
-          - -f={{ values_file }}
+          - "{{ '--version=' ~  chart_ver  if chart_ver is defined else [] }}"
+          - "{{ '-f='        ~ values_file if values    is defined else [] }}"
           - --show-secrets
+      ansible.builtin.command:
+        argv: "{{ argv | flatten }}"
       when: release_exists
       register: helm_diff
       changed_when: false
 
     - name: Set needs_upgrade fact
       ansible.builtin.set_fact:
+        # if all diffs suppressed, message would
+        # be "has changed, but diff is empty..."
         needs_upgrade: >-
-          {{ not release_exists or
-             helm_diff.stdout is search('has changed') }}
+          {{ not release_exists or helm_diff.stdout_lines |
+             select('search', '^[^ ]{2,}.+has.+(added|removed|changed):$') is truthy }}
 
     - name: Delete temp values file
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/file_module.html
@@ -103,4 +117,3 @@
         msg: |-
           release_exists: {{ release_exists }}
            needs_upgrade: {{ needs_upgrade  }}
-  any_errors_fatal: true

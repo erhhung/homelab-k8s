@@ -3,8 +3,8 @@
 # https://metallb.universe.tf/concepts/bgp
 ---
 - name: Install MetalLB on RKE cluster
+  tags: install
   hosts: "{{ rke_control_plane_host }}"
-  gather_facts: false
   vars_files:
     - vars/kubernetes.yml
     - vars/monitoring.yml
@@ -13,13 +13,21 @@
     # required kubernetes>=24.2 package only in user virtualenv
     ansible_python_interpreter: "{{ venv_python_interpreter }}"
     kubeconfig: "{{ rke_kubeconfig }}"
-    secret_ns: "{{ metallb_namespace }}"
-    release: "{{ metallb_release_name }}"
   pre_tasks:
     - name: Is the monitoring stack ready?
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
       ansible.builtin.include_tasks: tasks/monitoring/stackready.yml
       when: monitoring_stack_ready is not defined
+
+    - name: Does IPAddressPool CRD exist?
+      # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_info_module.html
+      kubernetes.core.k8s_info:
+        kubeconfig: "{{ kubeconfig }}"
+        api_version: apiextensions.k8s.io/v1
+        kind: CustomResourceDefinition
+        # name must be in plural form!
+        name: ipaddresspools.metallb.io
+      register: crd_info
   tasks:
     - name: Create MetalLB speaker secret
       vars:
@@ -30,22 +38,23 @@
           # to bug in Bitnami Helm chart:
           # https://github.com/bitnami/charts/issues/36271
           secretkey: "{{ metallb_secret }}"
+        secret_ns: "{{ metallb_namespace }}"
       ansible.builtin.include_tasks: tasks/k8s/secrets/generic.yml
 
     - name: Install MetalLB Helm chart
-      # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/helm_module.html
-      kubernetes.core.helm:
-        kubeconfig: "{{ kubeconfig }}"
-        chart_repo_url: https://charts.bitnami.com/bitnami
+      vars:
+        repo_name: bitnami
+        repo_url: https://charts.bitnami.com/bitnami
         chart_ref: metallb
-        chart_version: "{{ metallb_chart_version }}"
-        release_name: "{{ metallb_release_name }}"
-        release_namespace: "{{ metallb_namespace }}"
-        release_values: "{{ metallb_chart_values }}"
-        history_max: "{{ helm_max_history }}"
-        atomic: true
-        wait: true
-      timeout: 300
+        chart_ver: "{{ metallb_chart_version }}"
+        release: "{{ metallb_release_name }}"
+        release_ns: "{{ metallb_namespace }}"
+        values: "{{ metallb_chart_values }}"
+
+        extras: # adopt extra resources into Helm release
+          - v1 Secret {{ metallb_secrets['speaker'] }}
+          - "{{ metallb_config_crs if crd_info.resources is truthy else [] }}"
+      ansible.builtin.include_tasks: tasks/helm/helmfile.yml
 
     - name: Create MetalLB config CRs
       # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_module.html
@@ -57,4 +66,4 @@
       loop: "{{ metallb_config_crs }}"
       loop_control:
         label: "{{ item.kind }}"
-  any_errors_fatal: true
+      when: crd_info.resources is falsy

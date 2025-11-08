@@ -5,7 +5,6 @@
 - name: Install Prometheus monitoring stack
   tags: install
   hosts: "{{ rke_control_plane_host }}"
-  gather_facts: false
   vars_files:
     - vars/kubernetes.yml
     - vars/storage.yml
@@ -18,31 +17,19 @@
     kubeconfig: "{{ rke_kubeconfig }}"
     secret_ns: "{{ monitoring_namespace }}"
     create_ns: false
-    release: "{{ monitoring_release_name }}"
   pre_tasks:
-    - name: Hash monitoring user passwords
-      vars:
-        passwords: "{{ monitoring_passwords }}"
-        fact_name: monitoring_passwords_hashed
-      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
-      ansible.builtin.include_tasks: tasks/hashpwds.yml
-
     # CA certs to be stored inline with Grafana data
     # source configs for Prometheus and Alertmanager
     - name: Get CA certificates from PKI
       ansible.builtin.include_tasks: tasks/pki/cacerts.yml
       when: ca_certificates is not defined
 
-    # determine whether to create the node exporter
-    # RBAC config before installing the Helm chart
-    - name: Is Helm chart already installed?
-      # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/helm_info_module.html
-      kubernetes.core.helm_info:
-        kubeconfig: "{{ kubeconfig }}"
-        release_name: "{{ monitoring_release_name }}"
-        release_namespace: "{{ monitoring_namespace }}"
-        release_state: ["deployed"]
-      register: helm_info
+    - name: Hash monitoring user passwords
+      vars:
+        passwords: "{{ monitoring_passwords }}"
+        fact_name: monitoring_passwords_hashed
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
+      ansible.builtin.include_tasks: tasks/hashpwds.yml
 
     # add CORS headers to Grafana responses
     - name: Set grafana_ingress_snippet fact
@@ -55,25 +42,38 @@
         # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/template_lookup.html
         grafana_ingress_snippet: |-
           {{ lookup('ansible.builtin.template', template_dir ~ '/cors.nginx.j2') }}
+
+    - name: Load custom scrape configurations
+      vars:
+        # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/fileglob_lookup.html
+        # https://docs.ansible.com/ansible/latest/plugins/lookup.html#forcing-lookups-to-return-lists-query-and-wantlist-true
+        configs: "{{ query('ansible.builtin.fileglob', 'tasks/monitoring/configs/*.yml') }}"
+      # each tasks file should set fact referenced by
+      # additional_scrape_configs in the chart values
+      ansible.builtin.include_tasks: "{{ item }}"
+      loop: "{{ configs }}"
+      loop_control:
+        # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/basename_filter.html
+        label: "{{ item | ansible.builtin.basename }}"
   tasks:
     # client certs for etcd ServiceMonitor
     # (turns out not needed as the metrics
     # endpoint is only available via HTTP)
     - name: Create RKE etcd client secret
       vars:
-        cert_desc: RKE etcd client
-        cert_file: etcd/client
         secret_name: "{{ monitoring_secrets['etcd'] }}"
         create_ns: true
+        cert_desc: RKE etcd client
+        cert_file: etcd/client
       ansible.builtin.include_tasks: tasks/k8s/secrets/tls.rke.yml
 
     - name: Create monitoring ingress secret
       vars:
+        secret_name: "{{ monitoring_secrets[item.name] }}"
+        cert_name: "{{ item.cert }}-ingress"
         sans_:
           - "*.{{ monitoring_namespace }}.svc.{{ cluster_domain }}"
           - "*.{{ monitoring_namespace }}.svc"
-        secret_name: "{{ monitoring_secrets[item.name] }}"
-        cert_name: "{{ item.cert }}-ingress"
         sans: "{{ item.sans | flatten }}"
       ansible.builtin.include_tasks: tasks/k8s/secrets/tls.step.yml
       loop:
@@ -137,63 +137,107 @@
           } }}
       ansible.builtin.include_tasks: tasks/k8s/secrets/generic.yml
 
-    # this step is necessary before the Helm release has ever been
-    # installed because the Helm-generated template will have both
-    # the original prometheus-node-exporter-rbac-config ConfigMap
-    # as well as the modified version from extraManifests section
-    # of the chart values, which causes duplicate resource error
-    # unless an existing "Helm-managed" resource can be imported
-    - name: Create node exporter RBAC config
+    # install Prometheus CRDs separately using chart
+    # included by same kube-prometheus-stack version:
+    # https://github.com/prometheus-community/helm-charts/tree/main/charts/kube-prometheus-stack/charts/crds
+    - name: Install Prometheus Operator CRDs
       vars:
-        manifest: "{{ prometheus_stack_chart_values.extraManifests[0] }}"
-      # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_module.html
-      kubernetes.core.k8s:
-        kubeconfig: "{{ kubeconfig }}"
-        definition:
-          apiVersion: v1
-          kind: ConfigMap
-          metadata:
-            name: "{{ manifest.metadata.name }}"
-            namespace: "{{ monitoring_namespace }}"
-            labels:
-              app.kubernetes.io/managed-by: Helm
-            annotations:
-              meta.helm.sh/release-name: "{{ monitoring_release_name }}"
-              meta.helm.sh/release-namespace: "{{ monitoring_namespace }}"
-          data: "{{ manifest.data }}"
-        validate:
-          fail_on_error: false
-        state: present
-        apply: true
-      when: helm_info.status is not defined
+        # https://github.com/aslafy-z/helm-git#usage
+        repo_url: git+https://github.com/prometheus-community/helm-charts@charts/kube-prometheus-stack/charts/crds?ref=kube-prometheus-stack-{{ prometheus_stack_chart_version }}
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/shell_module.html
+      ansible.builtin.shell: |
+        # run Bash and source /etc/profile.d
+        # scripts so that kubectl is in PATH
+        exec /bin/bash -l <<'EOT'
+        set -eo pipefail
 
-    - name: Load custom scrape configurations
-      vars:
-        # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/fileglob_lookup.html
-        # https://docs.ansible.com/ansible/latest/plugins/lookup.html#forcing-lookups-to-return-lists-query-and-wantlist-true
-        configs: "{{ query('ansible.builtin.fileglob', 'tasks/monitoring/configs/*.yml') }}"
-      # each tasks file should set fact referenced by
-      # additional_scrape_configs in the chart values
-      ansible.builtin.include_tasks: "{{ item }}"
-      loop: "{{ configs }}"
-      loop_control:
-        # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/basename_filter.html
-        label: "{{ item | ansible.builtin.basename }}"
+        crds_file="/tmp/prometheus-crds.yaml"
+        trap "rm -f $crds_file" EXIT
+
+        helm template crds \
+          --repo="{{ repo_url }}" \
+          --include-crds > $crds_file
+
+        rc=9
+        while read name new_ver; do
+          old_ver=$(kubectl get crd/$name -o yaml 2> /dev/null | \
+              yq '.spec.versions[].name')
+          [ "$old_ver" == "$new_ver" ] || {
+            rc=0; break # (re)install ALL
+          }
+        done < <(
+          yq ea '(["\(.metadata.name) \(.spec.versions[].name)"]-[" "])[]' $crds_file
+        )
+        [ $rc -eq 0 ] || {
+          set +e; exit $rc # no change
+        }
+
+        # delete all and recreate instead of applying to avoid errors like:
+        # metadata.annotations: Too long: may not be more than 262144 bytes
+        kubectl delete -f $crds_file --ignore-not-found=true
+        kubectl create -f $crds_file
+        EOT
+      register: install_crds
+      changed_when: install_crds.rc == 0
+      failed_when: install_crds.rc not in [0,9]
 
     - name: Install Prometheus stack Helm chart
-      # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/helm_module.html
-      kubernetes.core.helm:
-        kubeconfig: "{{ kubeconfig }}"
-        chart_repo_url: https://prometheus-community.github.io/helm-charts
+      vars:
+        repo_name: prometheus
+        repo_url: https://prometheus-community.github.io/helm-charts
         chart_ref: kube-prometheus-stack
-        chart_version: "{{ prometheus_stack_chart_version }}"
-        release_name: "{{ monitoring_release_name }}"
-        release_namespace: "{{ monitoring_namespace }}"
-        release_values: "{{ prometheus_stack_chart_values }}"
-        history_max: "{{ helm_max_history }}"
-        atomic: true
-        wait: true
-      timeout: 600
+        chart_ver: "{{ prometheus_stack_chart_version }}"
+        release: "{{ monitoring_release_name }}"
+        release_ns: "{{ monitoring_namespace }}"
+        values: "{{ prometheus_stack_chart_values }}"
+
+        patches:
+          merge_patches:
+            - apiVersion: v1
+              kind: ConfigMap
+              metadata:
+                # the resource-based authorization defined by the chart doesn't seem
+                # to work--maybe ServiceAccount doesn't have ClusterRole that allows
+                # "tokenreviews" and "subjectaccessreviews"? So use static rule that
+                # only allows the client cert holder to access the /metrics endpoint:
+                # https://github.com/prometheus-community/helm-charts/tree/main/charts/prometheus-node-exporter/templates/rbac-configmap.yaml
+                # https://github.com/brancz/kube-rbac-proxy/tree/master/examples/static-auth
+                name: "{{ monitoring_release_name }}-prometheus-node-exporter-rbac-config"
+                namespace: "{{ monitoring_namespace }}"
+              data:
+                config-file.yaml: |+
+                  authorization:
+                    static:
+                      - user: # cert CN
+                          name: scraper
+                        verb: get
+                        resourceRequest: false
+                        path: /metrics
+
+          json_patches:
+            # Helm chart doesn't currently allow specifying
+            # basicAuth in .prometheus.thanosServiceMonitor
+            - target:
+                group: monitoring.coreos.com
+                version: v1
+                kind: ServiceMonitor
+                name: "{{ monitoring_release_name }}-thanos-sidecar"
+              patch:
+                - op: add
+                  path: /spec/endpoints/0/basicAuth
+                  value: "{{ thanos_metrics_auth }}"
+
+        extras: # adopt extra resources into Helm release
+          - cert-manager.io/v1 Certificate monitoring-prometheus-ingress
+          - cert-manager.io/v1 Certificate thanos-sidecar-ingress
+          - cert-manager.io/v1 Certificate monitoring-alertmanager-ingress
+          - cert-manager.io/v1 Certificate monitoring-grafana-ingress
+          - cert-manager.io/v1 Certificate {{ monitoring_secrets['scraper'] }}
+          - v1 Secret {{ monitoring_secrets['thanos-config'] }}
+          - v1 Secret {{ monitoring_secrets['oauth-proxy']   }}
+          - v1 Secret {{ monitoring_secrets['credentials']   }}
+          - v1 Secret {{ monitoring_secrets['etcd'] }}
+      ansible.builtin.include_tasks: tasks/helm/helmfile.yml
 
     # oauth2-proxy doesn't currently support auto-reloading
     # TLS certs, so make Wave watch TLS Secrets and trigger
@@ -208,26 +252,9 @@
         - prometheus
         - alertmanager
 
-    # Helm chart doesn't currently allow specifying
-    # basicAuth in .prometheus.thanosServiceMonitor
-    - name: Patch Thanos sidecar ServiceMonitor
-      # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_json_patch_module.html
-      kubernetes.core.k8s_json_patch:
-        kubeconfig: "{{ kubeconfig }}"
-        api_version: monitoring.coreos.com/v1
-        kind: ServiceMonitor
-        name: "{{ monitoring_release_name }}-thanos-sidecar"
-        namespace: "{{ monitoring_namespace }}"
-        patch:
-          - op: add
-            path: /spec/endpoints/0/basicAuth
-            value: "{{ thanos_metrics_auth }}"
-  any_errors_fatal: true
-
 - name: Configure monitoring applications
   tags: configure
   hosts: localhost
-  gather_facts: false
   vars_files:
     - vars/monitoring.yml
   tasks:
@@ -237,4 +264,3 @@
         password: "{{ grafana_admin_pass }}"
         settings: "{{ grafana_admin_settings }}"
       ansible.builtin.include_tasks: tasks/grafana/settings.yml
-  any_errors_fatal: true

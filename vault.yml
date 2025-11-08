@@ -5,7 +5,6 @@
 - name: Install Vault on RKE cluster
   tags: install
   hosts: "{{ rke_control_plane_host }}"
-  gather_facts: false
   vars_files:
     - vars/kubernetes.yml
     - vars/monitoring.yml
@@ -17,7 +16,6 @@
     kubeconfig: "{{ rke_kubeconfig }}"
     secret_ns: "{{ vault_namespace }}"
     create_ns: false
-    release: "{{ vault_release_name }}"
   tasks:
     - name: Create Vault node secret
       vars:
@@ -31,8 +29,8 @@
           - "*.{{ vault_namespace }}.svc"
           - |
             {% set sans = [] %}
-            {% for i in range(0, vault_chart_values.server.ha.replicas)  %}
-            {%   set _ = sans.append(release ~'-'~ i ~'.vault-internal') %}
+            {% for i in range(0, vault_chart_values.server.ha.replicas) %}
+            {%   set _ = sans.append(vault_release_name ~'-'~ i ~'.vault-internal') %}
             {% endfor %}
             {{ sans   }}
         sans: "{{ sans_ | flatten }}"
@@ -43,77 +41,34 @@
       ansible.builtin.include_tasks: tasks/monitoring/scraper.yml
 
     - name: Install Vault Helm chart
-      # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/helm_module.html
-      kubernetes.core.helm:
-        kubeconfig: "{{ kubeconfig }}"
-        chart_repo_url: https://helm.releases.hashicorp.com
-        chart_ref: vault
-        chart_version: "{{ vault_chart_version }}"
-        release_name: "{{ vault_release_name }}"
-        release_namespace: "{{ vault_namespace }}"
-        release_values: "{{ vault_chart_values }}"
-        history_max: "{{ helm_max_history }}"
-        atomic: true
-        wait: true
-
-    - name: Check if Vault is sealed
-      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/uri_module.html
-      ansible.builtin.uri:
-        # https://developer.hashicorp.com/vault/api-docs/system/health
-        url: "{{ vault_url }}/v1/sys/health"
-        status_code:
-          - 200 # initialized, unsealed, and active
-          - 429 # unsealed and standby
-          - 474 # standby but cannot connect to active
-          - 501 # not initialized
-          - 503 # sealed
-      register: seal_check
-      retries: 10
-      delay: 3
-
-    - name: Bootstrap Vault if sealed
       vars:
-        definitions: "{{ lookup('ansible.builtin.template',
-          template_dir ~ '/vault/bootstrap.yaml.j2') }}"
-      # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_module.html
-      kubernetes.core.k8s:
-        kubeconfig: "{{ kubeconfig }}"
-        namespace: "{{ vault_namespace }}"
-        definition: "{{ definitions }}"
-        state: present
-      when: >-
-        seal_check.status in [501,503]   or
-        seal_check.json   is defined    and
-        (not seal_check.json.initialized or
-             seal_check.json.sealed)
-      notify: Wait until bootstrap done
-  handlers:
-    - name: Wait until bootstrap done
-      # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_info_module.html
-      kubernetes.core.k8s_info:
-        kubeconfig: "{{ kubeconfig }}"
-        api_version: batch/v1
-        kind: Job
-        name: "{{ vault_release_name }}-bootstrap"
-        namespace: "{{ vault_namespace }}"
-      register: job_info
-      until:
-        - job_info.resources is defined
-        - job_info.resources is truthy
-        - job_info.resources[0].status.completionTime is defined
-      failed_when: >-
-        job_info.resources is not defined or
-        job_info.resources is     falsy   or
-        job_info.resources[0].status.succeeded == 0
-      retries: 20
-      delay: 15
-  any_errors_fatal: true
+        repo_name: hashicorp
+        repo_url: https://helm.releases.hashicorp.com
+        chart_ref: vault
+        chart_ver: "{{ vault_chart_version }}"
+        release: "{{ vault_release_name }}"
+        release_ns: "{{ vault_namespace }}"
+        values: "{{ vault_chart_values }}"
+
+        extras: # adopt extra resources into Helm release
+          - cert-manager.io/v1 Certificate {{ vault_secrets['node-tls']     }}
+          - cert-manager.io/v1 Certificate {{ monitoring_secrets['scraper'] }}
+          - | # ServiceAccount/Role/RoleBinding/Job
+            {{ lookup('ansible.builtin.template', template_dir ~ '/vault/bootstrap.yaml.j2')
+               |  split('---') | select('search', 'apiVersion:') | map('from_yaml') }}
+          # placeholder Secret will be
+          # populated during bootstrap
+          - apiVersion: v1
+            kind: Secret
+            metadata:
+              name: "{{ vault_secrets['unseal'] }}"
+            type: Opaque
+      ansible.builtin.include_tasks: tasks/helm/helmfile.yml
 
 # https://developer.hashicorp.com/vault/install
 - name: Install Vault CLI tool
   tags: cli
   hosts: rke_cluster
-  gather_facts: false
   vars_files:
     - vars/vault.yml
   tasks:
@@ -140,10 +95,14 @@
         . .bash_aliases
         set -o pipefail
 
-        [ "$VAULT_TOKEN" ] && exit 9 # no change
         token=$(kubectl get secret {{ vault_secrets['unseal'] }} \
-          -n {{ vault_namespace }} -o json | \
-          jq -r '.data.rootToken | @base64d')
+             -n {{ vault_namespace }} -o json | \
+          jq -r '.data.rootToken // "" | @base64d')
+        [ "$token" ] || {
+          echo >&2 "Error: could not get Vault root token"
+          exit 1
+        }
+        [ "$token" == "$VAULT_TOKEN" ] && exit 9 # no change
 
         # BASH_ENV_DIR is set in .bash_aliases
         cat <<EOF > "$BASH_ENV_DIR/vault.env"
@@ -155,7 +114,6 @@
       register: config_cli
       changed_when: config_cli.rc == 0
       failed_when: config_cli.rc not in [0,9]
-  any_errors_fatal: true
 
 # https://developer.hashicorp.com/vault/docs/concepts/policies
 # https://developer.hashicorp.com/vault/docs/auth/kubernetes
@@ -163,7 +121,6 @@
 - name: Configure Vault authentication
   tags: auth
   hosts: rke_any
-  gather_facts: false
   vars_files:
     - vars/kubernetes.yml
     - vars/externalsecrets.yml
@@ -264,12 +221,10 @@
       register: vault_create
       changed_when: vault_create.rc == 0
       failed_when: vault_create.rc not in [0,9]
-  any_errors_fatal: true
 
 - name: Populate Vault with secret data
   tags: data
   hosts: rke_any
-  gather_facts: false
   vars_files:
     - vars/vault.yml
     # vault_secrets_data.*
@@ -328,4 +283,3 @@
       register: vault_data
       changed_when: vault_data.rc == 0
       failed_when: vault_data.rc not in [0,9]
-  any_errors_fatal: true

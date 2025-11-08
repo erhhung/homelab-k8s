@@ -7,7 +7,6 @@
   hosts: &hosts
     - "{{ k3s_control_plane_host }}"
     - "{{ rke_control_plane_host }}"
-  gather_facts: false
   vars_files: &vars_files
     - vars/kubernetes.yml
     - vars/monitoring.yml
@@ -25,27 +24,21 @@
       when: monitoring_stack_ready is not defined
   tasks:
     - name: Install cert-manager Helm chart
-      # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/helm_module.html
-      kubernetes.core.helm:
-        kubeconfig: "{{ kubeconfig }}"
-        chart_repo_url: https://charts.jetstack.io
+      vars:
+        repo_name: jetstack
+        repo_url: https://charts.jetstack.io
         chart_ref: cert-manager
-        chart_version: "{{ certmanager_chart_version }}"
-        release_name: "{{ certmanager_release_name }}"
-        release_namespace: "{{ certmanager_namespace }}"
-        create_namespace: true
-        release_values: "{{ certmanager_chart_values }}"
-        history_max: "{{ helm_max_history }}"
-        atomic: true
-        wait: true
-  any_errors_fatal: true
+        chart_ver: "{{ certmanager_chart_version }}"
+        release: "{{ certmanager_release_name }}"
+        release_ns: "{{ certmanager_namespace }}"
+        values: "{{ certmanager_chart_values }}"
+      ansible.builtin.include_tasks: tasks/helm/helmfile.yml
 
 # https://cert-manager.io/docs/reference/cmctl#manual-installation
 # TIP: to force a renewal: cmctl renew -n <namespace> <certificate>
 - name: Install cert-manager CLI tool
   tags: cli
   hosts: k8s_all
-  gather_facts: false
   become: true
   tasks:
     - name: Install cert-manager CLI tool
@@ -70,14 +63,12 @@
       register: install_cli
       changed_when: install_cli.rc == 0
       failed_when: install_cli.rc not in [0,9]
-  any_errors_fatal: true
 
 # https://smallstep.com/docs/certificate-manager/kubernetes-step-issuer
 # https://github.com/smallstep/step-issuer
 - name: Configure Step CA as ClusterIssuer
   tags: issuer
   hosts: *hosts
-  gather_facts: false
   vars_files: *vars_files
   vars: *vars
   pre_tasks:
@@ -120,15 +111,18 @@
       ansible.builtin.include_tasks: tasks/k8s/secrets/generic.yml
 
     - name: Install Step Issuer Helm chart
-      kubernetes.core.helm:
-        kubeconfig: "{{ kubeconfig }}"
-        chart_repo_url: https://smallstep.github.io/helm-charts
+      vars:
+        passwordRef: "{{ step_issuer_chart_values.stepClusterIssuer.provisioner.passwordRef }}"
+
+        # === Inputs ===
+        repo_name: smallstep
+        repo_url: https://smallstep.github.io/helm-charts
         chart_ref: step-issuer
-        chart_version: "{{ step_issuer_chart_version }}"
-        release_name: "{{ step_issuer_release_name }}"
-        release_namespace: "{{ step_issuer_namespace }}"
-        release_values: "{{ step_issuer_chart_values }}"
-        history_max: "{{ helm_max_history }}"
-        atomic: true
-        wait: true
-  any_errors_fatal: true
+        chart_ver: "{{ step_issuer_chart_version }}"
+        release: "{{ step_issuer_release_name }}"
+        release_ns: "{{ step_issuer_namespace }}"
+        values: "{{ step_issuer_chart_values }}"
+
+        extras: # adopt extra resources into Helm release
+          - v1 Secret {{ passwordRef.name }}
+      ansible.builtin.include_tasks: tasks/helm/helmfile.yml

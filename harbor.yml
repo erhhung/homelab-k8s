@@ -4,65 +4,41 @@
 - name: Install Harbor on K3s cluster
   tags: install
   hosts: "{{ k3s_control_plane_host }}"
-  gather_facts: false
   vars_files:
     - vars/kubernetes.yml
     - vars/storage.yml
     - vars/harbor.yml
   vars:
+    # required kubernetes>=24.2 package only in user virtualenv
+    ansible_python_interpreter: "{{ venv_python_interpreter }}"
     kubeconfig: "{{ k3s_kubeconfig }}"
-    repo_name: harbor
-    repo_url: https://helm.goharbor.io
-    chart_name: harbor
-    chart_ver: "{{ harbor_chart_version }}"
-    release: "{{ harbor_release_name }}"
-    release_ns: "{{ harbor_namespace }}"
-  pre_tasks:
-    # despite providing fixed values for various secrets and certs
-    # to the Harbor Helm chart, the "helm upgrade" command through
-    # kubernetes.core.helm will always create a new revision, even
-    # when "helm diff upgrade" command outputs nothing, so perform
-    # the check first, and only proceed with the upgrade if needed
-    - name: Check if Helm upgrade needed
-      vars:
-        values: "{{ harbor_chart_values }}"
-      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
-      ansible.builtin.include_tasks: tasks/helm/diff.yml
-      # sets needs_upgrade fact
   tasks:
     - name: Create Harbor ingress secret
       vars:
         secret_name: "{{ harbor_secrets['ingress'] }}"
-        secret_ns: "{{ release_ns }}"
+        secret_ns: "{{ harbor_namespace }}"
         cert_name: harbor-ingress
         sans: "{{ [harbor_fqdn] }}"
       ansible.builtin.include_tasks: tasks/k8s/secrets/tls.step.yml
 
     - name: Install Harbor Helm chart
       vars:
-        # required kubernetes>=24.2 package only in user virtualenv
-        ansible_python_interpreter: "{{ venv_python_interpreter }}"
-      # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/helm_module.html
-      kubernetes.core.helm:
-        kubeconfig: "{{ kubeconfig }}"
-        chart_repo_url: "{{ repo_url }}"
-        chart_ref: "{{ chart_name }}"
-        chart_version: "{{ chart_ver }}"
-        release_name: "{{ release }}"
-        release_namespace: "{{ release_ns }}"
-        release_values: "{{ harbor_chart_values }}"
-        history_max: "{{ helm_max_history }}"
-        atomic: true
-        wait: true
-      timeout: 600
-      when: needs_upgrade
-  any_errors_fatal: true
+        repo_name: harbor
+        repo_url: https://helm.goharbor.io
+        chart_ref: harbor
+        chart_ver: "{{ harbor_chart_version }}"
+        release: "{{ harbor_release_name }}"
+        release_ns: "{{ harbor_namespace }}"
+        values: "{{ harbor_chart_values }}"
+
+        extras: # adopt extra resources into Helm release
+          - cert-manager.io/v1 Certificate {{ harbor_secrets['ingress'] }}
+      ansible.builtin.include_tasks: tasks/helm/helmfile.yml
 
 # https://github.com/goharbor/harbor-cli#installation
 - name: Install Harbor CLI tool
   tags: cli
   hosts: k8s_all
-  gather_facts: false
   vars_files:
     - vars/harbor.yml
   tasks:
@@ -70,7 +46,6 @@
       become: true
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/shell_module.html
       ansible.builtin.shell: |
-        cd /usr/local/bin
         set -o pipefail
 
         REL="https://github.com/goharbor/harbor-cli/releases/latest"
@@ -95,6 +70,7 @@
         mv -f harbor-cli harbor
       args:
         executable: /bin/bash
+        chdir: /usr/local/bin
       register: install_cli
       changed_when: install_cli.rc == 0
       failed_when: install_cli.rc not in [0,9]
@@ -127,12 +103,10 @@
       register: config_cli
       changed_when: config_cli.rc == 0
       failed_when: config_cli.rc not in [0,9]
-  any_errors_fatal: true
 
 - name: Configure Harbor registry
   tags: configure
   hosts: "{{ k3s_control_plane_host }}"
-  gather_facts: false
   vars_files:
     - vars/kubernetes.yml
     - vars/harbor.yml
@@ -248,12 +222,10 @@
       failed_when: >-
         create_users.rc not in [0,9] or
         create_users.stdout is search('errors')
-  any_errors_fatal: true
 
 - name: Copy images into Harbor
   tags: copy
   hosts: "{{ k3s_control_plane_host }}"
-  gather_facts: false
   vars_files:
     - vars/kubernetes.yml
     - vars/harbor.yml
@@ -350,4 +322,3 @@
         label: "{{ image }}"
       timeout: 900
       changed_when: true
-  any_errors_fatal: true

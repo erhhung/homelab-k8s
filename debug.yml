@@ -74,7 +74,6 @@
 - name: Show hosts and domain names
   tags: hosts
   hosts: localhost
-  gather_facts: false
   tasks:
     - name: Show inventory groups
       ansible.builtin.debug:
@@ -142,7 +141,6 @@
 - name: Show certificates on CA server
   tags: certs
   hosts: pki_any
-  gather_facts: false
   tasks:
     - name: Fetch cert file
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/command_module.html
@@ -178,7 +176,6 @@
 - name: Dump Helm chart values files
   tags: values
   hosts: localhost
-  gather_facts: false
   vars_files:
     - vars/kubernetes.yml
     - vars/storage.yml
@@ -204,7 +201,6 @@
 - name: Get list of files on remote host
   tags: files
   hosts: cosmos
-  gather_facts: true
   tasks:
     - name: Find ~/accounts/*.txt files
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/find_module.html
@@ -240,7 +236,6 @@
 - name: Debug basic Ansible/Jinja syntax
   tags: syntax
   hosts: localhost
-  gather_facts: false
   tasks:
     - name: Create IP address range
       vars:
@@ -360,7 +355,6 @@
 - name: Debug expressions and statements
   tags: exprs
   hosts: localhost
-  gather_facts: false
   tasks:
     - name: Select items not in list
       vars:
@@ -513,8 +507,23 @@
 - name: Debug various Ansible filters
   tags: filters
   hosts: localhost
-  gather_facts: false
   tasks:
+    - name: Test from_yaml_all filter
+      vars:
+        enabled: true
+        yaml: |
+          {% if enabled %}
+          doc:
+            foo: abc
+          ---
+          doc:
+            bar: xyz
+          {% endif %}
+        # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/from_yaml_all_filter.html
+        objs: "{{ yaml | from_yaml_all }}"
+      ansible.builtin.debug:
+        var: objs # [] if disabled
+
     - name: Debug password_hash filter
       vars:
         credentials:
@@ -675,7 +684,6 @@
 - name: Debug various Ansible lookups
   tags: lookups
   hosts: localhost
-  gather_facts: false
   tasks:
     - name: Debug url lookup
       vars:
@@ -716,7 +724,6 @@
 - name: Ansible quirks and behaviors
   tags: quirks
   hosts: localhost
-  gather_facts: false
   tasks:
     - name: Modify loaded variable
       block:
@@ -764,7 +771,6 @@
 - name: Useful collection of tasks
   tags: tasks
   hosts: localhost
-  gather_facts: false
   tasks:
     - name: Exit the play successfully
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/meta_module.html

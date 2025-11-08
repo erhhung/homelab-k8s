@@ -3,7 +3,6 @@
 - name: Install single-node K3s cluster
   tags: k3s
   hosts: rancher
-  gather_facts: false
   become: true
   vars_files:
     - vars/kubernetes.yml
@@ -64,12 +63,10 @@
         context: "{{ k3s_cluster_name }}"
         server: https://{{ k3s_fqdn }}:6443
       ansible.builtin.include_tasks: tasks/k8s/kubeconfig.yml
-  any_errors_fatal: true
 
 - name: Apply supplemental K3s configuration
   tags: configure
   hosts: "{{ k3s_control_plane_host }}"
-  gather_facts: false
   vars_files:
     - vars/basics.yml
     - vars/kubernetes.yml
@@ -179,13 +176,11 @@
           - restart
           - deployment/coredns
       changed_when: true
-  any_errors_fatal: true
 
 # https://ranchermanager.docs.rancher.com/getting-started/installation-and-upgrade
 - name: Install Rancher Server on K3s
-  tags: rancher
+  tags: install
   hosts: "{{ k3s_control_plane_host }}"
-  gather_facts: false
   vars_files:
     - vars/kubernetes.yml
     - vars/rancher.yml
@@ -193,7 +188,6 @@
     # required kubernetes>=24.2 package only in user virtualenv
     ansible_python_interpreter: "{{ venv_python_interpreter }}"
     kubeconfig: "{{ k3s_kubeconfig }}"
-    release: "{{ rancher_release_name }}"
   tasks:
     # https://ranchermanager.docs.rancher.com/getting-started/installation-and-upgrade/resources/add-tls-secrets
     # https://ranchermanager.docs.rancher.com/getting-started/installation-and-upgrade/resources/update-rancher-certificate
@@ -220,19 +214,19 @@
 
     # https://ranchermanager.docs.rancher.com/getting-started/installation-and-upgrade/install-upgrade-on-a-kubernetes-cluster#install-the-rancher-helm-chart
     - name: Install Rancher Server Helm chart
-      # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/helm_module.html
-      kubernetes.core.helm:
-        kubeconfig: "{{ kubeconfig }}"
-        chart_repo_url: https://releases.rancher.com/server-charts/latest
+      vars:
+        repo_name: rancher
+        repo_url: https://releases.rancher.com/server-charts/latest
         chart_ref: rancher
-        chart_version: "{{ rancher_chart_version }}"
-        release_name: "{{ rancher_release_name }}"
-        release_namespace: "{{ rancher_namespace }}"
-        release_values: "{{ rancher_chart_values }}"
-        history_max: "{{ helm_max_history }}"
-        atomic: true
-        wait: true
-      timeout: 600
+        chart_ver: "{{ rancher_chart_version }}"
+        release: "{{ rancher_release_name }}"
+        release_ns: "{{ rancher_namespace }}"
+        values: "{{ rancher_chart_values }}"
+
+        extras: # adopt extra resources into Helm release
+          - v1 Secret {{ rancher_secrets['ingress'] }}
+          - v1 Secret {{ rancher_secrets['ca-tls']  }}
+      ansible.builtin.include_tasks: tasks/helm/helmfile.yml
 
     - name: Set Rancher Server settings
       kubernetes.core.k8s:
@@ -270,7 +264,7 @@
           BIN=$(dirname "$BIN")
         }
         ARCH=$(uname -m | sed -e  's/x86_64/amd64/' \
-                              -e 's/aarch64/arm/')
+                              -e 's/aarch64/arm64/')
         curl -fsSL "$REL/download/rancher-linux-$ARCH-$VER.tar.gz" | \
           tar -xz -C "${BIN:-/usr/local/bin}" --no-same-owner \
             --strip-components=2 ./rancher-$VER/rancher
@@ -328,4 +322,3 @@
               io.cattle.agent.force.deploy: "true"
         state: patched
       when: rke_cluster is match('c-')
-  any_errors_fatal: true

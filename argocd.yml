@@ -4,7 +4,6 @@
 - name: Install Argo CD GitOps tool
   tags: install
   hosts: "{{ rke_control_plane_host }}"
-  gather_facts: false
   vars_files:
     - vars/kubernetes.yml
     - vars/valkey.yml
@@ -17,7 +16,6 @@
     kubeconfig: "{{ rke_kubeconfig }}"
     secret_ns: "{{ argocd_namespace }}"
     create_ns: false
-    release: "{{ argocd_release_name }}"
   pre_tasks:
     - name: Get image tag from Harbor
       when: argocd_image.registry == harbor_container_registry
@@ -88,7 +86,7 @@
       vars:
         secret_name: "{{ argocd_secrets['server'] }}"
         create_ns: true
-        cert_name: argocd-server-ingress
+        cert_name: argocd-server
         sans:
           - argocd
           - "{{ argocd_fqdn }}"
@@ -117,19 +115,19 @@
       ansible.builtin.include_tasks: tasks/gitlab/tokens/pat.yml
 
     - name: Install Argo CD Helm chart
-      # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/helm_module.html
-      kubernetes.core.helm:
-        kubeconfig: "{{ kubeconfig }}"
-        chart_repo_url: "{{ argocd_chart_repo_url }}"
+      vars:
+        repo_name: argo
+        repo_url: "{{ argocd_chart_repo_url }}"
         chart_ref: argo-cd
-        chart_version: "{{ argocd_chart_version }}"
-        release_name: "{{ argocd_release_name }}"
-        release_namespace: "{{ argocd_namespace }}"
-        release_values: "{{ argocd_chart_values }}"
-        history_max: "{{ helm_max_history }}"
-        atomic: true
-        wait: true
-      timeout: 300
+        chart_ver: "{{ argocd_chart_version }}"
+        release: "{{ argocd_release_name }}"
+        release_ns: "{{ argocd_namespace }}"
+        values: "{{ argocd_chart_values }}"
+
+        extras: # adopt extra resources into Helm release
+          - cert-manager.io/v1 Certificate {{ argocd_secrets['server'] }}
+          - v1 Secret {{ argocd_secrets['valkey'] }}
+      ansible.builtin.include_tasks: tasks/helm/helmfile.yml
 
     - name: >-
         {{ 'Enable' if enabled else 'Disable' }}
@@ -153,12 +151,10 @@
           {% endfor %}
           {{ res    }}
       ansible.builtin.include_tasks: tasks/istio/mesh.yml
-  any_errors_fatal: true
 
 - name: Install Argo CD CLI tool
   tags: cli
   hosts: rke_cluster
-  gather_facts: false
   vars_files:
     - vars/argocd.yml
   tasks:
@@ -167,7 +163,6 @@
       become: true
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/shell_module.html
       ansible.builtin.shell: |
-        cd /usr/local/bin
         set -o pipefail
 
         REL="https://github.com/argoproj/argo-cd/releases/latest"
@@ -184,6 +179,7 @@
         chmod +x argocd
       args:
         executable: /bin/bash
+        chdir: /usr/local/bin
       register: install_cli
       changed_when: install_cli.rc == 0
       failed_when: install_cli.rc not in [0,9]
@@ -201,12 +197,10 @@
       register: config_cli
       changed_when: config_cli.rc == 0
       failed_when: config_cli.rc not in [0,9]
-  any_errors_fatal: true
 
 - name: Configure projects/apps
   tags: configure
   hosts: "{{ rke_control_plane_host }}"
-  gather_facts: false
   vars_files:
     - vars/kubernetes.yml
     - vars/gitlab.yml
@@ -232,4 +226,3 @@
       vars:
         dashboards: "{{ argocd_grafana_dashboards }}"
       ansible.builtin.include_tasks: tasks/grafana/dashboards.yml
-  any_errors_fatal: true

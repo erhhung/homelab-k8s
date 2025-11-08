@@ -261,11 +261,11 @@ prometheus_stack_chart_values:
   # namespace, or else "found duplicate series for the match group" error occurs
   nameOverride: "{{ monitoring_release_name }}"
 
-  # https://github.com/prometheus-community/helm-charts/tree/main/charts/kube-prometheus-stack/charts/crds
   crds:
-    enabled: true
-    upgradeJob: # since Helm has no ability
-      enabled: true # feature is in preview
+    # Prometheus Operator CRDs are installed separately because they are huge,
+    # and including them in the release would exceed Kubernetes' 1MB limit on
+    # Helm's history Secret
+    enabled: false
 
   # ======================================== Operator ========================================
   #
@@ -1144,8 +1144,6 @@ prometheus_stack_chart_values:
           readOnly: true
 
       extraArgs:
-        # default args already specify --config-file, but mounted
-        # ConfigMap will be overridden by ".extraManifests" below
         - --tls-cert-file=/tls/proxy/tls.crt
         - --tls-private-key-file=/tls/proxy/tls.key
         - --client-ca-file=/tls/proxy/ca.crt
@@ -1222,28 +1220,6 @@ prometheus_stack_chart_values:
 
   # ======================================== Manifests =======================================
   #
-  extraManifests:
-    - apiVersion: v1
-      kind: ConfigMap
-      metadata:
-        # this overrides the ConfigMap created by the prometheus-node-exporter
-        # Helm chart because the provided resource-based authorization doesn't
-        # work--maybe the ServiceAccount doesn't have ClusterRole that allows
-        # "tokenreviews" & "subjectaccessreviews"? So we use static rule that
-        # only allows the client cert holder to access the /metrics endpoint:
-        # https://github.com/prometheus-community/helm-charts/tree/main/charts/prometheus-node-exporter/templates/rbac-configmap.yaml
-        # https://github.com/brancz/kube-rbac-proxy/tree/master/examples/static-auth
-        name: "{{ monitoring_release_name }}-prometheus-node-exporter-rbac-config"
-      data:
-        config-file.yaml: |+
-          authorization:
-            static:
-              - user: # cert CN
-                  name: scraper
-                verb: get
-                resourceRequest: false
-                path: /metrics
-
   # additional_prometheus_rules is defined at bottom of this file
   additionalPrometheusRulesMap: "{{ additional_prometheus_rules }}"
 

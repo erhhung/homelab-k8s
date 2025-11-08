@@ -151,14 +151,18 @@ vault_chart_values:
 
     # https://developer.hashicorp.com/vault/tutorials/kubernetes/kubernetes-raft-deployment-guide#configure-vault-helm-chart
     # https://developer.hashicorp.com/vault/api-docs/system/health
-    readinessProbe:
+    readinessProbe: &probe
       enabled: true
       # return 2xx for uninitialized or sealed vault to allow
       # successful Helm install, before manual initialization
       # and unsealing are performed
       path: /v1/sys/health?standbyok=true&sealedcode=204&uninitcode=204
+      periodSeconds: 10
+      timeoutSeconds: 5
+      failureThreshold: 3
+
     livenessProbe:
-      enabled: true
+      <<: *probe
       path: /v1/sys/health?standbyok=true
       initialDelaySeconds: 60
 

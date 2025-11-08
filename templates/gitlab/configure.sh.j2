@@ -47,15 +47,24 @@ RESPONSE_JSON="$TEMP_DIR/response.json"
      PAT_JSON="$TEMP_DIR/pat.json"
   RUNNER_JSON="$TEMP_DIR/runner.json"
 
+# sleep delay before run command
+# to throttle requests to server
+RUN_DELAY="0.5"
+
 AUTH_ARGS=(
   -b "$COOKIE_JAR"
   -c "$COOKIE_JAR"
+)
+RETRY_ARGS=(
+  --retry       2
+  --retry-delay 2
 )
 HTML_ARGS=(
   "${AUTH_ARGS[@]}"
   -H 'Accept: text/html'
   -o "$RESPONSE_HTML"
   -w '%{http_code}'
+  "${RETRY_ARGS[@]}"
 )
 JSON_ARGS=(
   "${AUTH_ARGS[@]}"
@@ -63,7 +72,9 @@ JSON_ARGS=(
   -H 'Content-Type: application/json'
   -o "$RESPONSE_JSON"
   -w '%{http_code}'
+  "${RETRY_ARGS[@]}"
 )
+rm -f $AUTH_USER $COOKIE_JAR
 
 # get CSRF token for page given its URL
 # csrf_token <page-url>
@@ -85,13 +96,20 @@ csrf_header() {
 
 # print function name and args to stderr
 _func_call() {
-  echo >&2 " FUNCTION: ${FUNCNAME[1]}" "$*"
+  local args=("$@")
+  [ -f $AUTH_USER ] && args+=("[$(< $AUTH_USER)]")
+  echo >&2 " FUNCTION: ${FUNCNAME[1]}" "${args[*]}"
 }
 
 # output command (given as $@) to stderr
 # and execute, piping in heredoc, if any
 # run <command> [args...] [<<EOT...EOT]
 run() {
+  # Bash only compares ints
+  [ "$RUN_DELAY"      ] && \
+  [ "$RUN_DELAY" != 0 ] && \
+    sleep $RUN_DELAY
+
   local arg args=()
   for arg in "$@"; do
     if [[ "$arg" =~ [[]|[]]|[\<\>\{\}\`\*\#\$\^\&\?\|\\\;] ]]; then
@@ -121,11 +139,16 @@ run() {
   [ "$stdin" ] && printf >&2 " <<'EOT'\n%s\nEOT" "$stdin"
   printf >&2 "\n"
 
-  if [ "$stdin" ]; then # pipe in heredoc
-    eval "echo \"\$stdin\" | ${args[*]}"
-  else
-    eval "${args[*]}"
-  fi
+  local status=$(
+    if [ "$stdin" ]; then # pipe in heredoc
+      eval "echo \"\$stdin\" | ${args[*]}"
+    else
+      eval "${args[*]}"
+    fi
+  )
+  printf "$status"
+  # fail if status isn't success
+  [[ "$status" =~ 200|201|302 ]]
 }
 
 root_login() {
@@ -144,14 +167,12 @@ gitlab_login() {
 
   local page_url user="$1" pass="$2"
   page_url="$GITLAB_URL/users/sign_in"
-  local status=$(run curl -s "$page_url"   \
-    -H "$(csrf_header        "$page_url")" \
+  run curl -s          "$page_url"   \
+    -H "$(csrf_header  "$page_url")" \
     "${HTML_ARGS[@]}"      \
     -d "user[login]=$user" \
-    -d "user[password]=$pass")
+    -d "user[password]=$pass"
 
-  printf "$status"
-  [ "$status" == 302 ] || return
   printf "$user" > $AUTH_USER
 }
 
@@ -164,32 +185,31 @@ user_erhhung() {
   local user='{{ user_erhhung.username }}'
   local page_url="$GITLAB_URL/admin/users"
   local user_url="$page_url/$user"
+  local args token
 
   local status="$(run curl -s "$user_url" "${HTML_ARGS[@]}")"
   printf "$status,"
-  [ "$status" == 404 ] || {
-    erhhung_login
-    return $?
+
+  [ "$status" == 404 ] && {
+    args=(
+      -d "user[username]=$user"
+      -d 'user[name]={{  user_erhhung.fullname }}'
+      -d 'user[email]={{ user_erhhung.email }}'
+      -d 'user[can_create_group]=1'
+      # regular|admin (IMPORTANT: admin user cannot be
+      # the target of a placeholder user reassignment)
+      -d 'user[access_level]=regular'
+      -d 'user[external]=0'
+      -d 'user[credit_card_validation_attributes][credit_card_validated_at]=1'
+    )
+    token="$(csrf_token "$page_url/new")"
+    run curl -s         "$page_url" \
+      "${HTML_ARGS[@]}" \
+      -d "authenticity_token=$token" \
+      "${args[@]}"
+    printf ','
   }
 
-  local args=(
-    -d "user[username]=$user"
-    -d 'user[name]={{  user_erhhung.fullname }}'
-    -d 'user[email]={{ user_erhhung.email }}'
-    -d 'user[can_create_group]=1'
-     # regular|admin (IMPORTANT: admin user cannot be
-     # the target of a placeholder user reassignment)
-    -d 'user[access_level]=regular'
-    -d 'user[external]=0'
-    -d 'user[credit_card_validation_attributes][credit_card_validated_at]=1'
-  )
-  local token="$(csrf_token "$page_url/new")"
-  run curl -s               "$page_url" \
-    "${HTML_ARGS[@]}" \
-    -d "authenticity_token=$token" \
-    "${args[@]}"
-
-  printf ','
   token="$(csrf_token "$page_url")"
   run curl -s         "$user_url/trust" \
     "${HTML_ARGS[@]}" \
@@ -239,49 +259,53 @@ group_homelab() {
 
   local group_id group='homelab'
   local group_url="$GITLAB_URL/$group"
+  local args token page_url
 
   local status="$(run curl -s "$group_url" "${HTML_ARGS[@]}")"
   printf "$status"
-  [ "$status" == 404 ] || return 0
-  printf ','
 
-  local args=(
-     # top-level group
-    -F 'group[parent_id]='
-    -F 'group[name]=Homelab'
-    -F 'group[path]=homelab'
-    -F "group[description]=Erhhung's homelab projects"
-     # image should be 192px square
-    -F 'group[avatar]=@{{ playbook_dir }}/images/homelab.png;type=image/png'
-     # 0=Private 10=Internal 20=Public
-    -F 'group[visibility_level]=20'
-     # for company/team or "just me"
-    -F 'group[setup_for_company]=true'
-     # basics|move_repository|code_storage|exploring|ci|other
-    -F 'group[jobs_to_be_done]=ci'
-     # invite members as developers
-    -F 'group[emails][]='
-    -F 'group[lfs_enabled]=1'
-    -F 'group[request_access_enabled]=1'
-     # 0=No One 2=Developers 4=Owners
-     # 1=Maintainers 3=Administrators
-    -F 'group[project_creation_level]=2'
-     # 0=Owners 1=Maintainers
-    -F 'group[subgroup_creation_level]=1'
-    -F 'group[require_two_factor_authentication]=0'
-    -F 'group[runner_registration_enabled]=1'
-  )
-  local page_url="$GITLAB_URL/groups"
-  local token="$(csrf_token "$page_url/new")"
-  run curl -s               "$page_url" \
-    "${HTML_ARGS[@]}" \
-    -F "authenticity_token=$token" \
-    "${args[@]}"
+  [ "$status" == 404 ] && {
+    printf ','
+    args=(
+      # top-level group
+      -F 'group[parent_id]='
+      -F 'group[name]=Homelab'
+      -F 'group[path]=homelab'
+      -F "group[description]=Erhhung's homelab projects"
+      # image should be 192px square
+      -F 'group[avatar]=@{{ playbook_dir }}/images/homelab.png;type=image/png'
+      # 0=Private 10=Internal 20=Public
+      -F 'group[visibility_level]=20'
+      # for company/team or "just me"
+      -F 'group[setup_for_company]=true'
+      # basics|move_repository|code_storage|exploring|ci|other
+      -F 'group[jobs_to_be_done]=ci'
+      # invite members as developers
+      -F 'group[emails][]='
+      -F 'group[lfs_enabled]=1'
+      -F 'group[request_access_enabled]=1'
+      # 0=No One 2=Developers 4=Owners
+      # 1=Maintainers 3=Administrators
+      -F 'group[project_creation_level]=2'
+      # 0=Owners 1=Maintainers
+      -F 'group[subgroup_creation_level]=1'
+      -F 'group[require_two_factor_authentication]=0'
+      -F 'group[runner_registration_enabled]=1'
+    )
+    page_url="$GITLAB_URL/groups"
+    token="$(csrf_token "$page_url/new")"
+    run curl -s         "$page_url" \
+      "${HTML_ARGS[@]}" \
+      -F "authenticity_token=$token" \
+      "${args[@]}"
 
-  printf ','
-  run curl -s "$group_url" "${HTML_ARGS[@]}"
+    printf ','
+    run curl -s "$group_url" "${HTML_ARGS[@]}"
+  }
+
   group_id="$(sed -En 's/Group ID: ([0-9]+)/\1/p' "$RESPONSE_HTML")"
-  echo >&2 "group_id: $group_id"
+  echo >&2 "group_id: ${group_id:-N/A}"
+  [ "$group_id" ] || return
 
   printf ','
   page_url="$GITLAB_URL/-/users/group_callouts"
@@ -649,7 +673,7 @@ EOT
   "query": "query getRunnerForRegistration(\$id: CiRunnerID!) {runner(id: \$id) {id description ephemeralAuthenticationToken creationState}}"
 }
 EOT
-  # function is being called from subshell,
+  # function may be called from a subshell,
   # so export runner info to temp JSON file
   jq '.data.runner | {
     runner: {
@@ -660,19 +684,25 @@ EOT
   }' $RESPONSE_JSON > $RUNNER_JSON
 }
 
-echo "‖        Login: $(root_login)"
-echo "‖      Erhhung: $(user_erhhung)"
-echo "‖      ‖    Group: [$(group_homelab)],[$(group_settings homelab)]"
-echo "‖      ‖   Popups: $(dismiss_popups)"
-echo "‖      ‖ Settings: $(user_settings),$(user_prefs),[$(user_pins)]"
-echo "‖      ‖ Pub Keys: $(add_ssh_key),$(add_gpg_key)"
-echo "‖        Login: $(root_login)"
-echo "‖       Popups: $(dismiss_popups)"
-echo "‖     Settings: $(user_settings),$(user_prefs),[$(app_settings)]"
-echo "‖ Integrations: $(integrations)"
-echo "‖   CI/CD Vars: $(cicd_vars)"
-echo "‖    Admin PAT: $(admin_pat)"
-echo "‖       Runner: $(register_runner)"
+printf "‖        Login: ";     root_login;             echo
+printf "‖      Erhhung: ";     user_erhhung;           echo
+printf "‖      ‖    Group: ["; group_homelab;          printf "],["
+                               group_settings homelab; echo     "]"
+printf "‖      ‖   Popups: ";  dismiss_popups;         echo
+printf "‖      ‖ Settings: ";  user_settings;          printf  ","
+                               user_prefs;             printf  ",["
+                               user_pins;              echo     "]"
+printf "‖      ‖ Pub Keys: ";  add_ssh_key;            printf  ","
+                               add_gpg_key;            echo
+printf "‖        Login: ";     root_login;             echo
+printf "‖       Popups: ";     dismiss_popups;         echo
+printf "‖     Settings: ";     user_settings;          printf  ","
+                               user_prefs;             printf  ",["
+                               app_settings;           echo     "]"
+printf "‖ Integrations: ";     integrations;           echo
+printf "‖   CI/CD Vars: ";     cicd_vars;              echo
+printf "‖    Admin PAT: ";     admin_pat;              echo
+printf "‖       Runner: ";     register_runner;        echo
 
 if [ -f $PAT_JSON ]; then
   echo "ADMIN_PAT=$(jq -r .token $PAT_JSON)"

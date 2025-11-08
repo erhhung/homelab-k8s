@@ -4,21 +4,27 @@
 # like TLS certificate secrets can be included in the Helm release
 #
 # pass the following vars:
+#   tmpdir_name  [optional] /tmp/helmfile/{name}
 #   kubeconfig   <required> kubeconfig path
-#   repo_name    <required> repository name
-#   repo_url     <required> repository URL
-#   chart_name   <required> chart name
-#   chart_ver    <required> chart version
+#   repo_name    [optional] Helm repository name
+#   repo_url     [optional] Helm repository URL
+#   chart_ref    <required> chart name or oci:// URL
+#   chart_ver    [optional] chart version
 #   release      <required> release name
 #   release_ns   <required> release namespace
-#   values       <required> chart values dict
+#   values       [optional] chart values dict
 #   patches:     [optional] kustomize patches
 #     merge_patches  [optional] list flatten(1)
 #     json_patches   [optional] list flatten(1)
 #     transformers   [optional] list flatten(1)
+#     post_renderers [optional] list flatten
 #   extras:      [optional] adoptees flatten(1)
-#     - <apiVersion> <kind> <name> pre-created (string)
-#     - {apiVersion,  kind,  ...}  full object (dict)
+#     - <apiVersion> <kind> <name> [?] pre-created (string)
+#                                  '?' ignore if not found
+#     - {apiVersion,  kind,  ...}      full object (dict)
+#   ignore:      [optional] ignore diffs
+#     lines      [optional] line regexes
+#     kinds      [optional] object kinds
 #   history_max  [optional] default=`helm_max_history`
 #   atomic       [optional] default=true
 #   wait         [optional] default=true
@@ -26,12 +32,19 @@
 #   wait_timeout [optional] default=600
 #   task_timeout [optional] default=900
 #
+# patches.{merge_patches,json_patches,transformers}:
 # https://helmfile.readthedocs.io/en/latest/advanced-features#adhoc-kustomization-of-helm-charts
 # https://github.com/helmfile/helmfile/tree/main/test/advanced/helmfile.yaml
+#
+# patches.post_renderers: list of scripts (text with #!shebang) to pipe
+# `helm template` output thru after chart rendering and before applying:
+# https://helm.sh/docs/topics/advanced#post-rendering
+# (this feature could pose a serious security risk if untrusted scripts
+# are used!)
 ---
+# always get most current list of APIs
 - name: Gather facts about the cluster
   ansible.builtin.include_tasks: tasks/k8s/clusterfacts.yml
-  when: kubernetes_version is not defined
 
 - name: Install Helm chart using Helmfile
   become: false
@@ -39,129 +52,184 @@
     # required kubernetes>=24.2 package only in user virtualenv
     ansible_python_interpreter: "{{ venv_python_interpreter }}"
 
-    temp_dir: /tmp/helmfile/{{ release }}
-    values_file: "{{ temp_dir }}/values.yaml"
+    extras_chart:
+      repository:
+        # https://github.com/bedag/helm-charts/tree/master/charts/raw
+        name: bedag
+        url: https://bedag.github.io/helm-charts
+      dependency:
+        chart: bedag/raw
+        version: "2.0.2"
+        # intentionally use unique name to avoid
+        # possible conflict with another subchart
+        alias: exxtraas
+
+    chart_repo: >-
+      {{ repo_name ~'/' if repo_name is defined and
+                           repo_url  is defined else '' }}
+    # if chart_ref is oci:// URL, use basename as chart name
+    chart_name: "{{ chart_ref | ansible.builtin.basename }}"
+
+    temp_dir: /tmp/helmfile/{{ tmpdir_name | default(chart_name) }}
+    values_file: "{{   temp_dir }}/values.yaml"
     helmfile_file: "{{ temp_dir }}/helmfile.yaml"
 
-    # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/flatten_filter.html
-    extras_: "{{ extras  | default([]) | flatten(1) }}"
-    objects: "{{ extras_ | select('mapping') }}"
+    post_renderer: "{{ temp_dir }}/post-renderer"
+    post_renderers: "{{ patches.post_renderers | default([]) | flatten }}"
+
+    # list item could be dict or list of dicts, or string, in
+    # which case it's parsed as possibly empty multi-doc YAML
+    merge_patches: |
+      {% set  patches_ = [] %}
+      {% for  patch in patches.merge_patches | default([]) %}
+      {%   if patch is string %}
+      {#     https://docs.ansible.com/ansible/latest/collections/ansible/builtin/from_yaml_all_filter.html #}
+      {%     set _ = patches_.append(patch | from_yaml_all) %}
+      {%   else %}
+      {%     set _ = patches_.append(patch) %}
+      {%   endif %}
+      {% endfor  %}
+      {{ patches_ | flatten(1) }}
+
+    # list item could be dict or list of dicts, or string or
+    # list of strings, in which case it's parsed as possibly
+    # empty multi-line strings: each line in 3/4-part format
+    all_extras: "{{ extras | default([]) | flatten(1) }}"
+
+    # gather pre-created resources for adoption
+    # NOTE: by convention, Certificate resource
+    # names are Secret names without the "-tls"
+    # suffix, so strip them if present
     adoptees: |
-      {% set resources = [] %}
-      {% for resource in extras_ | select('string') %}
-      {%   set parts = resource  | regex_replace('\\s+',' ') | split(' ') %}
-      {%   set _     = resources.append({
-              'apiVersion': parts[0],
-              'kind':       parts[1],
-              'name':       parts[2] if parts[1] != 'Certificate' else
-                            parts[2]  | regex_replace('-tls$', '')
-            })   %}
-      {% endfor %}
-      {{ resources }}
+      {% set  adoptees = [] %}
+      {% for  adoptee in all_extras %}
+      {%   if adoptee is string     %}
+      {%     for line in adoptee | split('\n') %}
+      {%       set parts = line  | trim | regex_replace('\\s+',' ') | split(' ') %}
+      {%       if  parts | length >= 3  %}
+      {%         set _ = adoptees.append({
+                   'apiVersion': parts[0],
+                   'kind':       parts[1],
+                   'name':       parts[2] if parts[1] != 'Certificate' else
+                                 parts[2]  |  regex_replace('-tls$',''),
+                   'optional':   parts | length > 3 and parts[3] == '?',
+                 })  %}
+      {%       endif %}
+      {%     endfor  %}
+      {%   endif  %}
+      {% endfor   %}
+      {{ adoptees }}
+
+    objects: "{{ all_extras | select('mapping') | selectattr('apiVersion', 'defined') }}"
+    has_extras: "{{ adoptees is truthy or objects is truthy }}"
+
+    # `helm diff --suppress-output-line-regex`
+    # useful for ignoring status-oriented annotations
+    # added after install that result in diff changes.
+    # "field.cattle.io/" annotations are automatically
+    # ignored because Rancher adds them to Deployments
+    ignore_always:
+      - "annotations:"
+      - field\.cattle\.io/
+      - wave\.pusher\.com/
+    ignore_lines: "{{ (ignore_always + [ignore.lines | default([])]) | flatten | unique }}"
+    ignore_kinds: "{{ [ignore.kinds  | default([])]  | flatten }}" # `helm diff --suppress`
+
+    base_args:
+      - --take-ownership # of pre-created resources
+    diff_args:
+      - --no-hooks # they usually delete themselves
+      - "{{ ['--suppress'] | product(ignore_kinds) | map('join',' ') }}"
   block:
-    - name: Write chart values file
+    - name: Create Helmfile $TMPDIR
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/shell_module.html
       ansible.builtin.shell: |
+        TMPDIR={{ temp_dir }}
+        rm    -rf $TMPDIR
+        mkdir  -p $TMPDIR
+        chmod 700 $TMPDIR
+      changed_when: false
+
+    - name: Write chart values file
+      ansible.builtin.shell: |
         set -o pipefail
-        mkdir -p {{ temp_dir }}
         jq <<'JSON' | yq -pj -oy > {{ values_file }}
         {{ values | to_json(separators=[',',':']) }}
         JSON
       args:
         executable: /bin/bash
+      when: values is defined
       changed_when: false
 
     - name: Create Helmfile manifest
       vars:
+        repos:
+          - "{{ { 'name': repo_name, 'url': repo_url } if chart_repo != '' else [] }}"
+          - "{{    extras_chart.repository             if has_extras       else [] }}"
+        _values:
+          # https://github.com/bedag/helm-charts/tree/master/charts/raw#examples
+          # https://github.com/bedag/helm-charts/tree/master/charts/raw/values.yaml
+          - | # keep extras values at index 0
+            {{ { extras_chart.dependency.alias:
+                   { 'resources': objects }
+               }            if has_extras        else [] }}
+          - "{{ values_file if values is defined else [] }}"
+
         # https://helmfile.readthedocs.io/en/latest#configuration
         helmfile:
           # providing cluster and API versions allows offline
           # rendering of chart templates that use conditional
           # logic on $.Capabilities.{KubeVersion,APIVersions}
           kubeVersion: "{{ kubernetes_version.with_minor }}"
-          apiVersions: "{{ kubernetes_apis.kinds }}"
+          # include both group/version and group/version/kind
+          apiVersions: |
+            {{ (kubernetes_apis.spec.keys() +
+                kubernetes_apis.kinds) | sort }}
 
           # use wrapper script to sanitize chart templates
           # (dedup keys) before running `kustomize build`
           # (see templates/packages/scripts/kustomize.sh)
           kustomizeBinary: /usr/local/bin/kustomize.sh
 
-          repositories:
-            - name: "{{ repo_name }}"
-              url: "{{  repo_url  }}"
-            # https://github.com/bedag/helm-charts/tree/master/charts/raw
-            - name: bedag
-              url: https://bedag.github.io/helm-charts
-
           helmDefaults:
-            historyMax: "{{    history_max  | default(helm_max_history) }}"
-            cleanupOnFail: "{{ atomic       | default(true)  }}"
-            wait: "{{          wait         | default(true)  }}"
-            waitForJobs: "{{   wait_jobs    | default(false) }}"
-            timeout: "{{       wait_timeout | default(600)   }}"
+            args: "{{     base_args | flatten }}"
+            diffArgs: "{{ diff_args | flatten }}"
+
+            # for charts that include "values.schema.json"
+            # and forbid extra values, skip validation so
+            # that .exxtraas (bedag/raw) can be included
+            skipSchemaValidation: true
+
+            historyMax: "{{  history_max  | default(helm_max_history) }}"
+            wait: "{{        wait         | default(true)  }}"
+            waitForJobs: "{{ wait_jobs    | default(false) }}"
+            timeout: "{{     wait_timeout | default(600)   }}"
+
+          repositories: "{{ repos | flatten }}"
 
           releases:
-            - name: "{{ release }}"
+            - name: "{{      release    }}"
               namespace: "{{ release_ns }}"
-              chart: "{{ repo_name }}/{{ chart_name }}"
-              version: "{{ chart_ver }}"
-
-              # https://helmfile.readthedocs.io/en/latest/advanced-features#adhoc-kustomization-of-helm-charts
-              strategicMergePatches: "{{ patches.merge_patches | default([]) | flatten(1) }}"
-              jsonPatches: "{{           patches.json_patches  | default([]) | flatten(1) }}"
-              transformers: "{{          patches.transformers  | default([]) | flatten(1) }}"
+              chart: "{{   chart_repo ~ chart_ref   }}"
+              version: "{{ chart_ver  | default('') }}"
 
               # https://helmfile.readthedocs.io/en/latest/advanced-features#adding-dependencies-without-forking-the-chart
-              dependencies:
-                - chart: bedag/raw
-                  version: 2.0.2
-                  alias: extras
+              dependencies: "{{ [extras_chart.dependency] if has_extras else [] }}"
+              values: "{{ _values | flatten(1) }}"
 
-              values:
-                - "{{ values_file }}"
-                # https://github.com/bedag/helm-charts/tree/master/charts/raw#examples
-                # https://github.com/bedag/helm-charts/tree/master/charts/raw/values.yaml
-                - extras: # subchart alias
-                    resources: "{{ objects }}"
-                    # adoptees: "{{ adoptees }}"
-                    # templates:
-                    #   # this doesn't work because Helmfile invokes `helm template`
-                    #   # to check for changes before applying, but lookup function
-                    #   # always returns nil during `helm template` (cluster access
-                    #   # not allowed)
-                    #   - |-
-                    #     {% raw -%}
-                    #     {{- range $_, $r := .Values.adoptees }}
-                    #     {{- $ns    := $.Release.Namespace    }}
-                    #     {{- $api   := $r.apiVersion          }}
-                    #     {{- $api_  := regexSplit "/" $api -1 }}
-                    #     {{- if gt (len $api_) 1 }}
-                    #     {{-   $api_ = printf ".%s.%s" (index $api_ 1)
-                    #                                   (index $api_ 0) }}
-                    #     {{- else }}
-                    #     {{-   $api_ = "" }}
-                    #     {{- end }}
-                    #     {{- $kind  := $r.kind }}
-                    #     {{- $name  := $r.name }}
-                    #     {{- $obj   := lookup $api $kind $ns $name }}
-                    #     {{- if not $obj }}
-                    #     {{-   fail (printf "Resource not found: %s%s/%s in %s namespace"
-                    #                   (lower $kind) $api_ $name $ns) }}
-                    #     {{- end }}
-                    #     {{- $meta := index $obj  "metadata"    }}
-                    #     {{- $anno := index $meta "annotations" }}
-                    #     {{- $_    := unset $anno "kubectl.kubernetes.io/last-applied-configuration" }}
-                    #     {{- $_    := unset $meta "creationTimestamp" }}
-                    #     {{- $_    := unset $meta "generation"        }}
-                    #     {{- $_    := unset $meta "managedFields"     }}
-                    #     {{- $_    := unset $meta "resourceVersion"   }}
-                    #     {{- $_    := unset $meta "uid"    }}
-                    #     {{- $_    := unset $obj  "status" }}
-                    #     ---
-                    #     # Adopt existing {{ $kind }}/{{ $name }}
-                    #     {{ $obj | toYaml }}
-                    #     {{- end }}
-                    #     {%- endraw %}
+              # https://helmfile.readthedocs.io/en/latest/advanced-features#adhoc-kustomization-of-helm-charts
+              strategicMergePatches: "{{ merge_patches }}"
+              jsonPatches: "{{    patches.json_patches | default([]) | flatten(1) }}"
+              transformers: "{{   patches.transformers | default([]) | flatten(1) }}"
+              postRenderer: "{{ post_renderer if post_renderers is truthy else '' }}"
+
+              # don't validate against
+              # the server during diff
+              disableValidation: true
+              suppressOutputLineRegex: "{{ ignore_lines }}"
+              # restore to last good state if failed
+              atomic: "{{ atomic | default(true) }}"
+
       ansible.builtin.shell: |
         set -o pipefail
         jq <<'JSON' | yq -pj -oy > {{ helmfile_file }}
@@ -171,7 +239,7 @@
         executable: /bin/bash
       changed_when: false
 
-    - name: Insert adopted resources
+    - name: Attach pre-created resources
       ansible.builtin.shell: |
         # run Bash and source /etc/profile.d
         # scripts so that kubectl is in PATH
@@ -191,23 +259,28 @@
               | del(.uid)
               )'
         }
-        while read name; do
-          jq '.releases[0].values[1].extras.resources += [input]' \
-            <(yq -oj {{ helmfile_file }}) \
-            <(kubectl get $name -n {{ release_ns }} -o json | canonicalize) \
-            | yq -pj | sponge {{ helmfile_file }}
+        while read name optional; do
+          json="$(kubectl get $name -n {{ release_ns }} -o json 2>/dev/null || true)"
+
+          if [ ! "$json" ]; then
+            [ "$optional" ] && continue
+            echo >&2 "Resource not found: $name in {{ release_ns }} namespace"
+            exit 1
+          fi
+
+          jq '.releases[0].values[0].{{ extras_chart.dependency.alias }}.resources += [input]' \
+            <(yq -oj {{ helmfile_file }}) <(canonicalize <<< "$json") \
+            | yq -pj -oy | sponge {{ helmfile_file }}
         done < <(
-          # convert JSON array of {apiVersion,kind,name}
-          # objects into array of "kind[.apiGroup]/name"
+
+          # convert JSON array of {apiVersion,kind,name,optional}
+          # objects into separate lines: kind[.apiGroup]/name [1]
           cat <<'JSON' | jq -r '.[] |
-            "\(
-               .kind | ascii_downcase
-            )\(
+            "\(.kind | ascii_downcase)\(
               (.apiVersion | split("/")) as $api |
               if ($api | length) > 1 then ".\($api[1]).\($api[0])" else "" end
-            )/\(
-               .name
-            )"'
+            )/\(.name
+            ) \(if .optional then 1 else "" end)"'
         {{ adoptees | to_json(separators=[',',':']) }}
         JSON
         )
@@ -215,18 +288,83 @@
       when: adoptees is truthy
       changed_when: false
 
+    - name: Write post-renderer scripts
+      ansible.builtin.shell: |
+        set -eo pipefail
+
+        {% set renderers = [] %}
+        {% for script in post_renderers %}
+        {%   set renderer = post_renderer ~ loop.index %}
+        {%   set _        = renderers.append(renderer) %}
+        cat <<'_SCRIPT_' > {{ renderer }}
+        {{ script | trim }}
+        _SCRIPT_
+
+        {% endfor %}
+        cat <<'_SCRIPT_' > {{ post_renderer }}
+        #!/usr/bin/env bash
+        set -eo pipefail
+
+        {{ renderers | join(' | \\\n') }}
+        _SCRIPT_
+
+        chmod 700 {{ post_renderer }}*
+      args:
+        executable: /bin/bash
+      when: post_renderers is truthy
+      changed_when: false
+
     - name: Install {{ chart_name }} Helm chart
-      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/command_module.html
-      ansible.builtin.command:
+      ansible.builtin.shell: |
+        set -o pipefail
+
+        # properly quote boolean strings like on/off/yes/no
+        # because Helm, unlike yq, adheres to YAML 1.1 spec,
+        # and will parse these as booleans if left unquoted
+        quote_bool_strs() {
+          yq -i '(.. | select( tag == "!!str" and
+            (downcase == "on" or downcase == "off" or
+             downcase == "no" or downcase == "yes")
+            ))  |= (. style = "double")' "$1"
+        }
+        [ -f values.yaml ] && \
+          quote_bool_strs values.yaml
+        quote_bool_strs helmfile.yaml
+
+        # create "chartify*" temp dirs
+        # under this Helmfile temp dir
+        export TMPDIR=$(pwd)
+
+        # must perform manual cleanup due to Helmfile bug:
+        # https://github.com/helmfile/helmfile/issues/1799
+        clean_up() {
+          rm -rf $TMPDIR/chartify*
+        }
+        clean_up
+        chmod 600 $TMPDIR/*.yaml
+
+        # return exit code 2 if changes were
+        # detected *AND* synced successfully
+        helmfile --kubeconfig={{ kubeconfig }} \
+           apply --detailed-exitcode
+
+        rc=$?
+        [[ $rc -eq 0 || $rc -eq 2 ]] && {
+          # just to keep the repo list tidy...
+          yq -i '.repositories |= sort_by(.name)' \
+            $HOME/.config/helm/repositories.yaml
+          clean_up
+        }
+        exit $rc
+      args:
+        executable: /bin/bash
         chdir: "{{ temp_dir }}"
-        argv:
-          - helmfile
-          - --kubeconfig={{ kubeconfig }}
-          - apply
-          # return exit code 2 if changes were
-          # detected AND applied successfully
-          - --detailed-exitcode
       register: helmfile_apply
-      changed_when: helmfile_apply.rc == 2
+      changed_when:
+        - helmfile_apply.rc == 2
+        # if all diffs suppressed, message would
+        # be "has changed, but diff is empty..."
+        - >-
+          helmfile_apply.stdout_lines |
+          select('search', '^[^ ]{2,}.+has.+(added|removed|changed):$') is truthy
       failed_when: helmfile_apply.rc not in [0,2]
-  any_errors_fatal: true

@@ -1,4 +1,5 @@
 # postgresql_pass: {vault.yml}
+#  pgpool_sr_pass: {vault.yml}
 #     pgpool_pass: {vault.yml}
 
 # in order to log in using client TLS cert, generate
@@ -37,7 +38,7 @@ postgresql_secrets:
   # namespace--it's created in other namespaces
   # to enable installation of custom extensions
   # that require superuser privileges
-  superuser: database-superuser
+  superuser: database-superuser-tls
 
 # https://github.com/bitnami/charts/tree/main/bitnami/postgresql-ha
 postgresql_chart_version: "16.2.2"
@@ -48,12 +49,15 @@ postgresql_chart_values:
   nameOverride: "{{ postgresql_release_name }}"
 
   global:
-    defaultStorageClass: "{{ storage_classes['default'] }}"
+    # provide explicit passwords to prevent
+    # random generation during Helm upgrade
     postgresql: &global_postgresql
       password: "{{ postgresql_pass }}" # user "postgres"
       repmgrPassword: "{{ postgresql_pass }}" # user "repmgr"
     pgpool: &global_pgpool
       adminPassword: "{{ postgresql_pass }}" # user "admin"
+      srCheckPassword: "{{ pgpool_sr_pass }}" # user "sr_check_user"
+    defaultStorageClass: "{{ storage_classes['default'] }}"
 
   persistence:
     size: 5Gi

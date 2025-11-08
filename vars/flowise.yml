@@ -324,6 +324,9 @@ flowise_chart_values:
       kind: Job
       metadata:
         name: "{{ flowise_release_name }}-db-init"
+        annotations:
+          helm.sh/hook: pre-install
+          helm.sh/hook-delete-policy: before-hook-creation
       spec:
         ttlSecondsAfterFinished: 120
         template:

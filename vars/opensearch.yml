@@ -341,13 +341,12 @@ opensearch_chart_values:
   startupProbe: {}
 
   service:
-    labels:
+    labelsHeadless:
       # add labels to the regular service to differentiate it from the headless service
       # so that the ServiceMonitor selector can target just one service instead of both;
       # however, the chart currently offers no way to add extra ServiceMonitor selector
       # labels: https://github.com/opensearch-project/helm-charts/issues/673
       prometheus.io/scrape: "true"
-    labelsHeadless: {}
 
   ingress:
     enabled: true
@@ -422,8 +421,8 @@ opensearch_chart_values:
     tlsConfig: "{{ metric_scraper_tls_config }}"
     basicAuth:
       enabled: true
-      # credentials secret is expected to
-      # have "username" & "password" keys
+      # credentials Secret is expected by the chart
+      # template to contain "username" & "password"
       existingSecret: opensearch-creds-metrics
 
 # https://grafana.com/grafana/dashboards/?search=OpenSearch&dataSource=prometheus
