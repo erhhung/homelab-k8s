@@ -5,7 +5,6 @@
 - name: Install Qdrant on RKE cluster
   tags: install
   hosts: "{{ rke_control_plane_host }}"
-  gather_facts: false
   vars_files:
     - vars/kubernetes.yml
     - vars/storage.yml
@@ -17,7 +16,6 @@
     kubeconfig: "{{ rke_kubeconfig }}"
     secret_ns: "{{ qdrant_namespace }}"
     create_ns: false
-    release: "{{ qdrant_release_name }}"
   tasks:
     # cert also used by Qdrant ingress
     - name: Create Qdrant node secret
@@ -38,7 +36,7 @@
           - |
             {% set sans = [] %}
             {% for i in range(0, qdrant_chart_values.replicaCount) %}
-            {%   set _ = sans.append(release ~'-'~ i ~'.qdrant-headless') %}
+            {%   set _ = sans.append(qdrant_release_name ~'-'~ i ~'.qdrant-headless') %}
             {% endfor %}
             {{ sans   }}
         sans: "{{ sans_ | flatten }}"
@@ -49,38 +47,38 @@
       ansible.builtin.include_tasks: tasks/monitoring/scraper.yml
 
     - name: Install Qdrant Helm chart
-      # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/helm_module.html
-      kubernetes.core.helm:
-        kubeconfig: "{{ kubeconfig }}"
-        chart_repo_url: https://qdrant.github.io/qdrant-helm
+      vars:
+        repo_name: qdrant
+        repo_url: https://qdrant.github.io/qdrant-helm
         chart_ref: qdrant
-        chart_version: "{{ qdrant_chart_version }}"
-        release_name: "{{ qdrant_release_name }}"
-        release_namespace: "{{ qdrant_namespace }}"
-        release_values: "{{ qdrant_chart_values }}"
-        history_max: "{{ helm_max_history }}"
-        atomic: true
-        wait: true
-        wait_timeout: 10m0s # requires wait=true
-      # normal OrderedReady startup takes ~5 minutes, but
-      # it can be longer if there's a snapshot to restore
-      timeout: 900
+        chart_ver: "{{ qdrant_chart_version }}"
+        release: "{{ qdrant_release_name }}"
+        release_ns: "{{ qdrant_namespace }}"
+        values: "{{ qdrant_chart_values }}"
 
-    # Helm chart does not currently allow
-    # providing .serviceMonitor.tlsConfig
-    - name: Patch Qdrant ServiceMonitor
-      # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_json_patch_module.html
-      kubernetes.core.k8s_json_patch:
-        kubeconfig: "{{ kubeconfig }}"
-        api_version: monitoring.coreos.com/v1
-        kind: ServiceMonitor
-        name: "{{ qdrant_release_name }}"
-        namespace: "{{ qdrant_namespace }}"
-        patch:
-          - op: replace
-            path: /spec/endpoints/0/scheme
-            value: https
-          - op: add
-            path: /spec/endpoints/0/tlsConfig
-            value: "{{ metric_scraper_tls_config }}"
-  any_errors_fatal: true
+        patches:
+          json_patches:
+            # Helm chart doesn't currently allow
+            # providing serviceMonitor.tlsConfig
+            - target:
+                group: monitoring.coreos.com
+                version: v1
+                kind: ServiceMonitor
+                name: "{{ qdrant_release_name }}"
+              patch:
+                - op: replace
+                  path: /spec/endpoints/0/scheme
+                  value: https
+                - op: add
+                  path: /spec/endpoints/0/tlsConfig
+                  value: "{{ metric_scraper_tls_config }}"
+
+        extras: # adopt extra resources into Helm release
+          - cert-manager.io/v1 Certificate {{ qdrant_secrets['node-tls']    }}
+          - cert-manager.io/v1 Certificate {{ monitoring_secrets['scraper'] }}
+
+        # normal OrderedReady startup takes ~5 minutes, but
+        # it can be longer if there's a snapshot to restore
+        wait_timeout: 600
+        task_timeout: 900
+      ansible.builtin.include_tasks: tasks/helm/helmfile.yml

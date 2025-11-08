@@ -38,6 +38,9 @@ apiVersion: batch/v1
 kind: Job
 metadata:
   name: {{ vault_release_name }}-bootstrap
+  annotations:
+    helm.sh/hook: post-install, post-upgrade
+    helm.sh/hook-delete-policy: before-hook-creation
 spec:
   template:
     spec:
@@ -55,6 +58,11 @@ spec:
 
               # https://developer.hashicorp.com/vault/api-docs/system/health
               # returns {initialized,sealed,...}
+              #  status 200: initialized, unsealed, and active
+              #         429: unsealed and standby
+              #         474: standby but cannot connect to active
+              #         501: not initialized
+              #         503: sealed
               sys_health() {
                 curl $CURL_OPTS $API_BASE/sys/health | jq
               }
@@ -115,15 +123,17 @@ spec:
                     "rootToken":  (.root_token          | @base64)
                   }
                 }' >> /tmp/secret.yaml
-                kubectl apply -f /tmp/secret.yaml -n {{ vault_namespace }}
+                # suppress warning about missing last-applied-configuration annotation
+                kubectl apply -f /tmp/secret.yaml -n {{ vault_namespace }} 2> /dev/null
               fi
               printf "%s Vault is initialized. ✓\n" $(timestamp)
 
               # returns keys in base64 format, one per line
               get_unseal_keys() {
+                # "W10=" is base64-encoding of "[]"
                 kubectl get secret {{ vault_secrets['unseal'] }} \
                                 -n {{ vault_namespace }} -o yaml |
-                   yq '.data.unsealKeys | @base64d | @yamld | .[]'
+                   yq '.data.unsealKeys // "W10=" | @base64d | @yamld | .[]'
               }
 
               # https://developer.hashicorp.com/vault/api-docs/system/unseal

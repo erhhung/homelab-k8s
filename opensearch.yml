@@ -3,9 +3,8 @@
 ---
 # https://docs.opensearch.org/docs/latest/install-and-configure/install-opensearch/helm
 - name: Install OpenSearch on RKE cluster
-  tags: opensearch
+  tags: install
   hosts: "{{ rke_control_plane_host }}"
-  gather_facts: false
   vars_files: &vars_files
     - vars/kubernetes.yml
     - vars/metallb.yml
@@ -13,13 +12,12 @@
     - vars/monitoring.yml
     - vars/opensearch.yml
     - vars/kibana.yml
-  vars:
+  vars: &vars
     # required kubernetes>=24.2 package only in user virtualenv
     ansible_python_interpreter: "{{ venv_python_interpreter }}"
     kubeconfig: "{{ rke_kubeconfig }}"
     secret_ns: "{{ opensearch_namespace }}"
     create_ns: false
-    release: "{{ opensearch_release_name }}"
   pre_tasks:
     - name: Hash OpenSearch user passwords
       vars:
@@ -78,17 +76,21 @@
     - name: Create OpenSearch passwords secret
       vars:
         secret_name: "{{ opensearch_secrets['passwords'] }}"
-        secret_data:
-          admin: "{{ opensearch_admin_pass }}"
-          kibana: "{{ kibana_os_pass }}"
+        # metrics user password is stored in separate Secret
+        # https://docs.ansible.com/ansible/latest/collections/ansible/utils/remove_keys_filter.html
+        secret_data: "{{ opensearch_passwords |
+          ansible.utils.remove_keys(target=['metrics']) }}"
       ansible.builtin.include_tasks: tasks/k8s/secrets/generic.yml
 
     - name: Create OpenSearch credentials secret
       vars:
         users:
+          # opensearch-creds-metrics is used by
+          # OpenSearch serviceMonitor.basicAuth
           - metrics
         secret_name: opensearch-creds-{{ item }}
         secret_data:
+          # these keys are expected by chart template
           username: "{{ item }}"
           password: "{{ opensearch_passwords[item] }}"
       ansible.builtin.include_tasks: tasks/k8s/secrets/generic.yml
@@ -105,41 +107,47 @@
       ansible.builtin.include_tasks: tasks/monitoring/scraper.yml
 
     - name: Install OpenSearch Helm chart
-      # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/helm_module.html
-      kubernetes.core.helm:
-        kubeconfig: "{{ kubeconfig }}"
-        chart_repo_url: https://opensearch-project.github.io/helm-charts
+      vars:
+        repo_name: opensearch
+        repo_url: https://opensearch-project.github.io/helm-charts
         chart_ref: opensearch
-        chart_version: "{{ opensearch_chart_version }}"
-        release_name: "{{ opensearch_release_name }}"
-        release_namespace: "{{ opensearch_namespace }}"
-        release_values: "{{ opensearch_chart_values }}"
-        history_max: "{{ helm_max_history }}"
-        atomic: true
-        wait: true
-        wait_timeout: 10m0s # requires wait=true
-      # it can take a long time to pull container images
-      # and provision storage and start each StatefulSet
-      # pod sequentially due to the OrderedReady policy
-      timeout: 1800
+        chart_ver: "{{ opensearch_chart_version }}"
+        release: "{{ opensearch_release_name }}"
+        release_ns: "{{ opensearch_namespace }}"
+        values: "{{ opensearch_chart_values }}"
 
-    # https://github.com/opensearch-project/helm-charts/issues/673
-    # https://github.com/opensearch-project/helm-charts/pull/674
-    - name: Patch OpenSearch ServiceMonitor
-      # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_module.html
-      kubernetes.core.k8s:
-        kubeconfig: "{{ kubeconfig }}"
-        api_version: monitoring.coreos.com/v1
-        kind: ServiceMonitor
-        name: "{{ opensearch_master_service }}-service-monitor"
-        namespace: "{{ opensearch_namespace }}"
-        definition:
-          spec:
-            selector:
-              matchLabels:
-                prometheus.io/scrape: "true"
-        state: patched
-      when: prometheus_crds_installed | default(false)
+        patches:
+          merge_patches:
+            # https://github.com/opensearch-project/helm-charts/issues/673
+            # https://github.com/opensearch-project/helm-charts/pull/674
+            # "prometheus.io/scrape" label is added on headless service
+            - |
+              {% if prometheus_crds_installed %}
+              apiVersion: monitoring.coreos.com/v1
+              kind: ServiceMonitor
+              metadata:
+                name: {{ opensearch_master_service }}-service-monitor
+                namespace: {{ opensearch_namespace }}
+              spec:
+                selector:
+                  matchLabels:
+                    prometheus.io/scrape: "true"
+              {% endif %}
+
+        extras: # adopt extra resources into Helm release
+          - cert-manager.io/v1 Certificate {{ opensearch_secrets['node-tls']  }}
+          - cert-manager.io/v1 Certificate {{ opensearch_secrets['admin-tls'] }}
+          - cert-manager.io/v1 Certificate {{ monitoring_secrets['scraper']   }}
+          - v1 Secret {{ opensearch_secrets['passwords'] }}
+          - v1 Secret {{ opensearch_secrets['security']  }}
+          - v1 Secret opensearch-creds-metrics
+
+        # it can take a long time to pull container images
+        # and provision storage and start each StatefulSet
+        # pod sequentially due to the OrderedReady policy
+        wait_timeout: 600
+        task_timeout: 1800
+      ansible.builtin.include_tasks: tasks/helm/helmfile.yml
 
     - name: Initialize OpenSearch Security?
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/uri_module.html
@@ -160,7 +168,6 @@
       # a handler cannot have block of subtasks, so the
       # tasks have been refactored into a separate file
       ansible.builtin.include_tasks: tasks/opensearch/security.yml
-  any_errors_fatal: true
 
 # https://docs.opensearch.org/docs/latest/install-and-configure/install-dashboards/helm
 - name: Install OpenSearch Dashboards
@@ -168,10 +175,8 @@
     - kibana
     - dashboards
   hosts: "{{ rke_control_plane_host }}"
-  gather_facts: false
   vars_files: *vars_files
-  vars:
-    kubeconfig: "{{ rke_kubeconfig }}"
+  vars: *vars
   pre_tasks:
     - name: Is the monitoring stack ready?
       ansible.builtin.include_tasks: tasks/monitoring/stackready.yml
@@ -180,29 +185,24 @@
     - name: Create Dashboards ingress secret
       vars:
         secret_name: "{{ kibana_secrets['ingress'] }}"
-        secret_ns: "{{ kibana_namespace }}"
-        create_ns: false
-        release: "{{ dashboards_release_name }}"
         cert_name: dashboards-ingress
         sans: "{{ [kibana_fqdn] }}"
       ansible.builtin.include_tasks: tasks/k8s/secrets/tls.step.yml
 
     - name: Install Dashboards Helm chart
       vars:
-        # required kubernetes>=24.2 package only in user virtualenv
-        ansible_python_interpreter: "{{ venv_python_interpreter }}"
-      kubernetes.core.helm:
-        kubeconfig: "{{ kubeconfig }}"
-        chart_repo_url: https://opensearch-project.github.io/helm-charts
+        repo_name: opensearch
+        repo_url: https://opensearch-project.github.io/helm-charts
         chart_ref: opensearch-dashboards
-        chart_version: "{{ dashboards_chart_version }}"
-        release_name: "{{ dashboards_release_name }}"
-        release_namespace: "{{ kibana_namespace }}"
-        release_values: "{{ dashboards_chart_values }}"
-        history_max: "{{ helm_max_history }}"
-        atomic: true
+        chart_ver: "{{ dashboards_chart_version }}"
+        release: "{{ dashboards_release_name }}"
+        release_ns: "{{ kibana_namespace }}"
+        values: "{{ dashboards_chart_values }}"
         wait: false
-      timeout: 300
+
+        extras: # adopt extra resources into Helm release
+          - cert-manager.io/v1 Certificate {{ kibana_secrets['ingress'] }}
+      ansible.builtin.include_tasks: tasks/helm/helmfile.yml
 
     - name: Add Wave annotations to Deployment
       vars:
@@ -233,4 +233,3 @@
         dashboards: "{{ opensearch_grafana_dashboards }}"
       ansible.builtin.include_tasks: tasks/grafana/dashboards.yml
       when: grafana_api_server_online | default(true)
-  any_errors_fatal: true

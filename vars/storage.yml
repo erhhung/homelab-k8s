@@ -103,6 +103,18 @@ longhorn_chart_values:
         type: bak
         backupMode: full
 
+# https://longhorn.io/docs/latest/snapshots-and-backups/scheduling-backups-and-snapshots#set-up-recurring-jobs
+longhorn_recurring_jobs:
+  - name: delete-snapshots
+    spec:
+      cron: 0 10 * * * # in UTC time; run every day at 2am Pacific time
+      task: snapshot-delete
+      groups: ["default"]
+      retain: 7
+      concurrency: 2
+
+# ==================================== NFS Provisioners ====================================
+
 nfs_provisioner_namespace: nfs-provisioner
 
 # https://github.com/kubernetes-sigs/nfs-subdir-external-provisioner/tree/master/charts/nfs-subdir-external-provisioner
@@ -142,6 +154,8 @@ nfs_provisioners:
 
 # https://computingforgeeks.com/configure-nfs-as-kubernetes-persistent-volume-storage
 nfs_mount_opts: rw,nosuid,nodev,noexec,hard,timeo=600,retrans=3,rsize=32768,wsize=32768
+
+# =================================== Grafana Dashboards ===================================
 
 # https://grafana.com/grafana/dashboards/?search=Longhorn&dataSource=prometheus
 storage_grafana_dashboards:

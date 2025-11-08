@@ -173,13 +173,18 @@ openwebui_extras:
   - "{{ openwebui_pvcs }}"
 
 # https://github.com/open-webui/helm-charts/tree/main/charts/open-webui
-openwebui_chart_version: "8.7.0"
+openwebui_chart_repo_url: https://helm.openwebui.com
+openwebui_chart_version: "8.14.0"
 # openwebui_app_version: {fact}
 openwebui_release_name: open-webui
 
 openwebui_image:
   pullPolicy: IfNotPresent
   repository: ghcr.io/open-webui/open-webui
+  # this tag is obtained from the chart and should be the same as
+  # the default value (`{{ .tag | default $.Chart.AppVersion }}`).
+  # it's needed in Ansible for the image in extra init containers,
+  # which don't support further templating
   tag: "{{ openwebui_app_version }}"
 
   # use our own image with Redis Cluster support

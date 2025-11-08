@@ -3,9 +3,8 @@
 # https://longhorn.io/docs/latest/advanced-resources/system-backup-restore/restore-to-a-new-cluster-using-velero
 ---
 - name: Install Velero backup & restore
-  tags: velero
+  tags: install
   hosts: "{{ rke_control_plane_host }}"
-  gather_facts: false
   vars_files: &vars_files
     - vars/kubernetes.yml
     - vars/monitoring.yml
@@ -17,7 +16,6 @@
     kubeconfig: "{{ rke_kubeconfig }}"
     secret_ns: "{{ velero_ui_namespace }}"
     create_ns: false
-    release: "{{ velero_ui_release_name }}"
   pre_tasks:
     - name: Get CA certificates from PKI
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
@@ -45,39 +43,35 @@
       ansible.builtin.include_tasks: tasks/k8s/secrets/generic.yml
 
     - name: Install Velero Helm chart
-      # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/helm_module.html
-      kubernetes.core.helm:
-        kubeconfig: "{{ kubeconfig }}"
-        chart_repo_url: https://vmware-tanzu.github.io/helm-charts
+      vars:
+        repo_name: vmware-tanzu
+        repo_url: https://vmware-tanzu.github.io/helm-charts
         chart_ref: velero
-        chart_version: "{{ velero_chart_version }}"
-        release_name: "{{ velero_release_name }}"
-        release_namespace: "{{ velero_namespace }}"
-        release_values: "{{ velero_chart_values }}"
-        history_max: "{{ helm_max_history }}"
-        atomic: true
-        wait: true
-      timeout: 300
+        chart_ver: "{{ velero_chart_version }}"
+        release: "{{ velero_release_name }}"
+        release_ns: "{{ velero_namespace }}"
+        values: "{{ velero_chart_values }}"
+      ansible.builtin.include_tasks: tasks/helm/helmfile.yml
 
     - name: Install Velero UI Helm chart
-      kubernetes.core.helm:
-        kubeconfig: "{{ kubeconfig }}"
-        chart_repo_url: https://helm.otwld.com
+      vars:
+        repo_name: otwld
+        repo_url: https://helm.otwld.com
         chart_ref: velero-ui
-        chart_version: "{{ velero_ui_chart_version }}"
-        release_name: "{{ velero_ui_release_name }}"
-        release_namespace: "{{ velero_ui_namespace }}"
-        release_values: "{{ velero_ui_chart_values }}"
-        history_max: "{{ helm_max_history }}"
-        atomic: true
-        wait: true
-  any_errors_fatal: true
+        chart_ver: "{{ velero_ui_chart_version }}"
+        release: "{{ velero_ui_release_name }}"
+        release_ns: "{{ velero_ui_namespace }}"
+        values: "{{ velero_ui_chart_values }}"
+
+        extras: # adopt extra resources into Helm release
+          - cert-manager.io/v1 Certificate {{ velero_secrets['ingress'] }}
+          - v1 Secret {{ velero_secrets['creds'] }}
+      ansible.builtin.include_tasks: tasks/helm/helmfile.yml
 
 # https://velero.io/docs/latest/basic-install#install-the-cli
 - name: Install Velero client
   tags: cli
   hosts: rke_cluster
-  gather_facts: false
   become: true
   tasks:
     - name: Install velero CLI tool
@@ -103,12 +97,10 @@
       register: install_cli
       changed_when: install_cli.rc == 0
       failed_when: install_cli.rc not in [0,9]
-  any_errors_fatal: true
 
 - name: Configure Velero dashboards
   tags: dashboards
   hosts: "{{ rke_control_plane_host }}"
-  gather_facts: false
   vars_files: *vars_files
   tasks:
     - name: Import Grafana dashboards
@@ -116,4 +108,3 @@
         dashboards: "{{ velero_grafana_dashboards }}"
       ansible.builtin.include_tasks: tasks/grafana/dashboards.yml
       when: grafana_api_server_online | default(true)
-  any_errors_fatal: true

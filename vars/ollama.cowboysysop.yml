@@ -1,5 +1,5 @@
 # https://github.com/cowboysysop/charts/tree/master/charts/ollama
-ollama_chart_repo: https://cowboysysop.github.io/charts
+ollama_chart_repo_url: https://cowboysysop.github.io/charts
 ollama_chart_version: "2.1.2"
 
 # https://github.com/cowboysysop/charts/tree/master/charts/ollama/values.yaml
@@ -105,9 +105,9 @@ ollama_chart_values:
       kind: Job
       metadata:
         name: {{ ollama_release_name }}-models
-        labels:
-          app.kubernetes.io/name: ollama
-          app.kubernetes.io/instance: {{ ollama_release_name }}
+        annotations:
+          helm.sh/hook: post-install
+          helm.sh/hook-delete-policy: before-hook-creation
       spec:
         template:
           spec:

@@ -10,11 +10,10 @@
 # https://kubernetes-sigs.github.io/node-feature-discovery
 # https://kubernetes-sigs.github.io/node-feature-discovery/stable/deployment/helm.html
 - name: Install Node Feature Discovery
-  tags: nfd
+  tags: install
   hosts: &hosts
     - "{{ k3s_control_plane_host }}"
     - "{{ rke_control_plane_host }}"
-  gather_facts: false
   vars_files: &vars_files
     - vars/kubernetes.yml
     - vars/monitoring.yml
@@ -30,26 +29,18 @@
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
       ansible.builtin.include_tasks: tasks/monitoring/stackready.yml
       when: monitoring_stack_ready is not defined
+
+    - name: Does NodeFeatureRule CRD exist?
+      # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_info_module.html
+      kubernetes.core.k8s_info:
+        kubeconfig: "{{ kubeconfig }}"
+        api_version: apiextensions.k8s.io/v1
+        kind: CustomResourceDefinition
+        # name must be in plural form!
+        name: nodefeaturerules.nfd.k8s-sigs.io
+      register: crd_info
   tasks:
     - name: Install Node Feature Discovery Helm chart
-      # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/helm_module.html
-      kubernetes.core.helm:
-        kubeconfig: "{{ kubeconfig }}"
-        chart_repo_url: https://kubernetes-sigs.github.io/node-feature-discovery/charts
-        chart_ref: node-feature-discovery
-        chart_version: "{{ nfd_chart_version }}"
-        release_name: "{{ nfd_release_name }}"
-        release_namespace: "{{ nfd_namespace }}"
-        create_namespace: true
-        release_values: "{{ nfd_chart_values }}"
-        history_max: "{{ helm_max_history }}"
-        atomic: true
-        wait: true
-
-    # this step is what would add vendor-specific lables,
-    # like "intel.feature.node.kubernetes.io/gpu=true" or
-    # "feature.node.kubernetes.io/pci-10de.present=true"
-    - name: Deploy additional node feature rules
       vars:
         rules: |
           {% set rules = [] %}
@@ -66,70 +57,93 @@
           {%   endif %}
           {% endfor  %}
           {{ rules   }}
-      # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_module.html
-      kubernetes.core.k8s:
-        kubeconfig: "{{ kubeconfig   }}"
-        definition: "{{ item.def     }}"
-        namespace: "{{ nfd_namespace }}"
-        state: present
-        apply: true
-      loop: "{{ rules }}"
-      loop_control:
-        label: "{{ item.name }}"
-  any_errors_fatal: true
+      block:
+        - name: Install Node Feature Discovery Helm chart
+          vars:
+            repo_name: nfd
+            repo_url: https://kubernetes-sigs.github.io/node-feature-discovery/charts
+            chart_ref: node-feature-discovery
+            chart_ver: "{{ nfd_chart_version }}"
+            release: "{{ nfd_release_name }}"
+            release_ns: "{{ nfd_namespace }}"
+            values: "{{ nfd_chart_values }}"
+
+            extras: # adopt extra resources into Helm release
+              - "{{ rules | map(attribute='def') if crd_info.resources is truthy else [] }}"
+          ansible.builtin.include_tasks: tasks/helm/helmfile.yml
+
+        # this step is what would add vendor-specific labels,
+        # like "intel.feature.node.kubernetes.io/gpu=true" or
+        # "feature.node.kubernetes.io/pci-10de.present=true"
+        - name: Deploy additional node feature rules
+          # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_module.html
+          kubernetes.core.k8s:
+            kubeconfig: "{{ kubeconfig   }}"
+            definition: "{{ item.def     }}"
+            namespace: "{{ nfd_namespace }}"
+            state: present
+            apply: true
+          loop: "{{ rules }}"
+          loop_control:
+            label: "{{ item.name }}"
+          when: crd_info.resources is falsy
 
 # https://intel.github.io/intel-device-plugins-for-kubernetes
 # https://intel.github.io/intel-device-plugins-for-kubernetes/cmd/operator/README.html#installation
 - name: Install Intel Device Plugins
-  tags: intel
+  tags: plugins
   hosts: *hosts
-  gather_facts: false
   vars_files: *vars_files
   vars: *vars
-  tasks:
-    - name: Install Intel Device Plugins Operator Helm chart
-      kubernetes.core.helm:
+  pre_tasks:
+    - name: Does GpuDevicePlugin CRD exist?
+      kubernetes.core.k8s_info:
         kubeconfig: "{{ kubeconfig }}"
-        chart_repo_url: https://intel.github.io/helm-charts
-        chart_ref: intel-device-plugins-operator
-        chart_version: "{{ intel_dp_operator_chart_version }}"
-        release_name: "{{ intel_dp_operator_release_name }}"
-        release_namespace: "{{ intel_device_plugins_namespace }}"
-        create_namespace: true
-        release_values: "{{ intel_dp_operator_chart_values }}"
-        history_max: "{{ helm_max_history }}"
-        # do not wait because probes must be
-        # patched ASAP to pass health checks
-        wait: false
-
-    # default 1s timeout for readiness and liveness
-    # probes are too optimistic for our environment
-    - name: Patch Intel Device Plugins Operator probes
+        api_version: apiextensions.k8s.io/v1
+        kind: CustomResourceDefinition
+        # name must be in plural form!
+        name: gpudeviceplugins.deviceplugin.intel.com
+      register: crd_info
+  tasks:
+    - name: Install Intel Device Plugins Helm chart
       vars:
-        res_kind: Deployment
-        res_name: inteldeviceplugins-controller-manager
-        res_ns: "{{ intel_device_plugins_namespace }}"
-        probes:
-          manager:
-            readinessProbe: &probe
-              timeoutSeconds: 5 # default=1
-            livenessProbe: *probe
-      ansible.builtin.include_tasks: tasks/k8s/probes.yml
-
-    - name: Deploy Intel Device Plugin CRs
+        # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/dict2items_filter.html
+        plugins: "{{ intel_device_plugin_crs | ansible.builtin.dict2items(
+          key_name='type', value_name='def') }}"
       block:
-        - name: Wait for IDP webhook to be ready
+        - name: Install Intel Device Plugins Helm chart
           vars:
-            res_kind: Deployment
-            res_name: inteldeviceplugins-controller-manager
-            res_ns: "{{ intel_device_plugins_namespace }}"
-          ansible.builtin.include_tasks: tasks/k8s/waitready.yml
+            repo_name: intel
+            repo_url: https://intel.github.io/helm-charts
+            chart_ref: intel-device-plugins-operator
+            chart_ver: "{{ intel_dp_operator_chart_version }}"
+            release: "{{ intel_dp_operator_release_name }}"
+            release_ns: "{{ intel_device_plugins_namespace }}"
+            values: "{{ intel_dp_operator_chart_values }}"
+
+            patches:
+              merge_patches:
+                # default 1s timeout for readiness and liveness
+                # probes are too optimistic for our environment
+                - apiVersion: apps/v1
+                  kind: Deployment
+                  metadata:
+                    name: inteldeviceplugins-controller-manager
+                    namespace: "{{ intel_device_plugins_namespace }}"
+                  spec:
+                    template:
+                      spec:
+                        containers:
+                          - name: manager
+                            readinessProbe: &probe
+                              timeoutSeconds: 5
+                            livenessProbe: *probe
+
+            extras: # adopt extra resources into Helm release
+              - "{{ plugins | map(attribute='def') if crd_info.resources is truthy else [] }}"
+          ansible.builtin.include_tasks: tasks/helm/helmfile.yml
 
         - name: Deploy Intel Device Plugin CRs
-          vars:
-            # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/dict2items_filter.html
-            plugins: "{{ intel_device_plugin_crs | ansible.builtin.dict2items(
-              key_name='type', value_name='def') }}"
           kubernetes.core.k8s:
             kubeconfig: "{{ kubeconfig }}"
             definition: "{{ item.def   }}"
@@ -139,4 +153,4 @@
           loop: "{{ plugins }}"
           loop_control:
             label: "{{ item.type }}"
-  any_errors_fatal: true
+          when: crd_info.resources is falsy

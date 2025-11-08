@@ -7,7 +7,6 @@
 - name: Install Open WebUI on RKE cluster
   tags: install
   hosts: "{{ rke_control_plane_host }}"
-  gather_facts: false
   vars_files:
     - vars/kubernetes.yml
     - vars/postgresql.yml
@@ -23,12 +22,13 @@
     kubeconfig: "{{ rke_kubeconfig }}"
     secret_ns: "{{ openwebui_namespace }}"
     create_ns: false
-    release: "{{ openwebui_release_name }}"
-    chart_repo_url: https://helm.openwebui.com
-    chart_ref: open-webui
   pre_tasks:
+    # used as image tag in init containers
     - name: Get Open WebUI chart appVersion
       block:
+        # there isn't a kubernetes.core.* module
+        # to get info about a chart, only to get
+        # info about an installed release
         - name: Run `helm show chart` command
           # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/command_module.html
           ansible.builtin.command:
@@ -36,10 +36,10 @@
               - helm
               - show
               - chart
-              - --repo={{ chart_repo_url }}
-              - "{{ chart_ref }}"
-              - --version
-              - "{{ openwebui_chart_version }}"
+              - open-webui
+              # don't quote args as this isn't shell!
+              - --repo={{ openwebui_chart_repo_url }}
+              - --version={{ openwebui_chart_version }}
           register: show_chart
           changed_when: false
 
@@ -54,6 +54,24 @@
       ansible.builtin.include_tasks: tasks/postgresql/image.yml
       when: postgresql_image is not defined
   tasks:
+    - name: Create Open WebUI ingress secret
+      vars:
+        secret_name: "{{ openwebui_secrets['ingress'] }}"
+        create_ns: true
+        cert_name: open-webui-ingress
+        sans: "{{ openwebui_fqdns }}"
+      ansible.builtin.include_tasks: tasks/k8s/secrets/tls.step.yml
+
+    - name: Create Open WebUI database secret
+      vars:
+        secret_name: "{{ openwebui_secrets['database'] }}"
+        cert_name: open-webui-database
+        days: 365
+        sans:
+          - "{{ openwebui_db_user }}"
+          - "{{ openwebui_db_user }}@{{ homelab_domain }}"
+      ansible.builtin.include_tasks: tasks/k8s/secrets/tls.step.yml
+
     # https://docs.openwebui.com/getting-started/env-configuration
     - name: Create Open WebUI extraEnv secret
       vars:
@@ -80,45 +98,28 @@
             {%   set _ = keys.insert(0, pipelines_api_key) -%}
             {% endif -%}
             {{ keys | join(';') }}
-        create_ns: true
       ansible.builtin.include_tasks: tasks/k8s/secrets/generic.yml
 
-    - name: Create Open WebUI database secret
-      vars:
-        secret_name: "{{ openwebui_secrets['database'] }}"
-        cert_name: open-webui-database
-        days: 365
-        sans:
-          - "{{ openwebui_db_user }}"
-          - "{{ openwebui_db_user }}@{{ homelab_domain }}"
-      ansible.builtin.include_tasks: tasks/k8s/secrets/tls.step.yml
-
-    - name: Create Open WebUI ingress secret
-      vars:
-        secret_name: "{{ openwebui_secrets['ingress'] }}"
-        cert_name: open-webui-ingress
-        sans: "{{ openwebui_fqdns }}"
-      ansible.builtin.include_tasks: tasks/k8s/secrets/tls.step.yml
-
     - name: Install Open WebUI Helm chart
-      # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/helm_module.html
-      kubernetes.core.helm:
-        kubeconfig: "{{ kubeconfig }}"
-        chart_repo_url: "{{ chart_repo_url }}"
-        chart_ref: "{{ chart_ref }}"
-        chart_version: "{{ openwebui_chart_version }}"
-        release_name: "{{ openwebui_release_name }}"
-        release_namespace: "{{ openwebui_namespace }}"
-        release_values: "{{ openwebui_chart_values }}"
-        history_max: "{{ helm_max_history }}"
-        atomic: true
-        wait: true
-        wait_timeout: 10m0s # requires wait=true
-      # pulling custom image from
-      # Harbor could take a while
-      timeout: 900
-      register: openwebui_helm
-  any_errors_fatal: true
+      vars:
+        repo_name: open-webui
+        repo_url: "{{ openwebui_chart_repo_url }}"
+        chart_ref: open-webui
+        chart_ver: "{{ openwebui_chart_version }}"
+        release: "{{ openwebui_release_name }}"
+        release_ns: "{{ openwebui_namespace }}"
+        values: "{{ openwebui_chart_values }}"
+
+        extras: # adopt extra resources into Helm release
+          - cert-manager.io/v1 Certificate {{ openwebui_secrets['ingress']  }}
+          - cert-manager.io/v1 Certificate {{ openwebui_secrets['database'] }}
+          - v1 Secret {{ openwebui_secrets['env-vars'] }}
+
+        # pulling custom image from
+        # Harbor could take a while
+        wait_timeout: 600
+        task_timeout: 900
+      ansible.builtin.include_tasks: tasks/helm/helmfile.yml
 
 # https://openwebui.fourteeners.local/docs
 - name: Configure Open WebUI installation
@@ -126,7 +127,6 @@
     - configure
     - knowledge
   hosts: localhost
-  gather_facts: false
   vars_files:
     - vars/openwebui.yml
     - vars/ollama.yml
@@ -151,15 +151,6 @@
       until: ui_version.status == 200
       retries: 20
       delay: 3
-
-    # - name: Give time for background tasks
-    #   # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/pause_module.html
-    #   ansible.builtin.pause:
-    #     prompt: Please wait...
-    #     seconds: 30
-    #   when:
-    #     - openwebui_helm is defined
-    #     - openwebui_helm is changed
   tasks:
     - name: Authenticate as the admin user
       ansible.builtin.uri:
@@ -326,7 +317,7 @@
 
     - name: Get Open WebUI knowledge base
       ansible.builtin.uri:
-        url: "{{ api_base }}/v1/knowledge/"
+        url: "{{ api_base }}/v1/knowledge/list"
         headers: "{{ auth_headers }}"
         return_content: true
       register: list_knowledge
@@ -364,7 +355,7 @@
 
     - name: Get Open WebUI custom models
       ansible.builtin.uri:
-        url: "{{ api_base }}/v1/models/"
+        url: "{{ api_base }}/v1/models/list"
         headers: "{{ auth_headers }}"
         return_content: true
       register: list_models
@@ -427,7 +418,6 @@
       ansible.builtin.set_fact:
         accounts_model: |
           {{ model | first if model is truthy else create_model.json }}
-  any_errors_fatal: true
 
 # NOTE: this play takes a long time to run because it loops through hundreds of files
 # and, for each, checks with Open WebUI whether it exists or has changed, and uploads
@@ -439,7 +429,6 @@
   # get auth token and knowledge ID
   tags: knowledge
   hosts: cosmos
-  gather_facts: false
   vars_files:
     # needed by tasks/openwebui/upload.yml
     - vars/kubernetes.yml
@@ -472,6 +461,9 @@
           # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/setup_module.html
           ansible.builtin.setup:
             gather_subset: user_dir
+
+        - name: Ensure DNS resolution works
+          ansible.builtin.include_tasks: tasks/hosts/dns.yml
 
         - name: Find ~/accounts/*.txt files
           # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/find_module.html
@@ -578,4 +570,3 @@
               {{ model }}
           register: update_model
           changed_when: update_model.status == 200
-  any_errors_fatal: true

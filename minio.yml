@@ -2,9 +2,8 @@
 # https://resources.min.io/
 ---
 - name: Install MinIO storage for QNAP
-  tags: minio
+  tags: install
   hosts: "{{ rke_control_plane_host }}"
-  gather_facts: false
   vars_files: &vars_files
     - vars/kubernetes.yml
     - vars/monitoring.yml
@@ -30,7 +29,6 @@
         secret_name: "{{ item.name }}"
         secret_ns: "{{ minio_tenant_namespace }}"
         create_ns: "{{ ansible_loop.first }}"
-        release: "{{ minio_tenant_release_name }}"
         cert_name: minio-{{ item.cert }}-ingress
         sans: "{{ item.sans }}"
       ansible.builtin.include_tasks: tasks/k8s/secrets/tls.step.yml
@@ -60,15 +58,12 @@
           public.crt: "{{ ca_chain }}"
         secret_ns: "{{ item.namespace }}"
         create_ns: "{{ item.namespace != minio_tenant_namespace }}"
-        release: "{{ item.release }}"
       ansible.builtin.include_tasks: tasks/k8s/secrets/generic.yml
       loop:
         - name: "{{ minio_secrets['operator-ca'] }}"
           namespace: "{{ minio_operator_namespace }}"
-          release: "{{ minio_operator_release_name }}"
         - name: "{{ minio_secrets['tenant-ca'] }}"
           namespace: "{{ minio_tenant_namespace }}"
-          release: "{{ minio_tenant_release_name }}"
       loop_control:
         label: "{{ item.name }}"
 
@@ -79,47 +74,54 @@
     # https://min.io/docs/minio/kubernetes/upstream/reference/operator-crd.html#tenantspec
     - name: Create MinIO user credentials
       vars:
-        secret_name: minio-creds-{{ item.key }}
+        secret_name: minio-creds-{{ item.name }}
         secret_data:
-          CONSOLE_ACCESS_KEY: "{{ item.key }}"
-          CONSOLE_SECRET_KEY: "{{ item.value.secret_key }}"
+          CONSOLE_ACCESS_KEY: "{{ item.name }}"
+          CONSOLE_SECRET_KEY: "{{ item.user.secret_key }}"
         secret_ns: "{{ minio_tenant_namespace }}"
         create_ns: false
-        release: "{{ minio_tenant_release_name }}"
       ansible.builtin.include_tasks: tasks/k8s/secrets/generic.yml
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/dict2items_filter.html
-      loop: "{{ minio_users | ansible.builtin.dict2items }}"
+      loop: "{{ minio_users | ansible.builtin.dict2items(key_name='name', value_name='user') }}"
       loop_control:
-        label: "{{ item.key }}"
+        label: "{{ item.name }}"
 
     - name: Install MinIO Operator Helm chart
-      # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/helm_module.html
-      kubernetes.core.helm:
-        kubeconfig: "{{ kubeconfig }}"
-        chart_repo_url: https://operator.min.io
+      vars:
+        tmpdir_name: minio-operator
+        repo_name: minio
+        repo_url: https://operator.min.io
         chart_ref: operator
-        chart_version: "{{ minio_operator_chart_version }}"
-        release_name: "{{ minio_operator_release_name }}"
-        release_namespace: "{{ minio_operator_namespace }}"
-        release_values: "{{ minio_operator_chart_values }}"
-        history_max: "{{ helm_max_history }}"
-        atomic: true
-        wait: true
-      timeout: 300
+        chart_ver: "{{ minio_operator_chart_version }}"
+        release: "{{ minio_operator_release_name }}"
+        release_ns: "{{ minio_operator_namespace }}"
+        values: "{{ minio_operator_chart_values }}"
+
+        extras: # adopt extra resources into Helm release
+          - v1 Secret {{ minio_secrets['operator-ca'] }}
+      ansible.builtin.include_tasks: tasks/helm/helmfile.yml
 
     - name: Install MinIO Tenant Helm chart
-      kubernetes.core.helm:
-        kubeconfig: "{{ kubeconfig }}"
-        chart_repo_url: https://operator.min.io
+      vars:
+        tmpdir_name: minio-tenant
+        repo_name: minio
+        repo_url: https://operator.min.io
         chart_ref: tenant
-        chart_version: "{{ minio_tenant_chart_version }}"
-        release_name: "{{ minio_tenant_release_name }}"
-        release_namespace: "{{ minio_tenant_namespace }}"
-        release_values: "{{ minio_tenant_chart_values }}"
-        history_max: "{{ helm_max_history }}"
-        atomic: true
+        chart_ver: "{{ minio_tenant_chart_version }}"
+        release: "{{ minio_tenant_release_name }}"
+        release_ns: "{{ minio_tenant_namespace }}"
+        values: "{{ minio_tenant_chart_values }}"
         wait: false
-      timeout: 300
+
+        extras: # adopt extra resources into Helm release
+          - cert-manager.io/v1 Certificate minio-console-ingress
+          - cert-manager.io/v1 Certificate minio-s3-ingress
+          - v1 Secret {{ minio_secrets['tenant-ca'] }}
+          - |
+            {% for user in minio_users.keys() %}
+            v1 Secret minio-creds-{{ user }}
+            {% endfor %}
+      ansible.builtin.include_tasks: tasks/helm/helmfile.yml
 
     - name: Wait until MinIO tenant ready
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/uri_module.html
@@ -133,6 +135,7 @@
       delay: 5
 
     # minio-operator not allowing patch!
+    # change reverted on reconciliation
     - name: Patch tenant sidecar probes
       vars:
         res_kind: StatefulSet
@@ -147,20 +150,17 @@
               timeoutSeconds: 5 # default=1
               failureThreshold: 3 # default=1
       ansible.builtin.include_tasks: tasks/k8s/probes.yml
-  any_errors_fatal: true
 
 # https://min.io/docs/minio/linux/reference/minio-mc-admin.html#installation
 - name: Install MinIO client
   tags: cli
   hosts: rke_cluster
-  gather_facts: false
   vars_files: *vars_files
   tasks:
     - name: Install mc CLI tool
       become: true
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/shell_module.html
       ansible.builtin.shell: |
-        cd /usr/local/bin
         set -o pipefail
 
         ARCH=$(uname -m | sed -e 's/aarch64/arm64/' \
@@ -179,6 +179,7 @@
         chmod +x mc
       args:
         executable: /bin/bash
+        chdir: /usr/local/bin
       register: install_cli
       changed_when: install_cli.rc == 0
       failed_when: install_cli.rc not in [0,9]
@@ -219,13 +220,11 @@
       register: config_mc
       changed_when: config_mc.rc == 0
       failed_when: config_mc.rc not in [0,9]
-  any_errors_fatal: true
 
 # https://min.io/docs/minio/linux/operations/monitoring/collect-minio-metrics-using-prometheus.html
 - name: Create MinIO scrape configs
   tags: metrics
   hosts: "{{ rke_control_plane_host }}"
-  gather_facts: false
   vars_files: *vars_files
   tasks:
     # MinIO Operator creates minio-prom-additional-scrape-config secret
@@ -316,12 +315,10 @@
           when: scrape_configs.resources is truthy
           changed_when: fix_configs.rc == 0
           failed_when: fix_configs.rc not in [0,9]
-  any_errors_fatal: true
 
 - name: Create MinIO buckets/users/groups
   tags: buckets
   hosts: "{{ rke_control_plane_host }}"
-  gather_facts: false
   vars_files: *vars_files
   tasks:
     - name: Create buckets/users/groups
@@ -416,12 +413,10 @@
       register: minio_create
       changed_when: minio_create.rc == 0
       failed_when: minio_create.rc not in [0,9]
-  any_errors_fatal: true
 
 - name: Configure MinIO dashboards
   tags: dashboards
   hosts: "{{ rke_control_plane_host }}"
-  gather_facts: false
   vars_files: *vars_files
   tasks:
     - name: Import Grafana dashboards
@@ -433,4 +428,3 @@
           {{ minio_grafana_dashboards | map('combine', options) }}
       ansible.builtin.include_tasks: tasks/grafana/dashboards.yml
       when: grafana_api_server_online | default(true)
-  any_errors_fatal: true

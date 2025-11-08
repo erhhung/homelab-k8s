@@ -3,8 +3,8 @@
 # https://www.keycloak.org/server/importExport
 ---
 - name: Install Keycloak on RKE cluster
+  tags: install
   hosts: "{{ rke_control_plane_host }}"
-  gather_facts: false
   vars_files:
     - vars/kubernetes.yml
     - vars/monitoring.yml
@@ -16,7 +16,6 @@
     kubeconfig: "{{ rke_kubeconfig }}"
     secret_ns: "{{ keycloak_namespace }}"
     create_ns: false
-    release: "{{ keycloakx_release_name }}"
   pre_tasks:
     - name: Is the monitoring stack ready?
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
@@ -68,29 +67,29 @@
     #     # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/md5_filter.html
     #     msg: "{{ keycloak_sql.stdout | ansible.builtin.md5 }}"
   tasks:
-    - name: Create Keycloak database secret
-      vars:
-        # Java requires key file to
-        # be in PKCS#8 / DER format
-        secret_name: "{{ keycloak_secrets['database'] }}"
-        create_ns: true
-        cert_name: keycloakx-database
-        der_key: true
-        days: 365
-        sans:
-          - "{{ keycloak_db_user }}"
-          - "{{ keycloak_db_user }}@{{ homelab_domain }}"
-      ansible.builtin.include_tasks: tasks/k8s/secrets/tls.step.yml
-
     - name: Create Keycloak ingress secret
       vars:
         secret_name: "{{ keycloak_secrets['ingress'] }}"
+        create_ns: true
         cert_name: keycloakx-ingress
         sans_:
           - "{{ keycloak_fqdns }}"
           - "*.{{ keycloak_namespace }}.svc.{{ cluster_domain }}"
           - "*.{{ keycloak_namespace }}.svc"
         sans: "{{ sans_ | flatten }}"
+      ansible.builtin.include_tasks: tasks/k8s/secrets/tls.step.yml
+
+    - name: Create Keycloak database secret
+      vars:
+        # Java requires key file to
+        # be in PKCS#8 / DER format
+        secret_name: "{{ keycloak_secrets['database'] }}"
+        cert_name: keycloakx-database
+        der_key: true
+        days: 365
+        sans:
+          - "{{ keycloak_db_user }}"
+          - "{{ keycloak_db_user }}@{{ homelab_domain }}"
       ansible.builtin.include_tasks: tasks/k8s/secrets/tls.step.yml
 
     - name: Create monitoring scraper secret
@@ -119,12 +118,11 @@
         data: |
           {% set data = {} %}
           {% for file in files %}
-          {%   set name = file.split('/')[-1] %}
-          {%   set _ = data.update({
-                  name: lookup('ansible.builtin.file', file, rstrip=false)
-               }) %}
+          {%   set _ = data.update({ (file | ansible.builtin.basename):
+                 lookup('ansible.builtin.file', file, rstrip=false)
+               })   %}
           {% endfor %}
-          {{ data }}
+          {{ data   }}
       kubernetes.core.k8s:
         kubeconfig: "{{ kubeconfig }}"
         definition:
@@ -140,42 +138,30 @@
         apply: true
 
     - name: Install Keycloak.X Helm chart
-      # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/helm_module.html
-      kubernetes.core.helm:
-        kubeconfig: "{{ kubeconfig }}"
-        chart_repo_url: https://codecentric.github.io/helm-charts
+      vars:
+        repo_name: codecentric
+        repo_url: https://codecentric.github.io/helm-charts
         chart_ref: keycloakx
-        chart_version: "{{ keycloakx_chart_version }}"
-        release_name: "{{ keycloakx_release_name }}"
-        release_namespace: "{{ keycloak_namespace }}"
-        release_values: "{{ keycloakx_chart_values }}"
-        history_max: "{{ helm_max_history }}"
-        atomic: true
-        wait: true
-        wait_timeout: 10m0s # requires wait=true
-      # startup can take a while at max utilization of allocated CPU:
-      # "updating configuration and installing your custom providers"
-      timeout: 900
+        chart_ver: "{{ keycloakx_chart_version }}"
+        release: "{{ keycloakx_release_name }}"
+        release_ns: "{{ keycloak_namespace }}"
+        values: "{{ keycloakx_chart_values }}"
 
-    # Helm chart does not currently allow
-    # providing .serviceMonitor.tlsConfig
-    - name: Patch Keycloak ServiceMonitor
-      # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_json_patch_module.html
-      kubernetes.core.k8s_json_patch:
-        kubeconfig: "{{ kubeconfig }}"
-        api_version: monitoring.coreos.com/v1
-        kind: ServiceMonitor
-        name: "{{ keycloakx_release_name }}-keycloakx"
-        namespace: "{{ keycloak_namespace }}"
-        patch:
-          - op: add
-            path: /spec/endpoints/0/tlsConfig
-            value: "{{ metric_scraper_tls_config }}"
-      when: prometheus_crds_installed
+        extras: # adopt extra resources into Helm release
+          - cert-manager.io/v1 Certificate {{ keycloak_secrets['ingress']   }}
+          - cert-manager.io/v1 Certificate {{ keycloak_secrets['database']  }}
+          - cert-manager.io/v1 Certificate {{ monitoring_secrets['scraper'] }}
+          - v1 ConfigMap {{ keycloak_configmaps['dbsql'] }}
+          - v1 ConfigMap {{ keycloak_configmaps['admin'] }}
+
+        # startup can take a while at max utilization of allocated CPU:
+        # "updating configuration and installing your custom providers"
+        wait_timeout: 600
+        task_timeout: 900
+      ansible.builtin.include_tasks: tasks/helm/helmfile.yml
 
     - name: Import Grafana dashboards
       vars:
         dashboards: "{{ keycloak_grafana_dashboards }}"
       ansible.builtin.include_tasks: tasks/grafana/dashboards.yml
       when: grafana_api_server_online | default(true)
-  any_errors_fatal: true

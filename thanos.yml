@@ -3,7 +3,6 @@
 - name: Install Thanos component suite
   tags: install
   hosts: "{{ rke_control_plane_host }}"
-  gather_facts: false
   vars_files:
     - vars/kubernetes.yml
     - vars/storage.yml
@@ -17,7 +16,6 @@
     kubeconfig: "{{ rke_kubeconfig }}"
     secret_ns: "{{ monitoring_namespace }}"
     create_ns: false
-    release: "{{ thanos_release_name }}"
   tasks:
     - name: Create Thanos ingress secret
       vars:
@@ -43,35 +41,26 @@
       loop_control:
         label: "{{ item.name }}"
 
-    # ConfigMap for Thanos Query Frontend
-    - name: Create Thanos tripper ConfigMap
-      # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_module.html
-      kubernetes.core.k8s:
-        kubeconfig: "{{ kubeconfig }}"
-        definition:
-          apiVersion: v1
-          kind: ConfigMap
-          metadata:
-            name: thanos-query-frontend-tripper
-            namespace: "{{ monitoring_namespace }}"
-          data: "{{ thanos_tripper_config }}"
-        validate:
-          fail_on_error: false
-        state: present
-        apply: true
-
     - name: Install Thanos Helm chart
-      # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/helm_module.html
-      kubernetes.core.helm:
-        kubeconfig: "{{ kubeconfig }}"
-        chart_repo_url: https://charts.bitnami.com/bitnami
+      vars:
+        repo_name: bitnami
+        repo_url: https://charts.bitnami.com/bitnami
         chart_ref: thanos
-        chart_version: "{{ thanos_chart_version }}"
-        release_name: "{{ thanos_release_name }}"
-        release_namespace: "{{ monitoring_namespace }}"
-        release_values: "{{ thanos_chart_values }}"
-        history_max: "{{ helm_max_history }}"
-        atomic: true
-        wait: true
-      timeout: 600
-  any_errors_fatal: true
+        chart_ver: "{{ thanos_chart_version }}"
+        release: "{{ thanos_release_name }}"
+        release_ns: "{{ monitoring_namespace }}"
+        values: "{{ thanos_chart_values }}"
+
+        extras: # adopt extra resources into Helm release
+          - cert-manager.io/v1 Certificate thanos-query-ingress
+          - cert-manager.io/v1 Certificate thanos-rule-ingress
+          - cert-manager.io/v1 Certificate thanos-store-ingress
+          - cert-manager.io/v1 Certificate thanos-bucket-ingress
+          - cert-manager.io/v1 Certificate thanos-compact-ingress
+          # Thanos tripper ConfigMap for Thanos Query Frontend
+          - apiVersion: v1
+            kind: ConfigMap
+            metadata:
+              name: thanos-query-frontend-tripper
+            data: "{{ thanos_tripper_config }}"
+      ansible.builtin.include_tasks: tasks/helm/helmfile.yml

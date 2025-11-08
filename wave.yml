@@ -1,28 +1,25 @@
 # https://github.com/wave-k8s/wave
 ---
 - name: Install Wave on RKE cluster
+  tags: install
   hosts: "{{ rke_control_plane_host }}"
-  gather_facts: false
   vars_files:
     - vars/kubernetes.yml
     - vars/wave.yml
+  vars:
+    # required kubernetes>=24.2 package only in user virtualenv
+    ansible_python_interpreter: "{{ venv_python_interpreter }}"
+    kubeconfig: "{{ rke_kubeconfig }}"
   tasks:
     # https://github.com/wave-k8s/wave#deploying-with-helm
     - name: Install Wave Helm chart
       vars:
-        # required kubernetes>=24.2 package only in user virtualenv
-        ansible_python_interpreter: "{{ venv_python_interpreter }}"
-      # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/helm_module.html
-      kubernetes.core.helm:
-        kubeconfig: "{{ rke_kubeconfig }}"
-        chart_repo_url: https://wave-k8s.github.io/wave
+        repo_name: wave
+        repo_url: https://wave-k8s.github.io/wave
         chart_ref: wave
-        chart_version: "{{ wave_chart_version }}"
-        release_name: "{{ wave_release_name }}"
-        release_namespace: "{{ wave_namespace }}"
-        create_namespace: true
-        release_values: "{{ wave_chart_values }}"
-        history_max: "{{ helm_max_history }}"
-        atomic: true
-        wait: true
-  any_errors_fatal: true
+        chart_ver: "{{ wave_chart_version }}"
+        release: "{{ wave_release_name }}"
+        release_ns: "{{ wave_namespace }}"
+        values: "{{ wave_chart_values }}"
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
+      ansible.builtin.include_tasks: tasks/helm/helmfile.yml

@@ -24,14 +24,15 @@ kiali_secrets:
   openid: kiali-openid
   ingress: kiali-ingress-tls
 
-# https://kiali.io/docs/installation/installation-guide/install-with-helm#install-with-operator
-kiali_operator_namespace: kiali-operator
-kiali_operator_chart_version: "2.13.0"
-
 kiali_oidc_client_id: kiali
 # kiali_oidc_client_secret: {vault.yml}
 # sso.fourteeners.local is same host as keycloak.fourteeners.local
 kiali_oidc_issuer_uri: https://sso.{{ homelab_domain }}/realms/homelab
+
+# https://kiali.io/docs/installation/installation-guide/install-with-helm#install-with-operator
+kiali_operator_namespace: kiali-operator
+kiali_operator_chart_version: "2.13.0"
+kiali_operator_release_name: kiali-operator
 
 # https://kiali.io/docs/configuration/kialis.kiali.io
 kiali_cr_spec:
