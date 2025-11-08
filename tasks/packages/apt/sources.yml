@@ -60,4 +60,3 @@
           Signed-By: {{ keyring_file }}
         mode: "0644"
       when: not file_stat.results[1].stat.exists
-  any_errors_fatal: true

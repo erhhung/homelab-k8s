@@ -107,4 +107,3 @@
       changed_when: false
       retries: 5
       delay: 2
-  any_errors_fatal: true

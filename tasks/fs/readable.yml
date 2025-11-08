@@ -1,3 +1,6 @@
+# ensure that file is readable,
+# including parent directories
+#
 # pass the following vars:
 #   file_path <required> absolute path
 #   file_desc [optional] for task name
@@ -39,4 +42,3 @@
         path: "{{ file_path }}"
         mode: "{{ file_mode | default('0644') }}"
       when: file_check.stat.exists
-  any_errors_fatal: true

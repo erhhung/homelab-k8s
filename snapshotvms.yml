@@ -1,7 +1,6 @@
 ---
 - name: Create/revert/delete VM snapshots
   hosts: "{{ xcp_master }}"
-  gather_facts: false
   vars_files:
     - vars/xcp.yml
   vars:
@@ -179,4 +178,3 @@
             label: "{{ item.uuid }}|{{ item.host }}"
           when: confirm.user_input | lower == 'y'
           changed_when: true
-  any_errors_fatal: true

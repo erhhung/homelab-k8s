@@ -143,4 +143,3 @@
             - helm_uninstall is defined
             - helm_uninstall is changed
           changed_when: true
-  any_errors_fatal: true

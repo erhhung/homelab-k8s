@@ -64,4 +64,3 @@
         name: "{{ remote_name }}"
       when: tag_image is defined
       changed_when: false
-  any_errors_fatal: true

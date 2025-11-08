@@ -144,4 +144,3 @@
     - name: Set saved_search_id
       ansible.builtin.set_fact:
         saved_search_id: "{{ existing_id or save_search.json.id }}"
-  any_errors_fatal: true

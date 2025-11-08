@@ -66,4 +66,3 @@
         uri_result: "{{ load_page }}"
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
       ansible.builtin.include_tasks: tasks/cookiejar.yml
-  any_errors_fatal: true

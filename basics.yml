@@ -121,12 +121,10 @@
         name: "{{ item }}"
         state: present
       loop: "{{ modprobe }}"
-  any_errors_fatal: true
 
 - name: Configure network settings
   tags: network
   hosts: k8s_all
-  gather_facts: false
   become: true
   vars_files:
     - vars/basics.yml
@@ -158,21 +156,8 @@
     #   # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/debug_module.html
     #   ansible.builtin.debug:
     #     msg: |-
-    #       resolvectl_dns: "{{ resolvectl_dns | join(',') }}"
+    #       resolvectl_dns: "{{    resolvectl_dns    | join(',') }}"
     #       resolvectl_domain: "{{ resolvectl_domain | join(',') }}"
-
-    - name: Is {{ homelab_domain }} DNS working?
-      vars:
-        test_domain: pki.{{ homelab_domain }}.
-        expected_ip: "{{ hostvars['pki'].ansible_host }}"
-      ansible.builtin.shell: |
-        set -o pipefail
-        { dig +short {{ test_domain }} || true; } | grep -q {{ expected_ip }}
-      args:
-        executable: /bin/bash
-      register: is_dns_working
-      changed_when: false
-      failed_when: false
 
     - name: Cloud-init Netplan config enabled?
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/stat_module.html
@@ -254,23 +239,24 @@
         resolvectl_domain != search_domains or
         disabled_netplan  is changed
       notify: Apply updated Netplan config
-
-    - name: Restart systemd-resolved service
-      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/systemd_service_module.html
-      ansible.builtin.systemd_service:
-        name: systemd-resolved
-        state: restarted
-      when: is_dns_working.rc != 0
   handlers:
     - name: Apply updated Netplan config
       ansible.builtin.command: netplan apply
       changed_when: true
-  any_errors_fatal: true
+
+- name: Configure network settings
+  tags: network
+  hosts: &hosts
+    - k8s_all
+    - cosmos
+  tasks:
+    - name: Ensure DNS resolution is working
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
+      ansible.builtin.include_tasks: tasks/hosts/dns.yml
 
 - name: Customize login MOTD messages
   tags: motd
   hosts: k8s_all
-  gather_facts: false
   become: true
   tasks:
     - name: Suppress select MOTD messages
@@ -289,12 +275,10 @@
           echo
         dest: /etc/update-motd.d/99-skip-line
         mode: "0755"
-  any_errors_fatal: true
 
 - name: Manage Linux users and groups
   tags: groups
   hosts: k8s_all
-  gather_facts: false
   become: true
   vars_files:
     - vars/basics.yml
@@ -323,18 +307,13 @@
       loop: "{{ sudoers_rules }}"
       loop_control:
         label: "{{ item.name }}"
-  any_errors_fatal: true
 
 - name: Add CA certs to trust store
   tags: certs
-  hosts:
-    - k8s_all
-    - cosmos
-  gather_facts: false
+  hosts: *hosts
   become: true
   pre_tasks:
     - name: Get CA certificates from PKI
-      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
       ansible.builtin.include_tasks: tasks/pki/cacerts.yml
       when: ca_certificates is not defined
   tasks:
@@ -353,4 +332,3 @@
     - name: Update CA trust store
       ansible.builtin.command: update-ca-certificates
       changed_when: true
-  any_errors_fatal: true

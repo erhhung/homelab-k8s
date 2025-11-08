@@ -43,4 +43,3 @@
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/set_fact_module.html
       ansible.builtin.set_fact:
         known_hosts: "{{ ssh_keyscan.stdout_lines }}"
-  any_errors_fatal: true

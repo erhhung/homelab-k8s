@@ -60,4 +60,3 @@
       changed_when: ism_policy.status == 404
       retries: 5
       delay: 2
-  any_errors_fatal: true

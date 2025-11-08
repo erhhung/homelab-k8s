@@ -43,4 +43,3 @@
             {%   endfor %}
             {% endfor   %}
             {{ result | sort }}
-  any_errors_fatal: true

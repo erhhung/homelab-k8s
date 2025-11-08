@@ -1,7 +1,6 @@
 ---
 - name: Start all or specific VMs
   hosts: "{{ xcp_master }}"
-  gather_facts: false
   become: true
   vars_files:
     - vars/xcp.yml
@@ -53,4 +52,5 @@
       changed_when: false
       retries: 60
       delay: 5
+
   any_errors_fatal: false

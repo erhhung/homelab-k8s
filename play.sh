@@ -15,6 +15,7 @@
 # shellcheck disable=SC2128 # Expanding array without index
 # shellcheck disable=SC2155 # Declare and assign separately
 
+set -o pipefail
 cd "$(dirname "$0")"
 
 # require given commands

@@ -116,4 +116,3 @@
         app_settings | to_json !=
         set_settings | to_json
       changed_when: true
-  any_errors_fatal: true

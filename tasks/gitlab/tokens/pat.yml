@@ -160,4 +160,3 @@
         "{{ pat_fact }}": >-
           {{ create_pat.json.token if needs_create and create_pat.status == 201 else
              rotate_pat.json.token if needs_rotate and rotate_pat.status == 200 else token }}
-  any_errors_fatal: true

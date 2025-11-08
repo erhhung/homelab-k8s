@@ -1,7 +1,6 @@
 ---
 - name: Shut down all or specific VMs
   hosts: "{{ targets }}"
-  gather_facts: false
   vars_files:
     - vars/kubernetes.yml
     - vars/xcp.yml
@@ -58,6 +57,8 @@
         EOT
       loop: "{{ resolved_hosts }}"
       changed_when: true
+
+  any_errors_fatal: false
   # ignore if already down
   ignore_unreachable: true
   ignore_errors: true

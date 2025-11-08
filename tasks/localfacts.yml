@@ -1,8 +1,10 @@
 # gather facts about the Ansible controller host
 #
 # sets the following facts:
-#   local_python_interpreter `which python3` output
-#   local_tz_offset          {in_hours,in_seconds}
+#   local_python_interpreter `which python3`
+#   local_bash_interpreter   `which bash`
+#   local_machine_arch        amd64|arm64
+#   local_tz_offset          {in_hours,in_seconds,in_hh_mm}
 ---
 - name: Gather controller facts
   delegate_to: localhost
@@ -29,5 +31,8 @@
         local_tz_offset:
           in_hours: "{{ tz_offset.in_hours | float }}"
           in_seconds: "{{ tz_offset.in_seconds | int }}"
-          in_hh_mm: "{{ tz_hh_mm }}"
-  any_errors_fatal: true
+          in_hh_mm: "{{ tz_hh_mm }}" # string
+
+        # persist across runs via facts cache plugin:
+        # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/set_fact_module.html#parameters
+        cacheable: true

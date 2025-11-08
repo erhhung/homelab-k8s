@@ -1,0 +1,29 @@
+# restart systemd-resolved on host if DNS isn't
+# working (cannot resolve pki.fourteeners.local)
+---
+- name: Ensure DNS resolution is working
+  become: true
+  block:
+    - name: Is {{ homelab_domain }} DNS working?
+      vars:
+        test_domain: pki.{{ homelab_domain }}.
+        expected_ip: "{{ hostvars['pki'].ansible_host }}"
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/shell_module.html
+      ansible.builtin.shell: |
+        set -o pipefail
+
+        # ignore SIGPIPE (rc=141) with pipefail:
+        # https://www.pixelbeat.org/programming/sigpipe_handling.html
+        { dig +short {{ test_domain }} || true; } | grep -q {{ expected_ip }}
+      args:
+        executable: /bin/bash
+      register: is_dns_working
+      changed_when: false
+      failed_when: false
+
+    - name: Restart systemd-resolved service
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/systemd_service_module.html
+      ansible.builtin.systemd_service:
+        name: systemd-resolved
+        state: restarted
+      when: is_dns_working.rc != 0

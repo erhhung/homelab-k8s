@@ -4,7 +4,6 @@
 ---
 - name: Create resources on RKE cluster
   hosts: "{{ rke_control_plane_host }}"
-  gather_facts: false
   vars_files:
     - vars/kubernetes.yml
   vars:
@@ -29,4 +28,3 @@
         wait: true
       loop: "{{ manifests }}"
       timeout: 300
-  any_errors_fatal: true

@@ -152,4 +152,3 @@
         import_dashboard.stdout is search('failed')
       retries: 3
       delay: 5
-  any_errors_fatal: true
