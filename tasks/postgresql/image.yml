@@ -32,4 +32,3 @@
               selectattr('name', '==', 'postgresql') |
               map(attribute='image') | first }}
       when: postgresql_sts.resources is truthy
-  any_errors_fatal: true

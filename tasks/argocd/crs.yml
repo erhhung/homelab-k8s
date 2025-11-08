@@ -52,4 +52,3 @@
       loop: "{{ definitions }}"
       loop_control:
         label: "{{ item.metadata.name }}"
-  any_errors_fatal: true

@@ -55,5 +55,12 @@
       ansible.builtin.set_fact:
         prometheus_crds_installed: "{{ crds_installed }}"
         grafana_api_server_online: "{{ grafana_online }}"
-        monitoring_stack_ready: "{{ crds_installed and grafana_online }}"
-  any_errors_fatal: true
+        monitoring_stack_ready: "{{    crds_installed and grafana_online }}"
+
+    - name: Show facts about stack readiness
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/debug_module.html
+      ansible.builtin.debug:
+        msg: |-
+          prometheus_crds_installed: {{ prometheus_crds_installed }}
+          grafana_api_server_online: {{ grafana_api_server_online }}
+             monitoring_stack_ready: {{ monitoring_stack_ready    }}

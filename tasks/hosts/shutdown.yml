@@ -40,4 +40,3 @@
       # https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_async.html
       async: 20
       poll: 0
-  any_errors_fatal: true

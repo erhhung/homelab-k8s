@@ -1,5 +1,10 @@
 # set minio_scrape_configs fact
 ---
+- name: Include vars/minio.yml
+  # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_vars_module.html
+  ansible.builtin.include_vars: vars/minio.yml
+  when: minio_prometheus_operator is not defined
+
 - name: Define MinIO scrape configs
   when: not minio_prometheus_operator
   block:
@@ -67,7 +72,7 @@
       changed_when: false
 
     - name: Set minio_scrape_configs fact
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/set_fact_module.html
       ansible.builtin.set_fact:
         minio_scrape_configs: "{{ add_configs.stdout | from_yaml }}"
       when: add_configs.rc == 0
-  any_errors_fatal: true

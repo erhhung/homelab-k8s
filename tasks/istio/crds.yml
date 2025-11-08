@@ -43,4 +43,9 @@
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/set_fact_module.html
       ansible.builtin.set_fact:
         service_mesh_crds_installed: "{{ crds_installed }}"
-  any_errors_fatal: true
+
+    - name: Show service_mesh_crds_installed fact
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/debug_module.html
+      ansible.builtin.debug:
+        msg: |-
+          service_mesh_crds_installed: {{ service_mesh_crds_installed }}

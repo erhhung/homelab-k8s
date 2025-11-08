@@ -54,4 +54,3 @@
         prompt: Please wait...
         seconds: "{{ wait_secs }}"
       when: wait_secs | default(0) > 0
-  any_errors_fatal: true

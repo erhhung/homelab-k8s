@@ -3,7 +3,6 @@
 ---
 - name: Create virtual clusters
   hosts: "{{ rke_control_plane_host }}"
-  gather_facts: false
   vars_files:
     - vars/kubernetes.yml
     - vars/storage.yml
@@ -45,4 +44,3 @@
       loop_control:
         loop_var: vcluster
         label: "{{ vcluster.name }}|{{ vcluster.node }}"
-  any_errors_fatal: true

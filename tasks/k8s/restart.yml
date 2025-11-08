@@ -56,4 +56,5 @@
     - name: Wait until pods have restarted
       ansible.builtin.include_tasks: tasks/k8s/waitready.yml
       when: wait_max > 0
+
   any_errors_fatal: false

@@ -3,7 +3,7 @@
 ---
 # https://docs.rke2.io/install/quickstart
 - name: Install RKE2 using role
-  tags: rke2
+  tags: install
   hosts: rke_cluster
   become: true
   vars_files:
@@ -39,14 +39,12 @@
       # timeout. Simply restart the service (and likely etcd pod) manually on each
       # node (systemctl restart rke2-server), wait for kube-system pods to settle,
       # and then re-run this playbook.
-  any_errors_fatal: true
 
 - name: Configure kubectl usage
   tags:
     - kubectl
     - kubeconfig
   hosts: "{{ rke_control_plane_group }}"
-  gather_facts: false
   vars_files: &vars_files
     - vars/kubernetes.yml
   tasks:
@@ -72,14 +70,12 @@
         context: "{{ rke_cluster_name }}"
         server: https://{{ rke_fqdns | first }}:6443
       ansible.builtin.include_tasks: tasks/k8s/kubeconfig.yml
-  any_errors_fatal: true
 
 - name: Configure kubectl usage
   tags:
     - kubectl
     - kubeconfig
   hosts: rke_cluster
-  gather_facts: false
   become: true
   vars_files: *vars_files
   vars:
@@ -156,7 +152,6 @@
       register: install_cli
       changed_when: install_cli.rc == 0
       failed_when: install_cli.rc not in [0,9]
-  any_errors_fatal: true
 
 - name: Configure RKE2 cluster
   tags: configure
@@ -206,24 +201,6 @@
         dest: /etc/rancher/rke2/registries.yaml
         mode: "0644"
       register: registries_yaml
-
-    # increase kube-proxy livenessProbe failureThreshold
-    # since it's causing frequent unhealthy pod restarts.
-    # turns out not necessary as it's a Linux kernel bug:
-    # https://bugs.launchpad.net/ubuntu/+source/linux/+bug/2104282
-    # - name: Patch kube-proxy livenessProbe
-    #   become: true
-    #   vars:
-    #     failure_threshold: 12
-    #   ansible.builtin.shell: |
-    #     cd /var/lib/rancher/rke2/agent/pod-manifests
-    #     prop=".spec.containers[0].livenessProbe.failureThreshold"
-    #     [ "$(yq "$prop" kube-proxy.yaml)" -ne {{ failure_threshold }} ] || exit 9 # no change
-    #     yq -i "$prop = {{ failure_threshold }}" kube-proxy.yaml
-    #   register: patch_pod
-    #   changed_when: patch_pod.rc == 0
-    #   failed_when: patch_pod.rc not in [0,9]
-    #   notify: Restart kube-proxy static pod
 
     - name: Create supplemental resources
       when: inventory_hostname == rke_control_plane_host
@@ -483,4 +460,3 @@
     #     name: kube-proxy-{{ inventory_hostname }}
     #     namespace: kube-system
     #     state: absent
-  any_errors_fatal: true

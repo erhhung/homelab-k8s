@@ -95,4 +95,3 @@
       loop: "{{ resources | default([]) }}"
       loop_control:
         label: "{{ item.kind | lower ~'/'~ item.name }}"
-  any_errors_fatal: true

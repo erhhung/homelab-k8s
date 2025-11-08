@@ -1,7 +1,7 @@
-# create client TLS secret "database-superuser"
-# (postgresql_secrets['superuser']) in the
-# specified namespace so that an init container
-# can install PostgreSQL extensions
+# create client TLS secret "database-superuser-tls"
+# (postgresql_secrets['superuser']) in the specified
+# namespace so init container can install PostgreSQL
+# extensions
 #
 # pass the following vars:
 #   kubeconfig <required> path to kubeconfig

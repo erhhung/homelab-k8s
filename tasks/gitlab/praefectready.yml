@@ -66,4 +66,3 @@
         - name: Set retry_count to zero
           ansible.builtin.set_fact:
             retry_count: 0
-  any_errors_fatal: true

@@ -68,4 +68,3 @@
     - name: Set index_pattern_id
       ansible.builtin.set_fact:
         index_pattern_id: "{{ existing_id or create_pattern.json.id }}"
-  any_errors_fatal: true
