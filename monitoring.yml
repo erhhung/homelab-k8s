@@ -161,7 +161,7 @@
         rc=9
         while read name new_ver; do
           old_ver=$(kubectl get crd/$name -o yaml 2> /dev/null | \
-              yq '.spec.versions[].name')
+              yq '.spec.versions[].name') || true
           [ "$old_ver" == "$new_ver" ] || {
             rc=0; break # (re)install ALL
           }

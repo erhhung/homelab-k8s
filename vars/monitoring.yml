@@ -895,7 +895,7 @@ prometheus_stack_chart_values:
         label: "{{ grafana_dashboard_label }}"
         labelValue: "1"
 
-        env: &sidecar_env
+        env: &sidecar-env
           REQ_SKIP_TLS_VERIFY: "true"
           PYTHONWARNINGS: ignore:Unverified HTTPS request
         reloadURL: https://localhost:3000/api/admin/provisioning/dashboards/reload
@@ -903,9 +903,9 @@ prometheus_stack_chart_values:
         enableNewTablePanelSyntax: true
 
       datasources:
-        enabled: false
+        enabled: true
 
-        env: *sidecar_env
+        env: *sidecar-env
         reloadURL: https://localhost:3000/api/admin/provisioning/datasources/reload
         # disable default (Prometheus) data source because its endpoint URL in
         # the Helm template does not use HTTPS, and there is no way to specify

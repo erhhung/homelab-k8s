@@ -1131,6 +1131,10 @@ pipelines_exporter_chart_values:
       - owner:
           name: homelab
           kind: group # group|user
+        pull:
+          refs:
+            branches:
+              regexp: "^(?:main|master|gitlab-ci)$"
 
     # project-specific overrides defined below
     projects: "{{ pipelines_exporter_projects }}"
@@ -1162,13 +1166,7 @@ pipelines_exporter_chart_values:
         interval: 30s
 
 # project-specific overrides
-pipelines_exporter_projects:
-  - name: homelab/flowise
-    pull:
-      refs:
-        branches:
-          # default is only main and master
-          regexp: "^(?:redis-cluster-tls)$"
+pipelines_exporter_projects: []
 
 # =================================== Grafana Dashboards ===================================
 
