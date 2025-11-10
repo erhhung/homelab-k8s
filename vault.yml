@@ -133,7 +133,7 @@
         set -eo pipefail
 
         # get list of enabled auth methods:
-        methods="$(vault auth list -format=json | jq -r 'keys[]')"
+        methods="$(vault auth list -format=json | jq -r 'keys[]')" || true
 
         # first, enable Kubernetes auth in order to
         # create role for External Secrets Operator
@@ -156,7 +156,7 @@
         }
 
         # get list of existing policies:
-        policies="$(vault policy list -format=json | jq -r '.[]' || true)"
+        policies="$(vault policy list -format=json | jq -r '.[]')" || true
         {% for name, stanzas in vault_policies.items() %}
 
         grep -q '^{{ name }}$' <<< "$policies" || {
@@ -174,7 +174,7 @@
         {% endfor %}
 
         # get list of existing users:
-        users="$(vault list -format=json auth/userpass/users | jq -r '.[]' || true)"
+        users="$(vault list -format=json auth/userpass/users | jq -r '.[]')" || true
 
         {%- for name, user in vault_users.items() +%}
         {# https://docs.ansible.com/ansible/latest/collections/ansible/builtin/union_filter.html #}
@@ -192,7 +192,7 @@
         {% endfor %}
 
         # get list of existing roles:
-        roles="$(vault list -format=json auth/kubernetes/role | jq -r '.[]' || true)"
+        roles="$(vault list -format=json auth/kubernetes/role | jq -r '.[]')" || true
         {% for name, role in vault_roles.items() %}
         {%   set sa_names      = [role.sa_names]      | flatten | join(',') %}
         {%   set sa_namespaces = [role.sa_namespaces] | flatten | join(',') %}
@@ -263,7 +263,7 @@
 
         json_="$(vault kv get -format=json \
           {{ mount }}/{{ path }} 2> /dev/null | \
-             jq -cM '.data.data' || true)"
+             jq -cM '.data.data')" || true
         json="$(cat <<'JSON'
         {{ pairs | to_json(separators=[',',':']) }}
         JSON

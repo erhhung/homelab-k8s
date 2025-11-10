@@ -66,7 +66,7 @@ step_issuer_secrets:
   provisioners: step-ca-provisioners
 
 # https://github.com/smallstep/helm-charts/tree/master/step-issuer
-step_issuer_chart_version: "1.9.8"
+step_issuer_chart_version: "1.9.9"
 step_issuer_release_name: step-issuer
 
 # https://github.com/smallstep/helm-charts/tree/master/step-issuer/values.yaml

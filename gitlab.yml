@@ -293,6 +293,11 @@
         task_timeout: 1200
       ansible.builtin.include_tasks: tasks/helm/helmfile.yml
 
+    - name: Import Grafana dashboards
+      vars:
+        dashboards: "{{ gitlab_grafana_dashboards }}"
+      ansible.builtin.include_tasks: tasks/grafana/dashboards.yml
+
     - name: >-
         {{ 'Enable' if enabled else 'Disable' }}
         Istio service mesh
@@ -340,14 +345,18 @@
         state: "{{ state }}"
         apply: true
       when: service_mesh_crds_installed
+      register: mesh_rules
 
-    - name: Wait until Praefect is ready
-      ansible.builtin.include_tasks: tasks/gitlab/praefectready.yml
-
-    - name: Import Grafana dashboards
-      vars:
-        dashboards: "{{ gitlab_grafana_dashboards }}"
-      ansible.builtin.include_tasks: tasks/grafana/dashboards.yml
+    - name: Stop if mesh JUST configured
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/fail_module.html
+      ansible.builtin.fail:
+        msg: |-
+          Service mesh rules have just been updated. Please wait until
+          routing config has fully propagated by ensuring that various
+          sections of the UI work as expected, then rerun the playbook.
+      when:
+        - mesh_rules is defined
+        - mesh_rules is changed
 
 - name: Configure GitLab installation
   tags: configure
@@ -377,6 +386,14 @@
   pre_tasks:
     - name: Gather facts about controller
       ansible.builtin.include_tasks: tasks/localfacts.yml
+
+    - name: Wait until Praefect is ready
+      block:
+        - name: Wait until Praefect is ready
+          vars:
+            kubeconfig: "{{ rke_kubeconfig }}"
+          ansible.builtin.include_tasks: tasks/gitlab/praefectready.yml
+      delegate_to: "{{ rke_control_plane_host }}"
 
     - name: Wait until GitLab is ready
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/uri_module.html

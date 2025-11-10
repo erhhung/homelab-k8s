@@ -1,13 +1,13 @@
 ---
 - name: Start all or specific VMs
   hosts: "{{ xcp_master }}"
-  become: true
+  gather_facts: false
   vars_files:
     - vars/xcp.yml
   vars:
     # targets can be overridden on command-line:
-    # ansible-playbook startvms.yml -e targets=rancher
-    targets: rancher,cluster
+    # ansible-playbook startvms.yml -e targets=rke_cluster
+    targets: k8s_all
   pre_tasks:
     - name: Resolve target hosts
       vars:
@@ -43,14 +43,12 @@
       changed_when: poweron_vms.rc == 0
       failed_when: poweron_vms.rc not in [0,9]
 
-    - name: Wait until hosts reachable
+    - name: Wait until hosts are reachable
       delegate_to: "{{ item }}"
-      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/command_module.html
-      ansible.builtin.command: "true"
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/wait_for_connection_module.html
+      ansible.builtin.wait_for_connection:
+        sleep: 2
+        timeout: 300
       loop: "{{ resolved_hosts }}"
-      ignore_unreachable: true
-      changed_when: false
-      retries: 60
-      delay: 5
 
   any_errors_fatal: false

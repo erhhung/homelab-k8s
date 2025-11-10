@@ -329,6 +329,7 @@
 
         # get list of existing buckets:
         # https://min.io/docs/minio/linux/reference/minio-mc/mc-ls.html
+        echo >&2 "Getting list of existing buckets..."
         buckets="$(mc ls local --json | jq -r '.key')"
         {% for bucket in minio_buckets | flatten %}
 
@@ -345,6 +346,7 @@
 
         # get list of existing policies:
         # https://min.io/docs/minio/linux/reference/minio-mc-admin/mc-admin-policy-list.html
+        echo >&2 "Getting list of existing policies..."
         policies="$(mc admin policy list local --json | jq -r '.policy')"
         {% for name, policy in minio_policies.items() %}
 
@@ -367,6 +369,7 @@
 
         # get list of existing users:
         # https://min.io/docs/minio/linux/reference/minio-mc-admin/mc-admin-user-list.html
+        echo >&2 "Getting list of existing users..."
         users="$(mc admin user list local --json | jq -r '.accessKey')"
         {% for access_key, user in minio_users.items() %}
 
@@ -388,7 +391,8 @@
 
         # get list of existing groups:
         # https://min.io/docs/minio/linux/reference/minio-mc-admin/mc-admin-group.html#mc.admin.group.ls
-        groups="$(mc admin group list local --json | jq -r '.groups[]')"
+        echo >&2 "Getting list of existing groups..."
+        groups="$(mc admin group list local --json | jq -r '(.groups // [])[]')"
         {% for name, group in minio_groups.items() %}
 
         grep -q '^{{ name }}$' <<< "$groups" || {

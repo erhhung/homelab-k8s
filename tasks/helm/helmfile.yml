@@ -8,7 +8,7 @@
 #   kubeconfig   <required> kubeconfig path
 #   repo_name    [optional] Helm repository name
 #   repo_url     [optional] Helm repository URL
-#   chart_ref    <required> chart name or oci:// URL
+#   chart_ref    <required> name  or oci:// URL
 #   chart_ver    [optional] chart version
 #   release      <required> release name
 #   release_ns   <required> release namespace
@@ -135,11 +135,13 @@
     ignore_lines: "{{ (ignore_always + [ignore.lines | default([])]) | flatten | unique }}"
     ignore_kinds: "{{ [ignore.kinds  | default([])]  | flatten }}" # `helm diff --suppress`
 
-    base_args:
-      - --take-ownership # of pre-created resources
+    base_args: [] # for commands `list|diff|upgrade`
     diff_args:
+      - --take-ownership # of pre-created resources
       - --no-hooks # they usually delete themselves
       - "{{ ['--suppress'] | product(ignore_kinds) | map('join',' ') }}"
+    sync_args:
+      - --take-ownership # of pre-created resources
   block:
     - name: Create Helmfile $TMPDIR
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/shell_module.html
@@ -188,12 +190,13 @@
 
           # use wrapper script to sanitize chart templates
           # (dedup keys) before running `kustomize build`
-          # (see templates/packages/scripts/kustomize.sh)
+          # (see templates/packages/install/kustomize.sh)
           kustomizeBinary: /usr/local/bin/kustomize.sh
 
           helmDefaults:
             args: "{{     base_args | flatten }}"
             diffArgs: "{{ diff_args | flatten }}"
+            syncArgs: "{{ sync_args | flatten }}"
 
             # for charts that include "values.schema.json"
             # and forbid extra values, skip validation so
@@ -223,10 +226,14 @@
               transformers: "{{   patches.transformers | default([]) | flatten(1) }}"
               postRenderer: "{{ post_renderer if post_renderers is truthy else '' }}"
 
-              # don't validate against
-              # the server during diff
-              disableValidation: true
+              # related: see `--suppress` added to diffArgs
               suppressOutputLineRegex: "{{ ignore_lines }}"
+
+              # don't validate against server during diff
+              # (related: see the `helmfile apply` option
+              # `--skip-diff-on-install` specified below)
+              disableValidation: true
+
               # restore to last good state if failed
               atomic: "{{ atomic | default(true) }}"
 
@@ -260,7 +267,7 @@
               )'
         }
         while read name optional; do
-          json="$(kubectl get $name -n {{ release_ns }} -o json 2>/dev/null || true)"
+          json="$(kubectl get $name -n {{ release_ns }} -o json 2>/dev/null)" || true
 
           if [ ! "$json" ]; then
             [ "$optional" ] && continue
@@ -343,18 +350,22 @@
         clean_up
         chmod 600 $TMPDIR/*.yaml
 
-        # return exit code 2 if changes were
-        # detected *AND* synced successfully
-        helmfile --kubeconfig={{ kubeconfig }} \
-           apply --detailed-exitcode
-
+        # --skip-diff-on-install prevents "missing CRD"
+        # errors when CRs are installed alongside CRDs;
+        # --detailed-exitcode  returns status code 2 if
+        # changes were detected AND synced successfully
+        helmfile apply \
+          --kubeconfig={{ kubeconfig }} \
+          --skip-diff-on-install \
+          --detailed-exitcode
         rc=$?
-        [[ $rc -eq 0 || $rc -eq 2 ]] && {
-          # just to keep the repo list tidy...
+
+        repos=($(yq '.repositories[].name' helmfile.yaml))
+        [ "$repos" ] && { # keep repo list sorted
           yq -i '.repositories |= sort_by(.name)' \
             $HOME/.config/helm/repositories.yaml
-          clean_up
         }
+        [[ $rc -eq 0 || $rc -eq 2 ]] && clean_up
         exit $rc
       args:
         executable: /bin/bash

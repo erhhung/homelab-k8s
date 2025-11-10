@@ -1,16 +1,17 @@
 ---
 - name: Create/revert/delete VM snapshots
   hosts: "{{ xcp_master }}"
+  gather_facts: false
   vars_files:
     - vars/xcp.yml
   vars:
     # To be overridden on command-line:
     # ansible-playbook snapshotvms.yml
-    #   [-e targets=rancher,cluster]
+    #   [-e targets=k3s_cluster,rke_cluster]
     #   [-e do=create|revert|delete]
     #   [-e '{"date":"2025-02-01"}']
     #   [-e '{"desc":"snapshot 1"}']
-    targets: rancher,cluster
+    targets: k8s_all
     do: create
     date: ""
     desc: ""
@@ -110,7 +111,7 @@
           {#   # if > 1 snapshot matches per host, select most recent one #}
           {%   if filtered | selectattr('host', '==', s.host) | length == 0 %}
           {%     set secs = (s.date | to_datetime('%Y-%m-%dT%H:%M:%SZ')).timestamp() %}
-          {%     set time = '%Y-%m-%d %I:%M %p' | strftime(secs + tz_offset.in_seconds) %}
+          {%     set time = '%Y-%m-%d %I:%M %p' | strftime(secs + local_tz_offset.in_seconds) %}
           {%     if s.host in    resolved_hosts  and
                       time is search(date_regex) and
                     s.desc is search(desc_regex, ignorecase=true) %}
