@@ -33,6 +33,7 @@
             {%   set _ = sans.append(vault_release_name ~'-'~ i ~'.vault-internal') %}
             {% endfor %}
             {{ sans   }}
+          - 127.0.0.1
         sans: "{{ sans_ | flatten }}"
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
       ansible.builtin.include_tasks: tasks/k8s/secrets/tls.step.yml
@@ -53,16 +54,10 @@
         extras: # adopt extra resources into Helm release
           - cert-manager.io/v1 Certificate {{ vault_secrets['node-tls']     }}
           - cert-manager.io/v1 Certificate {{ monitoring_secrets['scraper'] }}
+          - v1 Secret {{ vault_secrets['unseal'] }} ? # populated by bootstrap
           - | # ServiceAccount/Role/RoleBinding/Job
             {{ lookup('ansible.builtin.template', template_dir ~ '/vault/bootstrap.yaml.j2')
                |  split('---') | select('search', 'apiVersion:') | map('from_yaml') }}
-          # placeholder Secret will be
-          # populated during bootstrap
-          - apiVersion: v1
-            kind: Secret
-            metadata:
-              name: "{{ vault_secrets['unseal'] }}"
-            type: Opaque
       ansible.builtin.include_tasks: tasks/helm/helmfile.yml
 
 # https://developer.hashicorp.com/vault/install
@@ -125,6 +120,14 @@
     - vars/kubernetes.yml
     - vars/externalsecrets.yml
     - vars/vault.yml
+  pre_tasks:
+    - name: Wait for Vault to be ready
+      vars:
+        kubeconfig: "{{ rke_kubeconfig }}"
+        res_kind: StatefulSet
+        res_name: "{{ vault_release_name }}"
+        res_ns: "{{ vault_namespace }}"
+      ansible.builtin.include_tasks: tasks/k8s/waitready.yml
   tasks:
     - name: Create policies/users/roles
       ansible.builtin.shell: |

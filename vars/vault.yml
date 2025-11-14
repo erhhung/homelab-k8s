@@ -108,6 +108,10 @@ vault_chart_values:
           # https://developer.hashicorp.com/vault/docs/configuration#parameters
           # (NOTE: Helm template automatically appends this setting right here)
 
+    extraEnvironmentVars:
+      # Go TLS package CA bundle
+      SSL_CERT_FILE: /tls/ca.crt
+
     volumes:
       - name: node-tls
         secret:
@@ -159,7 +163,7 @@ vault_chart_values:
       path: /v1/sys/health?standbyok=true&sealedcode=204&uninitcode=204
       periodSeconds: 10
       timeoutSeconds: 5
-      failureThreshold: 3
+      failureThreshold: 6
 
     livenessProbe:
       <<: *probe
