@@ -6,6 +6,9 @@
 #           and stored encrypted in  vars/gitlab.secrets.yml
 
 gitlab_namespace: gitlab
+gitlab_enable_istio: false
+gitlab_use_waypoint: false
+
 # aliases of "ingress" and direct
 # subdomains of fourteeners.local
 gitlab_host_names:
@@ -1094,9 +1097,6 @@ gitlab_runner:
     - linux
     - buildah
   max_timeout: 7200
-
-# Istio service mesh?
-gitlab_use_mesh: true
 
 # =================================== Pipelines Exporter ===================================
 

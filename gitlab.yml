@@ -302,7 +302,7 @@
         {{ 'Enable' if enabled else 'Disable' }}
         Istio service mesh
       vars:
-        enabled: "{{ gitlab_use_mesh  }}"
+        enabled: "{{ gitlab_enable_istio }}"
         apps_ns: "{{ gitlab_namespace }}"
         praefect: "{{ gitlab_chart_values.global.praefect }}"
         gitaly: gitaly-{{ praefect.virtualStorages[0].name }}
@@ -323,8 +323,9 @@
           {% set res = [] %}
           {% for svc in services %}
           {%   set _ = res.append({
-                 'kind': 'Service',
-                 'name':  gitlab_release_name ~'-'~ svc,
+                 'kind':   'Service',
+                 'name':    gitlab_release_name ~'-'~ svc,
+                 'enabled': gitlab_use_waypoint,
                })   %}
           {% endfor %}
           {{ res    }}
@@ -334,7 +335,7 @@
     # add ServiceEntry and DestinationRule
     - name: Configure service mesh rules
       vars:
-        state: "{{ 'present' if gitlab_use_mesh else 'absent' }}"
+        state: "{{ 'present' if gitlab_enable_istio else 'absent' }}"
         definition: "{{ lookup('ansible.builtin.template',
           template_dir ~ '/gitlab/mesh.yaml.j2') }}"
       # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_module.html
@@ -350,10 +351,10 @@
     - name: Stop if mesh JUST configured
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/fail_module.html
       ansible.builtin.fail:
-        msg: |-
-          Service mesh rules have just been updated. Please wait until
-          routing config has fully propagated by ensuring that various
-          sections of the UI work as expected, then rerun the playbook.
+        msg: "\n\n\
+          Service mesh rules have just been updated. Please wait until\n\
+          routing config has fully propagated by ensuring that various\n\
+          sections of the UI work as expected, then rerun the playbook\n"
       when:
         - mesh_rules is defined
         - mesh_rules is changed
@@ -535,8 +536,18 @@
         validate:
           fail_on_error: false
         state: present
+
+    # GitLab Runner pod doesn't appear to auto-reload
+    # its config (e.g. config.template.toml) from the
+    # ConfigMap unless restarted, so use Wave watcher
+    - name: Add Wave annotations to Deployment
+      vars:
+        res_kind: Deployment
+        res_name: "{{ gitlab_release_name }}-gitlab-runner"
+        res_ns: "{{ gitlab_namespace }}"
+      ansible.builtin.include_tasks: tasks/k8s/wave.yml
   handlers:
-    - name: Scale runner to 1 replica
+    - name: Scale runner to one replica
       kubernetes.core.k8s:
         kubeconfig: "{{ kubeconfig }}"
         api_version: apps/v1
@@ -610,9 +621,10 @@
         {{ 'Enable' if enabled else 'Disable' }}
         Istio service mesh
       vars:
-        enabled: "{{ gitlab_use_mesh }}"
+        enabled: "{{ gitlab_enable_istio }}"
         apps_ns: "{{ pipelines_exporter_namespace }}"
         resources:
           - kind: Service
             name: "{{ pipelines_exporter_release_name }}"
+            enabled: "{{ gitlab_use_waypoint }}"
       ansible.builtin.include_tasks: tasks/istio/mesh.yml

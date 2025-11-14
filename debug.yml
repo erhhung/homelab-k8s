@@ -772,6 +772,13 @@
   tags: tasks
   hosts: localhost
   tasks:
+    - name: Fail and display message
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/fail_module.html
+      ansible.builtin.fail:
+        msg: "\n\n\
+          The task just failed.\n\
+          No, it really FAILED!\n"
+
     - name: Exit the play successfully
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/meta_module.html
       ansible.builtin.meta: end_play

@@ -6,6 +6,9 @@ email_notifications_enabled: false
 slack_notifications_enabled: true
 
 argocd_namespace: argocd
+argocd_enable_istio: false
+argocd_use_waypoint: false
+
 argocd_host_name: argocd # alias of "ingress"
 
 # remember to add argocd.fourteeners.local to pfSense DNS
@@ -436,9 +439,6 @@ argocd_chart_values:
     # don't need IdP integration in
     # homelab environment currently
     enabled: false
-
-# Istio service mesh?
-argocd_use_mesh: true
 
 # =================================== Grafana Dashboards ===================================
 

@@ -133,7 +133,7 @@
         {{ 'Enable' if enabled else 'Disable' }}
         Istio service mesh
       vars:
-        enabled: "{{ argocd_use_mesh  }}"
+        enabled: "{{ argocd_enable_istio }}"
         apps_ns: "{{ argocd_namespace }}"
         services:
           # names without argocd- prefix
@@ -145,8 +145,9 @@
           {% set res = [] %}
           {% for svc in services %}
           {%   set _ = res.append({
-                 'kind': 'Service',
-                 'name':  argocd_release_name ~'-'~ svc,
+                 'kind':   'Service',
+                 'name':    argocd_release_name ~'-'~ svc,
+                 'enabled': argocd_use_waypoint,
                })   %}
           {% endfor %}
           {{ res    }}
@@ -165,17 +166,17 @@
       ansible.builtin.shell: |
         set -o pipefail
 
-        REL="https://github.com/argoproj/argo-cd/releases/latest"
-        VER=$(curl -Is $REL | sed -En 's/^location:.+\/tag\/(.+)\r$/\1/p')
+        REL="https://github.com/argoproj/argo-cd/releases"
+        VER=$(curl -Is "$REL/latest" | sed -En 's/^location:.+\/tag\/v(.+)\r$/\1/p')
 
         # check if latest version already installed
         command -v argocd &> /dev/null && {
-          ver=$(v=(`argocd version --client --short`); echo ${v[1]%+*})
+          ver=$(v=(`argocd version --client --short`); v=${v[1]#v}; echo ${v%+*})
           [ "$ver" == "$VER" ] && exit 9 # no change
         }
         ARCH=$(uname -m | sed -e 's/aarch64/arm64/' \
                               -e  's/x86_64/amd64/')
-        curl -fsSLo argocd "$REL/download/argocd-linux-$ARCH"
+        curl -fsSLo argocd "$REL/download/v${VER}/argocd-linux-$ARCH"
         chmod +x argocd
       args:
         executable: /bin/bash

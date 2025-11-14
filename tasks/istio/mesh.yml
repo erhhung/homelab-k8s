@@ -17,18 +17,20 @@
   when: service_mesh_crds_installed is not defined
 
 - name: >-
-    {{ 'Enable' if enabled | default(true) else 'Disable' }}
+    {{ 'Enable' if istio_enabled else 'Disable' }}
     Istio for {{ apps_ns }} namespace
   when: service_mesh_crds_installed
   become: false
   vars:
     # required kubernetes>=24.2 package only in user virtualenv
     ansible_python_interpreter: "{{ venv_python_interpreter }}"
-    enabled_: "{{ enabled | default(true) }}"
-    waypoint: "{{ apps_ns ~ '-waypoint' }}"
+    istio_enabled: "{{ enabled | default(true) }}"
+    waypoint_enabled: "{{ istio_enabled and resources |
+      default([]) | map(attribute='enabled') is any }}"
+    waypoint_name: "{{ apps_ns ~ '-waypoint' }}"
   block:
     - name: >-
-        {{ 'Label' if enabled_ else 'Unlabel' }}
+        {{ 'Label' if istio_enabled else 'Unlabel' }}
         {{ apps_ns }} namespace as data plane
       # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_module.html
       kubernetes.core.k8s:
@@ -39,13 +41,13 @@
         definition:
           metadata:
             labels: # set label value to null (none) to remove an existing key
-              istio.io/dataplane-mode: "{{ 'ambient' if enabled_ else none }}"
+              istio.io/dataplane-mode: "{{ 'ambient' if istio_enabled else none }}"
         state: patched
 
     # https://istio.io/latest/docs/ambient/usage/waypoint#deploy-a-waypoint-proxy
     # https://ambientmesh.io/docs/setup/configure-waypoints
     - name: >-
-        {{ 'Deploy' if enabled_ else 'Delete' }}
+        {{ 'Deploy' if waypoint_enabled else 'Delete' }}
         Waypoint proxy via Gateway API
       kubernetes.core.k8s:
         kubeconfig: "{{ kubeconfig }}"
@@ -55,7 +57,7 @@
           apiVersion: gateway.networking.k8s.io/v1
           kind: Gateway
           metadata:
-            name: "{{ waypoint }}"
+            name: "{{ waypoint_name }}"
             labels:
               istio.io/waypoint-for: service
           spec:
@@ -69,16 +71,12 @@
               - name: http-monitoring
                 port: 15090
                 protocol: HTTP
-        # validate:
-        #   fail_on_error: false
-        state: "{{ 'present' if enabled_ else 'absent' }}"
+        state: "{{ 'present' if waypoint_enabled else 'absent' }}"
 
     # https://istio.io/latest/docs/ambient/usage/waypoint#useawaypoint
     - name: >-
-        {{ 'Label' if enabled_ else 'Unlabel' }}
+        {{ 'Label' if waypoint_enabled else 'Unlabel' }}
         resource for Waypoint proxy
-      vars:
-        _enabled: "{{ enabled_ and item.enabled | default(true) }}"
       kubernetes.core.k8s:
         kubeconfig: "{{ kubeconfig }}"
         api_version: v1
@@ -88,7 +86,8 @@
         definition:
           metadata:
             labels: # set label value to null (none) to remove existing key
-              istio.io/use-waypoint: "{{ waypoint if _enabled else none }}"
+              istio.io/use-waypoint: "{{ waypoint_name if
+                item.enabled | default(true) else none }}"
         # when state = `patched`, task does
         # nothing if resource doesn't exist
         state: patched
