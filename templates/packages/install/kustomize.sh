@@ -1,18 +1,21 @@
 # https://github.com/kubernetes-sigs/kustomize
 
 # shellcheck disable=SC2148 # Tips depend on target shell
+# shellcheck disable=SC2006 # Prefer $(...) over legacy `...`
+# shellcheck disable=SC2086 # Double quote prevent globbing
 
 set -eo pipefail
 
-REL="https://github.com/kubernetes-sigs/kustomize/releases/latest"
-VER=$(curl -Is $REL | sed -En 's/^location:.+\/tag\/kustomize\/(.+)\r$/\1/p')
+REL="https://github.com/kubernetes-sigs/kustomize/releases"
+VER=$(curl -Is "$REL/latest" | sed -En 's/^location:.+\/tag\/kustomize\/v(.+)\r$/\1/p')
 
 # check if latest version already installed
 command -v kustomize &> /dev/null && {
-  [ "$(kustomize version)" == "$VER" ] && exit 9 # no change
+  ver=$(v=`kustomize version`; echo ${v#v})
+  [ "$ver" == "$VER" ] && exit 9 # no change
 }
 ARCH=$(uname -m | sed -e 's/aarch64/arm64/' -e 's/x86_64/amd64/')
-curl -fsSL "$REL/download/kustomize_${VER}_linux_$ARCH.tar.gz" | \
+curl -fsSL "$REL/download/kustomize/v${VER}/kustomize_v${VER}_linux_${ARCH}.tar.gz" | \
   tar -xz -C /usr/local/bin --no-same-owner kustomize
 
 # create our own wrapper script that sanitizes

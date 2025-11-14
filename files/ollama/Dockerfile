@@ -36,9 +36,9 @@ RUN <<'EOT'
 ( set -uxo pipefail
 
   mkdir ollama-ipex-llm
-  REL="https://github.com/ipex-llm/ipex-llm/releases/latest"
-  VER=$(curl -Is $REL | sed -En 's/^location:.+\/tag\/v(.+)\r$/\1/p')
-  curl -fsSL "$REL/download/ollama-ipex-llm-$VER-ubuntu.tgz" | \
+  REL="https://github.com/ipex-llm/ipex-llm/releases"
+  VER=$(curl -Is "$REL/latest" | sed -En 's/^location:.+\/tag\/v(.+)\r$/\1/p')
+  curl -fsSL "$REL/download/v${VER}/ollama-ipex-llm-$VER-ubuntu.tgz" | \
     tar -xz -C ollama-ipex-llm --no-same-owner --strip-components=1
 )
 EOT

@@ -7,8 +7,8 @@
 
 set -eo pipefail
 
-REL="https://github.com/fastfetch-cli/fastfetch/releases/latest"
-VER=$(curl -Is $REL | sed -En 's/^location:.+\/tag\/(.+)\r$/\1/p')
+REL="https://github.com/fastfetch-cli/fastfetch/releases"
+VER=$(curl -Is "$REL/latest" | sed -En 's/^location:.+\/tag\/(.+)\r$/\1/p')
 
 # check if latest version already installed
 command -v fastfetch &> /dev/null && {
@@ -16,7 +16,7 @@ command -v fastfetch &> /dev/null && {
   [ "$ver" == "$VER" ] && exit 9 # no change
 }
 ARCH=$(uname -m | sed -e 's/x86_64/amd64/') # or aarch64
-curl -fsSL "$REL/download/fastfetch-linux-$ARCH.tar.gz" | \
+curl -fsSL "$REL/download/$VER/fastfetch-linux-$ARCH.tar.gz" | \
   tar -xz -C / --no-same-owner --strip-components=1 \
     "fastfetch-linux-$ARCH"
 
