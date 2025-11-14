@@ -254,20 +254,20 @@
       ansible.builtin.shell: |
         set -o pipefail
 
-        REL="https://github.com/rancher/cli/releases/latest"
-        VER=$(curl -Is $REL | sed -En 's/^location:.+\/tag\/(.+)\r$/\1/p')
+        REL="https://github.com/rancher/cli/releases"
+        VER=$(curl -Is "$REL/latest" | sed -En 's/^location:.+\/tag\/v(.+)\r$/\1/p')
 
         # check if latest version already installed
         BIN=$(command -v rancher) &> /dev/null && {
-          ver=$(v=(`rancher --version`); echo ${v[-1]})
+          ver=$(v=(`rancher --version`); echo ${v[-1]#v})
           [ "$ver" == "$VER" ] && exit 9 # no change
           BIN=$(dirname "$BIN")
         }
         ARCH=$(uname -m | sed -e  's/x86_64/amd64/' \
                               -e 's/aarch64/arm64/')
-        curl -fsSL "$REL/download/rancher-linux-$ARCH-$VER.tar.gz" | \
+        curl -fsSL "$REL/download/v${VER}/rancher-linux-$ARCH-v${VER}.tar.gz" | \
           tar -xz -C "${BIN:-/usr/local/bin}" --no-same-owner \
-            --strip-components=2 ./rancher-$VER/rancher
+            --strip-components=2 ./rancher-v${VER}/rancher
       args:
         executable: /bin/bash
       register: install_cli

@@ -48,17 +48,17 @@
       ansible.builtin.shell: |
         set -o pipefail
 
-        REL="https://github.com/goharbor/harbor-cli/releases/latest"
-        VER=$(curl -Is $REL | sed -En 's/^location:.+\/tag\/(.+)\r$/\1/p')
+        REL="https://github.com/goharbor/harbor-cli/releases"
+        VER=$(curl -Is "$REL/latest" | sed -En 's/^location:.+\/tag\/v(.+)\r$/\1/p')
 
         # check if latest version already installed
         command -v harbor &> /dev/null && {
-          ver=$(harbor version | yq .Version)
+          ver=$(v=`harbor version | yq .Version`; echo ${v#v})
           [ "$ver" == "$VER" ] && exit 9 # no change
         }
         ARCH=$(uname -m | sed -e 's/aarch64/arm64/' \
                               -e  's/x86_64/amd64/')
-        tarball="$REL/download/harbor-cli_${VER#v}_linux_$ARCH.tar.gz"
+        tarball="$REL/download/v${VER}/harbor-cli_${VER}_linux_${ARCH}.tar.gz"
 
         # this project is known to create a new release but fail to
         # attach asset files for download, so first ensure that the

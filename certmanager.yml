@@ -46,17 +46,17 @@
       ansible.builtin.shell: |
         set -o pipefail
 
-        REL="https://github.com/cert-manager/cmctl/releases/latest"
-        VER=$(curl -Is $REL | sed -En 's/^location:.+\/tag\/(.+)\r$/\1/p')
+        REL="https://github.com/cert-manager/cmctl/releases"
+        VER=$(curl -Is "$REL/latest" | sed -En 's/^location:.+\/tag\/v(.+)\r$/\1/p')
 
         # check if latest version already installed
         command -v cmctl &> /dev/null && {
-          ver=($(cmctl version --client --short))
-          [ "${ver[-1]}" == "$VER" ] && exit 9 # no change
+          ver=$(v=(`cmctl version --client --short`); echo ${v[-1]#v})
+          [ "$ver" == "$VER" ] && exit 9 # no change
         }
         ARCH=$(uname -m | sed -e 's/aarch64/arm64/' \
                               -e  's/x86_64/amd64/')
-        curl -fsSL "$REL/download/cmctl_linux_$ARCH.tar.gz" | \
+        curl -fsSL "$REL/download/v${VER}/cmctl_linux_${ARCH}.tar.gz" | \
           tar -xz -C /usr/local/bin --no-same-owner cmctl
       args:
         executable: /bin/bash

@@ -8,8 +8,8 @@
 
 set -eo pipefail
 
-REL="https://github.com/mikefarah/yq/releases/latest"
-VER=$(curl -Is $REL | sed -En 's/^location:.+\/tag\/v(.+)\r$/\1/p')
+REL="https://github.com/mikefarah/yq/releases"
+VER=$(curl -Is "$REL/latest" | sed -En 's/^location:.+\/tag\/v(.+)\r$/\1/p')
 
 # check if latest version already installed
 command -v yq &> /dev/null && {
@@ -18,11 +18,10 @@ command -v yq &> /dev/null && {
 }
 mkdir -p /tmp/yq
 ( cd     /tmp/yq
-  ARCH=$(uname -m | sed -e 's/aarch64/arm64/' \
-                        -e  's/x86_64/amd64/')
-  curl -fsSL "$REL/download/yq_linux_$ARCH.tar.gz" | \
+  ARCH=$(uname -m | sed -e 's/aarch64/arm64/' -e 's/x86_64/amd64/')
+  curl -fsSL "$REL/download/v${VER}/yq_linux_${ARCH}.tar.gz" | \
     tar -xz --no-same-owner
-  cp -a "yq_linux_$ARCH" /usr/bin/yq
+  mv -f "yq_linux_${ARCH}" /usr/bin/yq
   ./install-man-page.sh
 )
 rm -rf /tmp/yq
