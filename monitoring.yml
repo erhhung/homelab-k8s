@@ -149,33 +149,20 @@
         # run Bash and source /etc/profile.d
         # scripts so that kubectl is in PATH
         exec /bin/bash -l <<'EOT'
-        set -eo pipefail
+        set -o pipefail
 
         crds_file="/tmp/prometheus-crds.yaml"
         trap "rm -f $crds_file" EXIT
 
-        helm template crds \
+        helm template prometheus-crds \
           --repo="{{ repo_url }}" \
           --include-crds > $crds_file
 
-        rc=9
-        while read name new_ver; do
-          old_ver=$(kubectl get crd/$name -o yaml 2> /dev/null | \
-              yq '.spec.versions[].name') || true
-          [ "$old_ver" == "$new_ver" ] || {
-            rc=0; break # (re)install ALL
-          }
-        done < <(
-          yq ea '(["\(.metadata.name) \(.spec.versions[].name)"]-[" "])[]' $crds_file
-        )
-        [ $rc -eq 0 ] || {
-          set +e; exit $rc # no change
-        }
-
-        # delete all and recreate instead of applying to avoid errors like:
-        # metadata.annotations: Too long: may not be more than 262144 bytes
-        kubectl delete -f $crds_file --ignore-not-found=true
-        kubectl create -f $crds_file
+        # do server-side diff & apply so Helm doesn`t
+        # store state in annotations and cause error:
+        # Too long: may not be more than 262144 bytes
+        kubectl diff  --server-side -f $crds_file && exit 9 # no change
+        kubectl apply --server-side -f $crds_file
         EOT
       register: install_crds
       changed_when: install_crds.rc == 0
