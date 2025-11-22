@@ -42,8 +42,9 @@
     repo_tags: |
       {% set tags = [] %}
       {% for artifact in repo_artifacts.json %}
-      {%   if artifact.type == 'IMAGE' %}
-      {%     for tag in artifact.tags  %}
+      {%   if artifact.type == 'IMAGE' and
+              artifact.tags is iterable %}
+      {%     for tag in artifact.tags   %}
       {%       set _ = tags.append({
                  'tag':  tag.name,
                  'date': tag.push_time,

@@ -214,7 +214,7 @@
             - name: "{{      release    }}"
               namespace: "{{ release_ns }}"
               chart: "{{   chart_repo ~ chart_ref   }}"
-              version: "{{ chart_ver  | default('') }}"
+              version: "{{ chart_ver if chart_ver is defined and chart_ver != omit else '' }}"
 
               # https://helmfile.readthedocs.io/en/latest/advanced-features#adding-dependencies-without-forking-the-chart
               dependencies: "{{ [extras_chart.dependency] if has_extras else [] }}"

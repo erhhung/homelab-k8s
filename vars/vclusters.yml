@@ -6,20 +6,42 @@
 
 # vclusters.node is where etcd and data PVs will be created.
 # IMPORTANT! remember to create DNS record for each vCluster
-# (e.g. learning.vcluster.fourteeners.local) in pfSense that
+# (e.g. staging.vcluster.fourteeners.local) in pfSense that
 # resolve to the RKE control plane (cluster VIP in HA mode)
 # prior to provisioning
 vclusters:
-  # - name: learning
-  #   node: k8s6
   - name: testing
     node: k8s5
+  - name: staging
+    node: k8s6
 
 vcluster_pv_sizes:
   etcd: 2Gi
   data: 2Gi
 
 vcluster_domain: "{{ ['vcluster'] | product(search_domains) | map('join','.') | first }}"
+
+# vCluster kube API server
+# external ingress domains
+vcluster_fqdns: |
+  {% set fqdns = {} %}
+  {% for vc in vclusters %}
+  {%   set _ = fqdns.update({
+         vc.name: vc.name ~'.'~ vcluster_domain,
+       })   %}
+  {% endfor %}
+  {{ fqdns  }}
+
+# vCluster kube API server
+# internal service domains
+vcluster_kube_urls: |
+  {% set urls = {} %}
+  {% for vc in vclusters %}
+  {%   set _ = urls.update({
+         vc.name: 'https://'~ vc.name ~'.vcluster-'~ vc.name ~'.svc',
+       })   %}
+  {% endfor %}
+  {{ urls   }}
 
 # these pods are provisioned by vCluster, and are not
 # considered when checking if there are user-deployed
@@ -29,7 +51,6 @@ vcluster_pods: # regex matching <namespace>/<pod-name>
 
 # https://github.com/loft-sh/vcluster/tree/main/chart
 vcluster_chart_version: "0.26.0"
-
 # https://github.com/loft-sh/vcluster/tree/main/chart/values.yaml
 # https://www.vcluster.com/docs/vcluster/configure/vcluster-yaml
 # vcluster_chart_values: {templates/vcluster.yaml.j2}

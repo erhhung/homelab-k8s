@@ -105,7 +105,8 @@
         repo_name: open-webui
         repo_url: "{{ openwebui_chart_repo_url }}"
         chart_ref: open-webui
-        chart_ver: "{{ openwebui_chart_version }}"
+        chart_ver: "{{ openwebui_chart_version if
+          openwebui_chart_repo_url is match('^http') else omit }}"
         release: "{{ openwebui_release_name }}"
         release_ns: "{{ openwebui_namespace }}"
         values: "{{ openwebui_chart_values }}"

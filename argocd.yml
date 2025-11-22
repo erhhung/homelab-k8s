@@ -1,6 +1,34 @@
 # https://argo-cd.readthedocs.io/en/stable/getting_started
 # https://argo-cd.readthedocs.io/en/stable/operator-manual/installation
 ---
+# alternative: https://github.com/travisghansen/argo-cd-helmfile
+- name: Build Argo CD Helmfile plugin
+  tags: build
+  hosts: localhost
+  vars_files:
+    - vars/kubernetes.yml
+    - vars/argocd.yml
+  tasks:
+    - name: Build image and push to Harbor
+      vars:
+        context_dir: files/argocd/plugins/helmfile
+        image_name: cmp-helmfile
+        if_changed: Restart argocd-repo-server pods
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
+      ansible.builtin.include_tasks: tasks/docker/build.yml
+  handlers:
+    - name: Restart argocd-repo-server pods
+      delegate_to: "{{ rke_control_plane_host }}"
+      block:
+        - name: Restart argocd-repo-server pods
+          vars:
+            kubeconfig: "{{ rke_kubeconfig }}"
+            res_kind: Deployment
+            res_name: "{{ argocd_release_name }}-repo-server"
+            res_ns: "{{ argocd_namespace }}"
+            not_found: skip # ignore if Argo CD not installed
+          ansible.builtin.include_tasks: tasks/k8s/restart.yml
+
 - name: Install Argo CD GitOps tool
   tags: install
   hosts: "{{ rke_control_plane_host }}"
@@ -8,6 +36,7 @@
     - vars/kubernetes.yml
     - vars/valkey.yml
     - vars/gitlab.yml
+    - vars/vclusters.yml
     - vars/monitoring.yml
     - vars/argocd.yml
   vars:
@@ -25,7 +54,6 @@
           vars:
             repository: "{{ argocd_image.repository }}"
             verify_tag: "{{ argocd_image.tag | default(omit) }}"
-          # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
           ansible.builtin.include_tasks: tasks/harbor/gettag.yml
           # sets repo_tag_found fact
 
@@ -50,6 +78,30 @@
     - name: Get CA certificates from PKI
       ansible.builtin.include_tasks: tasks/pki/cacerts.yml
       when: ca_certificates is not defined
+
+    # get https:// Git credentials found in argocd-repo-creds-*
+    # Secrets (argocd_chart_values.configs.credentialTemplates)
+    # (this will return empty if Argo CD hasn't been installed)
+    - name: Get .git-credentials content
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/shell_module.html
+      ansible.builtin.shell: |
+        # run Bash and source /etc/profile.d
+        # scripts so that kubectl is in PATH
+        exec /bin/bash -l <<'EOT'
+        set -o pipefail
+
+        # https://git-scm.com/docs/git-credential-store#_storage_format
+        kubectl get secrets -n {{ argocd_namespace }}  \
+          -l argocd.argoproj.io/secret-type=repo-creds \
+          -o json | jq -r '.items[].data     |
+          (.url       | @base64d) as $url    |
+          select($url | startswith("https")) |
+          (.username  | @base64d) as $user   |
+          (.password  | @base64d) as $pass   |
+          $url | gsub("://"; "://\($user):\($pass)@")'
+        EOT
+      register: git_creds
+      changed_when: false
 
     - name: Get GitLab shell known hosts
       vars:
@@ -80,6 +132,18 @@
         name: argocd-repo-creds-gitlab-external-http
         namespace: "{{ secret_ns }}"
       register: gitlab_pat
+
+    - name: Get vCluster kubeconfig data
+      vars:
+        vc_names: "{{ vclusters | map(attribute='name') }}"
+      kubernetes.core.k8s_info:
+        kubeconfig: "{{ kubeconfig }}"
+        api_version: v1
+        kind: Secret
+        name: vc-{{ item }}
+        namespace: vcluster-{{ item }}
+      loop: "{{ vc_names }}"
+      register: vc_kubeconfigs
   tasks:
     # https://argo-cd.readthedocs.io/en/stable/operator-manual/tls#tls-certificates-used-by-argocd-server
     - name: Create Argo CD ingress secret
@@ -101,7 +165,54 @@
           redis-password: "{{ valkey_pass }}"
       ansible.builtin.include_tasks: tasks/k8s/secrets/generic.yml
 
-    - name: Verify/rotate or create PAT
+    # https://argo-cd.readthedocs.io/en/stable/operator-manual/declarative-setup#clusters
+    - name: Create managed cluster secret
+      vars:
+        vc_names: "{{ vclusters | map(attribute='name') }}"
+        vc_secret_data: "{{ vc_kubeconfigs.results[i].resources[0].data }}"
+        vc_kubeconfig: "{{ vc_secret_data.config | b64decode | from_yaml }}"
+        cluster: "{{ vc_kubeconfig.clusters[0].cluster }}"
+        user: "{{ vc_kubeconfig.users[0].user }}"
+
+        # === Inputs ===
+        secret_name: argocd-cluster-creds-{{ item }}
+        labels:
+          argocd.argoproj.io/secret-type: cluster
+          environment: "{{ item }}"
+          provider: vcluster
+        secret_data:
+          name: "{{ item }}"
+          server: "{{ vcluster_kube_urls[item] }}"
+          project: homelab
+          config: |-
+            {{ { 'tlsClientConfig': {
+                   'caData':   cluster['certificate-authority-data'],
+                   'certData': user['client-certificate-data'],
+                   'keyData':  user['client-key-data'],
+               } } |
+              ansible.builtin.to_nice_json(indent=2) }}
+      ansible.builtin.include_tasks: tasks/k8s/secrets/generic.yml
+      loop: "{{ vc_names }}"
+      loop_control:
+        index_var: i
+
+    # https://git-scm.com/docs/git-credential-store
+    - name: Create Git creds secret for CMP
+      vars:
+        secret_name: "{{ argocd_secrets['git-creds'] }}"
+        secret_data:
+          .git-credentials: "{{ git_creds.stdout }}"
+      ansible.builtin.include_tasks: tasks/k8s/secrets/generic.yml
+
+    # https://github.com/getsops/sops#encrypting-using-age
+    - name: Create age keys secret for SOPS
+      vars:
+        secret_name: "{{ argocd_secrets['age-keys'] }}"
+        secret_data:
+          keys.txt: "{{ age_secret_key }}"
+      ansible.builtin.include_tasks: tasks/k8s/secrets/generic.yml
+
+    - name: Verify/rotate/create GitLab PAT
       vars:
         token: >-
           {{ gitlab_pat.resources[0].data['password'] | b64decode
@@ -119,14 +230,21 @@
         repo_name: argo
         repo_url: "{{ argocd_chart_repo_url }}"
         chart_ref: argo-cd
-        chart_ver: "{{ argocd_chart_version }}"
+        chart_ver: "{{ argocd_chart_version if
+          argocd_chart_repo_url is match('^http') else omit }}"
         release: "{{ argocd_release_name }}"
         release_ns: "{{ argocd_namespace }}"
         values: "{{ argocd_chart_values }}"
 
         extras: # adopt extra resources into Helm release
           - cert-manager.io/v1 Certificate {{ argocd_secrets['server'] }}
-          - v1 Secret {{ argocd_secrets['valkey'] }}
+          - v1 Secret {{ argocd_secrets['valkey']    }}
+          - v1 Secret {{ argocd_secrets['git-creds'] }}
+          - v1 Secret {{ argocd_secrets['age-keys']  }}
+          - |
+            {% for vc in vclusters %}
+            v1 Secret argocd-cluster-creds-{{ vc.name }}
+            {% endfor %}
       ansible.builtin.include_tasks: tasks/helm/helmfile.yml
 
     - name: >-
@@ -162,7 +280,6 @@
     # https://argo-cd.readthedocs.io/en/stable/cli_installation#download-with-curl
     - name: Install Argo CD CLI tool
       become: true
-      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/shell_module.html
       ansible.builtin.shell: |
         set -o pipefail
 
@@ -204,6 +321,7 @@
   hosts: "{{ rke_control_plane_host }}"
   vars_files:
     - vars/kubernetes.yml
+    - vars/vclusters.yml
     - vars/gitlab.yml
     - vars/argocd.yml
   vars:

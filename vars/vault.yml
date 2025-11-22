@@ -112,6 +112,25 @@ vault_chart_values:
       # Go TLS package CA bundle
       SSL_CERT_FILE: /tls/ca.crt
 
+    extraInitContainers:
+      - name: fix-perms
+        image: busybox
+        imagePullPolicy: IfNotPresent
+        command: ["sh"]
+        args:
+          - -c
+          - |-
+            # fixes warning: storage.raft.fsm: raft FSM
+            # db file has wider permissions than needed
+            [ -f /vault/data/vault.db ] && \
+              chmod 600 /vault/data/vault.db
+            chmod 700 /vault/data
+        securityContext:
+          runAsUser: 0
+        volumeMounts:
+          - name: data
+            mountPath: /vault/data
+
     volumes:
       - name: node-tls
         secret:

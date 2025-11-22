@@ -76,17 +76,7 @@
       vars:
         vcluster_fqdn: "{{ vcluster.name }}.{{ vcluster_domain }}"
         vcluster_ns: vcluster-{{ vcluster.name }}
-        tls_secret: vc-{{ vcluster.name }}-tls
       block:
-        - name: Create vCluster ingress secret
-          vars:
-            secret_name: "{{ tls_secret }}"
-            secret_ns: "{{ vcluster_ns }}"
-            cert_name: "{{ vcluster_ns }}"
-            sans: ["{{ vcluster_fqdn }}"]
-          # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
-          ansible.builtin.include_tasks: tasks/k8s/secrets/tls.step.yml
-
         - name: Install vCluster Helm chart
           vars:
             # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/template_lookup.html
@@ -134,9 +124,7 @@
                   else
                     echo "$yaml"
                   fi
-
-            extras: # adopt extra resources into Helm release
-              - cert-manager.io/v1 Certificate {{ vcluster_ns }}
+          # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
           ansible.builtin.include_tasks: tasks/helm/helmfile.yml
 
         - name: Fetch vCluster kubeconfig

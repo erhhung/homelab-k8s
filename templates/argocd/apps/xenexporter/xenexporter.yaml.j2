@@ -15,7 +15,7 @@ spec:
     targetRevision: main
     path: overlays/homelab
   destination:
-    server: {{ kube_api_url }}
+    name: in-cluster
     namespace: xen-exporter
   syncPolicy:
     automated:

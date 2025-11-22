@@ -8,6 +8,8 @@
 #   image_name  <required> base image name
 #   image_tag   [optional] default=latest
 #   platforms   [optional] default=[ARCH]
+#   if_changed  [optional] notify handler (only if
+#                          new artifact generated)
 ---
 - name: Gather facts about controller
   # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
@@ -20,7 +22,8 @@
   vars:
     ansible_python_interpreter: "{{ local_python_interpreter }}"
     # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/basename_filter.html
-    local_name: "{{ image_name | ansible.builtin.basename }}:{{ image_tag | default('latest') }}"
+    base_name: "{{ image_name | ansible.builtin.basename }}"
+    local_name: "{{ base_name }}:{{ image_tag | default('latest') }}"
     local_image: "{{ local_name | ansible.builtin.regex_replace(':latest$','') }}"
     remote_name: "{{ harbor_container_registry }}/library/{{ local_name }}"
     remote_image: "{{ remote_name | ansible.builtin.regex_replace(':latest$','') }}"
@@ -52,11 +55,42 @@
         username: "{{ harbor_admin_user }}"
         password: "{{ harbor_admin_pass }}"
 
+    - name: Count current repository artifacts
+      delegate_to: &delegate >-
+        {{ groups['rke_any'] | first }}
+      vars: &vars
+        ansible_python_interpreter: "{{ default_python_interpreter }}"
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/shell_module.html
+      ansible.builtin.shell: &script |
+        # set $HARBOR_ENCRYPTION_KEY
+        . .bash_aliases
+        set -o pipefail
+
+        harbor artifact list library/{{ base_name }} -o json | \
+          jq '.Payload | map(select(.type == "IMAGE")) | length'
+      args: &args
+        executable: /bin/bash
+      register: artifacts_before
+      when: if_changed is defined
+      changed_when: false
+
     - name: Push "{{ remote_image }}"
       # https://docs.ansible.com/ansible/latest/collections/community/docker/docker_image_push_module.html
       community.docker.docker_image_push:
         name: "{{ remote_name }}"
       timeout: 600
+
+    - name: Notify handler if artifact created
+      delegate_to: *delegate
+      ansible.builtin.shell: *script
+      vars: *vars
+      args: *args
+      register: artifacts_after
+      when: if_changed is defined
+      changed_when: >-
+        artifacts_after.stdout  | int >
+        artifacts_before.stdout | int
+      notify: "{{ if_changed }}"
   always:
     - name: Untag "{{ remote_image }}"
       # https://docs.ansible.com/ansible/latest/collections/community/docker/docker_image_remove_module.html

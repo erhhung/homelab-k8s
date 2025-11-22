@@ -10,6 +10,7 @@
   "files.associations": {
     "*.json*.j2": "json",
     "*.yaml*.j2": "yaml",
+    "*.yaml.gotmpl": "yaml",
     "*.yml*.j2": "yaml",
     "*.xml*.j2": "xml",
     "*.toml*.j2": "toml",
