@@ -27,7 +27,7 @@
   block:
     - name: Get {{ res_name }} {{ res_kind }}
       vars:
-        api_default: "{{ 'v1' if res_kind == 'Pod' else 'apps/v1' }}"
+        api_default: "{{ '' if res_kind == 'Pod' else 'apps/' }}v1"
       # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_info_module.html
       kubernetes.core.k8s_info:
         kubeconfig: "{{ kubeconfig }}"

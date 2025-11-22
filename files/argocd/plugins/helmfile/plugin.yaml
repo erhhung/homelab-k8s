@@ -1,0 +1,21 @@
+# https://www.kubeblog.com/argocd/using-argocd-with-helmfile
+# https://argo-cd.readthedocs.io/en/stable/operator-manual/config-management-plugins
+---
+apiVersion: argoproj.io/v1alpha1
+kind: ConfigManagementPlugin
+metadata:
+  name: helmfile
+spec:
+  # IMPORTANT: if version is defined here, then
+  # spec.source.plugin.name in Application must
+  # be "helmfile-<version>" instead of helmfile
+  # version: v1.0
+  init:
+    command: ["helmfile.sh"]
+    args: ["init"]
+  generate:
+    command: ["helmfile.sh"]
+    args: ["generate"]
+  discover:
+    # *.y*ml and *.y*ml.gotmpl
+    fileName: "helmfile*.y*ml*"

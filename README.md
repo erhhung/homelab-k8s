@@ -392,77 +392,78 @@ however, all privileged operations using `sudo` will require the password stored
     ```
 </details>
 
-20. <details><summary>Install <strong>HashiCorp Vault</strong> in <em><strong>HA</strong></em> mode<br/> &nbsp; &nbsp; Install <strong>External Secrets Operator</strong></summary><br/>
+20. <details><summary>Create <strong>virtual Kubernetes clusters</strong> in RKE</summary><br/>
 
-    20.1. Initialize Vault cluster and unseal cluster pods  
-    20.2. Create policies, `Userpass` accounts, k8s roles  
-    20.3. Create `KV` mounts and populate secrets data  
-    20.4. Create ESO's `ClusterSecretStore` for Vault
+    ```bash
+    ./play.sh vclusters
+    ```
+</details>
+
+21. <details><summary>Install <strong>HashiCorp Vault</strong> in <em><strong>HA</strong></em> mode<br/> &nbsp; &nbsp; Install <strong>External Secrets Operator</strong></summary><br/>
+
+    21.1. Initialize Vault cluster and unseal cluster pods  
+    21.2. Create policies, `Userpass` accounts, k8s roles  
+    21.3. Create `KV` mounts and populate secrets data  
+    21.4. Create ESO's `ClusterSecretStore` for Vault
 
     ```bash
     ./play.sh vault externalsecrets
     ```
 </details>
 
-21. <details><summary>Install <strong>GitLab EE</strong> CI/CD Platform to build local images</summary><br/>
+22. <details><summary>Install <strong>GitLab EE</strong> CI/CD Platform to build local images</summary><br/>
 
-    21.1. Import Erhhung's SSH and GPG public keys, and create the `Homelab` group  
-    21.2. Configure **Harbor** and **Slack** integrations, and access GitHub using OmniAuth  
-    21.3. Configure and deploy **Kubernetes runner** for building images using `buildah`  
-    21.4. Use [`al2023-devops`](https://github.com/erhhung/al2023-devops) as the build container and load common pre-build script  
-    21.5. Deploy **CI Pipelines Exporter** to export metrics and visualize them in Grafana
+    22.1. Import Erhhung's SSH and GPG public keys, and create the `Homelab` group  
+    22.2. Configure **Harbor** and **Slack** integrations, and access GitHub using OmniAuth  
+    22.3. Configure and deploy **Kubernetes runner** for building images using `buildah`  
+    22.4. Use [`al2023-devops`](https://github.com/erhhung/al2023-devops) as the build container and load common pre-build script  
+    22.5. Deploy **CI Pipelines Exporter** to export metrics and visualize them in Grafana
 
     ```bash
     ./play.sh gitlab
     ```
 </details>
 
-22. <details><summary>Install <strong>Argo CD</strong> GitOps delivery in <em><strong>HA</strong></em> mode</summary><br/>
+23. <details><summary>Install <strong>Argo CD</strong> GitOps delivery in <em><strong>HA</strong></em> mode</summary><br/>
 
-    22.1. Configure Argo CD to use **Valkey** for caching  
-    22.2. Configure **GitLab** as an allowed SCM provider
+    23.1. Configure Argo CD to use **Valkey** for caching  
+    23.2. Configure **GitLab** as an allowed SCM provider
 
     ```bash
     ./play.sh argocd
     ```
 </details>
 
-23. <details><summary>Install <strong>Metacontroller</strong> to create Operators</summary><br/>
+24. <details><summary>Install <strong>Metacontroller</strong> to create Operators</summary><br/>
 
     ```bash
     ./play.sh metacontroller
     ```
 </details>
 
-24. <details><summary>Install <strong>Qdrant</strong> vector database in <em><strong>HA</strong></em> mode</summary><br/>
+25. <details><summary>Install <strong>Qdrant</strong> vector database in <em><strong>HA</strong></em> mode</summary><br/>
 
     ```bash
     ./play.sh qdrant
     ```
 </details>
 
-25. <details><summary>Install <strong>Ollama</strong> LLM server with common models<br/> &nbsp; &nbsp; Install <strong>Open WebUI</strong> AI platform with <strong>Pipelines</strong></summary><br/>
+26. <details><summary>Install <strong>Ollama</strong> LLM server with common models<br/> &nbsp; &nbsp; Install <strong>Open WebUI</strong> AI platform with <strong>Pipelines</strong></summary><br/>
 
-    25.1. Create `Accounts` knowledge base, and then `Accounts` custom model that embeds that KB  
-    25.2. **NOTE**: Populate `Accounts` KB by running `./play.sh openwebui -t knowledge` separately
+    26.1. Create `Accounts` knowledge base, and then `Accounts` custom model that embeds that KB  
+    26.2. **NOTE**: Populate `Accounts` KB by running `./play.sh openwebui -t knowledge` separately
 
     ```bash
     ./play.sh ollama openwebui
     ```
 </details>
 
-26. <details><summary>Install <strong>Flowise</strong> AI platform and integrations</summary><br/>
+27. <details><summary>Install <strong>Flowise</strong> AI platform and integrations</summary><br/>
 
     Current deployment uses local images in Harbor registry that were built by GitLab CI.
 
     ```bash
     ./play.sh flowise
-    ```
-
-27. <details><summary>Create <strong>virtual Kubernetes clusters</strong> in RKE</summary><br/>
-
-    ```bash
-    ./play.sh vclusters
     ```
 </details>
 

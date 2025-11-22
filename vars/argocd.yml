@@ -21,6 +21,8 @@ argocd_secrets:
   # https://argo-cd.readthedocs.io/en/stable/operator-manual/tls#tls-certificates-used-by-argocd-server
   server: argocd-server-tls
   valkey: argocd-valkey
+  git-creds: argocd-git-creds
+  age-keys: argocd-age-keys
 
 # common command-line options not provided in chart values under .externalRedis
 # (used by argocd-server, argocd-application-controller and argocd-repo-server):
@@ -67,7 +69,7 @@ argocd_chart_repo_url: git+https://github.com/erhhung/argo-helm@charts/argo-cd?r
 # argocd_chart_repo_url: https://argoproj.github.io/argo-helm
 
 # https://github.com/argoproj/argo-helm/tree/main/charts/argo-cd
-argocd_chart_version: "9.0.3"
+argocd_chart_version: "9.1.3"
 argocd_release_name: argocd
 
 # https://github.com/argoproj/argo-helm/tree/main/charts/argo-cd/values.yaml
@@ -79,8 +81,7 @@ argocd_chart_values:
   global:
     revisionHistoryLimit: 2
     domain: "{{ argocd_fqdn }}"
-    networkPolicy:
-      create: false
+
     image:
       imagePullPolicy: "{{ argocd_image.pullPolicy | default(omit) }}"
       repository: >-
@@ -94,6 +95,13 @@ argocd_chart_values:
         {{   omit  -}}
         {% endif    %}
       tag: "{{ argocd_image.tag | default(argocd_image_tag | default(omit)) }}"
+
+    securityContext:
+      runAsUser: 999
+      runAsGroup: 999
+      fsGroup: 999
+    networkPolicy:
+      create: false
 
   configs:
     # "argocd-cm" ConfigMap:
@@ -183,6 +191,11 @@ argocd_chart_values:
     # https://argo-cd.readthedocs.io/en/stable/user-guide/private-repositories#credentials
     credentialTemplates:
       # keys are Secret name suffixes
+      github-erhhung-http:
+        url: https://github.com/erhhung/
+        username: erhhung
+        password: "{{ github_access_token }}"
+
       gitlab-external-ssh: &ssh-creds
         url: "{{ gitlab_ssh_url }}"
         # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/unvault_lookup.html
@@ -264,6 +277,8 @@ argocd_chart_values:
     volumes: &volumes
       - name: tls-valkey
         secret:
+          # "server" secret (as opposed to "valkey") is
+          # correct here as it has "argocd" CN for mTLS
           secretName: "{{ argocd_secrets['server'] }}"
 
     volumeMounts: &mounts
@@ -316,7 +331,10 @@ argocd_chart_values:
 
     volumes: *volumes
     volumeMounts: *mounts
-    resources: *resources
+    resources:
+      requests:
+        cpu: 20m
+        memory: 256Mi
     readinessProbe: *probe
     metrics: *metrics
 
@@ -338,7 +356,63 @@ argocd_chart_values:
       {{ [
          ] + argocd_redis_options }}
 
-    volumes: *volumes
+    extraContainers:
+      # https://argo-cd.readthedocs.io/en/stable/operator-manual/config-management-plugins#register-the-plugin-sidecar
+      - name: cmp-helmfile
+        # could also use: ghcr.io/travisghansen/argo-cd-helmfile:latest
+        image: "{{ harbor_container_registry }}/library/cmp-helmfile:latest"
+        imagePullPolicy: Always
+        env:
+          # these Helm environment variables are
+          # same as in the repo-server container
+          - name: HELM_CACHE_HOME
+            value: /helm-working-dir
+          - name: HELM_CONFIG_HOME
+            value: /helm-working-dir
+          - name: HELM_DATA_HOME
+            value: /helm-working-dir
+          - name: SOPS_AGE_KEY_FILE
+            value: /sops/age/keys.txt
+        command:
+          - /var/run/argocd/argocd-cmp-server
+        volumeMounts:
+          - name: var-files
+            mountPath: /var/run/argocd
+          - name: plugins
+            mountPath: /home/argocd/cmp-server/plugins
+          - name: helm-working-dir
+            mountPath: /helm-working-dir
+          - name: cmp-tmp
+            mountPath: /tmp
+          # mount as read-only because .gitconfig is already
+          # configured in the container image to use its own
+          # git-credential-store wrapper script that ignores
+          # `store` and `erase` commands
+          - name: git-creds
+            mountPath: /home/argocd/.git-credentials
+            subPath: .git-credentials
+            readOnly: true
+          - name: age-keys
+            mountPath: /sops/age
+            readOnly: true
+
+    volumes:
+      - name: cmp-tmp
+        emptyDir:
+          medium: Memory
+      - name: tls-valkey
+        secret:
+          # "server" secret (as opposed to "valkey") is
+          # correct here as it has "argocd" CN for mTLS
+          secretName: "{{ argocd_secrets['server'] }}"
+      - name: git-creds
+        secret:
+          secretName: "{{ argocd_secrets['git-creds'] }}"
+          defaultMode: 288 # "0440"
+      - name: age-keys
+        secret:
+          secretName: "{{ argocd_secrets['age-keys'] }}"
+
     volumeMounts: *mounts
     resources: *resources
     readinessProbe: *probe

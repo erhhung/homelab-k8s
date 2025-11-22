@@ -355,9 +355,9 @@
             state: started
           timeout: 300
           register: restart_rke
-          until: >-
-            restart_rke.state is  defined and
-            restart_rke.state == 'started'
+          until:
+            - restart_rke.state is  defined
+            - restart_rke.state == 'started'
           retries: 3
           delay: 10
 

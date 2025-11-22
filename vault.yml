@@ -286,3 +286,36 @@
       register: vault_data
       changed_when: vault_data.rc == 0
       failed_when: vault_data.rc not in [0,9]
+
+    # prepare SOPS to be used by Argo CD:
+    # https://github.com/getsops/sops#27encrypting-using-hashicorp-vault
+    - name: Create transit keys for SOPS
+      ansible.builtin.shell: |
+        # set VAULT_ADDR
+        . .bash_aliases
+        set -eo pipefail
+
+        # get list of transit mounts:
+        mounts="$(vault secrets list -format=json | \
+          jq -r 'to_entries[] | select(.value.type == "transit") | .key')"
+        grep -q '^sops/' <<< "$mounts" || {
+          echo >&2 "Creating transit mount: sops/"
+          vault secrets enable -path=sops transit
+          rc=0
+        }
+
+        # get list of existing keys:
+        keys="$(vault list -format=json sops/keys | jq -r '.[]')" || true
+        grep -q '^default$' <<< "$keys" || {
+          echo >&2 "Importing aes256 key: default"
+          # https://developer.hashicorp.com/vault/docs/secrets/transit#key-types
+          vault transit import sops/keys/default \
+            {{ sops_encryption_key }} type=aes256-gcm96
+          rc=0
+        }
+        exit ${rc-9}
+      args:
+        executable: /bin/bash
+      register: sops_keys
+      changed_when: sops_keys.rc == 0
+      failed_when: sops_keys.rc not in [0,9]

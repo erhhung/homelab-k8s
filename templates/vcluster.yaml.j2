@@ -80,17 +80,21 @@ controlPlane:
         cpu: 100m
         memory: 384Mi
 
+  proxy:
+    # https://www.vcluster.com/docs/vcluster/manage/accessing-vcluster#access-vcluster-externally
+    extraSANs:
+      - {{ vcluster_fqdn }}
+      - {{ vcluster.name }}.vcluster-{{ vcluster.name }}.svc.{{ cluster_domain }}
+      - {{ vcluster.name }}.vcluster-{{ vcluster.name }}.svc
+
   # https://www.vcluster.com/docs/vcluster/manage/accessing-vcluster?x1=1#expose-vcluster
   ingress:
     enabled: true
-    # this domain (e.g. learning.vcluster.fourteeners.local) will be
+    # this domain (e.g. staging.vcluster.fourteeners.local) will be
     # the vCluster's Kubernetes API server endpoint specified in the
     # kubeconfig file, and must be created manually (for time being)
     # in the pfSense DNS Resolver
     host: {{ vcluster_fqdn }}
     pathType: Prefix
     spec:
-      tls:
-        - secretName: {{ tls_secret }}
-          hosts: {{ [vcluster_fqdn] }}
       ingressClassName: {{ rke_ingress_pt_class }}

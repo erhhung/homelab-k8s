@@ -108,7 +108,8 @@
         repo_name: cowboysysop
         repo_url: "{{ flowise_chart_repo_url }}"
         chart_ref: flowise
-        chart_ver: "{{ flowise_chart_version }}"
+        chart_ver: "{{ flowise_chart_version if
+          flowise_chart_repo_url is match('^http') else omit }}"
         release: "{{ flowise_release_name }}"
         release_ns: "{{ flowise_namespace }}"
         values: "{{ flowise_chart_values }}"
@@ -622,9 +623,9 @@
             headers: "{{ auth_headers }}"
             return_content: true
           register: check_status
-          until: >-
-            check_status.json is defined and
-            check_status.json.status | default('') == 'SYNC'
+          until:
+            - check_status.json        is defined
+            - check_status.json.status == 'SYNC'
           # processing can take few minutes
           retries: 20
           delay: 15

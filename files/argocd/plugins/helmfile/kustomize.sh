@@ -1,32 +1,7 @@
-# https://github.com/kubernetes-sigs/kustomize
-
-# shellcheck disable=SC2148 # Tips depend on target shell
-# shellcheck disable=SC2006 # Prefer $(...) over legacy `...`
-# shellcheck disable=SC2086 # Double quote prevent globbing
-
-set -eo pipefail
-
-REL="https://github.com/kubernetes-sigs/kustomize/releases"
-VER=$(curl -Is "$REL/latest" | sed -En 's/^location:.+\/tag\/kustomize\/v(.+)\r$/\1/p')
-
-# check if latest version already installed
-command -v kustomize &> /dev/null && {
-  ver=$(v=`kustomize version`; echo ${v#v})
-  [ "$ver" == "$VER" ] && exit 9 # no change
-}
-ARCH=$(uname -m | sed -e 's/aarch64/arm64/' -e 's/x86_64/amd64/')
-curl -fsSL "$REL/download/kustomize/v${VER}/kustomize_v${VER}_linux_${ARCH}.tar.gz" | \
-  tar -xz -C /usr/local/bin --no-same-owner kustomize
-
-# create our own wrapper script that sanitizes
-# YAML files in and under the `kustomize build`
-# directory (this is mainly to fix Kustomize's
-# strict YAML parsing that chokes on duplicate
-# keys, like labels, that Helm charts generate)
-SCRIPT="/usr/local/bin/kustomize.sh"
-cat <<'EOF' > $SCRIPT
 #!/usr/bin/env bash
 set -eo pipefail
+
+# shellcheck disable=SC2016 # Expr won't expand in '' quotes
 
 sanitize() (
   while read -r file; do
@@ -67,5 +42,3 @@ done
   sanitize "${build_dir:-.}"
 
 exec kustomize "$@"
-EOF
-chmod +x $SCRIPT

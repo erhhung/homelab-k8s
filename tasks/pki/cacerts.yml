@@ -7,6 +7,10 @@
   run_once: true
   become: false
   block:
+    # CA certificates can also be obtained through REST API:
+    # curl -sk https://pki.fourteeners.local/intermediates | jq -r '.crts[]'
+    # curl -sk https://pki.fourteeners.local/roots         | jq -r '.crts[]'
+    # https://github.com/smallstep/certificates/tree/master/api/api.go#L328-L342
     - name: Fetch CA certs from PKI
       delegate_to: "{{ pki_host }}"
       vars:
