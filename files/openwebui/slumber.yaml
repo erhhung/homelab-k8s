@@ -1,0 +1,165 @@
+.common_profile:
+  api_base: "{{ host_url }}/api"
+  # https://slumber.lucaspickering.me/api/template_functions.html
+  auth_token: "{{ response('sign_in', trigger='1h') | jsonpath('$.token') }}"
+  session_user: "{{ response('session_user', trigger='no_history') | json_parse() }}"
+  admin_user: "{{ session_user | jq('{id, name, email, role, profile_image_url}') }}"
+  user_id: "{{ admin_user | jsonpath('$.id') }}"
+  group_list: "{{ response('list_groups', trigger='no_history') | json_parse() }}"
+  group_id: '{{ group_list | jsonpath(concat([''$[?(@.name=="'',group_name,''")].id''])) }}'
+  knowledge_list: "{{ response('list_knowledge', trigger='no_history') | json_parse() }}"
+  knowledge_id: '{{ knowledge_list | jsonpath(concat([''$[?(@.name=="'',knowledge_name,''")].id''])) }}'
+  my_knowledge: "{{ response('get_knowledge', trigger='always') | json_parse() }}"
+  model_list: "{{ response('list_models', trigger='no_history') | json_parse() }}"
+  model_id: '{{ model_list | jsonpath(concat([''$[?(@.name=="'',model_name,''")].id''])) }}'
+  upload_id: "{{ response('upload_file', trigger='no_history') | jsonpath('$.id') }}"
+
+profiles:
+  homelab:
+    name: Homelab
+    default: true
+    data:
+      # https://openwebui.fourteeners.local/docs
+      host_url: https://openwebui.fourteeners.local
+      user_email: "{{ env('ADMIN_EMAIL') }}"
+      user_password: "{{ env('ADMIN_PASSWORD') | sensitive() }}"
+      group_name: Family
+      knowledge_name: Accounts
+      model_name: Accounts
+      icons_dir: "{{ concat([env('HOME'),'/icons/']) }}"
+      file_path: "{{ jq('env.UPLOAD_FILE // \"slumber.yaml\"',0) }}"
+      upload_file: >-
+        {{ {
+          'path': file_path,
+          'sha1':         trim(command(['sha1','-q',      file_path])),
+          'size': integer(trim(command(['stat','-f','%z', file_path]))),
+          'mtime':        trim(command(['date','-r',
+                          trim(command(['stat','-f','%m', file_path])),
+                                        '+%Y-%m-%d %H:%M:%S']))
+        } | jq('tostring') }}
+      $ref: "#/.common_profile"
+
+.auth_request:
+  authentication:
+    type: bearer
+    token: "{{ auth_token }}"
+  headers:
+    Accept: application/json
+
+requests:
+  sign_in:
+    # https://slumber.lucaspickering.me/api/request_collection/request_recipe.html#recipe-fields
+    method: POST
+    url: "{{ api_base }}/v1/auths/signin"
+    body:
+      type: json
+      data:
+        email: "{{ user_email }}"
+        password: "{{ user_password }}"
+
+  session_user:
+    method: GET
+    url: "{{ api_base }}/v1/auths/"
+    $ref: "#/.auth_request"
+
+  list_groups:
+    method: GET
+    url: "{{ api_base }}/v1/groups/"
+    $ref: "#/.auth_request"
+
+  list_knowledge:
+    method: GET
+    url: "{{ api_base }}/v1/knowledge/list"
+    $ref: "#/.auth_request"
+    # https://slumber.lucaspickering.me/user_guide/database.html#controlling-persistence
+    persist: false
+
+  get_knowledge:
+    method: GET
+    url: "{{ api_base }}/v1/knowledge/{{ knowledge_id }}"
+    $ref: "#/.auth_request"
+    persist: false
+
+  upload_file:
+    method: POST
+    url: "{{ api_base }}/v1/files/"
+    $ref: "#/.auth_request"
+    body:
+      # https://slumber.lucaspickering.me/user_guide/recipes.html#body
+      type: form_multipart
+      data:
+        file: "{{ file(file_path) }}"
+        metadata: "{{ upload_file }}"
+
+  add_to_knowledge:
+    method: POST
+    url: "{{ api_base }}/v1/knowledge/{{ knowledge_id }}/file/add"
+    $ref: "#/.auth_request"
+    body:
+      type: json
+      data:
+        file_id: "{{ upload_id }}"
+
+  delete_file:
+    method: DELETE
+    url: "{{ api_base }}/v1/files/{{ upload_id }}"
+    $ref: "#/.auth_request"
+
+  list_models:
+    method: GET
+    url: "{{ api_base }}/v1/models/list"
+    $ref: "#/.auth_request"
+    persist: false
+
+  create_model:
+    method: POST
+    url: "{{ api_base }}/v1/models/create"
+    $ref: "#/.auth_request"
+    body:
+      type: json
+      data:
+        id: '{{ concat([''"'',model_name,''"'']) | jq(''ascii_downcase | gsub(" ";"_")'') }}'
+        name: "{{ model_name }}"
+        meta:
+          description: Qwen3 base model RAG-enhanced with {{ knowledge_name }} knowledge base
+          tags:
+            - name: private
+          profile_image_url: >-
+            data:image/png;base64,{{ file(concat([icons_dir,'ai-assistant.png'])) | base64() }}
+          capabilities:
+            vision: false
+            file_upload: true
+            web_search: true
+            image_generation: false
+            code_interpreter: true
+            citations: true
+          knowledge: >-
+            {{ jq('add', [my_knowledge, {'type':'collection','user':admin_user}], mode='array') }}
+        base_model_id: qwen3:1.7b
+        params:
+          system: >-
+            You are a personal assistant that has intimate knowledge of all
+            personal information entrusted to you in the attached knowledge
+            base. When you answer questions, consult the personal knowledge
+            base before applying additional general knowledge.
+        access_control:
+          read:
+            group_ids: ["{{ group_id }}"]
+          write:
+            user_ids: ["{{ user_id }}"]
+    persist: false
+
+  delete_model:
+    method: DELETE
+    url: "{{ api_base }}/v1/models/model/delete"
+    query:
+      id: "{{ model_id }}"
+    $ref: "#/.auth_request"
+
+  model_image:
+    method: GET
+    url: "{{ api_base }}/v1/models/model/profile/image"
+    query:
+      id: "{{ model_id }}"
+    $ref: "#/.auth_request"
+    persist: false

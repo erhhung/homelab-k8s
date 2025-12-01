@@ -4,6 +4,7 @@
 **/.ansible/roles/
 **/.ansible/facts/
 **/.venv/
+**/.env
 **/*.log
 temp.yml
 NOTES
