@@ -122,11 +122,8 @@ vault_chart_values:
           - |-
             # fixes warning: storage.raft.fsm: raft FSM
             # db file has wider permissions than needed
-            [ -f /vault/data/vault.db ] && \
-              chmod 600 /vault/data/vault.db
-            chmod 700 /vault/data
-        securityContext:
-          runAsUser: 0
+            [ -f /vault/data/vault.db ] || exit 0
+            chmod 600 /vault/data/vault.db
         volumeMounts:
           - name: data
             mountPath: /vault/data
