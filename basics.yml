@@ -1,7 +1,7 @@
 ---
 - name: Configure system settings
   tags: system
-  hosts: k8s_all
+  hosts: k8s_hosts
   become: true
   vars_files:
     - vars/basics.yml
@@ -124,7 +124,7 @@
 
 - name: Configure network settings
   tags: network
-  hosts: k8s_all
+  hosts: k8s_hosts
   become: true
   vars_files:
     - vars/basics.yml
@@ -187,7 +187,7 @@
     - name: Add static entries to /etc/hosts
       vars:
         k8s_hosts: |
-          {% set hosts = groups['k8s_all'] %}
+          {% set hosts = groups['k8s_hosts'] %}
           {% if rke_ha_mode %}
           {%   set _ = hosts.append(rke_cluster_name) %}
           {% endif %}
@@ -247,7 +247,7 @@
 - name: Configure network settings
   tags: network
   hosts: &hosts
-    - k8s_all
+    - k8s_hosts
     - cosmos
   tasks:
     - name: Ensure DNS resolution is working
@@ -256,7 +256,7 @@
 
 - name: Customize login MOTD messages
   tags: motd
-  hosts: k8s_all
+  hosts: k8s_hosts
   become: true
   tasks:
     - name: Suppress select MOTD messages
@@ -278,7 +278,7 @@
 
 - name: Manage Linux users and groups
   tags: groups
-  hosts: k8s_all
+  hosts: k8s_hosts
   become: true
   vars_files:
     - vars/basics.yml
@@ -294,9 +294,9 @@
         label: "{{ item.user ~'|'~ item.groups | join(',') }}"
       when: inventory_hostname in item.hosts
 
-    - name: Create sudoers rule file # noqa: args
+    - name: Create sudoers rule file
       # https://docs.ansible.com/ansible/latest/collections/community/general/sudoers_module.html
-      community.general.sudoers:
+      community.general.sudoers: # noqa: args
         name: "{{ item.name }}"
         state: present
         user: "{{ item.user | default(omit) }}"

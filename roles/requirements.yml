@@ -8,3 +8,5 @@ roles:
     scm: git
 
 collections: []
+  # - name: awx.awx
+  #   source: https://galaxy.ansible.com

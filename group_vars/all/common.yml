@@ -1,8 +1,11 @@
 pki_host: "{{ groups['pki_any'] | first }}"
+xcp_host: "{{ groups['xcp_any'] | first }}"
 
-# https://docs.ansible.com/ansible/latest/collections/ansible/builtin/env_lookup.html
-ansible_ssh_private_key_file: "{{ lookup('ansible.builtin.env', 'HOME') }}/.ssh/{{
-                                  lookup('ansible.builtin.env', 'USER') }}.pem"
+# no longer setting SSH key file here so that AWX can inject it
+# by credentials while play.sh exports ANSIBLE_PRIVATE_KEY_FILE
+# ansible_ssh_private_key_file: >-
+#   {{ lookup('ansible.builtin.env', 'HOME') }}/.ssh/{{
+#      lookup('ansible.builtin.env', 'USER') }}.pem
 ansible_ssh_common_args: -o StrictHostKeyChecking=no -o ForwardAgent=yes
 # password overrides in inventory/host_vars/*.yml
 ansible_become_pass: "{{ sudo_pass['default'] }}"

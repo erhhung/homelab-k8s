@@ -1,0 +1,582 @@
+# https://github.com/ansible/awx
+# https://github.com/ansible/awx/tree/devel/INSTALL.md
+# https://docs.ansible.com/projects/awx/en/latest
+# https://docs.ansible.com/projects/awx/en/24.6.1/quickstart
+---
+- name: Build custom AWX EE images
+  tags: build
+  hosts: localhost
+  vars_files:
+    - vars/kubernetes.yml
+  tasks:
+    - name: Build image and push to Harbor
+      vars:
+        items:
+          - image_name: awx-ee-xcp-ng
+            context_dir: files/awx/ee/xcp
+        image_name: "{{  item.image_name  }}"
+        dockerfile: "{{  item.dockerfile  }}"
+        context_dir: "{{ item.context_dir }}"
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
+      ansible.builtin.include_tasks: tasks/docker/build.yml
+      loop: "{{ items }}"
+      loop_control:
+        label: "{{ image_name }}"
+
+- name: Install AWX on RKE cluster
+  tags: install
+  hosts: "{{ rke_control_plane_host }}"
+  vars_files:
+    - vars/kubernetes.yml
+    - vars/monitoring.yml
+    - vars/postgresql.yml
+    - vars/storage.yml
+    - vars/harbor.yml
+    - vars/awx.yml
+  vars: &vars
+    # required kubernetes>=24.2 package only in user virtualenv
+    ansible_python_interpreter: "{{ venv_python_interpreter }}"
+    kubeconfig: "{{ rke_kubeconfig }}"
+    secret_ns: "{{ awx_namespace }}"
+    create_ns: false
+  pre_tasks:
+    - name: Get CA certificates from PKI
+      ansible.builtin.include_tasks: tasks/pki/cacerts.yml
+      when: ca_certificates is not defined
+
+    - name: Get the PostgreSQL image used
+      ansible.builtin.include_tasks: tasks/postgresql/image.yml
+      when: postgresql_image is not defined
+
+    - name: Is the monitoring stack ready?
+      ansible.builtin.include_tasks: tasks/monitoring/stackready.yml
+      when: monitoring_stack_ready is not defined
+  tasks:
+    - name: Create AWX ingress secret
+      vars:
+        secret_name: "{{ awx_secrets['ingress'] }}"
+        create_ns: true
+        cert_name: awx-ingress
+        sans: "{{ awx_fqdns }}"
+      ansible.builtin.include_tasks: tasks/k8s/secrets/tls.step.yml
+
+    # not currently used as AWX doesn't
+    # currently support PostgreSQL mTLS
+    - name: Create AWX database secret
+      vars:
+        secret_name: "{{ awx_secrets['database'] }}"
+        cert_name: awx-database
+        days: 365
+        sans:
+          - "{{ awx_db_user }}"
+          - "{{ awx_db_user }}@{{ homelab_domain }}"
+      ansible.builtin.include_tasks: tasks/k8s/secrets/tls.step.yml
+
+    # create client cert for scraping
+    # awx-operator-controller-manager
+    - name: Create monitoring scraper secret
+      ansible.builtin.include_tasks: tasks/monitoring/scraper.yml
+
+    - name: Install AWX Operator Helm chart
+      vars:
+        # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/template_lookup.html
+        smon_manifests: "{{ lookup('ansible.builtin.template',
+          template_dir ~ '/monitoring/smons/awx.yaml.j2') }}"
+
+        # === Inputs ===
+        repo_name: awx-operator
+        repo_url: https://ansible-community.github.io/awx-operator-helm
+        chart_ref: awx-operator
+        chart_ver: "{{ awx_operator_chart_version }}"
+        release: "{{ awx_operator_release_name }}"
+        release_ns: "{{ awx_namespace }}"
+        values: "{{ awx_operator_chart_values }}"
+
+        extras: # adopt extra resources into Helm release
+          - cert-manager.io/v1 Certificate {{ awx_secrets['ingress']        }}
+          - cert-manager.io/v1 Certificate {{ awx_secrets['database']       }}
+          - cert-manager.io/v1 Certificate {{ monitoring_secrets['scraper'] }}
+          - v1 Secret {{ awx_secrets['gitlab']  }} ? # optional (created later)
+          - v1 Secret {{ awx_secrets['scraper'] }} ? # optional (created later)
+          # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/from_yaml_all_filter.html
+          - "{{ smon_manifests | from_yaml_all if prometheus_crds_installed else [] }}"
+      ansible.builtin.include_tasks: tasks/helm/helmfile.yml
+
+    - name: Wait for AWX to be ready
+      vars:
+        res_kind: Deployment
+        # awx-task, as opposed to awx-web, waits
+        # for database migration job to complete
+        res_name: awx-task
+        res_ns: "{{ awx_namespace }}"
+        max_wait: 600
+      ansible.builtin.include_tasks: tasks/k8s/waitready.yml
+
+# https://legacy-controller-docs.ansible.com/automation-controller/latest/html/controllercli/usage.html
+- name: Install AWX CLI tool
+  tags: cli
+  hosts: rke_cluster
+  vars_files:
+    - vars/awx.yml
+  tasks:
+    - name: Install AWX CLI tool
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/shell_module.html
+      ansible.builtin.shell: |
+        # restart Bash and load .bash_aliases
+        exec /bin/bash -l <<'EOT'
+        . .bash_aliases
+        set -o pipefail
+
+        venv && [ "$VIRTUAL_ENV" ] || {
+          echo >&2 "Error: cannot activate virtualenv"
+          exit 1
+        }
+        # install CLI matching the deployed AWX version
+        pkg=$(kubectl get deploy -n awx awx-web -o json  | \
+          jq -r '.spec.template.spec.containers[1].image |
+                  gsub(".+:"; "awxkit==")') || exit
+
+        pip freeze | grep -q "^$pkg$"   && \
+          [ "$CONTROLLER_OAUTH_TOKEN" ] && exit 9 # no change
+        pip install  $pkg jq # jq to allow --conf.format jq
+
+        # patch installed scripts to suppress
+        # pkg_resources is deprecated warning
+        for cli in awx akit; do
+          bin=$(which $cli)
+          grep -q filterwarnings $bin || \
+            sed -i '/import sys/a\
+        \
+        import warnings # ignore UserWarning: pkg_resources is deprecated...\
+        warnings.filterwarnings("ignore", category=UserWarning, module="awxkit")\
+        ' $bin
+        done
+
+        # BASH_ENV_DIR and envs are
+        # defined in .bash_aliases
+        dotenv="$BASH_ENV_DIR/awx.env"
+        cat <<EOF > $dotenv
+        REQUESTS_CA_BUNDLE="/etc/ssl/certs/ca-certificates.crt"
+        CONTROLLER_HOST="{{ awx_url }}"
+        EOF
+
+        # $HOME/.venv/bin should already be in $PATH
+        envs # load awx.env
+
+        json="$(awx login \
+          --description "AWX CLI on $HOSTNAME" \
+          --conf.username {{ awx_admin_user }} \
+          --conf.password {{ awx_admin_pass  | quote }} \
+          --conf.scope write)"
+        [[ "$json" == *Error* ]] && {
+          echo >&2 "Error${json#*Error}"
+          exit 1
+        }
+        token=$(jq -r .token <<< "$json")
+        echo "TOKEN=$token"
+        cat <<EOF >> $dotenv
+        CONTROLLER_OAUTH_TOKEN="$token"
+        EOF
+        EOT
+      register: install_cli
+      changed_when: install_cli.rc == 0
+      failed_when: install_cli.rc not in [0,9]
+      notify: Reset local CLI token
+  handlers:
+    # update CONTROLLER_OAUTH_TOKEN
+    # in .bash_private on localhost
+    - name: Reset local CLI token
+      delegate_to: localhost
+      run_once: true
+      vars:
+        token: >-
+          {% set lines = install_cli.stdout_lines | select('search','^TOKEN=') -%}
+          {{ lines[0].split('TOKEN=')[1] if lines is truthy else none }}
+      ansible.builtin.shell: |
+        FILE="$HOME/.bash_private"
+        [ -f "$FILE" ] || exit 9
+        perl -pX -i -e 's/(?<=CONTROLLER_OAUTH_TOKEN="?)\w+/{{ token }}/' $FILE
+      register: reset_token
+      changed_when: reset_token.rc == 0
+      failed_when: reset_token.rc not in [0,9]
+
+- name: Configure AWX resources
+  tags: configure
+  hosts: rke_any
+  vars_files:
+    - vars/kubernetes.yml
+    - vars/monitoring.yml
+    - vars/awx.yml
+  vars:
+    <<: *vars
+    preamble: |
+      # restart Bash and load .bash_aliases
+      # (also loads /etc/profile.d/venv.sh)
+      exec /bin/bash -l <<'EOT'
+      . .bash_aliases
+      set -eo pipefail
+
+      # https://legacy-controller-docs.ansible.com/automation-controller/latest/html/controllercli/output.html#colorized-output
+      export CONTROLLER_COLOR=f
+    functions: |-
+      # <res> <name>
+      get_id() {
+        awx $1 get --name "$2" -f jq --filter .id 2> /dev/null
+      }
+      # <desc> <name> [default]
+      def_id_getter() {
+        local desc="$1" name=$2 default="${3-X}"
+        local res="${desc// /_}"; res="${res,,}"
+        local arg="\${1:-"$default"}"
+
+        eval "$(cat <<FUNC
+      get_${name}_id() {
+        get_id $res "$arg" || {
+          echo >&2 "${desc} not found: $arg"
+          return 1
+        }
+      }
+      FUNC
+        )"
+      }
+      def_id_getter "Execution environment" ee
+      def_id_getter "Organization"          org  {{ awx_organization.name | quote }}
+      def_id_getter "Credential type"       crT
+      def_id_getter "Credential"            cred
+      def_id_getter "Project"               proj
+      def_id_getter "Inventory"             inv
+
+      # strip ANSI color codes
+      no_color() {
+        sed -E 's/(\x1B|\\x1B|\033|\\033)\[([0-9]{1,3}(;[0-9]{1,2})?)?[mGK]//g'
+      }
+      # <cmd...>
+      retry_loop() {
+        local retries=10
+        while ! (set -x; "$@") | no_color && ((--retries)); do
+          echo >&2 "Retrying... ($retries left)"
+          sleep 3
+        done
+        ((retries))
+      }
+    # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/unvault_lookup.html
+    ssh_key_data: "{{ lookup('ansible.builtin.unvault', 'files/erhhung/erhhung.pem') }}"
+
+    # retrieve Vault passwords for Ansible projects from macOS Keychain
+    keychain_cmd: security find-generic-password -w -a ansible-vault -s
+    # https://docs.ansible.com/projects/ansible/latest/collections/ansible/builtin/pipe_lookup.html
+    k8s_vault_pass: "{{ lookup('ansible.builtin.pipe', keychain_cmd ~' Home-K8s') }}"
+    xcp_vault_pass: "{{ lookup('ansible.builtin.pipe', keychain_cmd ~' XCP-ng')   }}"
+  pre_tasks:
+    - name: Get AWX controller token
+      ansible.builtin.include_tasks: tasks/awx/auth.yml
+      # sets awx_controller_token fact
+
+    - name: Get AWX secret if exists
+      # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_info_module.html
+      kubernetes.core.k8s_info:
+        kubeconfig: "{{ kubeconfig }}"
+        api_version: v1
+        kind: Secret
+        name: "{{ awx_secrets[item] }}"
+        namespace: "{{ secret_ns }}"
+      loop:
+        - gitlab
+        - scraper
+      register: secrets_info
+  tasks:
+    - name: Verify/rotate/create PAT
+      vars:
+        token: >-
+          {{ secrets_info.results[0].resources[0].data['token'] | b64decode
+          if secrets_info.results[0].resources is truthy else none }}
+        pat_name: awx
+        pat_owner: "{{ user_erhhung.username }}"
+        scopes:
+          # https://docs.gitlab.com/user/profile/personal_access_tokens#personal-access-token-scopes
+          - write_repository
+          - self_rotate
+        fact_name: awx_gitlab_pat
+      ansible.builtin.include_tasks: tasks/gitlab/tokens/pat.yml
+
+    - name: Create GitLab PAT secret
+      vars:
+        secret_name: "{{ awx_secrets['gitlab'] }}"
+        secret_data:
+          token: "{{ awx_gitlab_pat }}"
+      ansible.builtin.include_tasks: tasks/k8s/secrets/generic.yml
+
+    - name: Create AWX users
+      vars:
+        awx_auth: &awx-auth
+          controller_host: "{{ awx_url }}"
+          controller_oauthtoken: "{{ awx_controller_token }}"
+        users:
+          # admin user already created by awx-operator,
+          # but first & last names need to be set here
+          - username: "{{ awx_admin_user }}"
+            firstname: "{{ user_erhhung.firstname }}"
+            lastname: "{{  user_erhhung.lastname  }}"
+          # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/combine_filter.html
+          - "{{ scraper_user | ansible.builtin.combine({'auditor': true}) }}"
+
+      # https://docs.ansible.com/projects/ansible/latest/collections/awx/awx/user_module.html
+      awx.awx.user: # noqa: args
+        <<: *awx-auth
+        username: "{{   item.username }}"
+        first_name: "{{ item.firstname | default(omit) }}"
+        last_name: "{{  item.lastname  | default(omit) }}"
+        email: "{{      item.email     | default(omit) }}"
+        password: "{{   item.password  | default(omit) }}"
+        superuser: "{{  item.superuser | default(omit) }}"
+        auditor: "{{    item.auditor   | default(omit) }}"
+        update_secrets: false # set password just once
+        state: present
+      loop: "{{ users }}"
+      loop_control:
+        label: "{{ item.username }}"
+
+    # create scraper user's OAuth token
+    # for scraping AWX instance metrics
+    - name: Create monitoring scraper secret
+      when: secrets_info.results[1].resources is falsy
+      block:
+        - name: Create scraper OAuth token
+          # https://docs.ansible.com/projects/ansible/latest/collections/awx/awx/token_module.html
+          awx.awx.token:
+            controller_host: "{{ awx_url }}"
+            controller_username: "{{ scraper_user.username }}"
+            controller_password: "{{ scraper_user.password }}"
+            scope: read
+            state: present
+
+        - name: Create scraper token secret
+          vars:
+            secret_name: "{{ awx_secrets['scraper'] }}"
+            secret_data:
+              # `controller_token` fact was
+              # set by awx.awx.token module
+              token: "{{ controller_token.token }}"
+          ansible.builtin.include_tasks: tasks/k8s/secrets/generic.yml
+
+    # mount AWX secret key at /var/lib/awx/.vaultpass in worker
+    # container so that each project's vaultpass.sh can decrypt
+    # its encrypted real Vault password
+    - name: Override custom EE pod specs
+      # https://docs.ansible.com/projects/ansible/latest/collections/awx/awx/instance_group_module.html
+      awx.awx.instance_group:
+        <<: *awx-auth
+        name: default
+        pod_spec_override: |-
+          {{ lookup('ansible.builtin.template', 'templates/awx/eepod.yaml.j2') }}
+
+    # could also use awx.awx.organization module:
+    # https://docs.ansible.com/projects/ansible/latest/collections/awx/awx/organization_module.html
+    - name: Create AWX organization
+      vars:
+        default_ee: "{{ awx_environments['default'] }}"
+      ansible.builtin.shell: |
+        {{ preamble  }}
+        {{ functions }}
+
+        # custom EE already created by awx-operator,
+        # but there`s no way to set its pull policy
+        ee_id=$(get_ee_id {{ default_ee.name | quote }})
+
+        ee="$(awx execution_environment get $ee_id -f jq \
+             --filter '{name,image,pull}' 2> /dev/null)"
+        ee_="$(cat <<'JSON'
+        {{ default_ee | to_json }}
+        JSON
+        )"
+        [ "$ee" == "$ee_" ] || {
+          echo >&2 "Configuring: {{ default_ee.name }}"
+          args=(
+            $ee_id
+            --image {{ default_ee.image }}
+            --pull  {{ default_ee.pull  }}
+          )
+          # https://legacy-controller-docs.ansible.com/automation-controller/latest/html/controllercli/reference.html#awx-execution-environments-modify
+          retry_loop awx execution_environment modify "${args[@]}" && rc=0 || exit
+        }
+
+        get_org_id &> /dev/null || {
+          echo >&2 "Creating organization: {{ awx_organization.name }}"
+          args=(
+            --name        {{ awx_organization.name | quote }}
+            --description {{ awx_organization.desc | quote }}
+            --default_environment $ee_id
+          )
+          # https://legacy-controller-docs.ansible.com/automation-controller/latest/html/controllercli/reference.html#awx-organizations-create
+          retry_loop awx organization create "${args[@]}" && rc=0 || exit
+        }
+        set +e; exit ${rc-9}
+        EOT
+      register: create_org
+      changed_when: create_org.rc == 0
+      failed_when: create_org.rc not in [0,9]
+
+    # could also use awx.awx.credential module:
+    # https://docs.ansible.com/projects/ansible/latest/collections/awx/awx/credential_module.html
+    - name: Create AWX credentials
+      ansible.builtin.shell: |
+        {{ preamble  }}
+        {{ functions }}
+
+        org_id=$(get_org_id)
+        {% for cred in awx_credentials.values() %}
+
+        get_cred_id {{ cred.name | quote }} &> /dev/null || {
+          echo >&2 "Creating credential: {{ cred.name }}"
+          inputs="$(cat <<'JSON'
+        {{ cred.inputs | to_json(separators=[',',':']) }}
+        JSON
+          )"
+          args=(
+            --credential_type $(get_crT_id {{ cred.type | quote }})
+            --name {{ cred.name | quote }}
+            {% if cred.desc is defined -%}
+            --description {{ cred.desc | quote }}
+            {% endif -%}
+            --organization $org_id
+            --inputs      "$inputs"
+          )
+          # https://legacy-controller-docs.ansible.com/automation-controller/latest/html/controllercli/reference.html#awx-credentials-create
+          retry_loop awx credential create "${args[@]}" && rc=0 || exit
+        }
+        {% endfor %}
+        set +e; exit ${rc-9}
+        EOT
+      register: create_creds
+      changed_when: create_creds.rc == 0
+      failed_when: create_creds.rc not in [0,9]
+
+    # could also use awx.awx.organization module:
+    # https://docs.ansible.com/projects/ansible/latest/collections/awx/awx/organization_module.html
+    - name: Link Galaxy credential
+      # noqa risky-shell-pipe
+      ansible.builtin.shell: |
+        {{ preamble  }}
+        {{ functions }}
+
+         org_id=$(get_org_id)
+        cred_id=$(get_cred_id {{ awx_credentials['galaxy'].name | quote }})
+         cur_id=$(curl -s -H "Authorization: Bearer $CONTROLLER_OAUTH_TOKEN" \
+          "$CONTROLLER_HOST/api/v2/organizations/$org_id/galaxy_credentials" | \
+          jq '.results[] | .id')
+
+        [ "$cur_id" == "$cred_id" ] || {
+          args=(
+            $org_id
+            --galaxy_credential $cred_id
+          )
+          # https://legacy-controller-docs.ansible.com/automation-controller/latest/html/controllercli/reference.html#awx-organizations-associate
+          retry_loop awx organization associate "${args[@]}" && rc=0 || exit
+        }
+        set +e; exit ${rc-9}
+        EOT
+      register: link_cred
+      changed_when: link_cred.rc == 0
+      failed_when: link_cred.rc not in [0,9]
+
+    # could also use awx.awx.project module:
+    # https://docs.ansible.com/projects/ansible/latest/collections/awx/awx/project_module.html
+    - name: Create AWX projects
+      # noqa risky-shell-pipe
+      ansible.builtin.shell: |
+        {{ preamble  }}
+        {{ functions }}
+
+        org_id=$(get_org_id)
+        {% for proj in awx_projects.values() %}
+
+        get_proj_id {{ proj.name | quote }} &> /dev/null || {
+          echo >&2 "Creating project: {{ proj.name }}"
+          args=(
+            --name {{ proj.name | quote }}
+            {% if proj.desc is defined -%}
+            --description {{ proj.desc | quote }}
+            {% endif -%}
+            --organization $org_id
+            --scm_type {{ proj.type }}
+            --scm_url  {{ proj.url | quote }}
+            {% if proj.branch is defined -%}
+            --scm_branch {{ proj.branch }}
+            {% endif -%}
+            {% if proj.refspec is defined -%}
+            --scm_refspec {{ proj.refspec | quote }}
+            {% endif -%}
+            {% if proj.override is defined -%}
+            --scm_override {{ proj.override }}
+            {% endif -%}
+            {% if proj.clean is defined -%}
+            --scm_clean {{ proj.clean }}
+            {% endif -%}
+            {% if proj.track is defined -%}
+            --scm_track_submodules {{ proj.track }}
+            {% endif -%}
+            {% if proj.delete is defined -%}
+            --scm_delete_on_update {{ proj.delete }}
+            {% endif -%}
+            {% if proj['update'] is defined -%}
+            --scm_update_on_launch True
+            --scm_update_cache_timeout {{ proj['update'] }}
+            {% endif -%}
+            --monitor # see git clone/fetch output
+            --timeout 300 # timeout on project sync
+          )
+          {% if proj.credential is defined -%}
+          args+=(--credential $(get_cred_id {{ proj.credential.name | quote }}))
+          {% endif -%}
+          {% if proj.default_ee is defined -%}
+          args+=(--default_environment $(get_ee_id {{ proj.default_ee.name | quote }}))
+          {% endif -%}
+
+          # https://legacy-controller-docs.ansible.com/automation-controller/latest/html/controllercli/reference.html#awx-projects-create
+          retry_loop awx project create "${args[@]}" && rc=0 || exit
+          {% if proj.inventory is defined -%}
+          {%   set inv = proj.inventory   -%}
+
+          title={{ (proj.name ~' => '~ inv.path | basename) | quote }}
+          echo >&2 "Creating inventory: $title"
+          args=(
+            --name         {{ proj.name                      | quote }}
+            --description  {{ proj.name ~' static inventory' | quote }}
+            --organization $org_id
+          )
+          # https://legacy-controller-docs.ansible.com/automation-controller/latest/html/controllercli/reference.html#awx-inventory-create
+          retry_loop awx inventory create "${args[@]}" && rc=0 || exit
+
+           inv_id=$(get_inv_id  {{ proj.name | quote }})
+          proj_id=$(get_proj_id {{ proj.name | quote }})
+          args=(
+            --inventory      $inv_id
+            --name           {{ inv.path | basename }}
+            --source_path    {{ inv.path   }}
+            --source         {{ inv.source }}
+            --source_project $proj_id
+            {% if proj['update'] is defined -%}
+            --update_on_launch True
+            --update_cache_timeout {{ proj['update'] }}
+          {% endif -%}
+          )
+          # https://legacy-controller-docs.ansible.com/automation-controller/latest/html/controllercli/reference.html#awx-inventory-sources-create
+          retry_loop awx inventory_source create "${args[@]}" && rc=0 || exit
+
+          echo >&2 "Updating inventory: $title"
+          args=(
+            # inventory source name isn`t unique--pair with its inventory
+            $(awx inventory_sources list --name {{ inv.path | basename }} \
+                --inventory $inv_id -f jq --filter '.results[].id')
+            --monitor
+            --interval 5
+          )
+          retry_loop awx inventory_source update "${args[@]}" && rc=0 || exit
+          {% endif -%}
+        }
+        {% endfor %}
+        set +e; exit ${rc-9}
+        EOT
+      register: create_projs
+      changed_when: create_projs.rc == 0
+      failed_when: create_projs.rc not in [0,9]

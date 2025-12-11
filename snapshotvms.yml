@@ -1,9 +1,7 @@
 ---
 - name: Create/revert/delete VM snapshots
-  hosts: "{{ xcp_master }}"
+  hosts: xcp_any
   gather_facts: false
-  vars_files:
-    - vars/xcp.yml
   vars:
     # To be overridden on command-line:
     # ansible-playbook snapshotvms.yml
@@ -11,7 +9,7 @@
     #   [-e do=create|revert|delete]
     #   [-e '{"date":"2025-02-01"}']
     #   [-e '{"desc":"snapshot 1"}']
-    targets: k8s_all
+    targets: k8s_hosts
     do: create
     date: ""
     desc: ""

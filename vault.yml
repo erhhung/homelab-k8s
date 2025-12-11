@@ -60,6 +60,17 @@
                |  split('---') | select('search', 'apiVersion:') | map('from_yaml') }}
       ansible.builtin.include_tasks: tasks/helm/helmfile.yml
 
+    # Vault will be bootstrapped (initialized and unsealed)
+    # by Helm post-install hook, but if a pod is restarted
+    # after bootstrap, it must be unsealed again manually.
+    # run command below locally and run the copied output
+    # inside the pod:
+    #
+    # kubectl get secrets -n vault vault-unseal-keys -o yaml | \
+    #   yq '.data.unsealKeys | @base64d | from_yaml | .[] |
+    #      "vault operator unseal \"\(.)\""' | \
+    #   shuf -n 3 | pbcopy
+
 # https://developer.hashicorp.com/vault/install
 - name: Install Vault CLI tool
   tags: cli
@@ -218,7 +229,7 @@
         ; rc=0
         }
         {% endfor %}
-        exit ${rc-9}
+        set +e; exit ${rc-9}
       args:
         executable: /bin/bash
       register: vault_create
@@ -280,7 +291,7 @@
         {%     endfor %}
         {%   endif    %}
         {% endfor     %}
-        exit ${rc-9}
+        set +e; exit ${rc-9}
       args:
         executable: /bin/bash
       register: vault_data
@@ -313,7 +324,7 @@
             {{ sops_encryption_key }} type=aes256-gcm96
           rc=0
         }
-        exit ${rc-9}
+        set +e; exit ${rc-9}
       args:
         executable: /bin/bash
       register: sops_keys

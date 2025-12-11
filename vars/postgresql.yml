@@ -8,9 +8,10 @@
 # cluster is initially deployed--new users will have
 # to be created manually afterwards
 postgresql_users:
-  - erhhung
-  - scraper
+  - "{{ user_erhhung.username }}"
+  - "{{ scraper_user.username }}"
   - "{{  keycloak_db_user }}"
+  - "{{       awx_db_user }}"
   - "{{    gitlab_db_user }}"
   - "{{ openwebui_db_user }}"
   - "{{   flowise_db_user }}"
@@ -51,10 +52,10 @@ postgresql_chart_values:
   global:
     # provide explicit passwords to prevent
     # random generation during Helm upgrade
-    postgresql: &global_postgresql
+    postgresql: &global-postgresql
       password: "{{ postgresql_pass }}" # user "postgres"
       repmgrPassword: "{{ postgresql_pass }}" # user "repmgr"
-    pgpool: &global_pgpool
+    pgpool: &global-pgpool
       adminPassword: "{{ postgresql_pass }}" # user "admin"
       srCheckPassword: "{{ pgpool_sr_pass }}" # user "sr_check_user"
     defaultStorageClass: "{{ storage_classes['default'] }}"
@@ -75,11 +76,11 @@ postgresql_chart_values:
 
     # duplicate global settings or
     # else helm diff upgrade fails
-    <<: *global_postgresql
+    <<: *global-postgresql
     pgHbaTrustAll: true
 
     # https://github.com/bitnami/charts/tree/main/bitnami/postgresql-ha#securing-traffic-using-tls
-    tls: &node_tls
+    tls: &node-tls
       enabled: true
       certificatesSecret: "{{ postgresql_secrets['node-tls'] }}"
       certFilename: tls.crt
@@ -90,8 +91,8 @@ postgresql_chart_values:
     resources:
       requests:
         cpu: 100m
-        memory: 512Mi
-        ephemeral-storage: 50Mi
+        memory: 1Gi
+        ephemeral-storage: 100Mi
 
     priorityClassName: "{{ priority_classes['database'] }}"
 
@@ -143,11 +144,11 @@ postgresql_chart_values:
 
     # duplicate global settings or
     # else helm diff upgrade fails
-    <<: *global_pgpool
+    <<: *global-pgpool
 
     # use same certificate as postgresql:
     # https://github.com/bitnami/charts/tree/main/bitnami/postgresql-ha#securing-traffic-using-tls
-    tls: *node_tls
+    tls: *node-tls
 
     # https://github.com/bitnami/charts/tree/main/bitnami/postgresql-ha#resource-requests-and-limits
     # use a preset instead of explicitly configuring resources:
@@ -155,8 +156,8 @@ postgresql_chart_values:
     # resourcesPreset: micro
     resources:
       requests:
-        cpu: 50m
-        memory: 512Mi
+        cpu: 100m
+        memory: 1Gi
 
     priorityClassName: "{{ priority_classes['database'] }}"
 
@@ -189,6 +190,13 @@ postgresql_chart_values:
     # in postgresql.conf to ensure consistency by trading latency:
     # https://www.pgpool.net/docs/latest/en/html/runtime-config-load-balancing.html#RUNTIME-CONFIG-LOAD-BALANCING-SETTINGS
     disableLoadBalancingOnWrite: "off" # must be quoted
+
+    configuration: |-
+      # always use primary DB for reads to "awx" database
+      # to avoid read-after-write inconsistency among AWX
+      # clients due to replication lag:
+      # https://www.pgpool.net/docs/latest/en/html/runtime-config-load-balancing.html#GUC-DATABASE-REDIRECT-PREFERENCE-LIST
+      database_redirect_preference_list = 'postgres:primary,{{ awx_db_name }}:primary'
 
     # num_init_children = number of preforked Pgpool server
     # processes, or the concurrent client connections limit
@@ -307,7 +315,7 @@ postgresql_chart_values:
       #   imagePullPolicy: IfNotPresent
       #   env:
       #     - name: POSTGRES_USERNAME
-      #       value: scraper
+      #       value: "{{ scraper_user.username }}"
       #     - name: POSTGRES_PASSWORD
       #       valueFrom:
       #         secretKeyRef:

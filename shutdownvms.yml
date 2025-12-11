@@ -4,11 +4,10 @@
   gather_facts: false
   vars_files:
     - vars/kubernetes.yml
-    - vars/xcp.yml
   vars:
     # targets and pre-halt delay can be overridden on the command-line:
     # ansible-playbook shutdownvms.yml -e targets=rke_cluster -e haltdelay=30
-    targets: k8s_all
+    targets: k8s_hosts
     # fail fast if host already appears to be shut down
     ansible_ssh_args: -o ConnectTimeout=1s -o ConnectionAttempts=1
   pre_tasks:
@@ -38,7 +37,7 @@
       when: inventory_hostname in groups['k3s_cluster']
 
     - name: Wait until hosts down
-      delegate_to: "{{ xcp_master }}"
+      delegate_to: "{{ xcp_host }}"
       run_once: true
       # cannot use ansible.builtin.shell because XCP-ng 8.3 only has Python 3.6,
       # which requires an older version of Ansible that we don't otherwise need

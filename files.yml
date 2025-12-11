@@ -1,6 +1,6 @@
 ---
 - name: Set up admin user's home directory
-  hosts: k8s_all
+  hosts: k8s_hosts
   vars_files:
     - vars/files.yml
     - vars/kubernetes.yml

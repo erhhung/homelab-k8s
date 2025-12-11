@@ -411,7 +411,7 @@
           {% endif %}
         }
         {% endfor %}
-        exit ${rc-9}
+        set +e; exit ${rc-9}
       args:
         executable: /bin/bash
       register: minio_create

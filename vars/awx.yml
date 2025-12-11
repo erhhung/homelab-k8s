@@ -1,0 +1,458 @@
+# awx_admin_pass: {vault.yml}
+# awx_secret_key: {vault.yml}
+
+awx_admin_user: "{{ homelab_admin.username }}"
+awx_admin_email: "{{ user_erhhung.email }}"
+
+awx_namespace: awx
+awx_host_names: # aliases of "ingress"
+  - awx
+  - ansible
+
+# remember to add awx.fourteeners.local (and ansible.fourteeners.local)
+# to pfSense DNS as aliases of ingress.fourteeners.local: 192.168.4.222
+# https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_filters.html#products
+awx_fqdns: "{{ awx_host_names | product(search_domains) | map('join','.') }}"
+awx_url: https://{{ awx_fqdns[0] }}
+
+awx_secrets:
+  database: awx-database-tls
+  ingress: awx-ingress-tls
+  gitlab: awx-gitlab-token
+  secret: awx-secret-key
+  # credential for /api/v2/metrics/
+  scraper: monitoring-scraper-token
+
+awx_configmaps:
+  rbac-proxy: awx-operator-kube-rbac-proxy-config
+
+awx_db_name: awx
+awx_db_user: awx
+# use {{ pgpool_pass }}
+
+# https://github.com/ansible-community/awx-operator-helm
+awx_operator_chart_version: "3.2.0"
+awx_operator_release_name: awx-operator
+
+# https://github.com/ansible-community/awx-operator-helm/tree/main/charts/awx-operator/values.yaml
+awx_operator_chart_values:
+  AWX:
+    enabled: true
+
+    postgres:
+      # create Secret referenced by
+      # spec.postgres_configuration_secret
+      enabled: true
+      type: unmanaged
+      host: "{{ pgpool_service_host }}"
+      port: "{{ pgpool_service_port }}"
+      # cannot set `sslmode: verify-full` because there's no
+      # way to inject client cert into awx-migration Job pod:
+      # https://github.com/ansible/awx-operator/issues/1896
+      sslmode: prefer
+      dbName: "{{ awx_db_name }}"
+      username: "{{ awx_db_user }}"
+      password: "{{ pgpool_pass }}"
+
+    spec:
+      # https://docs.ansible.com/projects/awx-operator/en/latest/user-guide/admin-user-account-configuration.html
+      admin_user: "{{ awx_admin_user }}"
+      admin_email: "{{ awx_admin_email }}"
+      # first and last names set by task
+
+      redis_image: docker.io/bitnami/redis
+      redis_image_version: 8.2.1-debian-12-r0
+
+      # https://docs.ansible.com/projects/awx-operator/en/latest/user-guide/advanced-configuration/deploying-a-specific-version-of-awx.html
+      ee_images: "{{ awx_environments.values() }}"
+
+      # https://docs.ansible.com/projects/awx-operator/en/latest/user-guide/advanced-configuration/persisting-projects-directory.html
+      projects_persistence: true
+      projects_storage_class: "{{ storage_classes['default'] }}"
+      projects_storage_size: 384Mi # min XFS volume size is 300Mi
+      projects_storage_access_mode: ReadWriteMany
+
+      # https://docs.ansible.com/projects/awx-operator/en/latest/user-guide/advanced-configuration/custom-volume-and-volume-mount-options.html
+      extra_volumes: |
+        - name: database-tls
+          secret:
+            secretName: {{ awx_secrets['database'] }}
+            defaultMode: 416 # "0640"
+      web_extra_volume_mounts: &extra-mounts |
+        - name: database-tls
+          mountPath: /tls
+          readOnly: true
+      task_extra_volume_mounts: *extra-mounts
+
+      # use the AWX secret key as a secondary
+      # Vault password to decrypt per-project
+      # Vault password stored in vaultpass.sh
+      # (for custom EEs, this volume mount is
+      # defined in the pod spec override (see
+      # templates/awx/eepod.yaml.j2)
+      ee_extra_volume_mounts: |
+        - name: awx-secret-key
+          mountPath: /var/lib/awx/.vaultpass
+          subPath: SECRET_KEY
+          readOnly: true
+
+      # https://docs.ansible.com/projects/awx-operator/en/latest/user-guide/advanced-configuration/exporting-environment-variables-to-containers.html
+      web_extra_env: &extra-envs |
+        - name: PGSSLCERT
+          value: /tls/tls.crt
+        - name: PGSSLKEY
+          value: /tls/tls.key
+        - name: PGSSLROOTCERT
+          value: /tls/ca.crt
+      task_extra_env: *extra-envs
+
+      # https://docs.ansible.com/projects/awx-operator/en/latest/user-guide/advanced-configuration/security-context.html
+      # contrary to example in docs, this only sets
+      # securityContext at pod level:  capabilities
+      # and allowPrivilegeEscalation have no effect
+      security_context_settings:
+        # cannot run as non-root because init-projects container
+        # won't be able to run chmod/chgrp /var/lib/awx/projects
+        runAsUser: 0
+        runAsGroup: 0
+        fsGroup: 2000
+        fsGroupChangePolicy: OnRootMismatch
+
+      # https://docs.ansible.com/projects/awx-operator/en/latest/user-guide/advanced-configuration/privileged-tasks.html
+      task_privileged: true
+
+      # https://docs.ansible.com/projects/awx-operator/en/latest/user-guide/advanced-configuration/containers-resource-requirements.html
+      web_resource_requirements:
+        requests:
+          cpu: 50m
+          memory: 1Gi
+      task_resource_requirements:
+        requests:
+          cpu: 100m
+          memory: 1Gi
+          ephemeral-storage: 100M
+
+      # https://docs.ansible.com/projects/awx-operator/en/latest/user-guide/advanced-configuration/container-probes.html
+      web_liveness_period: 20
+      web_liveness_timeout: 5
+      web_readiness_period: 20
+      web_readiness_timeout: 5
+      task_liveness_period: 20
+      task_liveness_timeout: 5
+      task_readiness_period: 20
+      task_readiness_timeout: 5
+
+      # https://docs.ansible.com/projects/awx-operator/en/latest/user-guide/advanced-configuration/disable-ipv6.html
+      ipv6_disabled: true
+      # https://docs.ansible.com/projects/awx-operator/en/latest/user-guide/network-and-tls-configuration.html#service-type
+      service_type: ClusterIP
+
+      # https://docs.ansible.com/projects/awx-operator/en/latest/user-guide/network-and-tls-configuration.html#ingress-type
+      ingress_type: ingress
+      ingress_class_name: "{{ rke_ingress_class }}"
+      ingress_annotations: |
+        nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+        nginx.ingress.kubernetes.io/backend-protocol: HTTP
+      ingress_hosts: |
+        {% set hosts = [] %}
+        {% for fqdn in awx_fqdns %}
+        {%   set _ = hosts.append({
+               'hostname':   fqdn,
+               'tls_secret': awx_secrets['ingress'],
+             })   %}
+        {% endfor %}
+        {{ hosts  }}
+
+      # don't create demo credential/project/inventory/template
+      create_preload_data: false
+
+      # per docs, parameters configured in extra_settings or extra_settings_files
+      # are set as read-only settings in AWX. as a result, they cannot be changed
+      # in the UI after deployment--they can only be changed here in the AWX spec:
+      # https://docs.ansible.com/projects/awx-operator/en/latest/user-guide/advanced-configuration/extra-settings.html
+      # run `awx settings list` to show
+      extra_settings:
+        - setting: TOWER_URL_BASE
+          # requires dual quoting!
+          value: "'{{ awx_url }}'"
+        # increase "Idle Time Force Log Out"
+        # from default 30 minutes to 8 hours
+        - setting: SESSION_COOKIE_AGE
+          value: "28800"
+
+  # https://github.com/ansible-community/awx-operator-helm#customsecrets
+  customSecrets:
+    enabled: true
+
+    # spec.admin_password_secret
+    admin:
+      enabled: true
+      password: "{{ awx_admin_pass }}"
+    # spec.secret_key_secret
+    secretKey:
+      enabled: true
+      key: "{{ awx_secret_key }}"
+    # spec.bundle_cacert_secret
+    bundleCacert:
+      enabled: true
+      crt: "{{ ca_certificates | join('\n') }}"
+    # spec.ee_pull_credentials_secret
+    eePullCredentials:
+      enabled: true
+      url: "{{ harbor_url }}"
+      username: "{{ harbor_admin_user }}"
+      password: "{{ harbor_admin_pass }}"
+    ingressTls:
+      # created by cert-manager
+      enabled: false
+
+  # https://github.com/ansible-community/awx-operator-helm#operator-controller-container-configuration-override
+  operator-controller:
+    # this will mergeOverwrite with Deployment
+    # template awx-operator-controller-manager
+    spec:
+      template:
+        spec:
+          securityContext:
+            # user must be 1001 to write
+            # to /opt/ansible/.ansible/
+            runAsUser: 1001
+            runAsGroup: 1000
+            fsGroup: 2000
+            fsGroupChangePolicy: OnRootMismatch
+
+          initContainers:
+            # create PostgreSQL DB
+            # awx if doesn't exist
+            - name: create-database
+              image: "{{ postgresql_image }}"
+              imagePullPolicy: IfNotPresent
+              command: ["bash"]
+              args:
+                - -c
+                - |-
+                  # uses connection params added
+                  # by PG* environment variables
+                  db_found=$(psql -d postgres -tAc "
+                    SELECT COUNT(*) FROM pg_catalog.pg_database WHERE datname = '{{ awx_db_name }}'
+                  ") || exit $?
+                  echo "db_found=$db_found"
+
+                  [ "$db_found" -eq 1 ] || {
+                    echo -e "\nCreating '{{ awx_db_name }}' database..."
+                    psql -d postgres <<'EOT'
+
+                  -- https://www.postgresql.org/docs/current/sql-createdatabase.html
+                  CREATE DATABASE {{ awx_db_name }} WITH OWNER {{ awx_db_user }};
+                  REVOKE ALL ON DATABASE {{ awx_db_name }} FROM PUBLIC;
+                  GRANT  ALL ON DATABASE {{ awx_db_name }} TO {{ awx_db_user }};
+                  EOT
+                  }
+                  echo -e "\nDatabase initialization completed ✓"
+              env:
+                # https://www.postgresql.org/docs/current/libpq-envars.html
+                - name: PGHOST
+                  value: "{{ pgpool_service_host }}"
+                - name: PGUSER
+                  value: "{{ awx_db_user }}"
+                - name: PGSSLMODE
+                  value: verify-full
+                - name: PGSSLCERT
+                  value: /tls/tls.crt
+                - name: PGSSLKEY
+                  value: /tls/tls.key
+                - name: PGSSLROOTCERT
+                  value: /tls/ca.crt
+              volumeMounts:
+                - name: database-tls
+                  mountPath: /tls
+                  readOnly: true
+
+          volumes:
+            - name: database-tls
+              secret:
+                secretName: "{{ awx_secrets['database'] }}"
+                defaultMode: 416 # "0640"
+            - name: proxy-tls
+              secret:
+                secretName: "{{ awx_secrets['ingress'] }}"
+                defaultMode: 416 # "0640"
+            - name: proxy-config
+              configMap: # created by extraDeploy manifest
+                name: "{{ awx_configmaps['rbac-proxy'] }}"
+                defaultMode: 416 # "0640"
+
+  operator-controller-containers:
+    # https://github.com/brancz/kube-rbac-proxy#usage
+    kube-rbac-proxy:
+      args:
+        - --secure-listen-address=:8443
+        - --upstream=http://127.0.0.1:8080/
+        - --proxy-endpoints-port=9443
+        - --tls-cert-file=/tls/tls.crt
+        - --tls-private-key-file=/tls/tls.key
+        - --client-ca-file=/tls/ca.crt
+        - --config-file=/etc/kube-rbac-proxy/config.yaml
+        - --v=0 # klog verbosity
+
+      readinessProbe:
+        failureThreshold: 3
+        httpGet:
+          path: healthz
+          port: 9443
+          scheme: HTTPS
+        initialDelaySeconds: 5
+        periodSeconds: 10
+        successThreshold: 1
+        timeoutSeconds: 5
+
+      volumeMounts:
+        - name: proxy-tls
+          mountPath: /tls
+          readOnly: true
+        - name: proxy-config
+          mountPath: /etc/kube-rbac-proxy
+          readOnly: true
+
+  extraDeploy:
+    # create kube-rbac-proxy auth config file so
+    # Prometheus can scrape AWX Operator metrics
+    - |
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: {{ awx_configmaps['rbac-proxy'] }}
+      data:
+        config.yaml: |+
+          authorization:
+            static:
+              - user: # cert CN
+                  name: {{ scraper_user.username }}
+                verb: get
+                resourceRequest: false
+                path: /metrics
+
+awx_organization:
+  name: Fourteeners
+  desc: Erhhung's Homelab
+
+# https://docs.ansible.com/projects/awx-operator/en/latest/user-guide/advanced-configuration/deploying-a-specific-version-of-awx.html
+awx_environments:
+  default:
+    name: Default Execution Environment
+    image: "{{ harbor_container_registry }}/library/al2023-devops:latest"
+    pull: always # always|missing|never
+
+  xcp-ng:
+    name: XCP-ng Execution Environment
+    image: "{{ harbor_container_registry }}/library/awx-ee-xcp-ng:latest"
+    pull: always
+
+# get IDs of credential types:
+# while read id kind name; do
+#   printf "%-4d %-14s %s\n" $id $kind "$name"
+# done < <(
+#   awx credential_types list --all -f jq \
+#     --filter '.results | sort_by(.name) |
+#      .[] | "\(.id) \(.kind) \(.name)"'
+# )
+# get inputs for specific type:
+# awx credential_types get --name "GPG Public Key" -f yaml | yq .inputs
+awx_credentials:
+  # SSH private key for all Homelab hosts
+  ssh-key:
+    type: Machine
+    name: Erhhung SSH Private Key
+    # desc: optional
+    inputs:
+      # ssh_key_data set in Ansible task
+      ssh_key_data: "{{ ssh_key_data }}"
+
+  # Ansible Vault password for homelab-k8s
+  k8s-vault:
+    type: Vault
+    name: homelab-k8s Vault Password
+    inputs:
+      vault_password: "{{ k8s_vault_pass }}"
+
+  # Ansible Vault password for homelab-xcp
+  xcp-vault:
+    type: Vault
+    name: homelab-xcp Vault Password
+    inputs:
+      vault_password: "{{ xcp_vault_pass }}"
+
+  github-scm:
+    type: Source Control
+    name: Erhhung GitHub Credentials
+    inputs:
+      username: "{{ user_erhhung.username }}"
+      password: "{{ github_access_token   }}"
+
+  gitlab-scm:
+    type: Source Control
+    name: Erhhung GitLab Credentials
+    inputs:
+      username: "{{ user_erhhung.username }}"
+      password: "{{ awx_gitlab_pat        }}"
+
+  github-pat:
+    type: GitHub Personal Access Token
+    name: Erhhung GitHub Access Token
+    inputs:
+      token: "{{ github_access_token }}"
+
+  gitlab-pat:
+    type: GitLab Personal Access Token
+    name: Erhhung GitLab Access Token
+    inputs:
+      # PAT created by Ansible task
+      token: "{{ awx_gitlab_pat }}"
+
+  # this must be linked to the organization
+  # so that project update will run content
+  # sync task (install roles & collections)
+  galaxy:
+    type: Ansible Galaxy/Automation Hub API Token
+    name: Public Ansible Galaxy
+    inputs:
+      url: https://galaxy.ansible.com
+      # token: not needed for public
+
+awx_projects:
+  home-xcp:
+    name: homelab-xcp
+    desc: >-
+      Ansible playbooks to manage configuration and
+      dotfiles for Erhhung's XCP-ng cluster at home.
+    type: git # git|svn|insights|archive
+    url: https://github.com/erhhung/homelab-xcp.git
+    branch: main # branch/tag/commit
+    # refspec: optional # --scm_refspec
+    # override: optional # --allow_override
+    clean: true # --scm_clean
+    # track: optional # --scm_track_submodules
+    # delete: optional # --scm_delete_on_update
+    # update: --scm_update_cache_timeout
+    # (implies --scm_update_on_launch)
+    update: 600
+    credential: "{{ awx_credentials['github-scm'] }}"
+    default_ee: "{{ awx_environments['xcp-ng']    }}"
+    inventory: &inventory
+      source: scm # scm|file|...
+      path: inventory/hosts.ini
+
+  home-k8s:
+    name: homelab-k8s
+    desc: >-
+      Ansible playbooks to provision infrastructure and
+      deploy services for Erhhung's Kubernetes cluster
+      at home.
+    type: git
+    url: https://github.com/erhhung/homelab-k8s.git
+    branch: main
+    clean: true
+    update: 600
+    credential: "{{ awx_credentials['github-scm'] }}"
+    default_ee: "{{ awx_environments['default']   }}"
+    inventory: *inventory

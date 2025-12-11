@@ -1,7 +1,7 @@
 ---
 - name: Install required packages
   tags: install
-  hosts: k8s_all
+  hosts: k8s_hosts
   vars_files:
     - vars/packages.yml
   tasks:
@@ -91,6 +91,15 @@
         state: present
         virtualenv: "{{ ansible_user_virtualenv }}"
 
+    - name: Create /etc/profile.d/venv.sh
+      become: true
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/copy_module.html
+      ansible.builtin.copy:
+        dest: /etc/profile.d/venv.sh
+        content: |
+          export PATH="$HOME/.venv/bin:$PATH"
+        mode: "0644"
+
     # plugins are installed in the user's home
     # directory under .local/share/helm/plugins
     - name: Install useful Helm plugins
@@ -103,7 +112,7 @@
 
 - name: Install apps from GitHub releases
   tags: github
-  hosts: k8s_all
+  hosts: k8s_hosts
   become: true
   tasks:
     - name: Install app using GitHub release

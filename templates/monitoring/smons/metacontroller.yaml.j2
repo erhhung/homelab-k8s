@@ -4,7 +4,6 @@ kind: ServiceMonitor
 metadata:
   name: metacontroller
   labels:
-    app.kubernetes.io/name: metacontroller
     # required by serviceMonitorSelector!
     release: {{ monitoring_release_name }}
 spec:

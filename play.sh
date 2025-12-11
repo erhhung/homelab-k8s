@@ -33,6 +33,7 @@ _reqcmds() {
 _reqcmds yq jo || exit $?
 
 export ANSIBLE_CONFIG=./ansible.cfg
+export ANSIBLE_PRIVATE_KEY_FILE=$HOME/.ssh/$USER.pem
 export ANSIBLE_FORCE_COLOR=true
 
 prettify() {
@@ -128,11 +129,10 @@ get_tags() {
 
 # install roles from requirements
 install_roles() {
-  # so far only cluster playbook uses role
   local plays=$(get_playbooks "${args[@]}")
   [[ ",$plays," =~ ^.*,(cluster),.*$ ]] || return 0
 
-  echo -e "\nInstalling roles from requirements...\n"
+  echo -e "\nInstalling roles and collections...\n"
   ansible-galaxy install -r roles/requirements.yml
 }
 install_roles
