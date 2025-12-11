@@ -479,8 +479,8 @@
       when: config_method == 'shell'
       vars:
         <<: *vars
-        admin_pat: |-
-          {% set lines = configure_sh.stdout_lines | select('search','^ADMIN_PAT=') %}
+        admin_pat: >-
+          {% set lines = configure_sh.stdout_lines | select('search','^ADMIN_PAT=') -%}
           {{ lines[0].split('ADMIN_PAT=')[1] if lines is truthy else none }}
       block:
         - name: Create GitLab PATs secret
@@ -494,8 +494,8 @@
     - name: Set the runner_token fact
       when: config_method == 'shell'
       ansible.builtin.set_fact:
-        runner_token: |-
-          {% set lines = configure_sh.stdout_lines | select('search','^RUNNER_TOKEN=') %}
+        runner_token: >-
+          {% set lines = configure_sh.stdout_lines | select('search','^RUNNER_TOKEN=') -%}
           {{ lines[0].split('RUNNER_TOKEN=')[1] if lines is truthy else none }}
 
 # requires non-empty runner_token

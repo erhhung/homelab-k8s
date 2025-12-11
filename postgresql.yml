@@ -12,6 +12,7 @@
     # these are only needed for
     # their *_db_user variables
     - vars/keycloak.yml
+    - vars/awx.yml
     - vars/gitlab.yml
     - vars/openwebui.yml
     - vars/flowise.yml

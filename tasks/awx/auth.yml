@@ -1,0 +1,33 @@
+# obtain AWX controller credentials
+# from a host logged in via AWX CLI
+# for use by awx.awx modules
+#
+# pass the following vars:
+#   idempotent [optional] default=false
+#
+# sets the following facts:
+#   awx_controller_token
+---
+- name: Get AWX controller token
+  become: false
+  vars:
+    cli_hosts: "{{ groups['rke_cluster'] }}"
+    # https://docs.ansible.com/projects/ansible/latest/collections/ansible/builtin/random_filter.html
+    any_host: "{{  cli_hosts | random }}"
+    same_host: "{{ cli_hosts | first  }}"
+  block:
+    - name: Read .bash_env.d/awx.env file
+      delegate_to: "{{ same_host if idempotent | default(false) else any_host }}"
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/slurp_module.html
+      ansible.builtin.slurp:
+        src: "{{ ansible_env.HOME }}/.bash_env.d/awx.env"
+      register: awx_envs
+
+    - name: Set awx_controller_token fact
+      delegate_to: localhost
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/set_fact_module.html
+      ansible.builtin.set_fact:
+        awx_controller_token: >-
+          {% set lines = awx_envs.content | b64decode |
+               trim | split('\n')   | select('search', '^CONTROLLER_OAUTH_TOKEN=') -%}
+          {{ lines[0].split('=')[1] | regex_replace('["'']','') if lines is truthy else '' }}

@@ -1,1 +1,0 @@
-xcp_master: "{{ groups['xcp'][0] }}"

@@ -220,6 +220,7 @@
         pat_name: argocd
         pat_owner: "{{ user_erhhung.username }}"
         scopes:
+          # https://docs.gitlab.com/user/profile/personal_access_tokens#personal-access-token-scopes
           - read_repository
           - self_rotate
         fact_name: argocd_gitlab_pat

@@ -2,7 +2,7 @@
 # https://github.com/longhorn/charts/tree/v1.9.x/charts/longhorn#prerequisites
 - name: Prepare nodes for Longhorn
   tags: prepare
-  hosts: k8s_all
+  hosts: k8s_hosts
   become: true
   vars_files: &vars_files
     - vars/kubernetes.yml

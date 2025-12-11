@@ -38,7 +38,7 @@
 # https://github.com/goharbor/harbor-cli#installation
 - name: Install Harbor CLI tool
   tags: cli
-  hosts: k8s_all
+  hosts: k8s_hosts
   vars_files:
     - vars/harbor.yml
   tasks:
@@ -236,7 +236,7 @@
       # don`t load .rancher_api
       ADMIN_PASS=none
       . .bash_aliases
-      set -o pipefail
+      set -eo pipefail
   pre_tasks:
     - name: Determine source images
       # noqa risky-shell-pipe
@@ -247,15 +247,21 @@
         sources=() registries=()
 
         for image in "${images[@]}"; do
-          artifact="library/$(basename $image)"
-          tag="$(harbor artifact view $artifact -o yaml | \
-                yq '.payload.tags[].name')"
-          [ "$tag" ] && continue
+          repo="${image##*/}"
+           tag="${repo##*:}"
+          repo="library/${repo%%:*}"
+           tag="${tag:-latest}"
+          echo >&2 "repo=$repo tag=$tag"
 
-          sources+=($image)
-          registry=${image%%/*}
-          [[ " ${registries[*]} " == *" $registry "* ]] || \
-            registries+=($registry)
+          id="$(harbor artifact list $repo -o json 2> /dev/null | \
+            jq --arg tag $tag -r  '.Payload[] |
+                  select($tag == (.tags // [])[].name) | .id')" || true
+          [ "$id" ] || {
+            sources+=($image)
+            registry=${image%%/*}
+            [[ " ${registries[*]} " == *" $registry "* ]] || \
+              registries+=($registry)
+          }
         done
 
         jo -p sources="$(jo -a -- <<< ""    "${sources[@]}")" \
@@ -281,12 +287,14 @@
         )
         for registry in "${registries[@]}"; do
           user={{ user_erhhung.username }}
-          pass=
+          unset pass
+
           case "$registry" in
             docker.io) pass={{ docker_access_token }} ;;
               ghcr.io) pass={{ github_access_token }} ;;
               harbor*) pass={{ harbor_admin_pass   }} ;;
           esac
+
           [ "$pass" ] || {
             echo "No credentials provided for $registry."
             echo "Access will be public only."
@@ -296,7 +304,7 @@
           skopeo login $registry -u $user -p $pass
           rc=0
         done
-        exit ${rc-9}
+        set +e; exit ${rc-9}
         EOT
       register: reg_logins
       when: source_registries is truthy

@@ -196,7 +196,7 @@
                   authorization:
                     static:
                       - user: # cert CN
-                          name: scraper
+                          name: {{ scraper_user.username }}
                         verb: get
                         resourceRequest: false
                         path: /metrics

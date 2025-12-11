@@ -40,7 +40,7 @@ longhorn_chart_values:
     reclaimPolicy: Delete
     # allow live migration of Longhorn
     # volumes from one node to another
-    migratable: true
+    # migratable: true
 
   defaultSettings:
     defaultDataPath: "{{ data_lv.mount }}"

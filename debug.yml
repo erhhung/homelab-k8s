@@ -78,8 +78,8 @@
     - name: Show inventory groups
       ansible.builtin.debug:
         msg: |-
-          groups['all']:                  {{ groups['all']     }}
-          groups['k8s_all']:              {{ groups['k8s_all'] }}
+          groups['all']:                  {{ groups['all'] }}
+          groups['k8s_hosts']:            {{ groups['k8s_hosts']   }}
           groups['rke_cluster']:          {{ groups['rke_cluster'] }}
           groups['rke_control_plane']:    {{ groups['rke_control_plane']    }}
           groups['rke_control_plane_ha']: {{ groups['rke_control_plane_ha'] }}
@@ -117,7 +117,7 @@
         rke_cluster_name: homelab
         rke_ha_mode: true
         k8s_hosts: |
-          {% set hosts = groups['k8s_all'] %}
+          {% set hosts = groups['k8s_hosts'] %}
           {% if rke_ha_mode %}
           {%   set _ = hosts.append(rke_cluster_name) %}
           {% endif %}
@@ -513,10 +513,11 @@
         enabled: true
         yaml: |
           {% if enabled %}
-          doc:
+          doc: &doc
             foo: abc
           ---
           doc:
+            # <<: *doc # cannot span docs!
             bar: xyz
           {% endif %}
         # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/from_yaml_all_filter.html
@@ -567,6 +568,17 @@
             floats: {{ floats   }}
           booleans: {{ booleans }}
           mappings: {{ mappings }}
+
+    - name: Split string into lines
+      vars:
+        text: |
+          foo
+          bar
+          baz
+        # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/split_filter.html
+        lines: "{{ text | trim | ansible.builtin.split('\n') }}"
+      ansible.builtin.debug:
+        var: lines
 
     - name: Debug dict2items filter
       vars:

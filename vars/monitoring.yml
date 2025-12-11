@@ -6,6 +6,13 @@
 
 grafana_admin_user: erhhung
 
+scraper_user:
+  username: scraper
+  firstname: Prometheus
+  lastname: Scraper
+  email: scraper@{{ homelab_domain }}
+  password: "{{ monitoring_pass }}"
+
 # passwords will be hashed and stored
 # in monitoring_passwords_hashed fact
 monitoring_passwords:

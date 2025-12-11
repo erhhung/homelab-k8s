@@ -1,0 +1,46 @@
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: awx-operator-controller-manager
+  labels:
+    # required by serviceMonitorSelector!
+    release: {{ monitoring_release_name }}
+spec:
+  jobLabel: awx-operator-controller-manager
+  namespaceSelector:
+    matchNames:
+      - {{ awx_namespace }}
+  selector:
+    matchLabels:
+      control-plane: controller-manager
+  endpoints:
+    - port: https
+      path: /metrics
+      scheme: https
+      tlsConfig: {{ metric_scraper_tls_config }}
+      interval: 60s
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: awx-instance
+  labels:
+    # required by serviceMonitorSelector!
+    release: {{ monitoring_release_name }}
+spec:
+  jobLabel: awx-instance
+  namespaceSelector:
+    matchNames:
+      - {{ awx_namespace }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: awx
+  endpoints:
+    - port: http
+      # path must end with /
+      path: /api/v2/metrics/
+      bearerTokenSecret:
+        name: {{ awx_secrets['scraper'] }}
+        key: token
+      interval: 60s

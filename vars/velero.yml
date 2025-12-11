@@ -46,13 +46,15 @@ velero_chart_values:
 
   podSecurityContext: &pod_security
     fsGroup: 2000
+    fsGroupChangePolicy: OnRootMismatch
   containerSecurityContext: &container_security
-    capabilities:
-      drop: ["ALL"]
-    allowPrivilegeEscalation: false
-    readOnlyRootFilesystem: true
     runAsNonRoot: true
     runAsUser: 1000
+    runAsGroup: 1000
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    capabilities:
+      drop: ["ALL"]
 
   resources:
     requests:

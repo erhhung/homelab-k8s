@@ -20,7 +20,7 @@
     cert_name: monitoring-scraper
     days: 365
     sans:
-      - scraper
-      - scraper@{{ homelab_domain }}
+      - "{{ scraper_user.username }}"
+      - "{{ scraper_user.email    }}"
   # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
   ansible.builtin.include_tasks: tasks/k8s/secrets/tls.step.yml

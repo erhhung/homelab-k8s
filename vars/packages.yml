@@ -70,7 +70,7 @@ apt_packages:
       - git # required by kubernetes.core.helm_plugin
       - helm # requires /etc/apt/sources.list.d/helm.sources
       - skopeo # used to copy container images into Harbor
-    hosts: "{{ groups['k8s_all'] }}"
+    hosts: "{{ groups['k8s_hosts'] }}"
 
   - packages:
       # useful tools to debug MetalLB routing issues
