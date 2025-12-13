@@ -420,7 +420,7 @@
 
 - name: Configure MinIO dashboards
   tags: dashboards
-  hosts: "{{ rke_control_plane_host }}"
+  hosts: localhost
   vars_files: *vars_files
   tasks:
     - name: Import Grafana dashboards

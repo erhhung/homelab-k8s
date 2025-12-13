@@ -31,6 +31,8 @@
 #   wait_jobs    [optional] default=false
 #   wait_timeout [optional] default=600
 #   task_timeout [optional] default=900
+#   post_wait    [optional] sleep duration after apply
+#                           (only if changes occurred)
 #
 # patches.{merge_patches,json_patches,transformers}:
 # https://helmfile.readthedocs.io/en/latest/advanced-features#adhoc-kustomization-of-helm-charts
@@ -366,6 +368,11 @@
             $HOME/.config/helm/repositories.yaml
         }
         [[ $rc -eq 0 || $rc -eq 2 ]] && clean_up
+        {% if post_wait is defined %}
+        [ $rc -eq 2 ] && ( set -x
+          sleep {{ post_wait }}
+        )
+        {% endif %}
         exit $rc
       args:
         executable: /bin/bash

@@ -576,7 +576,7 @@
           bar
           baz
         # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/split_filter.html
-        lines: "{{ text | trim | ansible.builtin.split('\n') }}"
+        lines: "{{ text | trim | ansible.builtin.split('\n') | difference(['bar']) }}"
       ansible.builtin.debug:
         var: lines
 

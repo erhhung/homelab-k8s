@@ -15,6 +15,14 @@ spec:
           # decrypt the real per-project Vault password
           mountPath: /var/lib/awx/.vaultpass
           subPath: .vaultpass
+        # mount the tmp directory created on projects
+        # PV by awx-task init container at dedicated
+        # path that isn't subject to Git repo cleanup
+        # and isn't exposing the entire awx-projects
+        # tree to all jobs
+        - name: awx-projects
+          mountPath: /var/lib/awx/tmp
+          subPath: tmp
   volumes:
     - name: vaultpass
       secret:
@@ -23,3 +31,7 @@ spec:
           - key: secret_key
             path: .vaultpass
         defaultMode: 416 # "0640"
+    - name: awx-projects
+      persistentVolumeClaim:
+        # claim created by awx-operator
+        claimName: awx-projects-claim

@@ -6,7 +6,7 @@
     - vars/kubernetes.yml
   vars:
     # targets and pre-halt delay can be overridden on the command-line:
-    # ansible-playbook shutdownvms.yml -e targets=rke_cluster -e haltdelay=30
+    # ansible-playbook vms.shutdown.yml -e targets=rke_cluster -e haltdelay=30
     targets: k8s_hosts
     # fail fast if host already appears to be shut down
     ansible_ssh_args: -o ConnectTimeout=1s -o ConnectionAttempts=1
