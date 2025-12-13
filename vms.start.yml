@@ -4,7 +4,7 @@
   gather_facts: false
   vars:
     # targets can be overridden on command-line:
-    # ansible-playbook startvms.yml -e targets=rke_cluster
+    # ansible-playbook vms.start.yml -e targets=rke_cluster
     targets: k8s_hosts
   pre_tasks:
     - name: Resolve target hosts

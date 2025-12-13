@@ -511,7 +511,7 @@ Due to the dependency chain of the **Prometheus monitoring stack** (Keycloak and
 1. Shut down all/specific VMs
 
     ```bash
-    ansible-playbook shutdownvms.yml [-e targets={group|host|,...}]
+    ansible-playbook vms.shutdown.yml [-e targets={group|host|,...}]
     ```
 
 2. Create/revert/delete VM snapshots
@@ -519,15 +519,15 @@ Due to the dependency chain of the **Prometheus monitoring stack** (Keycloak and
     <details><summary>2.1. Create new snaphots</summary><br/>
 
     ```bash
-    ansible-playbook snapshotvms.yml [-e targets={group|host|,...}] \
-                                      -e '{"desc":"text description"}'
+    ansible-playbook vms.snapshot.yml [-e targets={group|host|,...}] \
+                                       -e '{"desc":"text description"}'
     ```
     </details>
 
     <details><summary>2.2. Revert to snapshots</summary><br/>
 
     ```bash
-    ansible-playbook snapshotvms.yml  -e do=revert \
+    ansible-playbook vms.snapshot.yml -e do=revert \
                                      [-e targets={group|host|,...}]  \
                                       -e '{"desc":"text to search"}' \
                                      [-e '{"date":"YYYY-mm-dd prefix"}']
@@ -537,7 +537,7 @@ Due to the dependency chain of the **Prometheus monitoring stack** (Keycloak and
     <details><summary>2.3. Delete old snaphots</summary><br/>
 
     ```bash
-    ansible-playbook snapshotvms.yml  -e do=delete \
+    ansible-playbook vms.snapshot.yml -e do=delete \
                                      [-e targets={group|host|,...}]  \
                                       -e '{"desc":"text to search"}' \
                                       -e '{"date":"YYYY-mm-dd prefix"}'
@@ -547,7 +547,7 @@ Due to the dependency chain of the **Prometheus monitoring stack** (Keycloak and
 3. Start all/specific VMs
 
     ```bash
-    ansible-playbook startvms.yml [-e targets={group|host|,...}]
+    ansible-playbook vms.start.yml [-e targets={group|host|,...}]
     ```
 
 ## VM Storage

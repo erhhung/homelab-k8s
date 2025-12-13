@@ -296,7 +296,7 @@
 
     - name: Create sudoers rule file
       # https://docs.ansible.com/ansible/latest/collections/community/general/sudoers_module.html
-      community.general.sudoers: # noqa: args
+      community.general.sudoers: # noqa args
         name: "{{ item.name }}"
         state: present
         user: "{{ item.user | default(omit) }}"

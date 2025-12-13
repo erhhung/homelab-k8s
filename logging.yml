@@ -96,7 +96,7 @@
 
 - name: Configure logging dashboards
   tags: dashboards
-  hosts: "{{ rke_control_plane_host }}"
+  hosts: localhost
   vars_files: *vars_files
   vars:
     log_search: "{{ saved_log_search }}"

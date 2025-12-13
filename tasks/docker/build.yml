@@ -79,6 +79,8 @@
       community.docker.docker_image_push:
         name: "{{ remote_name }}"
       timeout: 600
+      retries: 3
+      delay: 10
 
     - name: Notify handler if artifact created
       delegate_to: *delegate

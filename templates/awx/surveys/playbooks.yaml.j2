@@ -1,0 +1,12 @@
+# https://legacy-controller-docs.ansible.com/ansible-tower/latest/html/towerapi/api_ref.html#/Job_Templates/Job_Templates_job_templates_survey_spec_create
+---
+name: Playbook selections
+description: Select playbooks to run
+spec:
+  - type: multiselect
+    question_name: Select playbooks to run
+    question_description: Select one or more playbooks
+    variable: PLAYBOOKS
+    required: false
+    choices: {{ choices | to_json }}
+    default: {{ [defaults] | flatten | join('\n') | to_json }}

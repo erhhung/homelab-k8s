@@ -64,7 +64,8 @@ awx_operator_chart_values:
       redis_image_version: 8.2.1-debian-12-r0
 
       # https://docs.ansible.com/projects/awx-operator/en/latest/user-guide/advanced-configuration/deploying-a-specific-version-of-awx.html
-      ee_images: "{{ awx_environments.values() }}"
+      ee_images: "{{ awx_environments.values() |
+        selectattr('image', 'defined') }}"
 
       # https://docs.ansible.com/projects/awx-operator/en/latest/user-guide/advanced-configuration/persisting-projects-directory.html
       projects_persistence: true
@@ -84,6 +85,18 @@ awx_operator_chart_values:
           readOnly: true
       task_extra_volume_mounts: *extra-mounts
 
+      # initContainer here refers to the
+      # existing init-receptor container
+      init_container_extra_volume_mounts: |
+        - name: awx-projects
+          mountPath: /var/lib/awx/projects
+      # create temp dir on projects PV so
+      # workflow jobs can create temp.yml
+      # playbook file run by the next job
+      init_container_extra_commands: |
+        mkdir -p  /var/lib/awx/projects/tmp
+        chmod 777 /var/lib/awx/projects/tmp
+
       # use the AWX secret key as a secondary
       # Vault password to decrypt per-project
       # Vault password stored in vaultpass.sh
@@ -95,6 +108,9 @@ awx_operator_chart_values:
           mountPath: /var/lib/awx/.vaultpass
           subPath: SECRET_KEY
           readOnly: true
+        - name: awx-projects
+          mountPath: /var/lib/awx/tmp
+          subPath: tmp
 
       # https://docs.ansible.com/projects/awx-operator/en/latest/user-guide/advanced-configuration/exporting-environment-variables-to-containers.html
       web_extra_env: &extra-envs |
@@ -331,128 +347,3 @@ awx_operator_chart_values:
                 verb: get
                 resourceRequest: false
                 path: /metrics
-
-awx_organization:
-  name: Fourteeners
-  desc: Erhhung's Homelab
-
-# https://docs.ansible.com/projects/awx-operator/en/latest/user-guide/advanced-configuration/deploying-a-specific-version-of-awx.html
-awx_environments:
-  default:
-    name: Default Execution Environment
-    image: "{{ harbor_container_registry }}/library/al2023-devops:latest"
-    pull: always # always|missing|never
-
-  xcp-ng:
-    name: XCP-ng Execution Environment
-    image: "{{ harbor_container_registry }}/library/awx-ee-xcp-ng:latest"
-    pull: always
-
-# get IDs of credential types:
-# while read id kind name; do
-#   printf "%-4d %-14s %s\n" $id $kind "$name"
-# done < <(
-#   awx credential_types list --all -f jq \
-#     --filter '.results | sort_by(.name) |
-#      .[] | "\(.id) \(.kind) \(.name)"'
-# )
-# get inputs for specific type:
-# awx credential_types get --name "GPG Public Key" -f yaml | yq .inputs
-awx_credentials:
-  # SSH private key for all Homelab hosts
-  ssh-key:
-    type: Machine
-    name: Erhhung SSH Private Key
-    # desc: optional
-    inputs:
-      # ssh_key_data set in Ansible task
-      ssh_key_data: "{{ ssh_key_data }}"
-
-  # Ansible Vault password for homelab-k8s
-  k8s-vault:
-    type: Vault
-    name: homelab-k8s Vault Password
-    inputs:
-      vault_password: "{{ k8s_vault_pass }}"
-
-  # Ansible Vault password for homelab-xcp
-  xcp-vault:
-    type: Vault
-    name: homelab-xcp Vault Password
-    inputs:
-      vault_password: "{{ xcp_vault_pass }}"
-
-  github-scm:
-    type: Source Control
-    name: Erhhung GitHub Credentials
-    inputs:
-      username: "{{ user_erhhung.username }}"
-      password: "{{ github_access_token   }}"
-
-  gitlab-scm:
-    type: Source Control
-    name: Erhhung GitLab Credentials
-    inputs:
-      username: "{{ user_erhhung.username }}"
-      password: "{{ awx_gitlab_pat        }}"
-
-  github-pat:
-    type: GitHub Personal Access Token
-    name: Erhhung GitHub Access Token
-    inputs:
-      token: "{{ github_access_token }}"
-
-  gitlab-pat:
-    type: GitLab Personal Access Token
-    name: Erhhung GitLab Access Token
-    inputs:
-      # PAT created by Ansible task
-      token: "{{ awx_gitlab_pat }}"
-
-  # this must be linked to the organization
-  # so that project update will run content
-  # sync task (install roles & collections)
-  galaxy:
-    type: Ansible Galaxy/Automation Hub API Token
-    name: Public Ansible Galaxy
-    inputs:
-      url: https://galaxy.ansible.com
-      # token: not needed for public
-
-awx_projects:
-  home-xcp:
-    name: homelab-xcp
-    desc: >-
-      Ansible playbooks to manage configuration and
-      dotfiles for Erhhung's XCP-ng cluster at home.
-    type: git # git|svn|insights|archive
-    url: https://github.com/erhhung/homelab-xcp.git
-    branch: main # branch/tag/commit
-    # refspec: optional # --scm_refspec
-    # override: optional # --allow_override
-    clean: true # --scm_clean
-    # track: optional # --scm_track_submodules
-    # delete: optional # --scm_delete_on_update
-    # update: --scm_update_cache_timeout
-    # (implies --scm_update_on_launch)
-    update: 600
-    credential: "{{ awx_credentials['github-scm'] }}"
-    default_ee: "{{ awx_environments['xcp-ng']    }}"
-    inventory: &inventory
-      source: scm # scm|file|...
-      path: inventory/hosts.ini
-
-  home-k8s:
-    name: homelab-k8s
-    desc: >-
-      Ansible playbooks to provision infrastructure and
-      deploy services for Erhhung's Kubernetes cluster
-      at home.
-    type: git
-    url: https://github.com/erhhung/homelab-k8s.git
-    branch: main
-    clean: true
-    update: 600
-    credential: "{{ awx_credentials['github-scm'] }}"
-    default_ee: "{{ awx_environments['default']   }}"
-    inventory: *inventory

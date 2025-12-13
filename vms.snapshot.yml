@@ -4,7 +4,7 @@
   gather_facts: false
   vars:
     # To be overridden on command-line:
-    # ansible-playbook snapshotvms.yml
+    # ansible-playbook vms.snapshot.yml
     #   [-e targets=k3s_cluster,rke_cluster]
     #   [-e do=create|revert|delete]
     #   [-e '{"date":"2025-02-01"}']
