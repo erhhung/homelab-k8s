@@ -1,8 +1,12 @@
+# icloud_smtp.*:        {vault.yml}
+# slack_webhook_urls.*: {vault.yml}
+
 awx_organization:
   name: Fourteeners
   desc: Erhhung's Homelab
 
 # https://docs.ansible.com/projects/awx-operator/en/latest/user-guide/advanced-configuration/deploying-a-specific-version-of-awx.html
+# https://docs.ansible.com/projects/awx/en/24.6.1/userguide/execution_environments.html
 awx_environments:
   cplane:
     # created and name given by awx-operator
@@ -10,6 +14,7 @@ awx_environments:
 
   default:
     name: Default Execution Environment
+    # https://github.com/erhhung/al2023-devops
     image: "{{ harbor_container_registry }}/library/al2023-devops:latest"
     pull: always # always|missing|never
 
@@ -28,6 +33,8 @@ awx_environments:
 # )
 # get inputs for specific type:
 # awx credential_types get --name "GPG Public Key" -f yaml | yq .inputs
+
+# https://docs.ansible.com/projects/awx/en/24.6.1/userguide/credentials.html
 awx_credentials:
   # SSH private key for all Homelab hosts
   ssh-key:
@@ -89,6 +96,98 @@ awx_credentials:
       url: https://galaxy.ansible.com
       # token: not needed for public
 
+# https://docs.ansible.com/projects/awx/en/24.6.1/userguide/notifications.html
+awx_notifiers:
+  email:
+    name: Erhhung Gmail
+    # desc: optional
+    type: email # email|webhook|slack|pagerduty|...
+    config:
+      host: "{{ icloud_smtp.host }}"
+      port: "{{ icloud_smtp.port }}"
+      use_tls: true
+      use_ssl: false
+      username: "{{ icloud_smtp.username }}"
+      password: "{{ icloud_smtp.passwords['awx'] }}"
+      sender: "Ansible AWX <{{ icloud_smtp.from_email }}>"
+      recipients:
+        - "{{ user_erhhung.fullname }} <{{ user_erhhung.email }}>"
+      headers:
+        Content-Type: text/html; charset=utf-8
+    # sending HTML email isn't currently supported!
+    # https://github.com/ansible/awx/issues/11057
+    messages: | # custom messages
+      {% set msgs  = {} %}
+      {% set types = {
+           'started': 'started',
+           'success': 'completed',
+           'error':   'failed',
+         } %}
+      {# NOTE: the {{ }} braces below are part of the notification #}
+      {#       message template interpreted by AWX, not by Ansible #}
+      {% for type, msg in types.items() %}
+      {%   set _ = msgs.update({
+             type: {
+               'message': '{{ job_friendly_name }} {{ job.id }} has '~ msg,
+               'body':
+      '<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;">
+        <tr>
+          <td style="text-align:right; padding:2px 8px; white-space:nowrap;">{{ job_friendly_name }}:</td>
+          <td style="padding:2px 0; font-weight:bold;">
+            <a href="{{ url | replace(' ~"'#','ui_next'"~ ') }}/output">{{ job.name }} #{{ job.id }}</a>
+          </td>
+        </tr>
+        <tr>
+          <td style="text-align:right; padding:2px 8px; white-space:nowrap;">Status:</td>
+          <td style="padding:2px 0; font-weight:bold;">{{ job.status | upper }}</td>
+        </tr>
+      </table>',
+             }}) %}
+      {% endfor  %}
+      {{ msgs    }}
+
+  slack:
+    name: Homelab Slack
+    type: webhook # legacy Slack Incoming Webhook
+    config:
+      url: "{{ slack_webhook_urls['awx'] }}"
+      http_method: POST
+      headers:
+        Content-Type: application/json; charset=utf-8
+    # https://docs.ansible.com/projects/awx/en/24.6.1/userguide/notification_parameters_supported.html#supported-attributes-for-custom-notifications
+    # due to AWX not surfacing job.extra_vars, it's not possible
+    # to include list of selected playbooks in the message body:
+    # https://github.com/ansible/awx/issues/4539
+    messages: | # custom messages
+      {% set msgs  = {} %}
+      {% set types = {
+           'started': 'started',
+           'success': 'completed',
+           'error':   'failed',
+         } %}
+      {# NOTE: the {{ }} braces below are part of the notification #}
+      {#       message template interpreted by AWX, not by Ansible #}
+      {% for type, msg in types.items() %}
+      {%   set _ = msgs.update({
+             type: {
+               'body': {
+                 'text': '{{ job_friendly_name }} {{ job.id }} has '~ msg,
+                 'blocks': [{
+                   'type': 'section',
+                   'text': {
+                     'type': 'mrkdwn',
+                     'text': '*{{ job_friendly_name }}*: *<{{ url | replace(' ~"'#','ui_next'"~ ') }}/output|{{ job.name }} #{{ job.id }}>*' ~"\n"~
+                             '*Status*: *{{ job.status | upper }}*',
+                   },
+                 }],
+               } | to_json
+             }}) %}
+      {% endfor  %}
+      {{ msgs    }}
+
+# https://docs.ansible.com/projects/awx/en/24.6.1/userguide/projects.html
+# https://docs.ansible.com/projects/awx/en/24.6.1/userguide/inventories.html
+# https://docs.ansible.com/projects/awx/en/24.6.1/userguide/job_templates.html
 awx_projects:
   home-xcp:
     name: homelab-xcp

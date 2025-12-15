@@ -317,7 +317,7 @@
           failed_when: fix_configs.rc not in [0,9]
 
 - name: Create MinIO buckets/users/groups
-  tags: buckets
+  tags: configure
   hosts: "{{ rke_control_plane_host }}"
   vars_files: *vars_files
   tasks:

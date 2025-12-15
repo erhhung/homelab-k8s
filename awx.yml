@@ -447,6 +447,22 @@
         default_environment: "{{ awx_environments['default'].name }}"
         galaxy_credentials: "{{  awx_credentials['galaxy'].name   }}"
 
+    - name: Create AWX notifier
+      vars:
+        notifier: "{{ item.value }}"
+      # https://docs.ansible.com/projects/ansible/latest/collections/awx/awx/notification_template_module.html
+      awx.awx.notification_template: # noqa args
+        name: "{{ notifier.name }}"
+        description: "{{ notifier.desc | default(omit) }}"
+        organization: "{{ awx_organization.name }}"
+        notification_type: "{{ notifier.type }}"
+        notification_configuration: "{{ notifier.config }}"
+        messages: "{{ notifier.messages | default(omit) }}"
+        state: present
+      loop: "{{ awx_notifiers | ansible.builtin.dict2items }}"
+      loop_control:
+        label: "{{ item.key }}"
+
     - name: Create Localhost inventory
       # https://docs.ansible.com/projects/ansible/latest/collections/awx/awx/inventory_module.html
       awx.awx.inventory:
