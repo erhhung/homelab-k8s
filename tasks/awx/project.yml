@@ -23,6 +23,7 @@
     default_ig: default
     default_ee: "{{ awx_environments['default'].name }}"
     project_ee: "{{ awx_environments[project.exec_env | default('default')].name }}"
+
   module_defaults:
     # https://docs.ansible.com/projects/ansible/latest/collections/awx/awx/job_template_module.html
     awx.awx.job_template:
@@ -129,7 +130,7 @@
         inventory: Localhost
         project: "{{ project.name }}"
         playbook: awx.teardown.yml
-        skip_tags: ["failure"]
+        skip_tags: failure # CSV
         instance_groups: "{{ [cplane_ig] }}"
         execution_environment: "{{ cplane_ee }}"
         state: present
@@ -154,6 +155,15 @@
           template_dir ~ '/awx/surveys/playbooks.yaml.j2') | from_yaml }}"
         choices: "{{ ['ALL'] + project.playbooks }}"
         defaults: ALL
+        notifiers: |
+          {% set notifiers = [] %}
+          {% if email_notifications_enabled %}
+          {%   set _ = notifiers.append(awx_notifiers['email']) %}
+          {% endif %}
+          {% if slack_notifications_enabled %}
+          {%   set _ = notifiers.append(awx_notifiers['slack']) %}
+          {% endif %}
+          {{ notifiers | map(attribute='name') if notifiers is truthy else omit }}
       # https://docs.ansible.com/projects/ansible/latest/collections/awx/awx/workflow_job_template_module.html
       awx.awx.workflow_job_template: # noqa args
         name: "{{ project.name }}"
@@ -164,30 +174,36 @@
         ask_skip_tags: true
         survey_enabled: true
         survey_spec: "{{ survey }}"
+        notification_templates_success: "{{ notifiers }}"
+        notification_templates_error: "{{ notifiers }}"
+
         workflow_nodes:
-          - identifier: setup
+          - identifier: Set Up
             unified_job_template:
               type: job_template
               name: *setup
             related:
               success_nodes:
-                - identifier: execute
-          - identifier: teardown
-            unified_job_template:
-              type: job_template
-              name: *teardown
-          - identifier: fail
-            unified_job_template:
-              type: job_template
-              name: *fail
-          - identifier: execute
-            verbosity: "0"
+                - identifier: Execute
+
+          - identifier: Execute
             unified_job_template:
               type: job_template
               name: *execute
             related:
               success_nodes:
-                - identifier: teardown
+                - identifier: Tear Down
               failure_nodes:
                 # includes teardown
-                - identifier: fail
+                - identifier: Fail
+            verbosity: "0"
+
+          - identifier: Tear Down
+            unified_job_template:
+              type: job_template
+              name: *teardown
+
+          - identifier: Fail
+            unified_job_template:
+              type: job_template
+              name: *fail

@@ -1,8 +1,8 @@
-#     monitoring_pass: {vault.yml}
-#   thanos_admin_pass: {vault.yml}
-#  grafana_admin_pass: {vault.yml}
-#         icloud_smtp: {vault.yml}
-# slack_webhook_url.*: {vault.yml}
+#      monitoring_pass: {vault.yml}
+#    thanos_admin_pass: {vault.yml}
+#   grafana_admin_pass: {vault.yml}
+# icloud_smtp.*:        {vault.yml}
+# slack_webhook_urls.*: {vault.yml}
 
 grafana_admin_user: erhhung
 
@@ -121,7 +121,7 @@ alertmanager_config:
     smtp_smarthost: "{{ icloud_smtp.host }}:{{ icloud_smtp.port }}"
     smtp_require_tls: true
     smtp_auth_username: "{{ icloud_smtp.username }}"
-    smtp_auth_password: "{{ icloud_smtp.passwords['alertmanager'] }}"
+    smtp_auth_password: "{{ icloud_smtp.passwords['alerts'] }}"
 
   # default e-mail template:
   # https://github.com/prometheus/alertmanager/tree/main/template/email.tmpl
@@ -137,7 +137,7 @@ alertmanager_config:
       # https://prometheus.io/docs/alerting/latest/configuration#slack_config
       slack_configs:
         - channel: "#alerts"
-          api_url: "{{ slack_webhook_url['alerts'] }}"
+          api_url: "{{ slack_webhook_urls['alerts'] }}"
           send_resolved: false
     # aka /dev/null
     - name: "null"

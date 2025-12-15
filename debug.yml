@@ -352,6 +352,25 @@
           ansible.builtin.debug:
             var: stats
 
+    - name: Test dotted attributes
+      vars:
+        runlist:
+          - name: Include package installs playbook
+            ansible.builtin.import_playbook: packages.yml
+          - name: Include system settings playbook
+            ansible.builtin.import_playbook: basics.yml
+        # does NOT work: {{ runlist | map(attribute='ansible.builtin.import_playbook') }}
+        # https://docs.ansible.com/projects/ansible/latest/collections/community/general/json_query_filter.html
+        playbooks1: "{{ runlist | community.general.json_query('[].\"ansible.builtin.import_playbook\"') }}"
+        playbooks2: |
+          {% set pbs = [] %}
+          {% for pb in runlist %}
+          {%   set _ = pbs.append(pb['ansible.builtin.import_playbook']) %}
+          {% endfor %}
+          {{ pbs }}
+      ansible.builtin.debug:
+        var: playbooks1
+
 - name: Debug expressions and statements
   tags: exprs
   hosts: localhost

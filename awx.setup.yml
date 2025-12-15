@@ -11,7 +11,6 @@
   pre_tasks:
     # PLAYBOOKS is a survey variable
     - name: Assert PLAYBOOKS defined
-      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/assert_module.html
       ansible.builtin.assert:
         that:
           - PLAYBOOKS is defined
@@ -39,3 +38,12 @@
         perl -pX -i -e 's|(?<=import_playbook:\s)|/runner/project/|g' temp.yml
         mv -f temp.yml {{ temp_dir }}
       changed_when: true
+  post_tasks:
+    - name: Output temporary runlist
+      vars:
+        # https://docs.ansible.com/projects/ansible/latest/collections/ansible/builtin/file_lookup.html
+        runlist: "{{ lookup('ansible.builtin.file', temp_dir ~ '/temp.yml') | from_yaml }}"
+        # https://docs.ansible.com/projects/ansible/latest/collections/community/general/json_query_filter.html
+        playbooks: "{{ runlist | community.general.json_query('[].\"ansible.builtin.import_playbook\"') }}"
+      ansible.builtin.debug:
+        var: playbooks

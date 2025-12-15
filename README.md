@@ -183,7 +183,7 @@ ansible-vault view   $VAULTFILE
 | `awx_secret_key`                  |
 | `monitoring_pass`                 |
 | `monitoring_oidc_client_secret.*` |
-| `slack_webhook_url.*`             |
+| `slack_webhook_urls.*`            |
 | `oauth2_proxy_cookie_secret`      |
 | `kiali_oidc_client_secret`        |
 | `gitlab_secrets_data.*`           |

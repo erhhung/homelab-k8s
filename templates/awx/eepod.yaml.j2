@@ -1,20 +1,45 @@
-# custom execution environment pod spec override
+# strategic merge patch on custom
+# execution environment pod spec
+# used by default instance group
 ---
 apiVersion: v1
 kind: Pod
 spec:
+  initContainers:
+    # update CA trust on
+    # Fedora/CentOS/RHEL
+    - name: ca-bundle
+      image: {{ awx_environments['default'].image }}
+      imagePullPolicy: IfNotPresent
+      command: ["sh"]
+      args:
+        - -c
+        - |-
+          mkdir -p /etc/pki/ca-trust/extracted/{pem,openssl,edk2,java}
+          update-ca-trust extract
+      volumeMounts:
+        - name: ca-cert
+          mountPath: /etc/pki/ca-trust/source/anchors
+          readOnly: true
+        - name: ca-bundle
+          mountPath: /etc/pki/ca-trust/extracted
   containers:
-    - name: worker
+    - name: worker # existing/expected container
       resources:
+        # Ansible controller shouldn't incur much
+        # load unless it builds container images
         requests:
           cpu: 100m
           memory: 256Mi
       volumeMounts:
+        - name: ca-bundle
+          mountPath: /etc/pki/ca-trust/extracted
         - name: vaultpass
           # file is read by vaultpass.sh in projects to
           # decrypt the real per-project Vault password
           mountPath: /var/lib/awx/.vaultpass
           subPath: .vaultpass
+          readOnly: true
         # mount the tmp directory created on projects
         # PV by awx-task init container at dedicated
         # path that isn't subject to Git repo cleanup
@@ -24,6 +49,15 @@ spec:
           mountPath: /var/lib/awx/tmp
           subPath: tmp
   volumes:
+    - name: ca-cert
+      secret:
+        secretName: {{ awx_secrets['ingress'] }}
+        items:
+          - key: ca.crt
+            path: {{ homelab_domain }}.crt
+        defaultMode: 416 # "0640"
+    - name: ca-bundle
+      emptyDir: {}
     - name: vaultpass
       secret:
         secretName: {{ awx_secrets['secret'] }}

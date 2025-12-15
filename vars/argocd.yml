@@ -1,5 +1,7 @@
-# argocd_admin_pass:   {vault.yml}
-# github_access_token: {vault.yml}
+# argocd_admin_pass:    {vault.yml}
+# github_access_token:  {vault.yml}
+# icloud_smtp.*:        {vault.yml}
+# slack_webhook_urls.*: {vault.yml}
 
 # send notifications or just drop
 email_notifications_enabled: false
@@ -439,7 +441,7 @@ argocd_chart_values:
         # notifiers using $key syntax
         icloud-smtp-user: "{{ icloud_smtp.username }}"
         icloud-smtp-pass: "{{ icloud_smtp.passwords['argocd'] }}"
-        slack-webhook-url: "{{ slack_webhook_url['argocd'] }}"
+        slack-webhook-url: "{{   slack_webhook_urls['argocd'] }}"
 
     # user-defined context variables that can be referenced
     # in notification templates: {{ .context.environment }}
