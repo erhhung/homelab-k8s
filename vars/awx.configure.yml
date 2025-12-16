@@ -17,11 +17,16 @@ awx_environments:
     name: Default Execution Environment
     # https://github.com/erhhung/al2023-devops
     image: "{{ harbor_container_registry }}/library/al2023-devops:latest"
+    pull: always
+
+  minimal:
+    name: Minimal Execution Environment
+    image: "{{ harbor_container_registry }}/library/awx-ee-tiny:latest"
     pull: always # always|missing|never
 
   xcp-ng:
     name: XCP-ng Execution Environment
-    image: "{{ harbor_container_registry }}/library/awx-ee-xcp-ng:latest"
+    image: "{{ harbor_container_registry }}/library/awx-ee-xcp:latest"
     pull: always
 
 # get IDs of credential types:
@@ -224,7 +229,7 @@ awx_projects:
     inv_file: inventory/hosts.ini
     # we're importing THIS project, so
     # just get playbooks from main.yml
-    playbooks: |-
+    playbooks: |
       {% set main_yml =  playbook_dir ~ '/main.yml' %}
       {% set   yq_cmd = 'yq "map(.tags) | @json" '~ main_yml %}
       {{ lookup('ansible.builtin.pipe',  yq_cmd) | from_json }}

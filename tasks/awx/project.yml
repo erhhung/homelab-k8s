@@ -18,17 +18,16 @@
   vars:
     org: "{{ awx_organization.name }}"
     inv_fname: "{{ project.inv_file | basename }}"
-    cplane_ig: controlplane
-    cplane_ee: "{{  awx_environments['cplane'].name }}"
-    default_ig: default
     default_ee: "{{ awx_environments['default'].name }}"
+    minimal_ee: "{{ awx_environments['minimal'].name }}"
     project_ee: "{{ awx_environments[project.exec_env | default('default')].name }}"
 
   module_defaults:
     # https://docs.ansible.com/projects/ansible/latest/collections/awx/awx/job_template_module.html
     awx.awx.job_template:
-      become_enabled: false
       job_type: run
+      prevent_instance_group_fallback: true
+      become_enabled: false
   block:
     - name: Create AWX project "{{ project.name }}"
       # https://docs.ansible.com/projects/ansible/latest/collections/awx/awx/project_module.html
@@ -44,7 +43,7 @@
         scm_update_cache_timeout: 600
         scm_credential: "{{ awx_credentials[project.git_cred].name
           if project.git_cred is defined else omit }}"
-        default_environment: "{{ project_ee }}"
+        default_environment: "{{ minimal_ee }}"
         update_project: true
         state: present
         wait: true
@@ -56,7 +55,10 @@
         name: "{{ project.name }}"
         description: "{{ project.name }} static inventory"
         organization: "{{ org }}"
-        instance_groups: "{{ [cplane_ig] }}"
+        instance_groups:
+          - default
+          - minimal
+        prevent_instance_group_fallback: true
         state: present
 
     - name: Create inventory source "{{ inv_fname }}"
@@ -70,7 +72,7 @@
         overwrite: true
         update_on_launch: true
         update_cache_timeout: 600
-        execution_environment: "{{ cplane_ee }}"
+        execution_environment: "{{ minimal_ee }}"
         state: present
       register: inv_src
 
@@ -94,10 +96,9 @@
         inventory: Localhost
         project: "{{ project.name }}"
         playbook: awx.setup.yml
-        instance_groups: "{{ [default_ig] }}"
-        prevent_instance_group_fallback: true
-        # use custom EE with yq and jo installed
-        execution_environment: "{{ default_ee }}"
+        instance_groups: ["minimal"]
+        execution_environment: "{{ minimal_ee }}"
+        forks: 1
         state: present
 
     - name: Create job template "2-Execute"
@@ -108,6 +109,11 @@
         inventory: "{{ project.name }}"
         project: "{{ project.name }}"
         playbook: awx.execute.yml
+        ask_tags: true
+        ask_skip_tags: true
+        # there's no verbosity prompt
+        # for workflow, unfortunately
+        ask_verbosity: true
         credentials: |
           {% set creds = [] %}
           {% if project.run_creds is defined %}
@@ -116,10 +122,8 @@
           {%   endfor %}
           {% endif %}
           {{ creds }}
-        instance_groups: "{{ [default_ig] }}"
-        prevent_instance_group_fallback: true
+        instance_groups: ["default"]
         execution_environment: "{{ project_ee }}"
-        ask_verbosity: true
         state: present
 
     - name: Create job template "3-TearDown"
@@ -131,8 +135,9 @@
         project: "{{ project.name }}"
         playbook: awx.teardown.yml
         skip_tags: failure # CSV
-        instance_groups: "{{ [cplane_ig] }}"
-        execution_environment: "{{ cplane_ee }}"
+        instance_groups: ["minimal"]
+        execution_environment: "{{ minimal_ee }}"
+        forks: 1
         state: present
 
     - name: Create job template "4-Fail"
@@ -144,17 +149,28 @@
         project: "{{ project.name }}"
         # cleans up before failing
         playbook: awx.teardown.yml
-        instance_groups: "{{ [cplane_ig] }}"
-        execution_environment: "{{ cplane_ee }}"
+        instance_groups: ["minimal"]
+        execution_environment: "{{ minimal_ee }}"
+        forks: 1
         state: present
 
     - name: Create workflow template "{{ project.name }}"
       vars:
+        # generate playbook selection choices:
+        # ALL + #. numbered playbooks + DEBUG
+        choices: |
+          {% set pad   = project.playbooks | length | string | length %}
+          {% set fmt   =     '%%%ds' | format(pad)  %}
+          {% set items = [fmt | format('') ~ 'ALL'] %}
+          {% for pb in project.playbooks %}
+          {%   set n = fmt | format(loop.index)  %}
+          {%   set _ = items.append(n ~'. '~ pb) %}
+          {% endfor %}
+          {{ items + ['DEBUG'] }}
+        defaults: "{{ choices | first }}"
         # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/template_lookup.html
         survey: "{{ lookup('ansible.builtin.template',
           template_dir ~ '/awx/surveys/playbooks.yaml.j2') | from_yaml }}"
-        choices: "{{ ['ALL'] + project.playbooks }}"
-        defaults: ALL
         notifiers: |
           {% set notifiers = [] %}
           {% if email_notifications_enabled %}
@@ -196,7 +212,6 @@
               failure_nodes:
                 # includes teardown
                 - identifier: Fail
-            verbosity: "0"
 
           - identifier: Tear Down
             unified_job_template:

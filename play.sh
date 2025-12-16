@@ -4,6 +4,7 @@
 # in runlist.sh for how args are parsed to create
 # the runlist)
 
+# shellcheck disable=SC2046 # Quote to avoid word splitting
 # shellcheck disable=SC2207 # Prefer mapfile to split output
 # shellcheck disable=SC2155 # Declare and assign separately
 # shellcheck disable=SC2198 # Arrays don't work as operands
@@ -26,54 +27,39 @@ export ANSIBLE_FORCE_COLOR=true
 
 # get playbooks that will be run
 get_playbooks() {
-  local str list=($(
-    for arg in "$@"; do
-      if [ "$arg" == temp.yml ]; then
-        yq 'map(.tags)[]' temp.yml
-      elif [[ $arg == *.yml ]]; then
-        echo "${arg%.yml}"
-      fi
-    done
-  ))
-  str="${list[*]}"
-  echo "${str// /,}"
+  jo PLAYBOOKS="$(jo -a \
+    $(for arg in "$@"; do
+        if [ "$arg" == temp.yml ]; then
+          yq 'map(.tags)[]' temp.yml
+        elif [[ $arg == *.yml ]]; then
+          basename "${arg%.yml}"
+        fi
+      done
+    ))"
 }
-
-# get tags specified by -t|--tags
-get_tags() {
-  local str list=($(
-    for i in $(seq $#); do
-      if [[ ${!i} == -t || \
-            ${!i} == --tags ]]; then
-        ((++i)); echo "${!i}"
-      elif [[ ${!i} == -t=* || \
-              ${!i} == --tags=* ]]; then
-        echo "${!i#*=}"
-      fi
-    done
-  ))
-  str="${list[*]}"
-  echo "${str// /,}"
-}
+# pass extra var to indicate
+# playbooks that will be run
+extra_vars="$(get_playbooks "$@")"
 
 # install roles from requirements
 install_roles() {
-  local plays=$(get_playbooks "$@")
-  [[ ",$plays," =~ ^.*,(cluster),.*$ ]] || return 0
+  # list of playbooks that use roles
+  local use_roles="$(jo -a cluster)"
+
+  jq -n --argjson extra_vars "$extra_vars" \
+        --argjson use_roles  "$use_roles"  \
+    'halt_error(if any($extra_vars.PLAYBOOKS[]; . as $x |
+      $use_roles | index($x)) then 0 else 1 end)' || return 0
 
   echo -e "\nInstalling roles and collections...\n"
   ansible-galaxy install -r roles/requirements.yml
 }
-install_roles "$@"
+install_roles
 
 # strip ANSI color codes
 no_color() {
   sed -E 's/(\x1B|\\x1B|\033|\\033)\[([0-9]{1,3}(;[0-9]{1,2})?)?[mGK]//g'
 }
 
-# inject global vars to indicate playbooks that will
-# be run and tags on which to filter plays and tasks
-ansible-playbook                "$@"   \
-  -e PLAYBOOKS="$(get_playbooks "$@")" \
-  -e      TAGS="$(get_tags      "$@")" \
+ansible-playbook "$@" -e "$extra_vars" \
   2>&1 | tee >(no_color > ansible.log)

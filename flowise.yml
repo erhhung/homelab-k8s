@@ -476,31 +476,31 @@
       register: save_config
       changed_when: save_config.status == 200
 
+# NOTE: this play will only run if it is the only play specified to
+# run and the "documents" tag is also specified on the command line
+
 - name: Update Accounts document store
   # must run after previous play to get
   # auth headers & document store facts
   tags: documents
   hosts: localhost
   vars:
+    api_base: "{{ API_BASE }}"
+    # PLAYBOOKS is extra var passed by play.sh or by AWX workflow survey;
+    # strip numbering and padding added for showing as ordered list in UI
+    # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/regex_replace_filter.html
+    playbooks: "{{ PLAYBOOKS | map('ansible.builtin.regex_replace', '\\s*(\\d+\\. )?','') if
+      PLAYBOOKS is defined and PLAYBOOKS is sequence and PLAYBOOKS is not string else [] }}"
     # this var can be set on the command line
     # to limit the number of files to process
     limit: 0
-    # PLAYBOOKS and TAGS are global vars
-    # injected by play.sh wrapper script
-    playbooks: |
-      {{  PLAYBOOKS | split(',') if PLAYBOOKS is defined and PLAYBOOKS is truthy else [] }}
-    tags_: "{{ TAGS | split(',') if      TAGS is defined and      TAGS is truthy else [] }}"
-    api_base: "{{ API_BASE }}"
   pre_tasks:
     - name: Load documents or skip upload?
       ansible.builtin.set_fact:
-        do_upload: >-
-          {{ playbooks | length == 1  and
-             'flowise'   in playbooks and
-             'documents' in tags_ }}
+        do_load: "{{ playbooks == ['flowise'] and 'documents' in ansible_run_tags }}"
   tasks:
     - name: Find ~/accounts/*.txt files
-      when: do_upload
+      when: do_load
       # ansible_user_dir will
       # be set on 'localhost'
       delegate_to: cosmos
@@ -555,7 +555,7 @@
           register: file_data
 
     - name: Create new document loader
-      when: do_upload
+      when: do_load
       block:
         - name: Delete old document loader
           vars:

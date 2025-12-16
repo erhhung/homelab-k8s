@@ -435,22 +435,19 @@
     - vars/kubernetes.yml
     - vars/openwebui.yml
   vars:
+    facts: "{{ hostvars['localhost'] }}"
+    # PLAYBOOKS is extra var passed by play.sh or by AWX workflow survey;
+    # strip numbering and padding added for showing as ordered list in UI
+    # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/regex_replace_filter.html
+    playbooks: "{{ PLAYBOOKS | map('ansible.builtin.regex_replace', '\\s*(\\d+\\. )?','') if
+      PLAYBOOKS is defined and PLAYBOOKS is sequence and PLAYBOOKS is not string else [] }}"
     # this var can be set on the command line
     # to limit the number of files to process
     limit: 0
-    facts: "{{ hostvars['localhost'] }}"
-    # PLAYBOOKS and TAGS are global vars
-    # injected by play.sh wrapper script
-    playbooks: |
-      {{  PLAYBOOKS | split(',') if PLAYBOOKS is defined and PLAYBOOKS is truthy else [] }}
-    tags_: "{{ TAGS | split(',') if      TAGS is defined and      TAGS is truthy else [] }}"
   pre_tasks:
     - name: Upload files or skip upload?
       ansible.builtin.set_fact:
-        do_upload: >-
-          {{  playbooks | length == 1 and
-             'openwebui' in playbooks and
-             'knowledge' in tags_ }}
+        do_upload: "{{ playbooks == ['openwebui'] and 'knowledge' in ansible_run_tags }}"
       # this var can be set directly on
       # the command line to skip upload
       when: do_upload is not defined

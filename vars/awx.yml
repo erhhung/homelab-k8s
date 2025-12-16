@@ -67,6 +67,10 @@ awx_operator_chart_values:
       redis_image: docker.io/bitnami/redis
       redis_image_version: 8.2.1-debian-12-r0
 
+      # https://docs.ansible.com/projects/awx-operator/en/latest/user-guide/advanced-configuration/scaling-the-web-and-task-pods-independently.html
+      web_replicas: 1
+      task_replicas: 1
+
       # https://docs.ansible.com/projects/awx-operator/en/latest/user-guide/advanced-configuration/deploying-a-specific-version-of-awx.html
       ee_images: "{{ awx_environments.values() |
         selectattr('image', 'defined') }}"
@@ -112,9 +116,6 @@ awx_operator_chart_values:
           mountPath: /var/lib/awx/.vaultpass
           subPath: SECRET_KEY
           readOnly: true
-        - name: awx-projects
-          mountPath: /var/lib/awx/tmp
-          subPath: tmp
 
       # https://docs.ansible.com/projects/awx-operator/en/latest/user-guide/advanced-configuration/exporting-environment-variables-to-containers.html
       web_extra_env: &extra-envs |

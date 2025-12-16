@@ -5,7 +5,6 @@
 ---
 - name: Delete temporary runlist
   hosts: localhost
-  gather_facts: false
   vars:
     temp_dir: /var/lib/awx/tmp/homelab-k8s
   tasks:
@@ -20,7 +19,6 @@
   # if awx.execute.yml succeeded
   tags: failure
   hosts: localhost
-  gather_facts: false
   tasks:
     - name: Fail workflow on failure
       # https://docs.ansible.com/projects/ansible/latest/collections/ansible/builtin/fail_module.html
