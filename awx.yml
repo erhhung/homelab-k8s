@@ -300,6 +300,7 @@
         pat_owner: "{{ user_erhhung.username }}"
         scopes:
           # https://docs.gitlab.com/user/profile/personal_access_tokens#personal-access-token-scopes
+          - api
           - write_repository
           - self_rotate
         fact_name: awx_gitlab_pat
@@ -399,11 +400,6 @@
       vars:
         # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/unvault_lookup.html
         ssh_key_data: "{{ lookup('ansible.builtin.unvault', 'files/erhhung/erhhung.pem') }}"
-        # retrieve Vault passwords for Ansible projects from macOS Keychain
-        keychain_cmd: security find-generic-password -w -a ansible-vault -s
-        # https://docs.ansible.com/projects/ansible/latest/collections/ansible/builtin/pipe_lookup.html
-        xcp_vault_pass: "{{ lookup('ansible.builtin.pipe', keychain_cmd ~' XCP-ng')   }}"
-        k8s_vault_pass: "{{ lookup('ansible.builtin.pipe', keychain_cmd ~' Home-K8s') }}"
       ansible.builtin.shell: |
         {{ preamble  }}
         {{ functions }}

@@ -1,5 +1,6 @@
 # icloud_smtp.*:        {vault.yml}
 # slack_webhook_urls.*: {vault.yml}
+# ansible_vault_pass.*: {vault.yml}
 
 awx_organization:
   name: Fourteeners
@@ -50,14 +51,14 @@ awx_credentials:
     type: Vault
     name: homelab-xcp Vault Password
     inputs:
-      vault_password: "{{ xcp_vault_pass }}"
+      vault_password: "{{ ansible_vault_pass['home-xcp'] }}"
 
   # Ansible Vault password for homelab-k8s
   k8s-vault:
     type: Vault
     name: homelab-k8s Vault Password
     inputs:
-      vault_password: "{{ k8s_vault_pass }}"
+      vault_password: "{{ ansible_vault_pass['home-k8s'] }}"
 
   github-scm:
     type: Source Control
