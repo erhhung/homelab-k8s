@@ -12,7 +12,10 @@
           - build
           - --no-cache
           - --force-rm
-          - --pull=always # no idempotency
+          # no idempotency
+          - --pull=always
+          # for SHELL instructions in Dockerfile
+          - --format=docker
           - --platform={{ plats | join(',') }}
           # use --manifest for  multi-platform build
           # use -t/--tag   for single-platform build

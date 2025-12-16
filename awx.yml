@@ -13,7 +13,9 @@
     - name: Build image and push to Harbor
       vars:
         items:
-          - image_name: awx-ee-xcp-ng
+          - image_name: awx-ee-tiny
+            context_dir: files/awx/ee/tiny
+          - image_name: awx-ee-xcp
             context_dir: files/awx/ee/xcp
         image_name: "{{  item.image_name  }}"
         dockerfile: "{{  item.dockerfile  }}"
@@ -101,6 +103,9 @@
           - cert-manager.io/v1 Certificate {{ monitoring_secrets['scraper'] }}
           - v1 Secret {{ awx_secrets['gitlab']  }} ? # optional (created later)
           - v1 Secret {{ awx_secrets['scraper'] }} ? # optional (created later)
+          - v1 Secret    awx-receptor-ca           ? # created by awx-operator
+          - v1 Secret    awx-receptor-work-signing ? # created by awx-operator
+          - v1 Secret    awx-broadcast-websocket   ? # created by awx-operator
           # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/from_yaml_all_filter.html
           - "{{ smon_manifests | from_yaml_all if prometheus_crds_installed else [] }}"
       ansible.builtin.include_tasks: tasks/helm/helmfile.yml
@@ -368,9 +373,14 @@
     - name: Override custom EE pod specs
       # https://docs.ansible.com/projects/ansible/latest/collections/awx/awx/instance_group_module.html
       awx.awx.instance_group:
-        name: default
-        pod_spec_override: |-
-          {{ lookup('ansible.builtin.template', 'templates/awx/eepod.yaml.j2') }}
+        name: "{{ item }}"
+        is_container_group: true
+        pod_spec_override: "{{ lookup('ansible.builtin.template',
+          template_dir ~ '/awx/instancegroups/' ~ item ~ '.yaml.j2') }}"
+        state: present
+      loop:
+        - default
+        - minimal
 
     # custom EEs are created by awx-operator,
     # but there is no way to set pull policy
@@ -440,7 +450,8 @@
         instance_groups:
           - controlplane
           - default
-        default_environment: "{{ awx_environments['default'].name }}"
+          - minimal
+        default_environment: "{{ awx_environments['minimal'].name }}"
         galaxy_credentials: "{{  awx_credentials['galaxy'].name   }}"
 
     - name: Create AWX notifier
@@ -465,6 +476,10 @@
         name: &inventory >-
           Localhost
         organization: "{{ awx_organization.name }}"
+        instance_groups:
+          - default
+          - minimal
+        prevent_instance_group_fallback: true
         variables: &inv-vars
           ansible_connection: local
         state: present

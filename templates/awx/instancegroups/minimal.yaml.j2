@@ -1,0 +1,40 @@
+# strategic merge patch on custom
+# execution environment pod spec
+# used by minimal instance group
+---
+apiVersion: v1
+kind: Pod
+spec:
+  containers:
+    - name: worker # existing/expected container
+      resources:
+        requests:
+          cpu: 50m
+          memory: 256Mi
+      volumeMounts:
+        - name: vaultpass
+          # file is read by vaultpass.sh in projects to
+          # decrypt the real per-project Vault password
+          mountPath: /var/lib/awx/.vaultpass
+          subPath: .vaultpass
+          readOnly: true
+        # mount the tmp directory created on projects
+        # PV by awx-task init container at dedicated
+        # path that isn't subject to Git repo cleanup
+        # and isn't exposing the entire awx-projects
+        # tree to all jobs
+        - name: awx-projects
+          mountPath: /var/lib/awx/tmp
+          subPath: tmp
+  volumes:
+    - name: vaultpass
+      secret:
+        secretName: {{ awx_secrets['secret'] }}
+        items:
+          - key: secret_key
+            path: .vaultpass
+        defaultMode: 416 # "0640"
+    - name: awx-projects
+      persistentVolumeClaim:
+        # claim created by awx-operator
+        claimName: awx-projects-claim

@@ -11,6 +11,10 @@ ARG VALS_VERSION="0.42.4"
 RUN <<'EOT'
 ( set -eux
 
+# adjust default UID_MIN=1000 to allow
+# uid=999 expected for the argocd user
+echo -e "UID_MIN 999\nUID_MAX 60000" > /etc/login.defs
+
 groupadd -g 999    argocd
  useradd -u 999 -g argocd -m argocd
 )

@@ -49,12 +49,13 @@
         var: ansible_date_time
 
     - name: Dump "ansible_version"
-      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/debug_module.html
+      run_once: true
       ansible.builtin.debug:
         var: ansible_version
 
     # output is usually empty!
     - name: Dump "ansible_local"
+      run_once: true
       ansible.builtin.debug:
         var: ansible_local
 
@@ -104,6 +105,7 @@
           - query
           - rule
           - store
+        # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/regex_replace_filter.html
         thanos_pqdns: "{{ thanos_hosts | map('regex_replace', '$', '.'~ subdomain)  }}"
         thanos_fqdns: "{{ thanos_pqdns | product(search_domains) | map('join', '.') }}"
       ansible.builtin.debug:
@@ -185,7 +187,7 @@
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/shell_module.html
       ansible.builtin.shell: |
         set -o pipefail
-        jq <<'JSON' | yq -pj -oy > /tmp/{{ item.dest }}
+        jq <<'JSON' | yq -pj -oy > {{ item.dest }}
         {{ item.json }}
         JSON
       args:
@@ -193,7 +195,7 @@
       loop:
         # must serialize to JSON outside of shell script before loop begins
         - json: "{{ harbor_chart_values | to_json(separators=[',',':']) }}"
-          dest: values-harbor.yaml
+          dest: /tmp/values-harbor.yaml
       loop_control:
         label: "{{ item.dest }}"
       changed_when: true
@@ -201,6 +203,8 @@
 - name: Get list of files on remote host
   tags: files
   hosts: cosmos
+  vars:
+    run_iff: "{{ 'files' in ansible_run_tags }}"
   tasks:
     - name: Find ~/accounts/*.txt files
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/find_module.html
@@ -211,6 +215,7 @@
         patterns: "*.txt"
         get_checksum: true
       register: find_files
+      when: run_iff
 
     # filter out irrelevant file stats
     - name: Show list of matched files
@@ -232,6 +237,7 @@
           {{ files  }}
       ansible.builtin.debug:
         var: files
+      when: run_iff
 
 - name: Debug basic Ansible/Jinja syntax
   tags: syntax
@@ -424,8 +430,7 @@
         find: install
         text: Host purged; no K3s/Rancher; before installing RKE2
         # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/search_test.html
-        # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/regex_escape_filter.html
-        found: "{{ text is search(find | regex_escape, ignorecase=true) }}"
+        found: "{{ text is search(find | ansible.builtin.regex_escape, ignorecase=true) }}"
       ansible.builtin.debug:
         msg: |2-
            find: {{ find }}
@@ -598,6 +603,30 @@
         lines: "{{ text | trim | ansible.builtin.split('\n') | difference(['bar']) }}"
       ansible.builtin.debug:
         var: lines
+
+    - name: Show ordered list items
+      vars:
+        playbooks: |
+          {% set main_yml =  playbook_dir ~ '/main.yml' %}
+          {% set   yq_cmd = 'yq "map(.tags) | @json" '~ main_yml %}
+          {{ lookup('ansible.builtin.pipe',  yq_cmd) | from_json }}
+        formatted: |
+          {% set pad   = playbooks | length | string | length %}
+          {% set fmt   = '%%%ds'   | format(pad)    %}
+          {% set items = [fmt | format('') ~ 'ALL'] %}
+          {% for pb in playbooks %}
+          {%   set n = fmt | format(loop.index)  %}
+          {%   set _ = items.append(n ~'. '~ pb) %}
+          {% endfor %}
+          {{ items  }}
+        # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/regex_replace_filter.html
+        parsed: "{{ formatted | map('ansible.builtin.regex_replace', '\\d+\\.', '') | map('trim') }}"
+        lf: "\n"
+      ansible.builtin.debug:
+        msg: |-
+          {{ formatted | join(lf) }}
+          ---
+          {{ parsed | join(', ') }}
 
     - name: Debug dict2items filter
       vars:
@@ -799,6 +828,30 @@
             var: loop_changes
           changed_when: loop_changes is any
 
+- name: Test AWX workflow behaviors
+  tags: awx
+  hosts: localhost
+  tasks:
+    # PLAYBOOKS is passed in by play.sh when
+    # running from CLI, and by awx.setup.yml
+    # when running our AWX project workflows
+    - name: Show PLAYBOOKS var
+      ansible.builtin.debug:
+        var: PLAYBOOKS | default(none)
+
+    - name: Show run/skip tags
+      vars:
+        tagging:
+          # ansible_run_tags is a `frozenset` in Python,
+          # so must coerce to list to compare to a list
+          all_tags: "{{ ansible_run_tags | list == ['all'] }}"
+          # ansible_run_tags == ['all'] if NO tags were provided
+          run_tags: "{{ ansible_run_tags }}"
+          # ansible_skip_tags == [] if NO skip tags were provided
+          skip_tags: "{{ ansible_skip_tags }}"
+      ansible.builtin.debug:
+        var: tagging
+
 - name: Useful collection of tasks
   tags: tasks
   hosts: localhost
@@ -809,7 +862,8 @@
         msg: "\n\n\
           The task just failed.\n\
           No, it really FAILED!\n"
+      failed_when: false
 
-    - name: Exit the play successfully
+    - name: Exit play successfully
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/meta_module.html
       ansible.builtin.meta: end_play
