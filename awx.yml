@@ -19,7 +19,7 @@
         dockerfile: "{{  item.dockerfile  }}"
         context_dir: "{{ item.context_dir }}"
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
-      ansible.builtin.include_tasks: tasks/docker/build.yml
+      ansible.builtin.include_tasks: tasks/oci/build.yml
       loop: "{{ items }}"
       loop_control:
         label: "{{ image_name }}"

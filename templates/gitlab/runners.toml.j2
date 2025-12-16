@@ -35,12 +35,14 @@
     # https://github.com/erhhung/al2023-devops
     image = "{{ harbor_container_registry }}/library/al2023-devops:latest"
 
+    # using same request settings as
+    # AWX custom EE worker container
     # https://docs.gitlab.com/runner/executors/kubernetes#cpu-requests-and-limits
     cpu_request = "1000m"
     # https://docs.gitlab.com/runner/executors/kubernetes#memory-requests-and-limits
-    memory_request = "8Gi"
+    memory_request = "12Gi"
     # https://docs.gitlab.com/runner/executors/kubernetes#storage-requests-and-limits
-    ephemeral_storage_request = "20Gi"
+    ephemeral_storage_request = "30Gi"
 
     # enable custom pod annotations in
     # order to assign AppArmor profile:
@@ -90,6 +92,8 @@
       mount_path = "/ci/scripts"
       read_only = true
 
+    # schedule on the node that has the
+    # most memory and ephemeral storage
     # https://docs.gitlab.com/runner/executors/kubernetes#define-a-list-of-node-affinities
     [runners.kubernetes.affinity]
       [runners.kubernetes.affinity.node_affinity]

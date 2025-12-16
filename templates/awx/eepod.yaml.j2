@@ -5,6 +5,17 @@
 apiVersion: v1
 kind: Pod
 spec:
+  # schedule on the node that has the
+  # most memory and ephemeral storage
+  affinity:
+    nodeAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 100
+          preference:
+            matchExpressions:
+              # label defined in vars/kubernetes.yml
+              - key: node-role.kubernetes.io/runner
+                operator: Exists
   initContainers:
     # update CA trust on
     # Fedora/CentOS/RHEL
@@ -29,8 +40,16 @@ spec:
         # Ansible controller shouldn't incur much
         # load unless it builds container images
         requests:
-          cpu: 100m
-          memory: 256Mi
+          # using same settings as GitLab runner
+          cpu: 1000m
+          memory: 12Gi
+          ephemeral-storage: 40Gi
+      # allow building OCI images using Buildah
+      securityContext:
+        privileged: true
+        appArmorProfile:
+          type: Localhost
+          localhostProfile: buildah
       volumeMounts:
         - name: ca-bundle
           mountPath: /etc/pki/ca-trust/extracted

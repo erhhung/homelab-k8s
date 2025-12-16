@@ -16,6 +16,8 @@
         state: absent
 
 - name: Fail workflow on failure
+  # will be given as --skip-tags
+  # if awx.execute.yml succeeded
   tags: failure
   hosts: localhost
   gather_facts: false

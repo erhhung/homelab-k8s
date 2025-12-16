@@ -1,0 +1,110 @@
+# helper for build.yml to build
+# container image using Buildah
+---
+- name: Build and push Docker image
+  block:
+    - name: Build Docker image "{{ local_image }}"
+      vars:
+        plats: "{{ platforms | default([local_machine_arch]) |
+          map('regex_replace', '^', 'linux/') }}"
+        argv:
+          - buildah
+          - build
+          - --no-cache
+          - --force-rm
+          - --pull=always # no idempotency
+          - --platform={{ plats | join(',') }}
+          # use --manifest for  multi-platform build
+          # use -t/--tag   for single-platform build
+          - >-
+            {{  '--manifest=' ~ local_name  if plats | length > 1 else
+                ['-t',          local_name] }}
+          - "{{ ['-f', dockerfile] if dockerfile is defined else [] }}"
+          - "{{ context_path }}"
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/command_module.html
+      ansible.builtin.command:
+        argv: "{{ argv | flatten }}"
+      changed_when: true
+
+    - name: Tag image "{{ local_image }}" for Habor
+      ansible.builtin.command:
+        argv:
+          - buildah
+          - tag
+          - "{{  local_name }}"
+          - "{{ remote_name }}"
+      register: tag_image
+      # not important enough
+      # to report as changed
+      changed_when: false
+
+    - name: Log into Harbor registry as "{{ harbor_admin_user }}"
+      vars:
+        argv:
+          - buildah
+          - login
+          - "{{ harbor_container_registry   }}"
+          - --username={{ harbor_admin_user }}
+          - --password={{ harbor_admin_pass }}
+      ansible.builtin.command:
+        argv: "{{ argv | flatten }}"
+      # not important enough
+      # to report as changed
+      changed_when: false
+
+    - name: Count current repository artifacts
+      delegate_to: &delegate >-
+        {{ groups['rke_any'] | first }}
+      vars: &vars
+        ansible_python_interpreter: "{{ default_python_interpreter }}"
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/shell_module.html
+      ansible.builtin.shell: &script |
+        # set $HARBOR_ENCRYPTION_KEY
+        . .bash_aliases
+        set -o pipefail
+
+        harbor artifact list library/{{ base_name }} -o json | \
+          jq '.Payload | map(select(.type == "IMAGE")) | length'
+      args: &args
+        executable: /bin/bash
+      register: artifacts_before
+      when: if_changed is defined
+      changed_when: false
+
+    - name: Push "{{ remote_image }}"
+      ansible.builtin.command:
+        argv:
+          - buildah
+          - push
+          - "{{ remote_name }}"
+      changed_when: true
+      timeout: 600
+      retries: 3
+      delay: 10
+
+    - name: Notify handler if artifact created
+      delegate_to: *delegate
+      ansible.builtin.shell: *script
+      vars: *vars
+      args: *args
+      register: artifacts_after
+      when: if_changed is defined
+      changed_when: >-
+        artifacts_after.stdout  | int >
+        artifacts_before.stdout | int
+      notify: "{{ if_changed }}"
+  always:
+    # this step isn't really necessary
+    # in an ephemeral runner container
+    - name: Untag "{{ remote_image }}"
+      ansible.builtin.command:
+        argv:
+          - buildah
+          - rmi
+          - --force
+          - "{{ remote_name }}"
+      when: tag_image is defined
+      # not important enough
+      # to report as changed
+      changed_when: false
+      failed_when: false

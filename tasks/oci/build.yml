@@ -1,0 +1,82 @@
+# build container image on controller host and push to
+# Harbor registry in harbor.fourteeners.local/library/
+#
+# pass the following vars:
+#   context_dir <required> Docker context dir
+#   dockerfile  [optional] default=Dockerfile
+#   image_name  <required> base image name
+#   image_tag   [optional] default=latest
+#   platforms   [optional] default=[ARCH]
+#   if_changed  [optional] notify handler (only if
+#                          new artifact generated)
+---
+- name: Gather facts about controller
+  # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
+  ansible.builtin.include_tasks: tasks/localfacts.yml
+  when: local_python_interpreter is not defined
+
+- name: Build and push Docker image
+  delegate_to: localhost
+  become: false
+  vars:
+    ansible_python_interpreter: "{{ local_python_interpreter }}"
+  block:
+    - name: Is Docker available?
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/shell_module.html
+      ansible.builtin.shell: |
+        command -v docker &> /dev/null || {
+          echo >&2 '"docker" not installed or in $PATH.'
+          exit 1
+        }
+        # exits non-zero if fails to connect to the
+        # Docker API at unix:///var/run/docker.sock
+        docker info
+      args: &args
+        executable: "{{ local_bash_interpreter }}"
+      register: docker_check
+      changed_when: false
+      failed_when: false
+
+    - name: Is Buildah available?
+      ansible.builtin.shell: |
+        command -v buildah &> /dev/null || {
+          echo >&2 '"buildah" not installed or in $PATH.'
+          exit 1
+        }
+        # exits non-zero if insufficient privileges (in
+        # container without necessary security context)
+        buildah info
+      args: *args
+      register: buildah_check
+      when: docker_check.rc != 0
+      changed_when: false
+      failed_when: false
+
+    - name: Build and push Docker image
+      vars:
+        # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/basename_filter.html
+        base_name: "{{ image_name | ansible.builtin.basename }}"
+        local_name: "{{ base_name }}:{{ image_tag | default('latest') }}"
+        local_image: "{{ local_name | ansible.builtin.regex_replace(':latest$','') }}"
+        remote_name: "{{ harbor_container_registry }}/library/{{ local_name }}"
+        remote_image: "{{ remote_name | ansible.builtin.regex_replace(':latest$','') }}"
+        context_path: >-
+          {# use namespace() to create a scoped object -#}
+          {# https://jinja.palletsprojects.com/en/stable/templates#assignments -#}
+          {% set ns = namespace(path=none) -%}
+          {% if context_dir is not defined -%}
+          {%   set ns.path = playbook_dir  -%}
+          {% elif context_dir[0]  == '/'   -%}
+          {%   set ns.path = context_dir   -%}
+          {% else -%}
+          {%   set ns.path = playbook_dir ~'/'~ context_dir -%}
+          {% endif  -%}
+          {{ ns.path }}
+      block:
+        - name: Build and push Docker image
+          ansible.builtin.include_tasks: tasks/oci/build.docker.yml
+          when: docker_check.rc == 0
+
+        - name: Build and push Docker image
+          ansible.builtin.include_tasks: tasks/oci/build.buildah.yml
+          when: buildah_check.rc | default(-1) == 0

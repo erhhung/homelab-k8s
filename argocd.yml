@@ -15,7 +15,7 @@
         image_name: cmp-helmfile
         if_changed: Restart argocd-repo-server pods
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
-      ansible.builtin.include_tasks: tasks/docker/build.yml
+      ansible.builtin.include_tasks: tasks/oci/build.yml
   handlers:
     - name: Restart argocd-repo-server pods
       delegate_to: "{{ rke_control_plane_host }}"
