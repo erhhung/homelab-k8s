@@ -139,20 +139,23 @@ npm_install() {
 }
 
 buildah_login() {
-  echo -n "$CI_REGISTRY_PASSWORD"   |
-    buildah login $CI_REGISTRY      \
-      --username  $CI_REGISTRY_USER \
-      --password-stdin
+  buildah login $CI_REGISTRY      \
+    --username  $CI_REGISTRY_USER \
+    --password "$CI_REGISTRY_PASSWORD"
 }
 
 # <tag> <args>...
 buildah_build() {
   local section tag=$1; shift
+  local args=(--format docker)
   section="build_${tag%:*}"
   section=${section//-/_}
 
   section_start $section "Building $tag"
-  buildah build -t $tag "$@"
+  # use --manifest for  multi-platform build
+  # use -t/--tag   for single-platform build
+  [[ "$*" == *--manifest* ]] || args+=(-t $tag)
+  buildah build "${args[@]}" "$@"
   section_end   $section
 }
 

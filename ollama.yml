@@ -24,7 +24,7 @@
             context_dir: files/ollama
             image_name: "{{ ollama_chart_values.image.repository }}"
           # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
-          ansible.builtin.include_tasks: tasks/docker/build.yml
+          ansible.builtin.include_tasks: tasks/oci/build.yml
 
 - name: Install Ollama on RKE cluster
   tags: deploy

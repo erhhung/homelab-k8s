@@ -1,32 +1,7 @@
-# build Docker image on the controller
-# host and push to our Harbor registry
-# at harbor.fourteeners.local/library/
-#
-# pass the following vars:
-#   context_dir <required> Docker context dir
-#   dockerfile  [optional] default=Dockerfile
-#   image_name  <required> base image name
-#   image_tag   [optional] default=latest
-#   platforms   [optional] default=[ARCH]
-#   if_changed  [optional] notify handler (only if
-#                          new artifact generated)
+# helper for build.yml to build
+# container image using Docker
 ---
-- name: Gather facts about controller
-  # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
-  ansible.builtin.include_tasks: tasks/localfacts.yml
-  when: local_python_interpreter is not defined
-
 - name: Build and push Docker image
-  delegate_to: localhost
-  become: false
-  vars:
-    ansible_python_interpreter: "{{ local_python_interpreter }}"
-    # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/basename_filter.html
-    base_name: "{{ image_name | ansible.builtin.basename }}"
-    local_name: "{{ base_name }}:{{ image_tag | default('latest') }}"
-    local_image: "{{ local_name | ansible.builtin.regex_replace(':latest$','') }}"
-    remote_name: "{{ harbor_container_registry }}/library/{{ local_name }}"
-    remote_image: "{{ remote_name | ansible.builtin.regex_replace(':latest$','') }}"
   block:
     - name: Build Docker image "{{ local_image }}"
       # https://docs.ansible.com/ansible/latest/collections/community/docker/docker_image_build_module.html
@@ -34,8 +9,8 @@
         platform: "{{ platforms | default([local_machine_arch]) |
           map('regex_replace', '^', 'linux/') }}"
         dockerfile: "{{ dockerfile | default(omit) }}"
-        path: "{{ playbook_dir ~'/'~ context_dir }}"
-        name: "{{ local_name }}"
+        path: "{{ context_path }}"
+        name: "{{ local_name   }}"
         # no idempotency
         rebuild: always
         pull: true
@@ -46,6 +21,8 @@
         name: "{{ local_name }}"
         repository: "{{ remote_name }}"
       register: tag_image
+      # not important enough
+      # to report as changed
       changed_when: false
 
     - name: Log into Harbor registry as "{{ harbor_admin_user }}"
@@ -99,4 +76,6 @@
       community.docker.docker_image_remove:
         name: "{{ remote_name }}"
       when: tag_image is defined
+      # not important enough
+      # to report as changed
       changed_when: false
