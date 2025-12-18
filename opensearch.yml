@@ -216,8 +216,6 @@
       ansible.builtin.uri:
         url: https://{{ kibana_fqdn }}/
       # https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_loops.html#retrying-a-task-until-a-condition-is-met
-      register: site_check
-      until: site_check.status == 200
       retries: 30
       delay: 3
 

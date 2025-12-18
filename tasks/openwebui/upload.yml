@@ -57,8 +57,15 @@
             method: DELETE
             url: "{{ api_base }}/files/{{ existing.id }}"
             headers: "{{ headers }}"
+          # retry on best effort
           register: remove_file
-          changed_when: remove_file.status == 200
+          changed_when: false
+          failed_when: false
+          until: >-
+            remove_file.status  == 200 or
+            remove_file.attempts > 2
+          retries: 2
+          delay: 2
 
     - name: 'Upload "{{ filename }}"'
       when: needs_upload
@@ -109,9 +116,8 @@
             validate_certs: false
             return_content: true
           register: upload_file
-          changed_when: upload_file.status == 200
-          until: upload_file.status == 200
-          retries: 1
+          changed_when: true
+          retries: 2
           delay: 5
 
         - name: Add new file to knowledge
@@ -123,9 +129,8 @@
             body:
               file_id: "{{ upload_file.json.id }}"
           register: add_file
-          changed_when: add_file.status == 200
-          until: add_file.status == 200
-          retries: 1
+          changed_when: true
+          retries: 2
           delay: 5
       rescue:
         # delete uploaded file if it
@@ -137,10 +142,19 @@
             url: "{{ api_base }}/files/{{ upload_file.json.id }}"
             headers: "{{ headers }}"
             status_code: [200, 400]
+          # retry on best effort
+          register: remove_file
           when:
             - upload_file         is defined
             - upload_file.json    is defined
             - upload_file.json.id is defined
+          changed_when: false
+          failed_when: false
+          until: >-
+            remove_file.status in [200, 400] or
+            remove_file.attempts > 2
+          retries: 2
+          delay: 2
 
 - name: Update loop_changes fact
   vars:

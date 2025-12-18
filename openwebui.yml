@@ -149,7 +149,6 @@
         return_content: true
       # https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_loops.html#retrying-a-task-until-a-condition-is-met
       register: ui_version
-      until: ui_version.status == 200
       retries: 20
       delay: 3
   tasks:
@@ -195,8 +194,6 @@
                 system: "{{ openwebui_system_prompt }}"
                 models: "{{ [ollama_models | first] }}"
                 params: {}
-          register: update_settings
-          changed_when: update_settings.status == 200
           retries: 3
           delay: 3
 
