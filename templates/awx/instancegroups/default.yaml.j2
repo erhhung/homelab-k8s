@@ -40,9 +40,12 @@ spec:
         # Ansible controller shouldn't incur much
         # load unless it builds container images
         requests:
-          # using same settings as GitLab runner
+          cpu: 500m
+          memory: 2Gi
+          ephemeral-storage: 40Gi
+        limits:
           cpu: 1000m
-          memory: 12Gi
+          memory: 8Gi
           ephemeral-storage: 40Gi
       # allow building OCI images using Buildah
       securityContext:

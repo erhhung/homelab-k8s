@@ -101,7 +101,7 @@ longhorn_chart_values:
       deletionPolicy: Delete
       parameters:
         type: bak
-        backupMode: full
+        backupMode: incremental # incremental|full
 
 # https://longhorn.io/docs/latest/snapshots-and-backups/scheduling-backups-and-snapshots#set-up-recurring-jobs
 longhorn_recurring_jobs:

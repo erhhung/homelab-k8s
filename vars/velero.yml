@@ -159,6 +159,7 @@ velero_chart_values:
       metadata:
         name: cluster-daily
       spec:
+        paused: true # enable/disable backup
         # use cron expression because "@every 24h" cannot indicate start hour
         schedule: 0 12 * * * # in UTC time; run every day at 4am Pacific time
         useOwnerReferencesInBackup: false
@@ -166,6 +167,8 @@ velero_chart_values:
           metadata:
             labels:
               velero.io/schedule-name: cluster-daily
+          includedNamespaces:
+            - "*"
           excludedNamespaces:
             - vcluster-*
           itemOperationTimeout: 10m
