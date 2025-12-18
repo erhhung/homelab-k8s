@@ -177,7 +177,7 @@
             body: "{{ openwebui_admin_user }}"
             return_content: true
           register: admin_signup
-          changed_when: admin_signup.status == 200
+          changed_when: true
 
         - name: Set user default chat model
           vars:
@@ -242,7 +242,7 @@
               description: Erhhung's family
             return_content: true
           register: create_group
-          changed_when: create_group.status == 200
+          changed_when: true
 
         - name: Add admin to Family group
           vars:
@@ -258,8 +258,7 @@
               name: "{{ group.name }}"
               description: "{{ group.description }}"
               user_ids: "{{ [admin_user.id] }}"
-          register: update_group
-          changed_when: update_group.status == 200
+          changed_when: true
 
     - name: Set family_group_id fact
       ansible.builtin.set_fact:
@@ -310,8 +309,7 @@
           loop: "{{ memories }}"
           loop_control:
             label: "{{ item.title }}"
-          register: add_memory
-          changed_when: add_memory.status == 200
+          changed_when: true
 
     - name: Get Open WebUI knowledge base
       ansible.builtin.uri:
@@ -339,7 +337,7 @@
         return_content: true
       when: knowledge is falsy
       register: create_knowledge
-      changed_when: create_knowledge.status == 200
+      changed_when: true
 
     # pass var to the next play since
     # scope of registered variable in
@@ -406,9 +404,9 @@
             write:
               user_ids: "{{ [admin_user.id] }}"
         return_content: true
-      when: model is falsy
       register: create_model
-      changed_when: create_model.status == 200
+      when: model is falsy
+      changed_when: true
 
     - name: Set accounts_model fact
       vars:
@@ -563,5 +561,4 @@
                    'knowledge': [knowledge]
                  }) %}
               {{ model }}
-          register: update_model
-          changed_when: update_model.status == 200
+          changed_when: true

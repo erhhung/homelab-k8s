@@ -352,3 +352,12 @@ awx_operator_chart_values:
                 verb: get
                 resourceRequest: false
                 path: /metrics
+
+# https://grafana.com/grafana/dashboards/?search=AWX&dataSource=prometheus
+awx_grafana_dashboards:
+  # https://grafana.com/grafana/dashboards/12609-ansible-awx
+  - title: Ansible AWX
+    gnet_id: 12609
+    jq_patches:
+      # remove "pulse-line", "tower"
+      - (.tags) = ["ansible", "awx"]

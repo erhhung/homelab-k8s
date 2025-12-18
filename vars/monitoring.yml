@@ -315,7 +315,7 @@ prometheus_stack_chart_values:
     # https://github.com/prometheus-operator/prometheus-operator/tree/main/Documentation/api-reference/api.md#prometheusspec
     prometheusSpec:
       # total pods = replicas * shards
-      replicas: 2
+      replicas: 1
       shards: 1
 
       # soft:  prefer different nodes
@@ -678,7 +678,7 @@ prometheus_stack_chart_values:
     # kubectl get secret -n monitoring alertmanager-prometheus-stack-alertmanager -o jsonpath='{.data.alertmanager\.yaml}' | base64 -d | yq
     # https://github.com/prometheus-operator/prometheus-operator/tree/main/Documentation/api-reference/api.md#alertmanagerspec
     alertmanagerSpec:
-      replicas: 2
+      replicas: 1
 
       # soft:  prefer different nodes
       # hard: require different nodes

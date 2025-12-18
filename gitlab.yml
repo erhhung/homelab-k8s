@@ -293,11 +293,6 @@
         task_timeout: 1200
       ansible.builtin.include_tasks: tasks/helm/helmfile.yml
 
-    - name: Import Grafana dashboards
-      vars:
-        dashboards: "{{ gitlab_grafana_dashboards }}"
-      ansible.builtin.include_tasks: tasks/grafana/dashboards.yml
-
     - name: >-
         {{ 'Enable' if enabled else 'Disable' }}
         Istio service mesh
@@ -432,7 +427,7 @@
             body:
               user[login]: root
               user[password]: "{{ gitlab_root_pass }}"
-            # status_code: [302]
+            # status_code: 302
           register: root_login
 
         - name: Save issued cookies
@@ -627,3 +622,14 @@
             name: "{{ pipelines_exporter_release_name }}"
             enabled: "{{ gitlab_use_waypoint }}"
       ansible.builtin.include_tasks: tasks/istio/mesh.yml
+
+- name: Configure GitLab dashboards
+  tags: dashboards
+  hosts: localhost
+  vars_files:
+    - vars/gitlab.yml
+  tasks:
+    - name: Import Grafana dashboards
+      vars:
+        dashboards: "{{ gitlab_grafana_dashboards }}"
+      ansible.builtin.include_tasks: tasks/grafana/dashboards.yml

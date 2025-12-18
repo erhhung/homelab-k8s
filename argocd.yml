@@ -341,7 +341,13 @@
         base_dir: "{{ argocd_dir }}/apps"
       ansible.builtin.include_tasks: tasks/argocd/crs.yml
 
-    # dashboards for Argo CD and deployed applications
+# Argo CD and deployed applications
+- name: Configure Argo CD dashboards
+  tags: dashboards
+  hosts: localhost
+  vars_files:
+    - vars/argocd.yml
+  tasks:
     - name: Import Grafana dashboards
       vars:
         dashboards: "{{ argocd_grafana_dashboards }}"

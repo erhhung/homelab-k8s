@@ -502,3 +502,15 @@
       loop: "{{ awx_projects | ansible.builtin.dict2items }}"
       loop_control:
         label: "{{ item.key }}"
+
+- name: Configure AWX dashboards
+  tags: dashboards
+  hosts: localhost
+  vars_files:
+    - vars/awx.yml
+  tasks:
+    - name: Import Grafana dashboards
+      vars:
+        dashboards: "{{ awx_grafana_dashboards }}"
+      ansible.builtin.include_tasks: tasks/grafana/dashboards.yml
+      when: grafana_api_server_online | default(true)
