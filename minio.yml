@@ -127,7 +127,7 @@
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/uri_module.html
       ansible.builtin.uri:
         url: https://{{ minio_s3api_fqdn }}/
-        status_code: [403]
+        status_code: 403
       # https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_loops.html#retrying-a-task-until-a-condition-is-met
       retries: 60
       delay: 5

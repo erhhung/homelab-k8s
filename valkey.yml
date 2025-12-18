@@ -59,6 +59,12 @@
           - v1 Secret {{ valkey_secrets['password'] }}
       ansible.builtin.include_tasks: tasks/helm/helmfile.yml
 
+- name: Configure Valkey dashboards
+  tags: dashboards
+  hosts: localhost
+  vars_files:
+    - vars/valkey.yml
+  tasks:
     - name: Import Grafana dashboards
       vars:
         dashboards: "{{ valkey_grafana_dashboards }}"

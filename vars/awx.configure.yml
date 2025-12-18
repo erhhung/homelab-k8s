@@ -145,13 +145,17 @@ awx_notifiers:
         </tr>
         <tr>
           <td style="text-align:right; padding:2px 8px; white-space:nowrap;">Status:</td>
-          <td style="padding:2px 0; font-weight:bold;">{{ job.status | upper }}</td>
+          <td style="padding:2px 0; font-weight:bold;">'~ "{{
+            '✅' if job.status == 'successful' else '❌' if job.status == 'failed' else
+            '⏳' if job.status == 'running'    else '⚠️' }} {{ job.status | upper }}</td>
         </tr>
-      </table>',
+      </table>",
              }}) %}
       {% endfor  %}
       {{ msgs    }}
 
+  # https://docs.slack.dev/messaging/sending-messages-using-incoming-webhooks#advanced_message_formatting
+  # https://docs.slack.dev/messaging/formatting-message-text#basic-formatting
   slack:
     name: Homelab Slack
     type: webhook # legacy Slack Incoming Webhook
@@ -182,8 +186,9 @@ awx_notifiers:
                    'type': 'section',
                    'text': {
                      'type': 'mrkdwn',
-                     'text': '*{{ job_friendly_name }}*: *<{{ url | replace(' ~"'#','ui_next'"~ ') }}/output|{{ job.name }} #{{ job.id }}>*' ~"\n"~
-                             '*Status*: *{{ job.status | upper }}*',
+                     'text': "*{{ job_friendly_name }}*: *<{{ url | replace('#', 'ui_next') }}/output|{{ job.name }} #{{ job.id }}>*" ~"\n"~
+                             "*Status*: {{ '✅' if job.status == 'successful' else '❌' if job.status == 'failed' else" ~
+                                         " '⏳' if job.status == 'running'    else '⚠️' }} *{{ job.status | upper }}*",
                    },
                  }],
                } | to_json

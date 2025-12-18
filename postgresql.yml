@@ -63,6 +63,12 @@
         task_timeout: 1800
       ansible.builtin.include_tasks: tasks/helm/helmfile.yml
 
+- name: Configure PostgreSQL dashboards
+  tags: dashboards
+  hosts: localhost
+  vars_files:
+    - vars/postgresql.yml
+  tasks:
     - name: Import Grafana dashboards
       vars:
         dashboards: "{{ postgresql_grafana_dashboards }}"

@@ -184,8 +184,7 @@
             # unlike other "create" APIs, this
             # one actually returns correct 201
             status_code: 201
-          register: admin_reg
-          changed_when: admin_reg.status == 201
+          changed_when: true
 
         # register API doesn't return session
         # cookies, so need to reauthenticate
@@ -288,7 +287,7 @@
       loop_control:
         label: "{{ item.name }}"
       register: add_tool
-      changed_when: add_tool.status == 200
+      changed_when: true
 
     - name: Set marketplace_tools fact
       ansible.builtin.set_fact:
@@ -331,7 +330,7 @@
       loop_control:
         label: "{{ item.name }}"
       register: add_cred
-      changed_when: add_cred.status == 200
+      changed_when: true
 
     - name: Set external_credentials fact
       ansible.builtin.set_fact:
@@ -363,7 +362,7 @@
         return_content: true
       when: store is falsy
       register: create_store
-      changed_when: create_store.status == 200
+      changed_when: true
 
     # pass var to the next play since
     # scope of registered variable in
@@ -473,8 +472,7 @@
         old.recordManagerConfig         is falsy or
         old.recordManagerConfig.config | to_json !=
         new.recordManagerConfig        | to_json
-      register: save_config
-      changed_when: save_config.status == 200
+      changed_when: true
 
 # NOTE: this play will only run if it is the only play specified to
 # run and the "documents" tag is also specified on the command line
@@ -571,8 +569,7 @@
               accounts_doc_store.id }}/{{ loader | map(attribute='id') | first }}"
             headers: "{{ auth_headers }}"
           when: loader is truthy
-          register: delete_loader
-          changed_when: delete_loader.status == 200
+          changed_when: true
 
         - name: Set new loader_spec fact
           vars:
@@ -605,7 +602,7 @@
             body: "{{ loader_spec }}"
             return_content: true
           register: save_loader
-          changed_when: save_loader.status == 200
+          changed_when: true
 
         - name: Process document chunks
           ansible.builtin.uri:
@@ -614,8 +611,7 @@
             headers: "{{ auth_headers }}"
             body_format: json
             body: "{{ loader_spec }}"
-          register: process_docs
-          changed_when: process_docs.status == 200
+          changed_when: true
 
         - name: Wait until status is SYNC
           ansible.builtin.uri:
@@ -715,9 +711,9 @@
       loop: "{{ flowise_custom_chatflows }}"
       loop_control:
         label: "{{ item.name }}"
-      when: chatflow is falsy
       register: create_chatflow
-      changed_when: create_chatflow.status == 200
+      when: chatflow is falsy
+      changed_when: true
 
     - name: Import nodes into chatflow
       vars:
@@ -748,5 +744,4 @@
         label: "{{ item.name }}"
         index_var: i
       when: chatflow.flowData != flow_data
-      register: import_nodes
-      changed_when: import_nodes.status == 200
+      changed_when: true

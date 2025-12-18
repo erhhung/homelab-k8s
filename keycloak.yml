@@ -160,6 +160,12 @@
         task_timeout: 900
       ansible.builtin.include_tasks: tasks/helm/helmfile.yml
 
+- name: Configure Keycloak dashboards
+  tags: dashboards
+  hosts: localhost
+  vars_files:
+    - vars/keycloak.yml
+  tasks:
     - name: Import Grafana dashboards
       vars:
         dashboards: "{{ keycloak_grafana_dashboards }}"

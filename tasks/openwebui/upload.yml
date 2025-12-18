@@ -49,8 +49,9 @@
             body_format: json
             body:
               file_id: "{{ existing.id }}"
-          register: remove_file
-          changed_when: remove_file.status == 200
+          # not important enough
+          # to report as changed
+          changed_when: false
 
         - name: Remove file from Open WebUI
           ansible.builtin.uri:
