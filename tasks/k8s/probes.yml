@@ -35,6 +35,7 @@
         kind: "{{ res_kind }}"
         name: "{{ res_name }}"
         namespace: "{{ res_ns }}"
+      # https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_loops.html#retrying-a-task-until-a-condition-is-met
       register: res_info
       retries: 10
       delay: "{{ max_wait | default(10) / 10 }}"

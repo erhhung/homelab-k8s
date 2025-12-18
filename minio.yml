@@ -129,8 +129,6 @@
         url: https://{{ minio_s3api_fqdn }}/
         status_code: [403]
       # https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_loops.html#retrying-a-task-until-a-condition-is-met
-      register: tenant_check
-      until: tenant_check.status == 403
       retries: 60
       delay: 5
 

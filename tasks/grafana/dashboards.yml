@@ -55,6 +55,7 @@
         url_password: "{{ admin_pass }}"
         force_basic_auth: true
         return_content: true
+      # https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_loops.html#retrying-a-task-until-a-condition-is-met
       register: existing_dashboards
       retries: 5
       delay: 2
