@@ -159,7 +159,8 @@ velero_chart_values:
       metadata:
         name: cluster-daily
       spec:
-        paused: true # enable/disable backup
+        paused: false # enable/disable backup
+
         # use cron expression because "@every 24h" cannot indicate start hour
         schedule: 0 12 * * * # in UTC time; run every day at 4am Pacific time
         useOwnerReferencesInBackup: false
@@ -168,12 +169,16 @@ velero_chart_values:
             labels:
               velero.io/schedule-name: cluster-daily
           includedNamespaces:
-            - "*"
+            # pretty much all data other than PostgreSQL
+            # and logs/metrics can be recreated, but the
+            # latter aren't too critical in our resource
+            # constrained environment
+            - postgresql
           excludedNamespaces:
             - vcluster-*
-          itemOperationTimeout: 10m
+          itemOperationTimeout: 1h
           csiSnapshotTimeout: 30m
-          ttl: 168h0m0s # 1 week
+          ttl: 72h0m0s # 3 days
 
 # https://github.com/otwld/helm-charts/tree/main/charts/velero-ui/values.yaml
 velero_ui_chart_values:

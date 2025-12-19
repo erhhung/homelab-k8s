@@ -30,7 +30,7 @@ awx_environments:
     pull: always
 
 # get IDs of credential types:
-# while read id kind name; do
+# while read -r id kind name; do
 #   printf "%-4d %-14s %s\n" $id $kind "$name"
 # done < <(
 #   awx credential_types list --all -f jq \

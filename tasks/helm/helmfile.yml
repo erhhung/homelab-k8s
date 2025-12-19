@@ -268,7 +268,7 @@
               | del(.uid)
               )'
         }
-        while read name optional; do
+        while read -r name optional; do
           json="$(kubectl get $name -n {{ release_ns }} -o json 2>/dev/null)" || true
 
           if [ ! "$json" ]; then

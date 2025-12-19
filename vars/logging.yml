@@ -119,8 +119,8 @@ saved_log_search:
 # ISM policy settings:
 # roll over if too big
 log_index_max_size: 1gb
-# delete after a week
-log_index_max_age: 7d
+# delete after 3 days
+log_index_max_age: 3d
 
 # https://grafana.com/grafana/dashboards/?search=Fluent&dataSource=prometheus
 logging_grafana_dashboards:

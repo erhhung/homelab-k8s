@@ -160,7 +160,7 @@ spec:
                   [ "$keys" ] || keys="$(get_unseal_keys)"
                   i=1; unset unsealed
 
-                  while read key; do
+                  while read -r key; do
                     printf "%s Using unseal key %d: " $(timestamp) $i
                     result="$(unseal_vault $key)"
                     [ "$result" ] || {
