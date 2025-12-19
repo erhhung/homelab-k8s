@@ -104,7 +104,7 @@ spec:
                 chain_name=$3 rule_match="$4"
                 chain_args="$table_type $table_name $chain_name"
 
-                while read handle; do
+                while read -r handle; do
                   nft delete rule $chain_args handle $handle
                 done < <(
                   list_chain $chain_args -a | \

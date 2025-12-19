@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# Show available disk space on all cluster
+# show available disk space on all cluster
 # nodes (assumes `ssh <host>` works without
 # password for hosts: rancher & k8s1..k8sN)
 
@@ -8,18 +8,21 @@
  YELLOW='\033[1;33m'
 NUM_K8S=6
 
-# strip ANSI color codes
-no_colors() {
-  sed -E 's/\x1B\[([0-9]{1,3}(;[0-9]{1,2})?)?[mGK]//g'
-}
-
 # print given title with
 # another line of dashes
 title() {
-  echo -e "$*"
+  local s="$*" d l t
+  echo -e "$s"
+
   # use PCRE (*SKIP)(*F) trick to preserve ANSI
   # color codes while replacing all other chars
-  echo -e "$(perl -pe 's/(?:\\033\[[0-9;]*[mGKHF])(*SKIP)(*F)|./-/g' <<< "$*")"
+  d="$(perl -pe 's/(?:\\(033|x1B)\[[0-9;]*[mGKHF])(*SKIP)(*F)|./-/g' <<< "$s")"
+
+  #  remove  leading and trailing dashes
+  # matching leading and trailing spaces
+  l="${s%%[^[:space:]]*}" #  leading spaces
+  t="${s##*[^[:space:]]}" # trailing spaces
+  echo -e "$l${d:${#l}:${#d}-${#l}-${#t}}$t"
 }
 
 # run_df <host> <path> [path...]

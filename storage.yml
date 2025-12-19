@@ -8,6 +8,7 @@
     - vars/kubernetes.yml
     - vars/monitoring.yml
     - vars/storage.yml
+    - vars/basics.yml
     - vars/minio.yml
   pre_tasks:
     - name: Is iscsi_tcp module loaded?

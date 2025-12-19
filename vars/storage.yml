@@ -50,9 +50,9 @@ longhorn_chart_values:
     replicaSoftAntiAffinity: true
     defaultReplicaCount: 2
     # Velero is configured to perform daily
-    # backups with volume snapshot TTL of 1
-    # week, so set snapshotMaxCount to >= 7
-    snapshotMaxCount: 10
+    # backups with volume snapshot TTL of 3
+    # days, so set snapshotMaxCount to >= 3
+    snapshotMaxCount: 6
 
   defaultBackupStore:
     # user "longhorn" and "backups"
@@ -95,13 +95,132 @@ longhorn_chart_values:
       metadata:
         name: "{{ snapshot_classes['backup'] }}"
         labels:
-          # make Velero create VSs using this class
+          # make Velero create VSs using this class:
+          # https://velero.io/docs/main/csi#implementation-choices
           velero.io/csi-volumesnapshot-class: "true"
       driver: driver.longhorn.io
       deletionPolicy: Delete
       parameters:
         type: bak
-        backupMode: incremental # incremental|full
+        # full backup allows simple n-day deletion
+        # policy without worrying about incremental
+        # backup version chain dependencies
+        backupMode: full # incremental|full
+
+    # create daily CronJob to delete old Longhorn backups
+    # (set cutoff to 3 days to match Velero Schedule TTL)
+    - apiVersion: batch/v1
+      kind: CronJob
+      metadata:
+        name: delete-backups
+      spec:
+        schedule: 0 11 * * * # in UTC time; run every day at 3am Pacific time
+        concurrencyPolicy: Forbid
+        jobTemplate:
+          spec:
+            template:
+              spec:
+                # use pre-defined SA with delete permissions
+                serviceAccountName: longhorn-service-account
+                restartPolicy: OnFailure
+                containers:
+                  - name: delete-backups
+                    image: "{{ harbor_container_registry }}/library/al2023-devops:latest"
+                    imagePullPolicy: IfNotPresent
+                    command: ["bash"]
+                    args:
+                      - -c
+                      - |-
+                        THUMBUP=$'\U1F44D'
+
+                        # print given title with
+                        # another line of dashes
+                        title() {
+                          local s="$*" d l t
+                          echo -e "$s"
+
+                          # use PCRE (*SKIP)(*F) trick to preserve ANSI
+                          # color codes while replacing all other chars
+                          d="$(perl -pe 's/(?:\\(033|x1B)\[[0-9;]*[mGKHF])(*SKIP)(*F)|./-/g' <<< "$s")"
+
+                          #  remove  leading and trailing dashes
+                          # matching leading and trailing spaces
+                          l="${s%%[^[:space:]]*}" #  leading spaces
+                          t="${s##*[^[:space:]]}" # trailing spaces
+                          {% raw -%}
+                          echo -e "$l${d:${#l}:${#d}-${#l}-${#t}}$t"
+                          {%- endraw +%}
+                        }
+
+                        # mark start time
+                        tspush () {
+                          _timers+=($EPOCHREALTIME)
+                        }
+
+                        # end marked time
+                        # and set _tstart
+                        tspop () {
+                          unset _tstart
+                          {% raw -%}
+                          local i=$(( ${#_timers[@]}-1 ))
+                          {%- endraw +%}
+                          [ $i -ge 0 ] || return 1
+
+                          _tstart=${_timers[$i]}
+                          _timers=(${_timers[@]:0:$i})
+                        }
+
+                        # show time elapsed since last mark
+                        # [decimals=3] [label="DURATION:"]
+                        elapsed() {
+                          local t1 t0 lbl sec dec int hms
+                          t1=$EPOCHREALTIME
+                          tspop  && t0=$_tstart
+                          [ "$t0" ] || return 1
+
+                          dec=${1:-3}; int=$((dec+2))
+                          [ $dec -gt 0 ] && ((int++))
+                          shift; lbl="${*:-DURATION:}"
+                          sec=$(echo "$t1 - $t0" | bc)
+
+                          printf -v hms "%02d:%02d:%0${int}.${dec}f"   \
+                            $((${sec%.*}/3600)) $(((${sec%.*}/60)%60)) \
+                            $(bc <<< "$sec%60")
+                          echo "$lbl $hms"
+                        }
+
+                        tspush # measure total job time
+                        while read -r name date total pvc mode size; do
+                          echo; title DELETING $((++num))/$total: $name
+                          tspush # measure per item time
+
+                          # display ISO 8601 UTC date in local time zone
+                          date=$(TZ="{{ system_time_zone }}"  date -d $date "+%Y-%m-%d %H:%M:%S %Z")
+                          printf "Date: %s\n PVC: %s\nMode: %s\nSize: %d\n" "$date" $pvc $mode $size
+                          kubectl delete backup.longhorn.io $name -n {{ longhorn_namespace }}
+
+                          elapsed 3 DELETE TIME:
+                        done < <(
+                          kubectl get backups.longhorn.io -n {{ longhorn_namespace }} -o json  | \
+                            jq --arg cutoff $(date -d "-3 days" --iso-8601=seconds) -r '.items |
+                              map(select(
+                                .status.labels.KubernetesStatus and
+                                .status.backupCreatedAt < $cutoff)
+                              ) | sort_by(.status.backupCreatedAt)
+                                | length as $total | .[] |
+                              (.status.labels.KubernetesStatus | fromjson) as $pv
+                                | "\(.metadata.name) \(.status.backupCreatedAt) "
+                                + "\($total) \($pv.namespace)/\($pv.pvcName) "
+                                + "\(.spec.backupMode) \(.status.size)"'
+                        )
+                        echo; elapsed 0 $THUMBUP TOTAL TIME:
+            # actual storage deletion will occur asynchronously;
+            # `kubectl delete backup` should just mark deletion
+            activeDeadlineSeconds: 7200 # 2 hours
+            backoffLimit: 3 # 3 retries
+            # allow 12 hours to view logs
+            ttlSecondsAfterFinished: 43200
+        successfulJobsHistoryLimit: 1
 
 # https://longhorn.io/docs/latest/snapshots-and-backups/scheduling-backups-and-snapshots#set-up-recurring-jobs
 longhorn_recurring_jobs:
@@ -110,8 +229,13 @@ longhorn_recurring_jobs:
       cron: 0 10 * * * # in UTC time; run every day at 2am Pacific time
       task: snapshot-delete
       groups: ["default"]
-      retain: 7
-      concurrency: 2
+      retain: 3
+      concurrency: 1
+
+  # Longhorn RecurringJob doesn't currently support
+  # a task type for deleting backups, so a CronJob
+  # under .extraObjects above is created to delete
+  # old backups in the MinIO bucket
 
 # ==================================== NFS Provisioners ====================================
 
