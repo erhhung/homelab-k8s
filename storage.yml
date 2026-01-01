@@ -25,6 +25,10 @@
       changed_when: false
       failed_when: false
 
+    - name: Ensure DNS resolution works
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
+      ansible.builtin.include_tasks: tasks/hosts/dns.yml
+
     - name: Is Longhorn already installed?
       become: false
       vars:
@@ -177,7 +181,6 @@
     kubeconfig: "{{ rke_kubeconfig }}"
   pre_tasks:
     - name: Get CA certificates from PKI
-      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
       ansible.builtin.include_tasks: tasks/pki/cacerts.yml
       when: ca_certificates is not defined
 
@@ -326,7 +329,7 @@
           nfs:
             server: "{{ item.server }}"
             path: "{{   item.path   }}"
-            mountOptions: "{{ nfs_mount_opts | split(',') }}"
+            mountOptions: "{{ nfs_mount_opts }}"
           storageClass: |
             {% set sc = item.storageClass | ansible.builtin.combine({
                 'name': item.storageClass.name | default('nfs-'~ item.name)
