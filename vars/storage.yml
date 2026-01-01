@@ -277,7 +277,22 @@ nfs_provisioners:
       onDelete: delete
 
 # https://computingforgeeks.com/configure-nfs-as-kubernetes-persistent-volume-storage
-nfs_mount_opts: rw,nosuid,nodev,noexec,hard,timeo=600,retrans=3,rsize=32768,wsize=32768
+# (with recommendations from ChatGPT to better cope with ancient QNAP kernel & NFSv3)
+# https://www.man7.org/linux/man-pages/man5/nfs.5.html
+nfs_mount_opts:
+  - vers=3 # NFSv4 is unreliable on QTS 4.2.x
+  - proto=tcp
+  - rw
+  - nodev
+  - noexec
+  - nosuid
+  - soft # hard would cause indefinite hangs
+  - nolock # lockd & statd are too fragile
+  - intr # prevents unkillable processes
+  - timeo=100 # 10 seconds
+  - retrans=5
+  - rsize=16384
+  - wsize=16384
 
 # =================================== Grafana Dashboards ===================================
 
