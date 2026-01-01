@@ -511,7 +511,7 @@
         secret_data:
           runner-registration-token: ""
           runner-token: "{{ token }}"
-        if_changed: Scale runner to 1 replica
+        if_changed: Scale runner to one replica
       ansible.builtin.include_tasks: tasks/k8s/secrets/generic.yml
       when: token is truthy
 

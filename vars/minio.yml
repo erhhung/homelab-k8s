@@ -192,10 +192,14 @@ minio_tenant_chart_values:
     # https://min.io/docs/minio/kubernetes/upstream/reference/operator-crd.html#pool
     pools:
       - name: "{{ minio_pool_name }}"
-        # servers = # StatefulSet replicas (4 minimum)
-        servers: "{{ groups['rke_cluster'] | length }}"
+        # servers = # of StatefulSet replicas (4 minimum)
+        # use minimum servers to reduce stress on ancient
+        # QNAP kernel & NFSv3 (erasure coding layout with
+        # 6 servers: 4 data + 2 parity; with 4 servers: 3
+        # data + 1 parity)
+        servers: 4
         volumesPerServer: 1
-        size: 10Gi # per volume
+        size: 100Gi # per volume
         storageClassName: "{{ storage_classes['nfs'] }}"
 
         affinity: # one pod per worker node per pool

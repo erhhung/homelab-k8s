@@ -117,7 +117,7 @@ gitlab_omniauth_config:
       scope: user:email
 
 # https://gitlab.com/gitlab-org/charts/gitlab
-gitlab_chart_version: "9.4.1"
+gitlab_chart_version: "9.7.0"
 gitlab_release_name: gitlab
 
 # https://gitlab.com/gitlab-org/charts/gitlab/tree/master/values.yaml

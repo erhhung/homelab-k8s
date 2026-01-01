@@ -257,7 +257,7 @@ metric_scraper_tls_config:
 grafana_dashboard_label: grafana_dashboard
 
 # https://github.com/prometheus-community/helm-charts/tree/main/charts/kube-prometheus-stack
-prometheus_stack_chart_version: "77.5.0"
+prometheus_stack_chart_version: "80.9.2"
 monitoring_release_name: prometheus-stack
 
 # https://github.com/prometheus-community/helm-charts/tree/main/charts/kube-prometheus-stack/values.yaml

@@ -24,7 +24,6 @@
       register: awx_envs
 
     - name: Set awx_controller_token fact
-      delegate_to: localhost
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/set_fact_module.html
       ansible.builtin.set_fact:
         awx_controller_token: >-

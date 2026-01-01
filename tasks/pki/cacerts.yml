@@ -21,9 +21,6 @@
       changed_when: false
 
     - name: Set ca_certificates fact
-      # delegating to localhost sets fact at
-      # global scope so all hosts can access
-      delegate_to: localhost
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/set_fact_module.html
       ansible.builtin.set_fact:
         # split CA chain into intermediate and root CA certs
