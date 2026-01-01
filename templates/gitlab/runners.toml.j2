@@ -97,10 +97,16 @@
     # https://docs.gitlab.com/runner/executors/kubernetes#define-a-list-of-node-affinities
     [runners.kubernetes.affinity]
       [runners.kubernetes.affinity.node_affinity]
-        [[runners.kubernetes.affinity.node_affinity.preferred_during_scheduling_ignored_during_execution]]
-          weight = 100
-          [runners.kubernetes.affinity.node_affinity.preferred_during_scheduling_ignored_during_execution.preference]
-            [[runners.kubernetes.affinity.node_affinity.preferred_during_scheduling_ignored_during_execution.preference.match_expressions]]
+        # [[runners.kubernetes.affinity.node_affinity.preferred_during_scheduling_ignored_during_execution]]
+        #   weight = 100
+        #   [runners.kubernetes.affinity.node_affinity.preferred_during_scheduling_ignored_during_execution.preference]
+        #     [[runners.kubernetes.affinity.node_affinity.preferred_during_scheduling_ignored_during_execution.preference.match_expressions]]
+        #       # label defined in vars/kubernetes.yml
+        #       key = "node-role.kubernetes.io/runner"
+        #       operator = "Exists"
+        [runners.kubernetes.affinity.node_affinity.required_during_scheduling_ignored_during_execution]
+          [[runners.kubernetes.affinity.node_affinity.required_during_scheduling_ignored_during_execution.node_selector_terms]]
+            [[runners.kubernetes.affinity.node_affinity.required_during_scheduling_ignored_during_execution.node_selector_terms.match_expressions]]
               # label defined in vars/kubernetes.yml
               key = "node-role.kubernetes.io/runner"
               operator = "Exists"

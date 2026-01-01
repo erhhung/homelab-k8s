@@ -48,14 +48,25 @@
       register: grafana_api
 
     - name: Set facts about stack readiness
-      vars:
-        crds_installed: "{{ crd_info.resources is truthy }}"
+      vars: &vars
         grafana_online: "{{ grafana_api.status == 401    }}"
+        crds_installed: "{{ crd_info.resources is truthy }}"
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/set_fact_module.html
       ansible.builtin.set_fact:
-        prometheus_crds_installed: "{{ crds_installed }}"
         grafana_api_server_online: "{{ grafana_online }}"
+        prometheus_crds_installed: "{{ crds_installed }}"
         monitoring_stack_ready: "{{    crds_installed and grafana_online }}"
+
+    # also set grafana_api_server_online fact
+    # on localhost because it's often checked
+    # there to decide on importing dashboards
+    - name: Set facts about stack readiness
+      delegate_to: localhost
+      delegate_facts: true
+      run_once: true
+      vars: *vars
+      ansible.builtin.set_fact:
+        grafana_api_server_online: "{{ grafana_online }}"
 
     - name: Show facts about stack readiness
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/debug_module.html

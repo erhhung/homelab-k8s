@@ -85,11 +85,6 @@
   ansible.builtin.import_playbook: valkey.yml
   tags: valkey
 
-# AWX depends on PostgreSQL
-- name: Include Ansible AWX platform playbook
-  ansible.builtin.import_playbook: awx.yml
-  tags: awx
-
 # Prometheus depends on Keycloak and Valkey
 - name: Include Prometheus monitoring playbook
   ansible.builtin.import_playbook: monitoring.yml
@@ -127,6 +122,11 @@
 - name: Include Argo CD GitOps tool playbook
   ansible.builtin.import_playbook: argocd.yml
   tags: argocd
+
+# AWX depends on PostgreSQL, GitLab, Harbor
+- name: Include Ansible AWX platform playbook
+  ansible.builtin.import_playbook: awx.yml
+  tags: awx
 
 - name: Include K8s Metacontroller playbook
   ansible.builtin.import_playbook: metacontroller.yml

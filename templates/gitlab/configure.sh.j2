@@ -373,9 +373,19 @@ dismiss_popups() {
     [ "$once" ] && printf ','
     once=1
 
-    run curl -s         "$GITLAB_URL/-/users/callouts" \
-      -H "$(csrf_header "$GITLAB_URL/")" \
-      "${JSON_ARGS[@]}" -d '{"feature_name": "'$feat'"}'
+    run curl -s         "$GITLAB_URL/api/graphql" \
+      -H "$(csrf_header "$GITLAB_URL/dashboard/home")" \
+      "${JSON_ARGS[@]}" -d @- <<EOT
+{
+  "operationName": "dismissUserCallout",
+  "variables": {
+    "input": {
+      "featureName": "$feat"
+    }
+  },
+  "query": "mutation dismissUserCallout(\$input: UserCalloutCreateInput!) {userCalloutCreate(input: \$input) {userCallout {featureName dismissedAt} errors}}"
+}
+EOT
   done
 }
 

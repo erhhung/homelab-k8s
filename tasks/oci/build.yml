@@ -52,6 +52,17 @@
       changed_when: false
       failed_when: false
 
+    - name: Fail if none available
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/assert_module.html
+      ansible.builtin.assert:
+        that:
+          - docker_check.rc == 0 or
+            buildah_check.rc == 0
+        fail_msg: >-
+          Neither Docker nor Buildah is available
+          on the controller host to build images.
+        quiet: true
+
     - name: Build and push Docker image
       vars:
         # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/basename_filter.html

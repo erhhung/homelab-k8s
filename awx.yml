@@ -51,10 +51,6 @@
     - name: Get the PostgreSQL image used
       ansible.builtin.include_tasks: tasks/postgresql/image.yml
       when: postgresql_image is not defined
-
-    - name: Is the monitoring stack ready?
-      ansible.builtin.include_tasks: tasks/monitoring/stackready.yml
-      when: monitoring_stack_ready is not defined
   tasks:
     - name: Create AWX ingress secret
       vars:
@@ -107,7 +103,7 @@
           - v1 Secret    awx-receptor-work-signing ? # created by awx-operator
           - v1 Secret    awx-broadcast-websocket   ? # created by awx-operator
           # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/from_yaml_all_filter.html
-          - "{{ smon_manifests | from_yaml_all if prometheus_crds_installed else [] }}"
+          - "{{ smon_manifests | from_yaml_all }}"
       ansible.builtin.include_tasks: tasks/helm/helmfile.yml
 
     # on updates  to the awx-task pod template, this
@@ -513,4 +509,3 @@
       vars:
         dashboards: "{{ awx_grafana_dashboards }}"
       ansible.builtin.include_tasks: tasks/grafana/dashboards.yml
-      when: grafana_api_server_online | default(true)

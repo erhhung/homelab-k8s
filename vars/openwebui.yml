@@ -174,7 +174,7 @@ openwebui_extras:
 
 # https://github.com/open-webui/helm-charts/tree/main/charts/open-webui
 openwebui_chart_repo_url: https://helm.openwebui.com
-openwebui_chart_version: "8.14.0"
+openwebui_chart_version: "8.22.0"
 # openwebui_app_version: {fact}
 openwebui_release_name: open-webui
 

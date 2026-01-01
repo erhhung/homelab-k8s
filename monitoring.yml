@@ -154,9 +154,8 @@
         crds_file="/tmp/prometheus-crds.yaml"
         trap "rm -f $crds_file" EXIT
 
-        helm template prometheus-crds \
-          --repo="{{ repo_url }}" \
-          --include-crds > $crds_file
+        helm template crds --repo="{{ repo_url }}" \
+            --include-crds > $crds_file || exit
 
         # do server-side diff & apply so Helm doesn`t
         # store state in annotations and cause error:

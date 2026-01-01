@@ -128,10 +128,10 @@ kiali_cr_spec:
     # web_* settings don't configure anything--
     # they're used to generate URLs for browser
     # when the server is behind a proxy/ingress
-    web_port: 443
     web_schema: https
-    web_root: /kiali
     web_fqdn: "{{ kiali_fqdns[0] }}"
+    web_port: "443" # must be string
+    web_root: /kiali
     # don't require auth for
     # the /api endpoint only
     require_auth: false

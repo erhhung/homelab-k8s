@@ -2,6 +2,7 @@
 
 # JSON POST /-/users/callouts
 gitlab_user_callouts:
+  - personal_homepage_preferences_banner
   - product_usage_data_collection_changes
   - registration_enabled_callout
   - security_newsletter_callout

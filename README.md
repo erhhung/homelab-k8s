@@ -43,7 +43,6 @@ All cluster services will be provisioned with TLS certificates from Erhhung's pr
 |          postgres.fourteeners.local:5432 | PostgreSQL via Pgpool _(mTLS only)_
 |            https://sso.fourteeners.local | Keycloak IAM console
 |            valkey.fourteeners.local:6379 <br/> valkey<i>{1..6}</i>.fourteeners.local:6379 | Valkey cluster _(mTLS only)_
-|            https://awx.fourteeners.local | Ansible AWX UI
 |        https://grafana.fourteeners.local | Grafana dashboards
 |        https://metrics.fourteeners.local | Prometheus UI _(Keycloak SSO)_
 |         https://alerts.fourteeners.local | Alertmanager UI _(Keycloak SSO)_
@@ -55,6 +54,7 @@ All cluster services will be provisioned with TLS certificates from Erhhung's pr
 |  ssh://git@gitlab.fourteeners.local:2222 | GitLab SSH Git access
 | https://*.pages.gitlab.fourteeners.local | GitLab Pages websites
 |         https://argocd.fourteeners.local | Argo CD console
+|            https://awx.fourteeners.local | Ansible AWX UI
 |         https://qdrant.fourteeners.local | Qdrant dashboard
 |         https://ollama.fourteeners.local | Ollama API server
 |      https://openwebui.fourteeners.local | Open WebUI portal
@@ -100,8 +100,6 @@ All cluster services will be provisioned with TLS certificates from Erhhung's pr
     * Install on main RKE cluster using the [`keycloakx`](https://github.com/codecentric/helm-charts/tree/master/charts/keycloakx) Helm chart
 - [X] [Valkey Key/Value Store](https://valkey.io/) — Redis-compatible key/value store
     * Install on main RKE cluster using the [`valkey-cluster`](https://github.com/bitnami/charts/tree/main/bitnami/valkey-cluster) Helm chart
-- [X] [Ansible AWX Automation Platform](https://github.com/ansible/awx) — web UI, REST API, and task engine built on top of Ansible
-    * Install on main RKE cluster using the [`awx-operator`](https://github.com/ansible-community/awx-operator-helm) Helm chart
 - [X] [Prometheus Monitoring Stack](https://github.com/prometheus-operator/kube-prometheus) — Prometheus (via Operator), Thanos sidecar, and Grafana
     * Install on main RKE cluster using the [`kube-prometheus-stack`](https://github.com/prometheus-community/helm-charts/tree/main/charts/kube-prometheus-stack) Helm chart
     * [X] Add authentication to Prometheus and Alertmanager UIs using [`oauth2-proxy`](https://github.com/oauth2-proxy/oauth2-proxy) sidecar
@@ -121,6 +119,8 @@ All cluster services will be provisioned with TLS certificates from Erhhung's pr
     * Install on K3s cluster using the [`meshery`](https://docs.meshery.io/installation/kubernetes/helm) Helm chart, along with  
     [`meshery-istio`](https://docs.meshery.io/concepts/architecture/adapters) and [`meshery-nighthawk`](https://getnighthawk.dev/) adapters
     * [ ] Connect to main RKE cluster, along with Prometheus and Grafana
+- [X] [Ansible AWX Automation Platform](https://github.com/ansible/awx) — web UI, REST API, and task engine built on top of Ansible
+    * Install on main RKE cluster using the [`awx-operator`](https://github.com/ansible-community/awx-operator-helm) Helm chart
 - [X] [Kubernetes Metacontroller](https://metacontroller.github.io/metacontroller) — enable easy creation of custom controllers
     * Install on main RKE cluster using the [`metacontroller`](https://metacontroller.github.io/metacontroller/guide/helm-install.html) Helm chart
 - [X] [Ollama LLM Server](https://github.com/ollama/ollama) with [Ollama CLI](https://github.com/masgari/ollama-cli) — run LLMs on Kubernetes cluster
@@ -171,16 +171,15 @@ ansible-vault view   $VAULTFILE
 | `age_secret_key`                  | `harbor_admin_pass`
 | `metallb_secret`                  | `opensearch_admin_pass`
 | `step_ca_provisioner_pass`        | `keycloak_admin_pass`
-| `minio_client_pass`               | `awx_admin_pass`
-| `velero_repo_pass`                | `thanos_admin_pass`
-| `velero_passphrase`               | `grafana_admin_pass`
-| `harbor_secret`                   | `vault_admin_pass`
-| `dashboards_os_pass`              | `gitlab_root_pass`
-| `fluent_os_pass`                  | `gitlab_user_pass`
-| `valkey_pass`                     | `argocd_admin_pass`
+| `minio_client_pass`               | `thanos_admin_pass`
+| `velero_repo_pass`                | `grafana_admin_pass`
+| `velero_passphrase`               | `vault_admin_pass`
+| `harbor_secret`                   | `gitlab_root_pass`
+| `dashboards_os_pass`              | `gitlab_user_pass`
+| `fluent_os_pass`                  | `argocd_admin_pass`
+| `valkey_pass`                     | `awx_admin_pass`
 | `postgresql_pass`                 | `openwebui_admin_pass`
 | `keycloak_db_pass`                | `flowise_admin_pass`
-| `awx_secret_key`                  |
 | `monitoring_pass`                 |
 | `monitoring_oidc_client_secret.*` |
 | `slack_webhook_urls.*`            |
@@ -189,6 +188,7 @@ ansible-vault view   $VAULTFILE
 | `gitlab_secrets_data.*`           |
 | `gitlab_omniauth.*`               |
 | `argocd_signing_key`              |
+| `awx_secret_key`                  |
 | `hass_access_token`               |
 | `qdrant_api_key.*`                |
 | `openwebui_secret_key`            |
@@ -378,74 +378,74 @@ however, all privileged operations using `sudo` will require the password stored
     ```
 </details>
 
-18. <details><summary>Install <strong>Ansible AWX</strong> automation platform</summary><br/>
+18. <details><summary>Install <strong>Prometheus</strong>, <strong>Thanos</strong>, and <strong>Grafana</strong> in <em><strong>HA</strong></em> mode</summary><br/>
 
-    18.1. Create organization and custom execution environments based on [`al2023-devops`](https://github.com/erhhung/al2023-devops)  
-    18.2. Create credentials for all homelab hosts and access tokens for GitHub and GitLab  
-    18.3. Import this project and [`homelab-xcp`](https://github.com/erhhung/homelab-xcp), and inventories from their `hosts.ini` files
-
-    ```bash
-    ./play.sh awx
-    ```
-</details>
-
-19. <details><summary>Install <strong>Prometheus</strong>, <strong>Thanos</strong>, and <strong>Grafana</strong> in <em><strong>HA</strong></em> mode</summary><br/>
-
-    19.1. Expose Prometheus & Alertmanager UIs via `oauth2-proxy` integration with **Keycloak**  
-    19.2. Connect Thanos sidecars to **MinIO** to store scraped metrics in the `metrics` bucket  
-    19.3. Deploy and integrate other Thanos components with Prometheus and Alertmanager
+    18.1. Expose Prometheus & Alertmanager UIs via `oauth2-proxy` integration with **Keycloak**  
+    18.2. Connect Thanos sidecars to **MinIO** to store scraped metrics in the `metrics` bucket  
+    18.3. Deploy and integrate other Thanos components with Prometheus and Alertmanager
 
     ```bash
     ./play.sh monitoring thanos
     ```
 </details>
 
-20. <details><summary>Install <strong>Istio</strong> service mesh in <em><strong>ambient</strong></em> mode</summary><br/>
+19. <details><summary>Install <strong>Istio</strong> service mesh in <em><strong>ambient</strong></em> mode</summary><br/>
 
     ```bash
     ./play.sh istio
     ```
 </details>
 
-21. <details><summary>Create <strong>virtual Kubernetes clusters</strong> in RKE</summary><br/>
+20. <details><summary>Create <strong>virtual Kubernetes clusters</strong> in RKE</summary><br/>
 
     ```bash
     ./play.sh vclusters
     ```
 </details>
 
-22. <details><summary>Install <strong>HashiCorp Vault</strong> in <em><strong>HA</strong></em> mode<br/> &nbsp; &nbsp; Install <strong>External Secrets Operator</strong></summary><br/>
+21. <details><summary>Install <strong>HashiCorp Vault</strong> in <em><strong>HA</strong></em> mode<br/> &nbsp; &nbsp; Install <strong>External Secrets Operator</strong></summary><br/>
 
-    22.1. Initialize Vault cluster and unseal cluster pods  
-    22.2. Create policies, `Userpass` accounts, k8s roles  
-    22.3. Create `KV` mounts and populate secrets data  
-    22.4. Create ESO's `ClusterSecretStore` for Vault
+    21.1. Initialize Vault cluster and unseal cluster pods  
+    21.2. Create policies, `Userpass` accounts, k8s roles  
+    21.3. Create `KV` mounts and populate secrets data  
+    21.4. Create ESO's `ClusterSecretStore` for Vault
 
     ```bash
     ./play.sh vault externalsecrets
     ```
 </details>
 
-23. <details><summary>Install <strong>GitLab EE</strong> CI/CD Platform to build local images</summary><br/>
+22. <details><summary>Install <strong>GitLab EE</strong> CI/CD Platform to build local images</summary><br/>
 
-    23.1. Import Erhhung's SSH and GPG public keys, and create the `Homelab` group  
-    23.2. Configure **Harbor** and **Slack** integrations, and access GitHub using OmniAuth  
-    23.3. Configure and deploy **Kubernetes runner** for building images using `buildah`  
-    23.4. Use [`al2023-devops`](https://github.com/erhhung/al2023-devops) as the build container and load common pre-build script  
-    23.5. Deploy **CI Pipelines Exporter** to export metrics and visualize them in Grafana
+    22.1. Import Erhhung's SSH and GPG public keys, and create the `Homelab` group  
+    22.2. Configure **Harbor** and **Slack** integrations, and access GitHub using OmniAuth  
+    22.3. Configure and deploy **Kubernetes runner** for building images using `buildah`  
+    22.4. Use [`al2023-devops`](https://github.com/erhhung/al2023-devops) as the build container and load common pre-build script  
+    22.5. Deploy **CI Pipelines Exporter** to export metrics and visualize them in Grafana
 
     ```bash
     ./play.sh gitlab
     ```
 </details>
 
-24. <details><summary>Install <strong>Argo CD</strong> GitOps delivery in <em><strong>HA</strong></em> mode</summary><br/>
+23. <details><summary>Install <strong>Argo CD</strong> GitOps delivery in <em><strong>HA</strong></em> mode</summary><br/>
 
-    24.1. Configure Argo CD to use **Valkey** for caching  
-    24.2. Configure **GitLab** as an allowed SCM provider
+    23.1. Configure Argo CD to use **Valkey** for caching  
+    23.2. Configure **GitLab** as an allowed SCM provider
 
     ```bash
     ./play.sh argocd
+    ```
+</details>
+
+24. <details><summary>Install <strong>Ansible AWX</strong> automation platform</summary><br/>
+
+    24.1. Create organization and custom execution environments based on [`al2023-devops`](https://github.com/erhhung/al2023-devops)  
+    24.2. Create credentials for all homelab hosts and access tokens for GitHub and GitLab  
+    24.3. Import this project and [`homelab-xcp`](https://github.com/erhhung/homelab-xcp), and inventories from their `hosts.ini` files
+
+    ```bash
+    ./play.sh awx
     ```
 </details>
 

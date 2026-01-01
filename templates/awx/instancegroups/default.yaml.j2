@@ -9,10 +9,15 @@ spec:
   # most memory and ephemeral storage
   affinity:
     nodeAffinity:
-      preferredDuringSchedulingIgnoredDuringExecution:
-        - weight: 100
-          preference:
-            matchExpressions:
+      # preferredDuringSchedulingIgnoredDuringExecution:
+      #   - weight: 100
+      #     preference:
+      #       matchExpressions:
+      #         - key: node-role.kubernetes.io/runner
+      #           operator: Exists
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+          - matchExpressions:
               # label defined in vars/kubernetes.yml
               - key: node-role.kubernetes.io/runner
                 operator: Exists

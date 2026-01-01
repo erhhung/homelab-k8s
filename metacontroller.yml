@@ -11,11 +11,6 @@
     # required kubernetes>=24.2 package only in user virtualenv
     ansible_python_interpreter: "{{ venv_python_interpreter }}"
     kubeconfig: "{{ rke_kubeconfig }}"
-  pre_tasks:
-    - name: Is the monitoring stack ready?
-      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
-      ansible.builtin.include_tasks: tasks/monitoring/stackready.yml
-      when: monitoring_stack_ready is not defined
   tasks:
     # https://metacontroller.github.io/metacontroller/guide/helm-install.html
     - name: Install Metacontroller Helm chart
@@ -69,5 +64,6 @@
                   value: 2
 
         extras: # adopt extra resources into Helm release
-          - "{{ smon_manifest | from_yaml if prometheus_crds_installed else [] }}"
+          - "{{ smon_manifest | from_yaml }}"
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
       ansible.builtin.include_tasks: tasks/helm/helmfile.yml
