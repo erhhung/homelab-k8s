@@ -35,11 +35,17 @@ ollama_common_values:
               - key: intel.feature.node.kubernetes.io/gpu
                 operator: Exists # Intel GPU
       preferredDuringSchedulingIgnoredDuringExecution:
-        - weight: 100
+        - weight: 40
           preference:
             matchExpressions:
               # custom label to select latest generation GPU
               - key: feature.node.kubernetes.io/gpu.preferred
+                operator: Exists
+        - weight: 60
+          preference:
+            matchExpressions:
+              # label defined in vars/kubernetes.yml
+              - key: node-role.kubernetes.io/runner
                 operator: Exists
 
   resources:

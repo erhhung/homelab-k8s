@@ -11,6 +11,7 @@ spec:
         requests:
           cpu: 50m
           memory: 256Mi
+
       volumeMounts:
         - name: vaultpass
           # file is read by vaultpass.sh in projects to
@@ -26,6 +27,7 @@ spec:
         - name: awx-projects
           mountPath: /var/lib/awx/tmp
           subPath: tmp
+
   volumes:
     - name: vaultpass
       secret:
