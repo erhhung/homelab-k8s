@@ -1,0 +1,45 @@
+# get knowledge files using pagination
+#
+# pass the following vars:
+#   auth_token   <required> user auth token
+#   knowledge_id <required> knowledge ID
+# sets the following facts:
+#   knowledge_files  knowledge file objects
+---
+- name: Get all files in knowledge
+  vars:
+    next_page: "{{ cur_page | default(0) + 1 }}"
+  block:
+    - name: Reset knowledge_files fact
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/set_fact_module.html
+      ansible.builtin.set_fact:
+        knowledge_files: []
+      when: cur_page is not defined
+
+    # API currently returns up to 30 files per page
+    - name: Get knowledge files page {{ next_page }}
+      vars:
+        api_url: https://{{ openwebui_fqdns[0] }}/api/v1/knowledge/{{ knowledge_id }}/files
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/uri_module.html
+      ansible.builtin.uri:
+        url: "{{ api_url }}?page={{ next_page }}"
+        headers:
+          Authorization: Bearer {{ auth_token }}
+        return_content: true
+      register: files_page
+
+    - name: Accumulate knowledge files
+      ansible.builtin.set_fact:
+        knowledge_files: "{{ knowledge_files + files_page.json['items'] }}"
+
+    - name: Recurse to get more files
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
+      ansible.builtin.include_tasks:
+        file: tasks/openwebui/files.yml
+        # use apply.vars to set cur_page instead
+        # of defining vars at task level because
+        # that causes maximum recursion exceeded
+        apply:
+          vars:
+            cur_page: "{{ next_page }}"
+      when: knowledge_files | length < files_page.json['total']

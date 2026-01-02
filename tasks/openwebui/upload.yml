@@ -19,8 +19,10 @@
   vars:
     counter: "{{ file_info.index }}/{{ file_info.total }}"
     filename: "{{ file_info.abs_path | basename }}"
-    files: "{{ knowledge.files }}"
     know_id: "{{ knowledge.id }}"
+    files: |
+      {{ knowledge.files if knowledge.files is defined and
+                            knowledge.files is truthy else [] }}
     headers:
       Authorization: Bearer {{ auth_token }}
     api_base: https://{{ openwebui_fqdns[0] }}/api/v1

@@ -46,6 +46,7 @@
         - name: Set openwebui_app_version fact
           vars:
             chart_info: "{{ show_chart.stdout | from_yaml }}"
+          # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/set_fact_module.html
           ansible.builtin.set_fact:
             openwebui_app_version: "{{ chart_info.appVersion }}"
 
@@ -311,16 +312,39 @@
             label: "{{ item.title }}"
           changed_when: true
 
-    - name: Get Open WebUI knowledge base
+    - name: Get Open WebUI knowledge bases
       ansible.builtin.uri:
-        url: "{{ api_base }}/v1/knowledge/list"
+        # this API does not populate
+        # the knowledge's files list
+        url: "{{ api_base }}/v1/knowledge/"
         headers: "{{ auth_headers }}"
         return_content: true
       register: list_knowledge
 
-    - name: Create Accounts knowledge
+    - name: Get Accounts knowledge & files
       vars:
-        knowledge: "{{ list_knowledge.json | selectattr('name', '==', knowledge_name) }}"
+        knowledge: "{{ list_knowledge.json['items'] |
+          selectattr('name', '==', knowledge_name) }}"
+      when: knowledge is truthy
+      block:
+        - name: Get Accounts knowledge base
+          ansible.builtin.uri:
+            url: "{{ api_base }}/v1/knowledge/{{ knowledge[0].id }}"
+            headers: "{{ auth_headers }}"
+            return_content: true
+          register: get_knowledge
+
+        - name: Get Accounts knowledge files
+          vars:
+            auth_token: "{{ admin_token }}"
+            knowledge_id: "{{ knowledge[0].id }}"
+          ansible.builtin.include_tasks: tasks/openwebui/files.yml
+          # sets knowledge_files fact
+
+    - name: Create Accounts knowledge base
+      vars:
+        knowledge: "{{ list_knowledge.json['items'] |
+          selectattr('name', '==', knowledge_name) }}"
       ansible.builtin.uri:
         method: POST
         url: "{{ api_base }}/v1/knowledge/create"
@@ -328,7 +352,8 @@
         body_format: json
         body:
           name: "{{ knowledge_name }}"
-          description: Confidential information and notable events about various accounts
+          description: Confidential information and
+            notable events about various accounts
           access_control:
             read:
               group_ids: "{{ [family_group_id] }}"
@@ -339,15 +364,11 @@
       register: create_knowledge
       changed_when: true
 
-    # pass var to the next play since
-    # scope of registered variable in
-    # Ansible is limited to this play
     - name: Set accounts_knowledge fact
-      vars:
-        knowledge: "{{ list_knowledge.json | selectattr('name', '==', knowledge_name) }}"
       ansible.builtin.set_fact:
         accounts_knowledge: |
-          {{ knowledge | first if knowledge is truthy else create_knowledge.json }}
+          {{ get_knowledge.json | ansible.builtin.combine({'files': knowledge_files})
+          if get_knowledge.json is defined else create_knowledge.json }}
 
     - name: Get Open WebUI custom models
       ansible.builtin.uri:
@@ -358,7 +379,8 @@
 
     - name: Create Accounts custom model
       vars:
-        model: "{{ list_models.json | selectattr('name', '==', model_name) }}"
+        model: "{{ list_models.json['items'] |
+          selectattr('name', '==', model_name) }}"
         base_model: "{{ ollama_models | select('search', '^qwen3') | first }}"
         # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/file_lookup.html
         image_data: "{{ lookup('ansible.builtin.file', 'images/assistant.png') }}"
@@ -410,7 +432,8 @@
 
     - name: Set accounts_model fact
       vars:
-        model: "{{ list_models.json | selectattr('name', '==', model_name) }}"
+        model: "{{ list_models.json['items'] |
+          selectattr('name', '==', model_name) }}"
       ansible.builtin.set_fact:
         accounts_model: |
           {{ model | first if model is truthy else create_model.json }}
@@ -434,7 +457,8 @@
     # PLAYBOOKS is extra var passed by play.sh or by AWX workflow survey;
     # strip numbering and padding added for showing as ordered list in UI
     # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/regex_replace_filter.html
-    playbooks: "{{ PLAYBOOKS | map('ansible.builtin.regex_replace', '\\s*(\\d+\\. )?','') if
+    playbooks:
+      "{{ PLAYBOOKS | map('ansible.builtin.regex_replace', '\\s*(\\d+\\. )?','') if
       PLAYBOOKS is defined and PLAYBOOKS is sequence and PLAYBOOKS is not string else [] }}"
     # this var can be set on the command line
     # to limit the number of files to process

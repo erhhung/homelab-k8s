@@ -21,6 +21,7 @@ spec:
               # label defined in vars/kubernetes.yml
               - key: node-role.kubernetes.io/runner
                 operator: Exists
+
   initContainers:
     # update CA trust on
     # Fedora/CentOS/RHEL
@@ -39,6 +40,7 @@ spec:
           readOnly: true
         - name: ca-bundle
           mountPath: /etc/pki/ca-trust/extracted
+
   containers:
     - name: worker # existing/expected container
       resources:
@@ -52,12 +54,14 @@ spec:
           cpu: 1000m
           memory: 8Gi
           ephemeral-storage: 40Gi
+
       # allow building OCI images using Buildah
       securityContext:
         privileged: true
         appArmorProfile:
           type: Localhost
           localhostProfile: buildah
+
       volumeMounts:
         - name: ca-bundle
           mountPath: /etc/pki/ca-trust/extracted
@@ -75,6 +79,7 @@ spec:
         - name: awx-projects
           mountPath: /var/lib/awx/tmp
           subPath: tmp
+
   volumes:
     - name: ca-cert
       secret:
