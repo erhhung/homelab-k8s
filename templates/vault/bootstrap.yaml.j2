@@ -46,6 +46,7 @@ spec:
     spec:
       serviceAccountName: vault-bootstrap
       restartPolicy: OnFailure
+
       containers:
         - name: bootstrap
           image: alpine:latest
@@ -156,10 +157,17 @@ spec:
                 echo; [ $n -ge 1 ] && wait_for_pod $n
 
                 if is_sealed; then
-                  printf "%s Unsealing Vault on pod %d...\n" $(timestamp) $n
-                  [ "$keys" ] || keys="$(get_unseal_keys)"
                   i=1; unset unsealed
+                  printf "%s Unsealing Vault on pod %d...\n" $(timestamp) $n
 
+                  [ "$keys" ] || {
+                    keys="$(get_unseal_keys)"
+                    echo "$keys" | grep -q redacted... && {
+                      echo "Unseal keys in Secret have been redacted!"
+                      echo "Unseal pods manually with encrypted keys."
+                      exit 0
+                    }
+                  }
                   while read -r key; do
                     printf "%s Using unseal key %d: " $(timestamp) $i
                     result="$(unseal_vault $key)"
@@ -196,6 +204,7 @@ spec:
               value: "5"
             - name: SECRET_THRESHOLD
               value: "3"
+
   activeDeadlineSeconds: 300
   backoffLimit: 3 # 3 retries
   ttlSecondsAfterFinished: 600

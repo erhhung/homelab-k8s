@@ -10,7 +10,7 @@
     - vars/monitoring.yml
     - vars/storage.yml
     - vars/vault.yml
-  vars:
+  vars: &vars
     # required kubernetes>=24.2 package only in user virtualenv
     ansible_python_interpreter: "{{ venv_python_interpreter }}"
     kubeconfig: "{{ rke_kubeconfig }}"
@@ -62,9 +62,12 @@
 
     # Vault will be bootstrapped (initialized and unsealed)
     # by Helm post-install hook, but if a pod is restarted
-    # after bootstrap, it must be unsealed again manually.
-    # run command below locally and run the copied output
-    # inside the pod:
+    # after bootstrap, it must be unsealed again manually:
+    #
+    # if unseal keys in `vault-unseal-keys` Secret haven't
+    # been redacted, then run the command below locally to
+    # generate  `vault operator unseal` commands to run in
+    # the pod:
     #
     # kubectl get secrets -n vault vault-unseal-keys -o yaml | \
     #   yq '.data.unsealKeys | @base64d | from_yaml | .[] |
@@ -108,7 +111,8 @@
           echo >&2 "Error: could not get Vault root token"
           exit 1
         }
-        [ "$token" == "$VAULT_TOKEN" ] && exit 9 # no change
+        [[ "$token" ==  redacted...*  || \
+           "$token" == "$VAULT_TOKEN" ]] && exit 9 # no change
 
         # BASH_ENV_DIR is set in .bash_aliases
         cat <<EOF > "$BASH_ENV_DIR/vault.env"
@@ -330,3 +334,107 @@
       register: sops_keys
       changed_when: sops_keys.rc == 0
       failed_when: sops_keys.rc not in [0,9]
+
+- name: Encrypt unseal keys on PKI host
+  tags: keys
+  hosts: "{{ rke_control_plane_host }}"
+  vars_files:
+    - vars/kubernetes.yml
+    - vars/vault.yml
+  vars: *vars
+  pre_tasks:
+    - name: Get keys from Secret
+      # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_info_module.html
+      kubernetes.core.k8s_info:
+        kubeconfig: "{{ kubeconfig }}"
+        api_version: v1
+        kind: Secret
+        name: "{{ vault_secrets['unseal'] }}"
+        namespace: "{{ secret_ns }}"
+      register: unseal_secret
+
+    - name: Set unseal_keys fact
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/set_fact_module.html
+      ansible.builtin.set_fact:
+        unseal_keys: |
+          {{ unseal_secret.resources[0].data['unsealKeys'] | b64decode | from_yaml
+          if unseal_secret.resources is truthy else [] }}
+        root_token: |
+          {{ unseal_secret.resources[0].data['rootToken'] | b64decode
+          if unseal_secret.resources is truthy else '' }}
+  tasks:
+    - name: Create unseal-keys.asc
+      when: &when
+        - unseal_keys is truthy
+        - unseal_keys[0] is not search('^redacted\.{3}')
+      # must use pki.fourteeners.local
+      # and not: pki_host (pki/cosmos)
+      delegate_to: pki
+      vars:
+        ansible_python_interpreter: "{{ default_python_interpreter }}"
+        txt_data: "{{ unseal_keys | join('\n') ~'\n' }}"
+        txt_file: /opt/vault-unseal/unseal-keys.txt
+        asc_file: /opt/vault-unseal/unseal-keys.asc
+      block:
+        - name: Write unseal-keys.txt
+          # https://docs.ansible.com/ansible/latest/collections/ansible/builtin.copy_module.html
+          ansible.builtin.copy:
+            content: "{{ txt_data }}"
+            dest: "{{ txt_file }}"
+            mode: "0600"
+
+        - name: Encrypt using OpenPGP
+          # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/command_module.html
+          ansible.builtin.command:
+            argv:
+              - gpg
+              - --encrypt
+              - --recipient
+              # GnuPG-created user to identify encryption key
+              - Vault Unseal Key <vault@{{ homelab_domain }}>
+              - --armor
+              - --output
+              - "{{ asc_file }}"
+              - --yes # overwrite
+              - "{{ txt_file }}"
+          changed_when: true
+
+        # decryption could fail if YubiKey isn't ready
+        # (`ykman info` and `gpg --card-status` fails)
+        # or if OpenPGP card hasn't been unlocked with
+        # passphrase
+        - name: Decrypt unseal-keys.asc
+          ansible.builtin.command:
+            argv:
+              - gpg
+              - --decrypt
+              - "{{ asc_file }}"
+          register: decrypted_keys
+          changed_when: false
+
+        - name: Verify decrypted keys
+          # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/assert_module.html
+          ansible.builtin.assert:
+            that:
+              - decrypted_keys.stdout == txt_data | trim
+            fail_msg: Decrypted keys do not
+              match the original plain text
+            quiet: true
+
+        - name: Delete unseal-keys.txt
+          # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/file_module.html
+          ansible.builtin.file:
+            path: "{{ txt_file }}"
+            state: absent
+
+    - name: Redact keys in Secret
+      when: *when
+      vars:
+        secret_name: "{{ vault_secrets['unseal'] }}"
+        secret_data:
+          # redact all but last 3 chars of each key
+          unsealKeys: "{{ unseal_keys | map('regex_replace',
+            '^.+(?P<end>...)$', 'redacted...\\g<end>') | to_yaml }}"
+          rootToken: "{{ root_token | regex_replace(
+            '^.+(?P<end>...)$', 'redacted...\\g<end>') }}"
+      ansible.builtin.include_tasks: tasks/k8s/secrets/generic.yml

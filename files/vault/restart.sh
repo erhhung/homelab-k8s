@@ -4,11 +4,16 @@
 
 # shellcheck disable=SC2207 # Prefer mapfile to split output
 # shellcheck disable=SC2086 # Double quote prevent globbing
+# shellcheck disable=SC2128 # Expanding array without index
 
 set -euo pipefail
 
 NAMESPACE="vault"
-  TIMEOUT="30s"
+   SECRET="vault-unseal-keys"
+ PKI_HOST="pki.fourteeners.local"
+ ASC_FILE="/opt/vault-unseal/unseal-keys.asc"
+  TIMEOUT="60s"
+THRESHOLD="3"
 
 YELLOW='\x1B[1;33m'
  NOCLR='\x1B[0m'
@@ -22,6 +27,19 @@ for pod in "${pods[@]}"; do
   kubectl delete pod "$pod" -n $NAMESPACE --now --wait
 done
 
+get_unseal_commands() {
+  # first try getting unredacted keys from Secret
+  keys=($(kubectl get secrets $SECRET -n $NAMESPACE -o yaml | \
+    yq '.data.unsealKeys | @base64d | from_yaml | .[]'))
+
+  if [[ "$keys" == redacted...* ]]; then
+    # get keys from pki.fourteeners.local instead
+    keys=($(ssh -i ~/.ssh/$USER -o StrictHostKeyChecking=no $PKI_HOST \
+      "gpg --decrypt $ASC_FILE 2>/dev/null"))
+  fi
+  printf "sleep .25s; echo; vault operator unseal \"%s\"\n" "${keys[@]}"
+}
+
 for pod in "${pods[@]}"; do
   echo -e "\n${YELLOW}Waiting for pod $pod to be Ready...${NOCLR}"
   kubectl wait --for=condition=Ready pod/$pod \
@@ -29,10 +47,7 @@ for pod in "${pods[@]}"; do
     echo >&2 "Pod $pod failed to start after $TIMEOUT!"
     continue
   }
-  echo -e "${YELLOW}Unsealing Vault node in pod $pod...${NOCLR}"
-  kubectl get secrets vault-unseal-keys -n $NAMESPACE -o yaml | \
-    yq '.data.unsealKeys | @base64d | from_yaml | .[] |
-       "sleep .25s; echo; vault operator unseal \"\(.)\""' | \
-    shuf -n 3 | \
+  echo -e "${YELLOW}Unsealing Vault node at pod $pod...${NOCLR}"
+  get_unseal_commands | shuf -n $THRESHOLD | \
     kubectl exec -i $pod -c vault -n $NAMESPACE -- sh -s
 done
