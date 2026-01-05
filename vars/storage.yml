@@ -181,7 +181,9 @@ longhorn_chart_values:
                           dec=${1:-3}; int=$((dec+2))
                           [ $dec -gt 0 ] && ((int++))
                           shift; lbl="${*:-DURATION:}"
-                          sec=$(echo "$t1 - $t0" | bc)
+                          # make sure values < 1.0 have leading
+                          # zero so hms computation below works
+                          sec="0$(echo "$t1 - $t0" | bc)"
 
                           printf -v hms "%02d:%02d:%0${int}.${dec}f"   \
                             $((${sec%.*}/3600)) $(((${sec%.*}/60)%60)) \
@@ -189,7 +191,7 @@ longhorn_chart_values:
                           echo "$lbl $hms"
                         }
 
-                        tspush # measure total job time
+                        num=0; tspush # measure total job time
                         while read -r name date total pvc mode size; do
                           echo; title DELETING $((++num))/$total: $name
                           tspush # measure per item time
@@ -213,7 +215,9 @@ longhorn_chart_values:
                                 + "\($total) \($pv.namespace)/\($pv.pvcName) "
                                 + "\(.spec.backupMode) \(.status.size)"'
                         )
-                        echo; elapsed 0 $THUMBUP TOTAL TIME:
+                        [ $num -gt 0 ] && echo
+                        echo "Deleted $num Longhorn backups."
+                        elapsed 2 $THUMBUP TOTAL TIME:
             # actual storage deletion will occur asynchronously;
             # `kubectl delete backup` should just mark deletion
             activeDeadlineSeconds: 7200 # 2 hours
