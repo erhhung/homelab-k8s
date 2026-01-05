@@ -153,7 +153,7 @@ alertmanager_config:
     routes:
       - receiver: "null"
         matchers:
-          - alertname = Watchdog
+          - alertname =~ Watchdog|InfoInhibitor
       - receiver: "{{ 'erhhung-email' if email_alerts_enabled else 'null' }}"
         continue: true # send to Slack as well if enabled
       - receiver: "{{ 'homelab-slack' if slack_alerts_enabled else 'null' }}"

@@ -37,8 +37,8 @@ nfd_chart_values:
         cpu: 10m
         memory: 32Mi
       limits:
-        cpu: 20m
-        memory: 64Mi
+        # cpu: 20m
+        memory: 128Mi
 
     startupProbe: &probe
       periodSeconds: 10
@@ -64,7 +64,7 @@ nfd_chart_values:
         cpu: 5m
         memory: 48Mi
       limits:
-        cpu: 20m
+        # cpu: 20m
         memory: 96Mi
 
     readinessProbe: *probe
