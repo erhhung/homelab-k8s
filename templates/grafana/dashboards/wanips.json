@@ -1,0 +1,222 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": {
+          "type": "grafana",
+          "uid": "-- Grafana --"
+        },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "links": [],
+  "panels": [
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed"
+          },
+          "custom": {
+            "align": "center",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "footer": {
+              "reducers": []
+            },
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": 0
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "ip"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "IP address"
+              },
+              {
+                "id": "custom.width",
+                "value": 120
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "first_seen"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Seen since"
+              },
+              {
+                "id": "unit",
+                "value": "dateTimeAsLocal"
+              },
+              {
+                "id": "custom.width",
+                "value": 210
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 12,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "id": 1,
+      "options": {
+        "cellHeight": "sm",
+        "showHeader": true,
+        "sortBy": [
+          {
+            "desc": true,
+            "displayName": "Seen since"
+          }
+        ]
+      },
+      "pluginVersion": "12.3.1",
+      "targets": [
+        {
+          "editorMode": "code",
+          "expr": "sort_desc(min by (ip) (min_over_time(wan_ip_time_seconds[30d])))",
+          "format": "table",
+          "instant": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Homelab WAN IPs seen in the last 30 days",
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "__name__": true,
+              "container": true,
+              "endpoint": true,
+              "instance": true,
+              "job": true,
+              "namespace": true,
+              "node": true,
+              "pod": true,
+              "service": true
+            },
+            "includeByName": {},
+            "indexByName": {
+              "Time": 0,
+              "Value": 2,
+              "ip": 1
+            },
+            "orderBy": [],
+            "orderByMode": "manual",
+            "renameByName": {
+              "Value": "first_seen_s"
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "alias": "first_seen",
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "first_seen_s"
+                }
+              },
+              "operator": "*",
+              "right": {
+                "fixed": "1000"
+              }
+            },
+            "mode": "binary",
+            "reduce": {
+              "reducer": "sum"
+            },
+            "replaceFields": false
+          }
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "first_seen_s": true
+            },
+            "includeByName": {},
+            "indexByName": {
+              "first_seen": 1,
+              "ip": 0
+            },
+            "renameByName": {}
+          }
+        }
+      ],
+      "transparent": true,
+      "type": "table"
+    }
+  ],
+  "preload": false,
+  "refresh": "30m",
+  "schemaVersion": 42,
+  "tags": ["networking", "wan"],
+  "templating": {
+    "list": [
+      {
+        "current": {
+          "text": "Prometheus",
+          "value": "prometheus"
+        },
+        "name": "DS_PROMETHEUS",
+        "options": [],
+        "query": "prometheus",
+        "refresh": 1,
+        "type": "datasource"
+      }
+    ]
+  },
+  "time": {
+    "from": "now-30d",
+    "to": "now"
+  },
+  "timepicker": {
+    "refresh_intervals": ["30m", "1h", "6h", "1d"]
+  },
+  "timezone": "browser",
+  "title": "Homelab WAN IPs",
+  "uid": "wan-ips",
+  "version": 1
+}

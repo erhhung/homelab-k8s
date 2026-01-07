@@ -22,7 +22,7 @@
     # source configs for Prometheus and Alertmanager
     - name: Get CA certificates from PKI
       ansible.builtin.include_tasks: tasks/pki/cacerts.yml
-      when: ca_certificates is not defined
+      when: ca_certificates is undefined
 
     - name: Hash monitoring user passwords
       vars:
@@ -241,7 +241,7 @@
 - name: Configure monitoring applications
   tags: configure
   hosts: localhost
-  vars_files:
+  vars_files: &vars_files
     - vars/monitoring.yml
   tasks:
     - name: Customize Grafana user settings
@@ -250,3 +250,33 @@
         password: "{{ grafana_admin_pass }}"
         settings: "{{ grafana_admin_settings }}"
       ansible.builtin.include_tasks: tasks/grafana/settings.yml
+
+- name: Configure monitoring dashboards
+  tags: dashboards
+  hosts: localhost
+  vars_files: *vars_files
+  pre_tasks:
+    - name: Clear private_dashboards
+      ansible.builtin.set_fact:
+        private_dashboards: []
+
+    # list of {title,json} dicts only
+    - name: Add to private_dashboards
+      vars:
+        dashboards: "{{ query('ansible.builtin.fileglob',
+          template_dir ~ '/grafana/dashboards/*.json*') }}"
+        filter: ansible.builtin.{{ 'template' if item |
+          ansible.builtin.splitext == '.j2' else 'file' }}
+        json: "{{  lookup(filter, item) }}"
+        dashboard: "{{ json | from_json }}"
+      ansible.builtin.set_fact:
+        private_dashboards: "{{ private_dashboards +
+          [{'title': dashboard.title, 'json': json}] }}"
+      loop: "{{ dashboards }}"
+      loop_control:
+        label: "{{ item | ansible.builtin.basename }}"
+  tasks:
+    - name: Import Grafana dashboards
+      vars:
+        dashboards: "{{ private_dashboards }}"
+      ansible.builtin.include_tasks: tasks/grafana/dashboards.yml

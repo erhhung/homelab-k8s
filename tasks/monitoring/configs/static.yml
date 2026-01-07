@@ -18,7 +18,7 @@
       ansible.builtin.set_fact:
         # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/template_lookup.html
         static_scrape_configs: "{{ static_scrape_configs +
-          lookup('ansible.builtin.template', _item) | from_yaml }}"
+          [lookup('ansible.builtin.template', _item) | from_yaml] }}"
       loop: "{{ _configs }}"
       loop_control:
         loop_var: _item

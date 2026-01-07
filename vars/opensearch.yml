@@ -274,6 +274,7 @@ opensearch_chart_values:
     # https://docs.opensearch.org/docs/latest/security/configuration/generate-certificates#optional-generate-node-and-client-certificates
     - name: chmod-tls
       image: busybox
+      imagePullPolicy: IfNotPresent
       command: ["sh"]
       args:
         - -c
