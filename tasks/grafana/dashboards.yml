@@ -1,14 +1,15 @@
-# import one or more Grafana dashboards from
-# https://grafana.com/grafana/dashboards/ by
-# their IDs (gnetId)
+# import one or more Grafana dashboards by JSON or by
+# gnetId from https://grafana.com/grafana/dashboards/
 #
 # pass the following vars:
-#   dashboards  <required> dashboard list
+#   dashboards: <required> dashboard list
 #     - title   <required> official title
-#       gnet_id <required> dashboard ID
+#       json    [optional] dashboard JSON (mutually
+#                exclusive with gnet_id and filter)
+#       gnet_id [required] grafana.com dashboard ID
 #       filter  [optional] filter by description
 #       ds_var  [optional] default=DS_PROMETHEUS
-#       inputs  [optional] extra variables
+#       inputs: [optional] extra variables
 #         - name
 #           type
 #           value
@@ -23,20 +24,17 @@
 #
 # IMPORTANT: if jq_patches are provided, it's
 # imperative that each query (executed as-is)
-# return the document root
-#
-# TODO: detect revision change due to change in
-# description filter and reimport the dashboard
+# returns the document root
 ---
 - name: Gather facts about controller
   # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
   ansible.builtin.include_tasks: tasks/localfacts.yml
-  when: local_python_interpreter is not defined
+  when: local_python_interpreter is undefined
 
 - name: Include vars/monitoring.yml
   # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_vars_module.html
   ansible.builtin.include_vars: vars/monitoring.yml
-  when: grafana_url is not defined
+  when: grafana_url is undefined
 
 - name: Import Grafana dashboards
   delegate_to: localhost
@@ -60,96 +58,132 @@
       retries: 5
       delay: 2
 
-    # https://istio.io/latest/docs/ops/integrations/grafana#option-2-import-from-grafanacom-into-an-existing-deployment
     - name: Import Grafana dashboard
       vars:
         existing: "{{ existing_dashboards.json | map(attribute='title') }}"
-        patches: "{{ item.jq_patches | default([]) }}"
         api_auth: "{{ admin_user }}:'{{ admin_pass }}'"
-      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/shell_module.html
-      ansible.builtin.shell: |
-        set -eo pipefail
+      block:
+        - name: Import dashboard by JSON
+          vars: &vars
+            patches: "{{ item.jq_patches | default([]) }}"
+            script1: |-
+              json="$(jq 'del(.id) | .title = "{{ item.title }}"' <<< "$json")"
 
-        revs_url="https://grafana.com/api/dashboards/{{ item.gnet_id }}/revisions"
-        retry_opts=(--retry 5 --retry-delay 2)
+              tags='{{ item.tags | default(tags | default([])) |
+                                   to_json(separators=[',',':']) }}'
+              [ "$tags" == "[]" ] || json="$(jq ".tags += $tags" <<< "$json")"
+              json="$(jq   '.tags |= map(ascii_downcase)'        <<< "$json")"
 
-        # find latest revision that matches filter
-        filter='{{ item.filter | default(filter | default('')) }}'
-        [ "$filter" ] && \
-            filter="| select(.description | contains(\"$filter\"))"
+              {% if patches is truthy  %}
+              {%   for expr in patches %}
+              patch_{{ loop.index }}="$(cat <<'EOT'
+              {{ expr }}
+              EOT
+              )"
+              {%   endfor %}
+              for i in $(seq {{ patches | length }}); do
+                echo "Applying patch $i/{{ patches | length }}..."
+                patch_var="patch_$i"
+                json="$(jq "${!patch_var}" <<< "$json")"
+              done
 
-        rev=$(curl -sfL "$revs_url" | \
-          jq -r  "[.items[] $filter | .revision] | max")
-        desc="revision $rev of {{ item.title }} ({{ item.gnet_id }})"
+              {% endif %}
+              ds_var='{{ item.ds_var | default(ds_var | default('DS_PROMETHEUS')) }}'
+              inputs='{{ item.inputs | default(inputs | default([])) |
+                                       to_json(separators=[',',':']) }}'
+              inputs="$(jq  --argjson inputs "$inputs" '. + $inputs' <<JSON
+              [{
+                "name":     "$ds_var",
+                "type":     "datasource",
+                "pluginId": "prometheus",
+                "value":    "Prometheus"
+              }]
+              JSON
+              )"
+            script2: |-
+              jq -cM <<JSON | \
+                curl -X POST  -fku {{ api_auth }} -m 60  \
+                     -H 'Content-Type: application/json' \
+                  --no-progress-meter "${retry_opts[@]}" \
+                  {{ api_base }}/dashboards/import -d @- | jq
+              {
+                "folderUid": "",
+                "overwrite": true,
+                "dashboard": $json,
+                "inputs":    $inputs
+              }
+              JSON
+          # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/shell_module.html
+          ansible.builtin.shell: |
+            set -eo pipefail
 
-        echo "Downloading $desc..."
-        echo "URL: $revs_url/$rev/download"
-        json="$(curl -fsSL "${retry_opts[@]}" "$revs_url/$rev/download")"
-        json="$(jq 'del(.id) | .title = "{{ item.title }}"' <<< "$json")"
+            json="$(cat <<'JSON'
+            {{ item.json }}
+            JSON
+            )"
+            {{ script1 }}
 
-        tags='{{ item.tags | default(tags | default([])) | to_json(separators=[',',':']) }}'
-        [ "$tags" == "[]" ] || json="$(jq ".tags += $tags" <<< "$json")"
-        json="$(jq '.tags |= map(ascii_downcase)' <<< "$json")"
+            echo "Importing {{ item.title }}..."
+            {{ script2 }}
+          args:
+            executable: /bin/bash
+          loop: "{{ dashboards | selectattr('json', 'defined') }}"
+          loop_control:
+            label: "{{ item.title }}"
+          when: item.title not in existing
+          register: import_by_json
+          changed_when: import_by_json.rc == 0
+          failed_when: >-
+            import_by_json.rc not in [0,9] or
+            import_by_json.stdout is search('failed')
+          retries: 3
+          delay: 5
 
-        {% if patches is truthy  %}
-        {%   for expr in patches %}
-        patch_{{ loop.index }}="$(cat <<'EOT'
-        {{ expr }}
-        EOT
-        )"
-        {%   endfor %}
-        for i in $(seq {{ patches | length }}); do
-          echo "Applying patch $i/{{ patches | length }}..."
-          patch_var="patch_$i"
-          json="$(jq "${!patch_var}" <<< "$json")"
-        done
+        # https://istio.io/latest/docs/ops/integrations/grafana#option-2-import-from-grafanacom-into-an-existing-deployment
+        - name: Import dashboard by gnetId
+          vars: *vars
+          ansible.builtin.shell: |
+            set -eo pipefail
 
-        {% endif %}
-        ds_var='{{ item.ds_var | default(ds_var | default('DS_PROMETHEUS')) }}'
-        inputs='{{ item.inputs | default(inputs | default([])) | to_json(separators=[',',':']) }}'
-        inputs="$(jq --argjson  inputs "$inputs" '. + $inputs' <<EOT
-        [{
-          "name":     "$ds_var",
-          "type":     "datasource",
-          "pluginId": "prometheus",
-          "value":    "Prometheus"
-        }]
-        EOT
-        )"
+            revs_url="https://grafana.com/api/dashboards/{{ item.gnet_id }}/revisions"
+            retry_opts=(--retry 5 --retry-delay 2)
 
-        TMP_DIR="/tmp/grafana"
-        mkdir -p "$TMP_DIR"
+            # find latest revision that matches filter
+            filter='{{ item.filter | default(filter | default('')) }}'
+            [ "$filter" ] && \
+                filter="| select(.description | contains(\"$filter\"))"
 
-        file="$TMP_DIR/{{ item.gnet_id }}-$rev"
-        echo "$revs_url/$rev/download" > "$file-dashboard.url"
-        echo "$json"                   > "$file-dashboard.json"
-        echo "$inputs"                 > "$file-inputs.json"
+            rev=$(curl -sfL "$revs_url" | \
+              jq -r  "[.items[] $filter | .revision] | max")
+            desc="revision $rev of {{ item.title }} ({{ item.gnet_id }})"
 
-        echo "Importing $desc..."
-        jq -cM <<EOT | \
-          curl -X POST -fku {{ api_auth }} -m 60   \
-               -H 'Content-Type: application/json' \
-            --no-progress-meter "${retry_opts[@]}" \
-            {{ api_base }}/dashboards/import -d @- | jq
-        {
-          "folderUid": "",
-          "overwrite": true,
-          "dashboard": $json,
-          "inputs":    $inputs
-        }
-        EOT
+            echo "Downloading $desc..."
+            echo "URL: $revs_url/$rev/download"
+            json="$(curl -fsSL "${retry_opts[@]}" "$revs_url/$rev/download")"
+            {{ script1 }}
 
-        rm -f $file-*
-      args:
-        executable: /bin/bash
-      loop: "{{ dashboards }}"
-      loop_control:
-        label: "{{ item.title }}"
-      when: item.title not in existing
-      register: import_dashboard
-      changed_when: import_dashboard.rc == 0
-      failed_when: >-
-        import_dashboard.rc not in [0,9] or
-        import_dashboard.stdout is search('failed')
-      retries: 3
-      delay: 5
+            TMP_DIR=/tmp/grafana
+            mkdir -p "$TMP_DIR"
+
+            file="$TMP_DIR/{{ item.gnet_id }}-$rev"
+            echo "$revs_url/$rev/download" > "$file-dashboard.url"
+            echo "$json"                   > "$file-dashboard.json"
+            echo "$inputs"                 > "$file-inputs.json"
+
+            echo "Importing $desc..."
+            {{ script2 }}
+
+            rm -f $file-*
+          args:
+            executable: /bin/bash
+          loop: "{{ dashboards | selectattr('json', 'undefined') }}"
+          loop_control:
+            label: "{{ item.title }}"
+          when: item.title not in existing
+          register: import_by_gnetid
+          changed_when: import_by_gnetid.rc == 0
+          failed_when: >-
+            import_by_gnetid.rc not in [0,9] or
+            import_by_gnetid.stdout is search('failed')
+          retries: 3
+          delay: 5
