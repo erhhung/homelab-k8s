@@ -24,11 +24,11 @@
     - name: Get the PostgreSQL image used
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
       ansible.builtin.include_tasks: tasks/postgresql/image.yml
-      when: postgresql_image is not defined
+      when: postgresql_image is undefined
 
     - name: Get CA certificates from PKI
       ansible.builtin.include_tasks: tasks/pki/cacerts.yml
-      when: ca_certificates is not defined
+      when: ca_certificates is undefined
 
     - name: Get current runner replicas
       # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_info_module.html

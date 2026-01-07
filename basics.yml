@@ -315,7 +315,7 @@
   pre_tasks:
     - name: Get CA certificates from PKI
       ansible.builtin.include_tasks: tasks/pki/cacerts.yml
-      when: ca_certificates is not defined
+      when: ca_certificates is undefined
   tasks:
     - name: Add certs to trust store
       ansible.builtin.copy:

@@ -28,7 +28,7 @@
 
     - name: Is the monitoring stack ready?
       ansible.builtin.include_tasks: tasks/monitoring/stackready.yml
-      when: monitoring_stack_ready is not defined
+      when: monitoring_stack_ready is undefined
 
     - name: Is OpenSearch already running?
       # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_info_module.html
@@ -180,7 +180,7 @@
   pre_tasks:
     - name: Is the monitoring stack ready?
       ansible.builtin.include_tasks: tasks/monitoring/stackready.yml
-      when: monitoring_stack_ready is not defined
+      when: monitoring_stack_ready is undefined
   tasks:
     - name: Create Dashboards ingress secret
       vars:

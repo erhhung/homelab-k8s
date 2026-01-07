@@ -63,7 +63,7 @@
 
     - name: Get the PostgreSQL image used
       ansible.builtin.include_tasks: tasks/postgresql/image.yml
-      when: postgresql_image is not defined
+      when: postgresql_image is undefined
   tasks:
     - name: Create Flowise ingress secret
       vars:

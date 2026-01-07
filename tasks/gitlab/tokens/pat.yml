@@ -17,16 +17,16 @@
   # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/setup_module.html
   ansible.builtin.setup:
     gather_subset: date_time
-  when: ansible_date_time is not defined
+  when: ansible_date_time is undefined
 
 - name: Gather facts about controller
   # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
   ansible.builtin.include_tasks: tasks/localfacts.yml
-  when: local_python_interpreter is not defined
+  when: local_python_interpreter is undefined
 
 - name: Include vars/gitlab.yml
   ansible.builtin.include_vars: vars/gitlab.yml
-  when: gitlab_http_url is not defined
+  when: gitlab_http_url is undefined
 
 - name: Verify, rotate, or create PAT
   delegate_to: localhost
@@ -62,7 +62,7 @@
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/set_fact_module.html
       ansible.builtin.set_fact:
         needs_create: >-
-          {{ existing_pat.status is not defined or
+          {{ existing_pat.status is undefined or
              existing_pat.status == 401 }}
         needs_rotate: >-
           {{ existing_pat.status          is defined and

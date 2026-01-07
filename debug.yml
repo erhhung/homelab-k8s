@@ -511,7 +511,7 @@
           # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/setup_module.html
           ansible.builtin.setup:
             gather_subset: date_time
-          when: ansible_date_time is not defined
+          when: ansible_date_time is undefined
 
         - name: Get days until expiration
           vars:
@@ -532,6 +532,17 @@
   tags: filters
   hosts: localhost
   tasks:
+    - name: Test splitext filter
+      vars:
+        files:
+          - /path/to/config.yaml
+          # gets .gz not .tar.gz
+          - /path/to/file.tar.gz
+        # https://docs.ansible.com/projects/ansible/latest/collections/ansible/builtin/splitext_filter.html
+        exts: "{{ files | map('ansible.builtin.splitext') }}"
+      ansible.builtin.debug:
+        var: exts
+
     - name: Test from_yaml_all filter
       vars:
         enabled: true

@@ -13,7 +13,7 @@
 - name: Include vars/postgresql.yml
   # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_vars_module.html
   ansible.builtin.include_vars: vars/postgresql.yml
-  when: postgresql_secrets is not defined
+  when: postgresql_secrets is undefined
 
 - name: Create database superuser secret
   vars:

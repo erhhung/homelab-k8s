@@ -21,7 +21,7 @@
     - name: Is the monitoring stack ready?
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
       ansible.builtin.include_tasks: tasks/monitoring/stackready.yml
-      when: monitoring_stack_ready is not defined
+      when: monitoring_stack_ready is undefined
   tasks:
     - name: Install cert-manager Helm chart
       vars:
@@ -74,11 +74,11 @@
   pre_tasks:
     - name: Gather facts about controller
       ansible.builtin.include_tasks: tasks/localfacts.yml
-      when: local_python_interpreter is not defined
+      when: local_python_interpreter is undefined
 
     - name: Get CA certificates from PKI
       ansible.builtin.include_tasks: tasks/pki/cacerts.yml
-      when: ca_certificates is not defined
+      when: ca_certificates is undefined
 
     - name: Get Step CA provisioner info
       delegate_to: localhost

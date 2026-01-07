@@ -4,7 +4,7 @@
 - name: Gather facts about controller
   # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
   ansible.builtin.include_tasks: tasks/localfacts.yml
-  when: local_python_interpreter is not defined
+  when: local_python_interpreter is undefined
 
 - name: Delete vCluster "{{ vcluster.name }}"
   become: false
@@ -59,8 +59,8 @@
 
     - name: Continue with deletion
       when: >-
-        confirm.user_input is not defined or
-        confirm.user_input | lower == 'y'
+        confirm.user_input is undefined or
+        confirm.user_input  | lower == 'y'
       vars:
         # required kubernetes>=24.2 package only in user virtualenv
         ansible_python_interpreter: "{{ venv_python_interpreter }}"
@@ -80,8 +80,8 @@
           # during handling of Helm install failure, atomic
           # install will have already deleted all resources
           when: >-
-            helm_install is not defined or
-            helm_install.status.name != vcluster.name
+            helm_install is undefined or
+            helm_install.status.name  != vcluster.name
           register: helm_uninstall
 
         - name: Delete namespace "vcluster-{{ vcluster.name }}"

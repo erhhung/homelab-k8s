@@ -14,7 +14,7 @@
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/set_fact_module.html
       ansible.builtin.set_fact:
         knowledge_files: []
-      when: cur_page is not defined
+      when: cur_page is undefined
 
     # API currently returns up to 30 files per page
     - name: Get knowledge files page {{ next_page }}

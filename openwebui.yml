@@ -53,7 +53,7 @@
     - name: Get the PostgreSQL image used
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
       ansible.builtin.include_tasks: tasks/postgresql/image.yml
-      when: postgresql_image is not defined
+      when: postgresql_image is undefined
   tasks:
     - name: Create Open WebUI ingress secret
       vars:
@@ -469,7 +469,7 @@
         do_upload: "{{ playbooks == ['openwebui'] and 'knowledge' in ansible_run_tags }}"
       # this var can be set directly on
       # the command line to skip upload
-      when: do_upload is not defined
+      when: do_upload is undefined
 
     - name: Prepare for file uploads
       when: do_upload
@@ -543,7 +543,7 @@
       # this allows forcing the next task
       # to run if this var is set to true
       # directly on the command line
-      when: files_changed is not defined
+      when: files_changed is undefined
 
     # not sure if this step is needed so that the custom model,
     # which was created initially with an empty knowledge, gets

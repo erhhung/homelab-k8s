@@ -16,7 +16,7 @@
 - name: Include vars/wave.yml
   # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_vars_module.html
   ansible.builtin.include_vars: vars/wave.yml
-  when: wave_optin_annotation is not defined
+  when: wave_optin_annotation is undefined
 
 - name: Opt-in to Wave monitoring
   become: false
