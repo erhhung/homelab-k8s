@@ -21,7 +21,7 @@
     - name: Is the monitoring stack ready?
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
       ansible.builtin.include_tasks: tasks/monitoring/stackready.yml
-      when: monitoring_stack_ready is not defined
+      when: monitoring_stack_ready is undefined
   tasks:
     - name: Create Fluent credentials secret
       vars:

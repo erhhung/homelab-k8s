@@ -182,11 +182,11 @@
   pre_tasks:
     - name: Get CA certificates from PKI
       ansible.builtin.include_tasks: tasks/pki/cacerts.yml
-      when: ca_certificates is not defined
+      when: ca_certificates is undefined
 
     - name: Is the monitoring stack ready?
       ansible.builtin.include_tasks: tasks/monitoring/stackready.yml
-      when: monitoring_stack_ready is not defined
+      when: monitoring_stack_ready is undefined
 
     - name: Does RecurringJob CRD exist?
       kubernetes.core.k8s_info:

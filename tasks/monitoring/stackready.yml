@@ -12,7 +12,7 @@
 - name: Include vars/monitoring.yml
   # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_vars_module.html
   ansible.builtin.include_vars: vars/monitoring.yml
-  when: grafana_url is not defined
+  when: grafana_url is undefined
 
 - name: Is the monitoring stack ready?
   become: false

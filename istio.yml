@@ -131,7 +131,7 @@
   pre_tasks:
     - name: Get CA certificates from PKI
       ansible.builtin.include_tasks: tasks/pki/cacerts.yml
-      when: ca_certificates is not defined
+      when: ca_certificates is undefined
   tasks:
     # NOTE: this Helm install cannot adopt resources
     # created after because those are in istio-system

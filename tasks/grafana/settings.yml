@@ -11,12 +11,12 @@
 - name: Gather facts about controller
   # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
   ansible.builtin.include_tasks: tasks/localfacts.yml
-  when: local_python_interpreter is not defined
+  when: local_python_interpreter is undefined
 
 - name: Include vars/monitoring.yml
   # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_vars_module.html
   ansible.builtin.include_vars: vars/monitoring.yml
-  when: grafana_url is not defined
+  when: grafana_url is undefined
 
 - name: Apply Grafana user settings
   delegate_to: localhost

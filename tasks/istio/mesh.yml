@@ -14,7 +14,7 @@
 - name: Service mesh CRDs installed?
   # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
   ansible.builtin.include_tasks: tasks/istio/crds.yml
-  when: service_mesh_crds_installed is not defined
+  when: service_mesh_crds_installed is undefined
 
 - name: >-
     {{ 'Enable' if istio_enabled else 'Disable' }}

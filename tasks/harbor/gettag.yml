@@ -12,11 +12,11 @@
 - name: Gather facts about controller
   # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
   ansible.builtin.include_tasks: tasks/localfacts.yml
-  when: local_python_interpreter is not defined
+  when: local_python_interpreter is undefined
 
 - name: Include vars/harbor.yml
   ansible.builtin.include_vars: vars/harbor.yml
-  when: harbor_url is not defined
+  when: harbor_url is undefined
 
 - name: List tags in repository
   delegate_to: localhost
@@ -59,7 +59,7 @@
   ansible.builtin.set_fact:
     repo_tag_found: >-
       {{  verify_tag  if  verified else
-         repo_tags[0] if (verify_tag is not defined or
-                          verify_tag        == omit or
-                          verify_tag is not truthy) and
-                          repo_tags  is     truthy  else '' }}
+         repo_tags[0] if (verify_tag is undefined or
+                          verify_tag == omit      or
+                          verify_tag is falsy)   and
+                          repo_tags  is truthy  else '' }}

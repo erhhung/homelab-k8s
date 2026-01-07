@@ -12,7 +12,7 @@
 - name: Include vars/monitoring.yml
   # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_vars_module.html
   ansible.builtin.include_vars: vars/monitoring.yml
-  when: monitoring_secrets is not defined
+  when: monitoring_secrets is undefined
 
 - name: Create monitoring scraper secret
   vars:

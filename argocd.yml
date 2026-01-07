@@ -77,7 +77,7 @@
 
     - name: Get CA certificates from PKI
       ansible.builtin.include_tasks: tasks/pki/cacerts.yml
-      when: ca_certificates is not defined
+      when: ca_certificates is undefined
 
     # get https:// Git credentials found in argocd-repo-creds-*
     # Secrets (argocd_chart_values.configs.credentialTemplates)
