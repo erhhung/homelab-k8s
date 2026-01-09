@@ -1,0 +1,182 @@
+# VS Code thinks "buildkite.yml" is Buildkite configuration,
+# so explicitly set schema from https://www.schemastore.org:
+# yaml-language-server: $schema=https://raw.githubusercontent.com/ansible/ansible-lint/main/src/ansiblelint/schemas/ansible.json
+
+# https://buildkite.com/docs/agent/v3
+# https://buildkite.com/docs/agent/v3/agent-stack-k8s
+# https://buildkite.com/docs/agent/v3/agent-stack-k8s/installation
+---
+- name: Install Buildkite Agent for K8s
+  tags: install
+  hosts: "{{ rke_control_plane_host }}"
+  vars_files:
+    - vars/kubernetes.yml
+    - vars/gitlab.yml
+    - vars/harbor.yml
+    - vars/monitoring.yml
+    - vars/buildkite.yml
+  vars:
+    # required kubernetes>=24.2 package only in user virtualenv
+    ansible_python_interpreter: "{{ venv_python_interpreter }}"
+    kubeconfig: "{{ rke_kubeconfig }}"
+    secret_ns: "{{ buildkite_namespace }}"
+    create_ns: false
+  pre_tasks:
+    - name: Get CA certificates from PKI
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
+      ansible.builtin.include_tasks: tasks/pki/cacerts.yml
+      when: ca_certificates is undefined
+
+    - name: Get GitLab shell known hosts
+      vars:
+        ssh_host: "{{ gitlab_fqdns['gitlab'] }}"
+        ssh_port: "{{ gitlab_shell_port }}"
+      ansible.builtin.include_tasks: tasks/hosts/knownhosts.yml
+      # sets known_hosts fact
+
+    - name: Set gitlab_known_hosts fact
+      vars:
+        # since we're using non-standard SSH port, first field is [host]:port
+        # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/regex_replace_filter.html
+        svc_hosts: "{{ known_hosts | map('regex_replace', '^[^:]+', '['~ gitlab_shell_host ~']') }}"
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/set_fact_module.html
+      ansible.builtin.set_fact:
+        # contains entries for both external and in-cluster FQDNs
+        gitlab_known_hosts: "{{ (known_hosts + svc_hosts) | join('\n') }}"
+
+    - name: Get GitLab PAT if it exists
+      # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_info_module.html
+      kubernetes.core.k8s_info:
+        kubeconfig: "{{ kubeconfig }}"
+        api_version: v1
+        kind: Secret
+        name: "{{ buildkite_secrets['git-creds'] }}"
+        namespace: "{{ secret_ns }}"
+      register: git_creds
+  tasks:
+    - name: Create CA certificates secret
+      vars:
+        ca_prefix: "{{ homelab_domain.split('.')[0] }}_"
+        create_ns: true
+        secret_name: "{{ buildkite_secrets['ca-certs'] }}"
+        secret_data: "{{ {
+          ca_prefix ~'intermediate_ca.crt': ca_certificates[0],
+          ca_prefix ~'root_ca.crt':         ca_certificates[1],
+          } }}"
+      ansible.builtin.include_tasks: tasks/k8s/secrets/generic.yml
+
+    - name: Create SSH credentials secret
+      vars:
+        secret_name: "{{ buildkite_secrets['ssh-creds'] }}"
+        secret_data:
+          # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/unvault_lookup.html
+          erhhung.pem: "{{ lookup('ansible.builtin.unvault', 'files/erhhung/erhhung.pem') }}"
+          known_hosts: "{{ gitlab_known_hosts ~'\n' }}"
+          config: |
+            Host *
+              StrictHostKeyChecking yes
+              IdentitiesOnly        yes
+              IdentityFile ~/.ssh/erhhung.pem
+              User git
+            Host {{ gitlab_fqdns['gitlab'] }} {{ gitlab_shell_host }}
+              Port {{ gitlab_shell_port }}
+      ansible.builtin.include_tasks: tasks/k8s/secrets/generic.yml
+
+    - name: Verify/rotate/create GitLab PAT
+      vars:
+        token: "{{
+          git_creds.resources[0].data['.git-credentials'] | b64decode |
+          replace('\n','') | regex_replace('^.+:(glpat-.+?)@.+$','\\1')
+          if git_creds.resources is truthy else none }}"
+        pat_name: buildkite
+        pat_owner: "{{ user_erhhung.username }}"
+        scopes:
+          # https://docs.gitlab.com/user/profile/personal_access_tokens#personal-access-token-scopes
+          - read_repository
+          - self_rotate
+        fact_name: buildkite_gitlab_pat
+      ansible.builtin.include_tasks: tasks/gitlab/tokens/pat.yml
+
+    # https://git-scm.com/docs/git-credential-store
+    - name: Create .git-credentials secret
+      vars:
+        gitlab_creds: "{{ user_erhhung.username }}:{{ buildkite_gitlab_pat }}"
+        secret_name: "{{ buildkite_secrets['git-creds'] }}"
+        secret_data:
+          # https://git-scm.com/docs/git-credential-store#_storage_format
+          .git-credentials: |
+            https://erhhung:{{ github_access_token }}@github.com/erhhung/
+            https://{{ gitlab_creds }}@{{ gitlab_fqdns['gitlab'] }}
+            https://{{ gitlab_creds }}@{{ gitlab_service_host }}:{{ gitlab_service_port }}
+      ansible.builtin.include_tasks: tasks/k8s/secrets/generic.yml
+
+    - name: Create pipeline env vars secret
+      vars:
+        ci_reg_path: "{{ harbor_container_registry }}/{{ harbor_default_project }}"
+        secret_name: "{{ buildkite_secrets['env-vars'] }}"
+        secret_data:
+          # https://github.com/erhhung/al2023-devops
+          CI_IMAGE: "{{ ci_reg_path }}/al2023-devops:latest"
+          CI_REGISTRY: "{{ harbor_url }}"
+          CI_REGISTRY_PATH: "{{ ci_reg_path }}"
+          CI_REGISTRY_USER: "{{ buildkite_harbor_user }}"
+          CI_REGISTRY_PASSWORD: "{{ buildkite_harbor_pass }}"
+      ansible.builtin.include_tasks: tasks/k8s/secrets/generic.yml
+
+    - name: Install Buildkite Agent Helm chart
+      vars:
+        monitoring: "{{ buildkite_chart_values.monitoring }}"
+        # deploy extra objects like runner ServiceAccount
+        # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/template_lookup.html
+        extra_objs: "{{ lookup('ansible.builtin.template',
+          template_dir ~ '/buildkite/extras.yaml.j2') }}"
+
+        # === Inputs ===
+        tmpdir_name: buildkite
+        chart_ref: "{{ buildkite_chart_oci_url }}"
+        chart_ver: "{{ buildkite_chart_version }}"
+        release: "{{ buildkite_release_name }}"
+        release_ns: "{{ buildkite_namespace }}"
+        values: "{{ buildkite_chart_values }}"
+
+        patches:
+          json_patches:
+            # the Helm chart is lacking common
+            # settings to customize PodMonitor
+            - |
+              {% if monitoring.podMonitor.deploy %}
+              target:
+                group: monitoring.coreos.com
+                version: v1
+                kind: PodMonitor
+                name: "{{ buildkite_release_name }}-podmonitor"
+                namespace: "{{ buildkite_namespace }}"
+              patch:
+                - op: replace
+                  path: /metadata/name
+                  value: "{{ buildkite_release_name }}"
+                - op: add
+                  path: /metadata/labels/release
+                  value: "{{ monitoring_release_name }}"
+              ---
+              {% endif %}
+              {% if monitoring.deployGrafanaDashboard %}
+              target:
+                version: v1
+                kind: ConfigMap
+                name: "{{ buildkite_release_name }}-grafana-dashboard"
+                namespace: "{{ buildkite_namespace }}"
+              patch:
+                - op: replace
+                  path: /metadata/name
+                  value: "{{ buildkite_release_name }}-dashboard"
+              {% endif %}
+
+        extras: # adopt extra resources into Helm release
+          - v1 Secret {{ buildkite_secrets['ca-certs']  }}
+          - v1 Secret {{ buildkite_secrets['ssh-creds'] }}
+          - v1 Secret {{ buildkite_secrets['git-creds'] }}
+          - v1 Secret {{ buildkite_secrets['env-vars']  }}
+          # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/from_yaml_all_filter.html
+          - "{{ extra_objs | from_yaml_all }}"
+      ansible.builtin.include_tasks: tasks/helm/helmfile.yml

@@ -97,8 +97,8 @@ gitlab_integrations:
     service[active]: "true"
     service[url]: "{{ harbor_url }}"
     service[project_name]: "{{ harbor_default_project }}"
-    service[username]: gitlab
-    service[password]: "{{ harbor_admin_pass }}"
+    service[username]: "{{ gitlab_harbor_user }}"
+    service[password]: "{{ gitlab_harbor_pass }}"
 
   slack:
     service[active]: "true"

@@ -110,6 +110,8 @@
   vars_files:
     - vars/kubernetes.yml
     - vars/harbor.yml
+    - vars/gitlab.yml
+    - vars/buildkite.yml
   vars:
     # https://harbor.fourteeners.local/devcenter-api-2.0
     api_base: "{{ harbor_url }}/api/v2.0"

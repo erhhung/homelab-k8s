@@ -110,9 +110,11 @@ All cluster services will be provisioned with TLS certificates from Erhhung's pr
     * Install Kiali using the [`kiali-operator`](https://kiali.io/docs/installation/installation-guide/install-with-helm#install-with-operator) Helm chart and `Kiali` CR
 - [X] [HashiCorp Vault](https://github.com/hashicorp/vault) and [External Secrets Operator](https://external-secrets.io/) — secure secrets management and synchronization
     * Install on main RKE cluster using the [`vault`](https://github.com/hashicorp/vault-helm) and [`external-secrets`](https://external-secrets.io/latest/introduction/getting-started#installing-with-helm) Helm charts
-- [X] [GitLab CI/CD Platform](https://gitlab.com/rluna-gitlab/gitlab-ce) — run CI/CD pipelines for local deployments
+- [X] [GitLab CI/CD Platform](https://gitlab.com/rluna-gitlab/gitlab-ce) — Git server with CI/CD pipelines for local deployments
     * Install on main RKE cluster using the [`gitlab`](https://gitlab.com/gitlab-org/charts/gitlab) Helm chart
     * [X] Install [GitLab CI Pipelines Exporter](https://github.com/mvisonneau/gitlab-ci-pipelines-exporter) using the [`gitlab-ci-pipelines-exporter`](https://github.com/mvisonneau/helm-charts/tree/main/charts/gitlab-ci-pipelines-exporter) Helm chart
+- [X] [Buildkite Self-Hosted Agent](https://buildkite.com/docs/agent/v3) — run CI/CD pipelines on `buildkite.com` locally
+    * Install on main RKE cluster using the [`agent-stack-k8s`](https://buildkite.com/docs/agent/v3/agent-stack-k8s) Helm chart
 - [X] [Argo CD Declarative GitOps](https://argo-cd.readthedocs.io/) — manage deployment of personal projects
     * Install on main RKE cluster using the [`argo-cd`](https://github.com/argoproj/argo-helm/tree/main/charts/argo-cd) Helm chart
 - [ ] [Meshery Visual GitOps Platform](https://meshery.io/) — manage infrastructure visually and collaboratively
@@ -187,6 +189,7 @@ ansible-vault view   $VAULTFILE
 | `kiali_oidc_client_secret`        |
 | `gitlab_secrets_data.*`           |
 | `gitlab_omniauth.*`               |
+| `buildkite_agent_token`           |
 | `argocd_signing_key`              |
 | `awx_secret_key`                  |
 | `hass_access_token`               |
@@ -428,52 +431,58 @@ however, all privileged operations using `sudo` will require the password stored
     ```
 </details>
 
-23. <details><summary>Install <strong>Argo CD</strong> GitOps delivery in <em><strong>HA</strong></em> mode</summary><br/>
+23. <details><summary>Install <strong>Buildkite</strong> agent connected to <code>buildkite.com</code></summary><br/>
 
-    23.1. Configure Argo CD to use **Valkey** for caching  
-    23.2. Configure **GitLab** as an allowed SCM provider
+    ```bash
+    ./play.sh buildkite
+    ```
+
+24. <details><summary>Install <strong>Argo CD</strong> GitOps delivery in <em><strong>HA</strong></em> mode</summary><br/>
+
+    24.1. Configure Argo CD to use **Valkey** for caching  
+    24.2. Configure **GitLab** as an allowed SCM provider
 
     ```bash
     ./play.sh argocd
     ```
 </details>
 
-24. <details><summary>Install <strong>Ansible AWX</strong> automation platform</summary><br/>
+25. <details><summary>Install <strong>Ansible AWX</strong> automation platform</summary><br/>
 
-    24.1. Create organization and custom execution environments based on [`al2023-devops`](https://github.com/erhhung/al2023-devops)  
-    24.2. Create credentials for all homelab hosts and access tokens for GitHub and GitLab  
-    24.3. Import this project and [`homelab-xcp`](https://github.com/erhhung/homelab-xcp), and inventories from their `hosts.ini` files
+    25.1. Create organization and custom execution environments based on [`al2023-devops`](https://github.com/erhhung/al2023-devops)  
+    25.2. Create credentials for all homelab hosts and access tokens for GitHub and GitLab  
+    25.3. Import this project and [`homelab-xcp`](https://github.com/erhhung/homelab-xcp), and inventories from their `hosts.ini` files
 
     ```bash
     ./play.sh awx
     ```
 </details>
 
-25. <details><summary>Install <strong>Metacontroller</strong> to create Operators</summary><br/>
+26. <details><summary>Install <strong>Metacontroller</strong> to create Operators</summary><br/>
 
     ```bash
     ./play.sh metacontroller
     ```
 </details>
 
-26. <details><summary>Install <strong>Qdrant</strong> vector database in <em><strong>HA</strong></em> mode</summary><br/>
+27. <details><summary>Install <strong>Qdrant</strong> vector database in <em><strong>HA</strong></em> mode</summary><br/>
 
     ```bash
     ./play.sh qdrant
     ```
 </details>
 
-27. <details><summary>Install <strong>Ollama</strong> LLM server with common models<br/> &nbsp; &nbsp; Install <strong>Open WebUI</strong> AI platform with <strong>Pipelines</strong></summary><br/>
+28. <details><summary>Install <strong>Ollama</strong> LLM server with common models<br/> &nbsp; &nbsp; Install <strong>Open WebUI</strong> AI platform with <strong>Pipelines</strong></summary><br/>
 
-    27.1. Create `Accounts` knowledge base, and then `Accounts` custom model that embeds that KB  
-    27.2. **NOTE**: Populate `Accounts` KB by running `./play.sh openwebui -t knowledge` separately
+    28.1. Create `Accounts` knowledge base, and then `Accounts` custom model that embeds that KB  
+    28.2. **NOTE**: Populate `Accounts` KB by running `./play.sh openwebui -t knowledge` separately
 
     ```bash
     ./play.sh ollama openwebui
     ```
 </details>
 
-28. <details><summary>Install <strong>Flowise</strong> AI platform and integrations</summary><br/>
+29. <details><summary>Install <strong>Flowise</strong> AI platform and integrations</summary><br/>
 
     Current deployment uses local images in Harbor registry that were built by GitLab CI.
 

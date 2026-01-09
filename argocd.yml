@@ -79,30 +79,6 @@
       ansible.builtin.include_tasks: tasks/pki/cacerts.yml
       when: ca_certificates is undefined
 
-    # get https:// Git credentials found in argocd-repo-creds-*
-    # Secrets (argocd_chart_values.configs.credentialTemplates)
-    # (this will return empty if Argo CD hasn't been installed)
-    - name: Get .git-credentials content
-      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/shell_module.html
-      ansible.builtin.shell: |
-        # run Bash and source /etc/profile.d
-        # scripts so that kubectl is in PATH
-        exec /bin/bash -l <<'EOT'
-        set -o pipefail
-
-        # https://git-scm.com/docs/git-credential-store#_storage_format
-        kubectl get secrets -n {{ argocd_namespace }}  \
-          -l argocd.argoproj.io/secret-type=repo-creds \
-          -o json | jq -r '.items[].data     |
-          (.url       | @base64d) as $url    |
-          select($url | startswith("https")) |
-          (.username  | @base64d) as $user   |
-          (.password  | @base64d) as $pass   |
-          $url | gsub("://"; "://\($user):\($pass)@")'
-        EOT
-      register: git_creds
-      changed_when: false
-
     - name: Get GitLab shell known hosts
       vars:
         ssh_host: "{{ gitlab_fqdns['gitlab'] }}"
@@ -196,22 +172,6 @@
       loop_control:
         index_var: i
 
-    # https://git-scm.com/docs/git-credential-store
-    - name: Create Git creds secret for CMP
-      vars:
-        secret_name: "{{ argocd_secrets['git-creds'] }}"
-        secret_data:
-          .git-credentials: "{{ git_creds.stdout }}"
-      ansible.builtin.include_tasks: tasks/k8s/secrets/generic.yml
-
-    # https://github.com/getsops/sops#encrypting-using-age
-    - name: Create age keys secret for SOPS
-      vars:
-        secret_name: "{{ argocd_secrets['age-keys'] }}"
-        secret_data:
-          keys.txt: "{{ age_secret_key }}"
-      ansible.builtin.include_tasks: tasks/k8s/secrets/generic.yml
-
     - name: Verify/rotate/create GitLab PAT
       vars:
         token: >-
@@ -225,6 +185,27 @@
           - self_rotate
         fact_name: argocd_gitlab_pat
       ansible.builtin.include_tasks: tasks/gitlab/tokens/pat.yml
+
+    # https://git-scm.com/docs/git-credential-store
+    - name: Create Git creds secret for CMP
+      vars:
+        gitlab_creds: "{{ user_erhhung.username }}:{{ argocd_gitlab_pat }}"
+        secret_name: "{{ argocd_secrets['git-creds'] }}"
+        secret_data:
+          # https://git-scm.com/docs/git-credential-store#_storage_format
+          .git-credentials: |
+            https://erhhung:{{ github_access_token }}@github.com/erhhung/
+            https://{{ gitlab_creds }}@{{ gitlab_fqdns['gitlab'] }}
+            https://{{ gitlab_creds }}@{{ gitlab_service_host }}:{{ gitlab_service_port }}
+      ansible.builtin.include_tasks: tasks/k8s/secrets/generic.yml
+
+    # https://github.com/getsops/sops#encrypting-using-age
+    - name: Create age keys secret for SOPS
+      vars:
+        secret_name: "{{ argocd_secrets['age-keys'] }}"
+        secret_data:
+          keys.txt: "{{ age_secret_key }}"
+      ansible.builtin.include_tasks: tasks/k8s/secrets/generic.yml
 
     - name: Install Argo CD Helm chart
       vars:
@@ -281,6 +262,7 @@
     # https://argo-cd.readthedocs.io/en/stable/cli_installation#download-with-curl
     - name: Install Argo CD CLI tool
       become: true
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/shell_module.html
       ansible.builtin.shell: |
         set -o pipefail
 

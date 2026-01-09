@@ -76,22 +76,25 @@
     values_file: "{{   temp_dir }}/values.yaml"
     helmfile_file: "{{ temp_dir }}/helmfile.yaml"
 
-    post_renderer: "{{ temp_dir }}/post-renderer"
-    post_renderers: "{{ patches.post_renderers | default([]) | flatten }}"
-
     # list item could be dict or list of dicts, or string, in
     # which case it's parsed as possibly empty multi-doc YAML
-    merge_patches: |
-      {% set  patches_ = [] %}
-      {% for  patch in patches.merge_patches | default([]) %}
-      {%   if patch is string %}
+    patchsets: |
+      {% set patchsets = {
+          'merge_patches': [],
+           'json_patches': [],
+           'transformers': [],
+         } %}
+      {% for type in patchsets.keys() %}
+      {%   for patch in patches[type] | default([]) %}
       {#     https://docs.ansible.com/ansible/latest/collections/ansible/builtin/from_yaml_all_filter.html #}
-      {%     set _ = patches_.append(patch | from_yaml_all) %}
-      {%   else %}
-      {%     set _ = patches_.append(patch) %}
-      {%   endif %}
-      {% endfor  %}
-      {{ patches_ | flatten(1) }}
+      {%     set _ = patchsets[type].append(patch | from_yaml_all if patch is string else patch) %}
+      {%   endfor  %}
+      {%   set _ = patchsets.update({type: patchsets[type] | flatten(1)}) %}
+      {% endfor    %}
+      {{ patchsets }}
+
+    post_renderer: "{{ temp_dir }}/post-renderer"
+    post_renderers: "{{ patches.post_renderers | default([]) | flatten }}"
 
     # list item could be dict or list of dicts, or string or
     # list of strings, in which case it's parsed as possibly
@@ -223,9 +226,9 @@
               values: "{{ _values | flatten(1) }}"
 
               # https://helmfile.readthedocs.io/en/latest/advanced-features#adhoc-kustomization-of-helm-charts
-              strategicMergePatches: "{{ merge_patches }}"
-              jsonPatches: "{{    patches.json_patches | default([]) | flatten(1) }}"
-              transformers: "{{   patches.transformers | default([]) | flatten(1) }}"
+              strategicMergePatches: "{{ patchsets['merge_patches'] }}"
+              jsonPatches: "{{           patchsets[ 'json_patches'] }}"
+              transformers: "{{          patchsets[ 'transformers'] }}"
               postRenderer: "{{ post_renderer if post_renderers is truthy else '' }}"
 
               # related: see `--suppress` added to diffArgs

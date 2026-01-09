@@ -63,16 +63,16 @@ init_certs() {
   }
 
   if [ $(id -u) -eq 0 ]; then
-    local debian_certs="/usr/local/share/ca-certificates"
-    local fedora_certs="/etc/pki/ca-trust/source/anchors"
+    local debian_certs="/usr/local/share/ca-certificates" # Debian/Ubuntu/Alpine
+    local fedora_certs="/etc/pki/ca-trust/source/anchors" # Fedora/CentOS/RHEL
 
     if [ -d $debian_certs ] && \
-      command -v update-ca-certificates &> /dev/null; then # Debian/Ubuntu
+      command -v update-ca-certificates &> /dev/null; then
         cp $ca_cert $debian_certs
         update-ca-certificates
         return
     elif [ -d $fedora_certs ] && \
-      command -v update-ca-trust &> /dev/null; then # Fedora/CentOS/RHEL
+      command -v update-ca-trust &> /dev/null; then
         cp $ca_cert $fedora_certs
         update-ca-trust
         return

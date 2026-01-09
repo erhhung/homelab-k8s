@@ -1,4 +1,5 @@
-# VS Code thinks "cluster.yaml" is RKE cluster configuration, so explicitly set schema:
+# VS Code thinks "cluster.yml" is RKE cluster configuration,
+# so explicitly set schema from https://www.schemastore.org:
 # yaml-language-server: $schema=https://raw.githubusercontent.com/ansible/ansible-lint/main/src/ansiblelint/schemas/ansible.json
 ---
 # https://docs.rke2.io/install/quickstart
