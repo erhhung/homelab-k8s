@@ -1,13 +1,17 @@
-# stable virtual IP addresses reserved for specific LoadBalancer Services.
-# they're specified in the Service's "metallb.universe.tf/loadBalancerIPs"
-# annotation or .spec.loadBalancerIP field, although latter is deprecated.
+# stable virtual IPv4 addresses reserved for specific LoadBalancer Services.
+# they're assigned by each service's `metallb.io/loadBalancerIPs` annotation
+# or by its `.spec.loadBalancerIP` field, although the latter is deprecated.
 
 metallb_vips:
   # use subnet 192.168.4.0/24 which is not "on-link" for
   # clients, so they must route to pfSense. pfSense then
   # responds to ARP requests with advertised ECMP routes
-  start: 192.168.4.222
-  end: 192.168.4.240
+  _manual:
+    start: 192.168.4.222
+    end: 192.168.4.240
+  _auto:
+    start: 192.168.4.242
+    end: 192.168.4.250
 
   ingress: 192.168.4.222
   ingress-pt: 192.168.4.223 # SSL passthrough
@@ -55,9 +59,9 @@ metallb_chart_values:
     # advertise routes to the network via BGP
     enabled: true
 
-    # native BGP implementation (as opposed to FRR) is
-    # lighter weight and adequate for homelab use cases:
-    # https://metallb.universe.tf/concepts/bgp#frr-mode
+    # native BGP implementation (as opposed to FRR)
+    # is lighter weight and adequate for homelab:
+    # https://metallb.io/concepts/bgp#frr-mode
     frr:
       enabled: false
 
@@ -133,26 +137,40 @@ metallb_config_crs:
     kind: BGPPeer
     metadata:
       name: pfsense
+    # https://metallb.io/apis#bgppeerspec
     spec:
-      myASN: 64513              # cluster ASN
-      peerASN: 64512            # pfSense ASN
-      peerAddress: 192.168.0.1  # pfSense RID
+      myASN: 64513 # cluster ASN
+      peerASN: 64512 # pfSense ASN
+      peerAddress: 192.168.0.1 # pfSense RID
+
+  # https://metallb.io/configuration/_advanced_ipaddresspool_configuration
+  - apiVersion: metallb.io/v1beta1
+    kind: IPAddressPool
+    metadata:
+      name: manual-pool
+    # https://metallb.io/apis#ipaddresspoolspec
+    spec:
+      addresses:
+        - "{{ metallb_vips._manual.start }}-{{ metallb_vips._manual.end }}"
+      autoAssign: false # service should define fixed IP in metallb_vips.*
 
   - apiVersion: metallb.io/v1beta1
     kind: IPAddressPool
     metadata:
-      name: cluster-pool
+      name: auto-pool
     spec:
       addresses:
-        - "{{ metallb_vips.start }}-{{ metallb_vips.end }}"
-      # services should define stable IP in metallb_vips.*
-      autoAssign: false
+        - "{{ metallb_vips._auto.start }}-{{ metallb_vips._auto.end }}"
+      autoAssign: true
 
+  # https://metallb.io/configuration/_advanced_bgp_configuration
   - apiVersion: metallb.io/v1beta1
     kind: BGPAdvertisement
     metadata:
       name: cluster-advert
+    # https://metallb.io/apis#bgpadvertisementspec
     spec:
       ipAddressPools:
-        - cluster-pool
+        - manual-pool
+        - auto-pool
       aggregationLength: 32

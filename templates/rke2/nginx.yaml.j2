@@ -127,8 +127,8 @@ spec:
         enableHttps: true
 
         annotations:
-          # replaces deprecated .spec.loadBalancerIP field
-          metallb.universe.tf/loadBalancerIPs: "{{ metallb_vips['ingress'] }}"
+          # replaces to-be-deprecated .spec.loadBalancerIP field
+          metallb.io/loadBalancerIPs: "{{ metallb_vips['ingress'] }}"
 
         # prevent kube-proxy from re-spraying traffic to all
         # nodes since pfSense is already doing that via ECMP

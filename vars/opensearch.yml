@@ -391,8 +391,8 @@ opensearch_chart_values:
           app.kubernetes.io/instance: "{{ opensearch_cluster_name }}"
           app.kubernetes.io/component: "{{ opensearch_master_service }}"
         annotations:
-          # replaces deprecated .spec.loadBalancerIP field
-          metallb.universe.tf/loadBalancerIPs: "{{ metallb_vips['opensearch'] }}"
+          # replaces to-be-deprecated .spec.loadBalancerIP field
+          metallb.io/loadBalancerIPs: "{{ metallb_vips['opensearch'] }}"
       spec:
         type: LoadBalancer
         ports:
