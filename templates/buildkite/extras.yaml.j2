@@ -1,0 +1,21 @@
+# create ServiceAccount with cluster-admin role
+# so Job pods can deploy into other namespaces
+{% set sa_name = buildkite_release_name ~'-runner' %}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ sa_name }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ sa_name }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-admin
+subjects:
+  - kind: ServiceAccount
+    name: {{ sa_name }}
+    namespace: {{ buildkite_namespace }}

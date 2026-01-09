@@ -79,22 +79,6 @@ update-ca-certificates
 )
 EOT
 
-# create Git credential
-# store read-only script
-RUN <<'EOT'
-( set -eux
-
-gcs_sh="/usr/local/bin/git-credential-store-ro"
-cat <<'EOF' > $gcs_sh
-#!/bin/sh
-
-[ "$1" = get ] || exit 0 # ignore store & erase
-exec /usr/lib/git-core/git-credential-store "$@"
-EOF
-chmod +x $gcs_sh
-)
-EOT
-
 # install Helmfile/Kustomize/vals
 RUN <<'EOT'
 ( set -euxo pipefail
@@ -130,7 +114,7 @@ vals version
 )
 EOT
 
-COPY --link *.sh /usr/local/bin/
+COPY --link usrlocalbin/* /usr/local/bin/
 USER argocd
 
 # HELM_BIN is required by helm-git

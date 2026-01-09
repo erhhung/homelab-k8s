@@ -118,6 +118,11 @@
   ansible.builtin.import_playbook: gitlab.yml
   tags: gitlab
 
+# Buildkite depends on GitLab
+- name: Include Buildkite Agent playbook
+  ansible.builtin.import_playbook: buildkite.yml
+  tags: buildkite
+
 # Argo CD depends on Valkey, GitLab, vClusters
 - name: Include Argo CD GitOps tool playbook
   ansible.builtin.import_playbook: argocd.yml

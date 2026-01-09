@@ -1,0 +1,171 @@
+# VS Code thinks "buildkite.yml" is Buildkite configuration,
+# so explicitly set schema from https://www.schemastore.org:
+# yaml-language-server: $schema=https://raw.githubusercontent.com/ansible/ansible-lint/main/src/ansiblelint/schemas/vars.json
+---
+# buildkite_agent_token: {vault.yml}
+
+buildkite_namespace: buildkite
+
+buildkite_secrets:
+  ca-certs: buildkite-ca-certs
+  # contains ~/.ssh/* files like
+  # *.pem, config and known_hosts
+  ssh-creds: buildkite-git-ssh-creds
+  # contains .git-credentials file
+  git-creds: buildkite-git-http-creds
+  # contains env vars like CI_IMAGE
+  env-vars: buildkite-pipeline-env
+
+buildkite_harbor_user: buildkite
+buildkite_harbor_pass: "{{ harbor_admin_pass }}"
+
+# https://buildkite.com/docs/agent/v3/agent-stack-k8s/installation
+buildkite_chart_oci_url: oci://ghcr.io/buildkite/helm/agent-stack-k8s
+# https://github.com/buildkite/agent-stack-k8s
+buildkite_chart_version: "0.36.2"
+buildkite_release_name: agent-stack-k8s
+
+# https://github.com/buildkite/agent-stack-k8s/tree/main/charts/agent-stack-k8s/values.yaml
+buildkite_chart_values:
+  agentToken: "{{ buildkite_agent_token }}"
+
+  config:
+    tags:
+      # self-hosted queue
+      - queue=kubernetes
+
+    # https://buildkite.com/docs/agent/v3/agent-stack-k8s/controller-configuration#flags
+    # default 1s poll interval is
+    # too aggressive for our usage
+    poll-interval: 10s
+    max-in-flight: 2 # max concurrent jobs
+    job-active-deadline-seconds: 7200 # 2h
+    job-ttl: 1h # ttlSecondsAfterFinished
+
+    # https://buildkite.com/docs/agent/v3/agent-stack-k8s/git-credentials#cloning-repositories-using-ssh-keys
+    pod-spec-patch:
+      # schedule on the node that has the
+      # most memory and ephemeral storage
+      affinity:
+        nodeAffinity:
+          # preferredDuringSchedulingIgnoredDuringExecution:
+          #   - weight: 100
+          #     preference:
+          #       matchExpressions:
+          #         - key: node-role.kubernetes.io/runner
+          #           operator: Exists
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  # label defined in vars/kubernetes.yml
+                  - key: node-role.kubernetes.io/runner
+                    operator: Exists
+
+      # service account with cluster admin access is
+      # defined in templates/buildkite/extras.yaml.j2
+      serviceAccountName: "{{ buildkite_release_name }}-runner"
+
+      initContainers:
+        # create ca-bundle.crt file
+        # with our private CA certs
+        - name: ca-bundle
+          image: ghcr.io/buildkite/agent
+          imagePullPolicy: IfNotPresent
+          command: ["sh"]
+          args:
+            - -c
+            - |-
+              update-ca-certificates || exit
+              CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt
+              cp $CA_BUNDLE /certs/ca-bundle.crt
+              tail -n 23 $CA_BUNDLE
+          volumeMounts:
+            - name: ca-certs
+              mountPath: /usr/local/share/ca-certificates
+              readOnly: true
+            - name: ca-bundle
+              mountPath: /certs
+
+        # fix permissions on ~/.ssh/* files,
+        # such as *.pem, config, known_hosts
+        - name: ssh-config
+          image: busybox
+          imagePullPolicy: IfNotPresent
+          command: ["sh"]
+          args:
+            - -c
+            - |-
+              cp /ssh/src/* /ssh/dest
+              chmod 755     /ssh/dest
+              chmod 644     /ssh/dest/*
+              chmod 400     /ssh/dest/*.pem
+              ls    -al     /ssh/dest
+          volumeMounts:
+            - name: ssh-creds
+              mountPath: /ssh/src
+              readOnly: true
+            - name: ssh-config
+              mountPath: /ssh/dest
+
+      containers:
+        - name: container-0
+          # enable building OCI
+          # images using Buildah
+          securityContext:
+            privileged: true
+            appArmorProfile:
+              type: Localhost
+              localhostProfile: buildah
+          # use same request settings as
+          # GitLab runner build container
+          resources:
+            requests:
+              cpu: 500m
+              memory: 2Gi
+              ephemeral-storage: 40Gi
+
+      volumes:
+        - name: ca-certs
+          secret:
+            secretName: "{{ buildkite_secrets['ca-certs'] }}"
+            defaultMode: 420 # "0644"
+        - name: ca-bundle
+          emptyDir: {}
+        - name: ssh-config
+          emptyDir: {}
+        - name: ssh-creds
+          secret:
+            secretName: "{{ buildkite_secrets['ssh-creds'] }}"
+            defaultMode: 256 # "0400"
+        - name: git-creds
+          secret:
+            secretName: "{{ buildkite_secrets['git-creds'] }}"
+            defaultMode: 384 # "0600"
+
+    # https://buildkite.com/docs/agent/v3/agent-stack-k8s/git-credentials
+    default-checkout-params:
+      # https://buildkite.com/docs/agent/v3/agent-stack-k8s/volume-mounts#checkout-containers-only
+      extraVolumeMounts: &mounts
+        - name: ca-bundle # Debian/Ubuntu/Alpine
+          mountPath: /etc/ssl/certs/ca-certificates.crt
+          subPath: ca-bundle.crt
+        - name: ca-bundle # Fedora/CentOS/RHEL
+          mountPath: /etc/pki/tls/certs/ca-bundle.crt
+          subPath: ca-bundle.crt
+        - name: ssh-config
+          mountPath: /root/.ssh
+        - name: git-creds
+          mountPath: /root/.git-credentials
+          subPath: .git-credentials
+
+    default-command-params:
+      envFrom:
+        - secretRef:
+            name: "{{ buildkite_secrets['env-vars'] }}"
+      # https://buildkite.com/docs/agent/v3/agent-stack-k8s/volume-mounts#command-containers-only
+      extraVolumeMounts: *mounts
+
+  monitoring:
+    podMonitor:
+      deploy: true
+    deployGrafanaDashboard: true

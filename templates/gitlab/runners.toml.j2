@@ -38,11 +38,11 @@
     # using same request settings as
     # AWX custom EE worker container
     # https://docs.gitlab.com/runner/executors/kubernetes#cpu-requests-and-limits
-    cpu_request = "1000m"
+    cpu_request = "500m"
     # https://docs.gitlab.com/runner/executors/kubernetes#memory-requests-and-limits
-    memory_request = "12Gi"
+    memory_request = "2Gi"
     # https://docs.gitlab.com/runner/executors/kubernetes#storage-requests-and-limits
-    ephemeral_storage_request = "30Gi"
+    ephemeral_storage_request = "40Gi"
 
     # enable custom pod annotations in
     # order to assign AppArmor profile:

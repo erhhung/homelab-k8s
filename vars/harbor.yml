@@ -105,20 +105,26 @@ harbor_chart_values:
   metrics:
     enabled: true
 
-# user_erhhung:  {vault.yml}
-# homelab_admin: {vault.yml}
+# user_erhhung: {vault.yml}
 harbor_users:
-  - username: "{{ user_erhhung.username }}"
-    realname: "{{ user_erhhung.fullname }}"
+  - realname: "{{ user_erhhung.fullname }}"
+    username: "{{ user_erhhung.username }}"
     email: "{{ user_erhhung.email }}"
     # 8+ chars w/ upper + lower + digit
     password: "{{ harbor_admin_pass }}"
     role: maintainer # project: library
     # comment: optional
-  - username: gitlab
-    realname: GitLab CI/CD
-    email: "{{ homelab_admin.email }}"
-    password: "{{ harbor_admin_pass }}"
+
+  - realname: GitLab CI/CD
+    email: gitlab@{{ homelab_domain  }}
+    username: "{{ gitlab_harbor_user }}"
+    password: "{{ gitlab_harbor_pass }}"
+    role: maintainer # project: library
+
+  - realname: Buildkite CI/CD
+    email: buildkite@{{ homelab_domain  }}
+    username: "{{ buildkite_harbor_user }}"
+    password: "{{ buildkite_harbor_pass }}"
     role: maintainer # project: library
 
 # https://github.com/goharbor/harbor/tree/main/src/portal/src/app/shared/entities/shared.const.ts#L295-L309

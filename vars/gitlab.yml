@@ -116,6 +116,9 @@ gitlab_omniauth_config:
     args:
       scope: user:email
 
+gitlab_harbor_user: gitlab
+gitlab_harbor_pass: "{{ harbor_admin_pass }}"
+
 # https://gitlab.com/gitlab-org/charts/gitlab
 gitlab_chart_version: "9.7.0"
 gitlab_release_name: gitlab

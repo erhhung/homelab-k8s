@@ -41,6 +41,8 @@ ollama_common_values:
               # custom label to select latest generation GPU
               - key: feature.node.kubernetes.io/gpu.preferred
                 operator: Exists
+        # schedule on the node that has
+        # the most CPU cores and memory
         - weight: 60
           preference:
             matchExpressions:
