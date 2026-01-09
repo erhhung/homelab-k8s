@@ -1,6 +1,6 @@
 # https://metallb.io/
-# https://metallb.universe.tf/concepts
-# https://metallb.universe.tf/concepts/bgp
+# https://metallb.io/concepts
+# https://metallb.io/concepts/bgp
 ---
 - name: Install MetalLB on RKE cluster
   tags: install

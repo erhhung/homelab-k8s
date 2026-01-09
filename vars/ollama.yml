@@ -115,8 +115,8 @@ ollama_common_values:
         app.kubernetes.io/name: ollama
         app.kubernetes.io/instance: "{{ ollama_release_name }}"
       annotations:
-        # replaces deprecated .spec.loadBalancerIP field
-        metallb.universe.tf/loadBalancerIPs: "{{ metallb_vips['ollama'] }}"
+        # replaces to-be-deprecated .spec.loadBalancerIP field
+        metallb.io/loadBalancerIPs: "{{ metallb_vips['ollama'] }}"
     spec:
       type: LoadBalancer
       ports:

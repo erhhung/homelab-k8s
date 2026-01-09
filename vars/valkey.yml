@@ -133,7 +133,7 @@ valkey_chart_values:
         disableLoadBalancerIP: true
         # OMG! misspelled key in template!
         # https://github.com/bitnami/charts/issues/36278
-        loadBalancerIPAnnotaion: metallb.universe.tf/loadBalancerIPs
+        loadBalancerIPAnnotaion: metallb.io/loadBalancerIPs
         # create one service per node and
         # expose on IPs 192.168.4.231-236
         loadBalancerIP: "{{ valkey_lb_ips }}"

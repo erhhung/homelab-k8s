@@ -355,8 +355,8 @@ postgresql_chart_values:
     type: LoadBalancer
 
     annotations:
-      # replaces deprecated .spec.loadBalancerIP field
-      metallb.universe.tf/loadBalancerIPs: "{{ metallb_vips['postgresql'] }}"
+      # replaces to-be-deprecated .spec.loadBalancerIP field
+      metallb.io/loadBalancerIPs: "{{ metallb_vips['postgresql'] }}"
 
     sessionAffinity: ClientIP
     sessionAffinityConfig:
