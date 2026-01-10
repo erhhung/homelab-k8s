@@ -54,8 +54,19 @@ keycloak_sql_gz_b64: keycloak.sql.gz.b64
 # NOTE: iCloud SMTP server configuration
 # has been pre-baked into the SQL script
 
+# additional pre-baked configurations
+# -----------------------------------
+# realm default:
+#   SSO session idle:      8 hours
+#   SSO session max:       1 day
+#   access token lifespan: 30 minutes
+# Kiali client:
+#   access token lifespan: 8 hours
+#     because Kiali currently lacks
+#     support for auto token refresh
+
 # https://github.com/codecentric/helm-charts/tree/master/charts/keycloakx
-keycloakx_chart_version: "7.1.4"
+keycloakx_chart_version: "7.1.5"
 keycloakx_release_name: keycloakx
 
 # https://github.com/codecentric/helm-charts/tree/master/charts/keycloakx/values.yaml
