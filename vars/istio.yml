@@ -47,6 +47,9 @@ kiali_cr_spec:
       disable_rbac: true
       client_id: "{{ kiali_oidc_client_id }}"
       issuer_uri: "{{ kiali_oidc_issuer_uri }}"
+      allowed_domains:
+        - "{{ homelab_domain }}"
+        - gmail.com # erhhung@
       scopes:
         - openid # required
         - basic
@@ -190,6 +193,15 @@ kiali_cr_spec:
       provider: jaeger
       external_url: ""
       internal_url: ""
+
+  kiali_feature_flags:
+    ui_defaults:
+      metrics_per_refresh: 10m
+      refresh_interval: 1m
+    custom_workload_types:
+      - group: argoproj.io
+        version: v1alpha1
+        kind: Application
 
 # https://grafana.com/grafana/dashboards/?search=Istio&dataSource=prometheus
 istio_grafana_dashboards:

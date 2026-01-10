@@ -38,6 +38,13 @@ certmanager_chart_values:
   # https://cert-manager.io/docs/usage/certificate#cleaning-up-secrets-when-certificates-are-deleted
   enableCertificateOwnerRef: true
 
+  # options for controller pod (see default values
+  # file for available options and feature gates)
+  config:
+    enableGatewayAPI: true
+    featureGates:
+      ExperimentalGatewayAPISupport: true
+
   # create Helm post-install hook Job that waits
   # for the webhook endpoint to become available
   startupapicheck:
