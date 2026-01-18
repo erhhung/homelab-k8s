@@ -376,6 +376,20 @@
         txt_file: /opt/vault-unseal/unseal-keys.txt
         asc_file: /opt/vault-unseal/unseal-keys.asc
       block:
+        # make sure OpenPGP is unlocked so decryption
+        # works before writing plain-text unseal keys
+        - name: Unlock YubiKey OpenPGP
+          # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/command_module.html
+          ansible.builtin.command:
+            # see custom script and SmartCard commands
+            # "pki/unlock-yubikey.*" added to ~/.gnupg
+            chdir: .gnupg
+            cmd: ./unlock-yubikey.sh
+            # yubikey_unlock_pin: {vault.yml}
+            stdin: "{{ yubikey_unlock_pin }}"
+            stdin_add_newline: false
+          changed_when: false
+
         - name: Write unseal-keys.txt
           # https://docs.ansible.com/ansible/latest/collections/ansible/builtin.copy_module.html
           ansible.builtin.copy:
@@ -383,8 +397,9 @@
             dest: "{{ txt_file }}"
             mode: "0600"
 
+        # encryption uses public key,
+        # so no YubiKey access needed
         - name: Encrypt using OpenPGP
-          # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/command_module.html
           ansible.builtin.command:
             argv:
               - gpg

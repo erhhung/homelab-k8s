@@ -35,7 +35,9 @@
         var: facts
 
     - name: Show {{ cluster }} cluster facts
-      when: inventory_hostname == cp_host
+      when:
+        - inventory_hostname == cp_host
+        - kubernetes_version is defined
       vars:
         facts:
           kubernetes_version: "{{ kubernetes_version }}"

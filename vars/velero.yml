@@ -17,17 +17,25 @@ velero_secrets:
   ingress: velero-ingress-tls
 
 # https://github.com/vmware-tanzu/helm-charts/tree/main/charts/velero
-velero_chart_version: "10.0.12"
+velero_chart_version: "11.3.2"
 velero_release_name: velero
 
 # https://github.com/otwld/helm-charts/tree/main/charts/velero-ui
-velero_ui_chart_version: "0.13.3"
+velero_ui_chart_version: "0.14.0"
 velero_ui_release_name: velero-ui
 
 # https://github.com/vmware-tanzu/helm-charts/tree/main/charts/velero/values.yaml
 velero_chart_values:
   upgradeCRDs: true
   cleanUpCRDs: true
+
+  # chart default uses bitnamilegacy/kubectl
+  # matching cluster version, which is newer
+  # than what's available in now-frozen repo
+  kubectl:
+    image:
+      repository: docker.io/bitnamilegacy/kubectl
+      tag: "1.33.4" # latest version available
 
   # this is how storage provider plugins get
   # installed (at least one must be defined)

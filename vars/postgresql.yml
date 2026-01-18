@@ -42,7 +42,7 @@ postgresql_secrets:
   superuser: database-superuser-tls
 
 # https://github.com/bitnami/charts/tree/main/bitnami/postgresql-ha
-postgresql_chart_version: "16.2.2"
+postgresql_chart_version: "16.3.2"
 postgresql_release_name: postgresql
 
 # https://github.com/bitnami/charts/tree/main/bitnami/postgresql-ha/values.yaml

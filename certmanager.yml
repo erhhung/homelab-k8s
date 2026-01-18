@@ -18,8 +18,12 @@
     cluster: "{{ (inventory_hostname in groups['k3s_cluster']) | ternary('k3s','rke') }}"
     kubeconfig: "{{ vars[cluster ~'_kubeconfig'] }}"
   pre_tasks:
-    - name: Is the monitoring stack ready?
+    - name: Are Gateway API CRDs installed?
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
+      ansible.builtin.include_tasks: tasks/istio/crds.yml
+      when: gateway_api_crds_installed is undefined
+
+    - name: Is the monitoring stack ready?
       ansible.builtin.include_tasks: tasks/monitoring/stackready.yml
       when: monitoring_stack_ready is undefined
   tasks:

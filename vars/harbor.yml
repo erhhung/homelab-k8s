@@ -18,7 +18,7 @@ harbor_secrets:
 
 # https://goharbor.io/docs/latest/install-config/harbor-ha-helm
 # https://github.com/goharbor/harbor-helm/tree/main
-harbor_chart_version: "1.17.1"
+harbor_chart_version: "1.18.1"
 harbor_release_name: harbor
 
 # https://github.com/goharbor/harbor-helm/tree/main/values.yaml
