@@ -1,2 +1,4 @@
 ansible_user: erhhung
-ansible_become_pass: "{{ sudo_pass['cosmos'] }}"
+
+# https://docs.ansible.com/projects/ansible/latest/playbook_guide/playbooks_privilege_escalation.html#become-connection-variables
+ansible_become_password: "{{ sudo_pass['cosmos'] }}"

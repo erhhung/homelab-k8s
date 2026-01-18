@@ -1,7 +1,7 @@
 certmanager_namespace: cert-manager
 
 # https://github.com/cert-manager/cert-manager/tree/master/deploy/charts/cert-manager
-certmanager_chart_version: "1.18.2"
+certmanager_chart_version: "1.19.2"
 certmanager_release_name: cert-manager
 
 # https://github.com/cert-manager/cert-manager/tree/master/deploy/charts/cert-manager/values.yaml
@@ -41,9 +41,14 @@ certmanager_chart_values:
   # options for controller pod (see default values
   # file for available options and feature gates)
   config:
-    enableGatewayAPI: true
+    # automatically create Certificate resources
+    # by annotating Kubernetes Gateway resource:
+    # https://cert-manager.io/docs/usage/gateway
+    # controller pod will fail to start if this feature
+    # is enabled but Gateway API CRDs are not installed!
+    enableGatewayAPI: "{{ gateway_api_crds_installed }}"
     featureGates:
-      ExperimentalGatewayAPISupport: true
+      ExperimentalGatewayAPISupport: "{{ gateway_api_crds_installed }}"
 
   # create Helm post-install hook Job that waits
   # for the webhook endpoint to become available

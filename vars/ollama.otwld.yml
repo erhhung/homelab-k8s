@@ -1,6 +1,6 @@
 # https://github.com/otwld/ollama-helm
 ollama_chart_repo_url: https://helm.otwld.com
-ollama_chart_version: "1.25.0"
+ollama_chart_version: "1.37.0"
 
 # https://github.com/otwld/ollama-helm/tree/main/values.yaml
 ollama_chart_values:

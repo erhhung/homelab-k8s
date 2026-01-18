@@ -30,7 +30,9 @@
         secret_ns: "{{ minio_tenant_namespace }}"
         create_ns: "{{ ansible_loop.first }}"
         cert_name: minio-{{ item.cert }}-ingress
-        sans: "{{ item.sans }}"
+        sans: "{{  item.sans }}"
+        days: "{{  item.days  | default(omit) }}"
+        renew: "{{ item.renew | default(omit) }}"
       ansible.builtin.include_tasks: tasks/k8s/secrets/tls.step.yml
       loop:
         - name: "{{ minio_secrets['console'] }}"
@@ -39,6 +41,12 @@
             - "{{ minio_console_fqdn }}"
         - name: "{{ minio_secrets['s3api'] }}"
           cert: s3
+          # use longer expiration and renewal than the default
+          # 30 days, or else MinIO Operator will log warnings
+          # incessantly (every 5s) about the impending expiry
+          # (30-day threshold)
+          days: 90
+          renew: 30
           sans:
             - "{{ minio_s3api_fqdn }}"
             - "*.{{ minio_s3api_fqdn }}"

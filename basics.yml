@@ -25,7 +25,10 @@
         locale_language: "{{ (locale_status.stdout |
           ansible.builtin.regex_search('LANGUAGE=([^\n]+)','\\1') or [locale_lang]) | first }}"
   tasks:
-    - name: Set host name to "{{ inventory_hostname }}"
+    - name: Set host name of {{ os }} server
+      vars:
+        lsb: "{{ ansible_facts['lsb'] }}"
+        os: "{{ lsb.id ~' '~ lsb.release }}"
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/hostname_module.html
       # https://docs.ansible.com/ansible/latest/reference_appendices/special_variables.html
       ansible.builtin.hostname:

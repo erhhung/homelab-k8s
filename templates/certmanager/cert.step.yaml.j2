@@ -29,8 +29,12 @@ spec:
     group: certmanager.step.sm
 
   # https://cert-manager.io/docs/usage/certificate#issuance-triggers
-  duration: {{ days | default(30) * 24 }}h
+  duration: {{ days * 24 if days is defined and days != omit else 720 }}h
+{% if renew is defined and renew != omit %}
+  renewBefore: {{ renew * 24 }}h
+{% else %}
   renewBeforePercentage: 10
+{% endif %}
 
   privateKey:
     # supported algorithms: RSA, ECDSA, Ed25519

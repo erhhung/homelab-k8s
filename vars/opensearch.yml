@@ -211,12 +211,12 @@ opensearch_security_config:
       users:
         - metrics
 
-opensearch_version: "2.19.3"
+opensearch_version: "2.19.4"
 # IMPORTANT! keep opensearch_version and opensearch_chart_version
 # in sync: helm show chart opensearch/opensearch --version 2.xx.x
 # opensearch_version will be used to select proper plugin version
 # https://github.com/opensearch-project/helm-charts/tree/main/charts/opensearch
-opensearch_chart_version: "2.35.0"
+opensearch_chart_version: "2.36.0"
 opensearch_release_name: opensearch
 
 # https://github.com/opensearch-project/helm-charts/tree/main/charts/opensearch/values.yaml
@@ -369,15 +369,15 @@ opensearch_chart_values:
     installList:
       # - telemetry-otel
       # - repository-s3
-      # - https://github.com/Aiven-Open/prometheus-exporter-plugin-for-opensearch/releases/download/{{
-      #   opensearch_version }}.0/prometheus-exporter-{{ opensearch_version }}.0.zip
+      - https://github.com/opensearch-project/opensearch-prometheus-exporter/releases/download/{{
+        opensearch_version }}.0/prometheus-exporter-{{ opensearch_version }}.0.zip
 
       # since the "official" GitHub repo hasn't released new plugin versions
       # to match newer OpenSearch versions, including the version we install,
       # I've recompiled the 2.17.1.0 source code as 2.19.3.0 and released it
       # in my forked repo
-      - https://github.com/erhhung/prometheus-exporter-plugin-for-opensearch/releases/download/{{
-        opensearch_version }}.0/prometheus-exporter-{{ opensearch_version }}.0.zip
+      # - https://github.com/erhhung/prometheus-exporter-plugin-for-opensearch/releases/download/{{
+      #   opensearch_version }}.0/prometheus-exporter-{{ opensearch_version }}.0.zip
 
   extraObjects:
     # create LoadBalancer service to listen on port 9200

@@ -4,7 +4,7 @@
 # NOTE: K3s version may be held back by
 # Rancher Server Helm chart requirements
 # https://github.com/k3s-io/k3s/releases
-k3s_version: v1.32.7+k3s1
+k3s_version: v1.34.3+k3s1 # 12/15/2025
 
 # curl -sfL https://get.k3s.io | \
 #   sh -s - server [opts...]

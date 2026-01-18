@@ -1,3 +1,5 @@
+# https://docs.ansible.com/projects/ansible/latest/reference_appendices/special_variables.html
+
 pki_host: "{{ groups['pki_any'] | first }}"
 xcp_host: "{{ groups['xcp_any'] | first }}"
 
@@ -6,9 +8,17 @@ xcp_host: "{{ groups['xcp_any'] | first }}"
 # ansible_ssh_private_key_file: >-
 #   {{ lookup('ansible.builtin.env', 'HOME') }}/.ssh/{{
 #      lookup('ansible.builtin.env', 'USER') }}.pem
-ansible_ssh_common_args: -o StrictHostKeyChecking=no -o ForwardAgent=yes
+ansible_ssh_common_args: >-
+  -o StrictHostKeyChecking=no
+  -o ForwardAgent=yes
+  -o ConnectTimeout=5
+  -o LogLevel=error
+
+# host-specific password for Kubernetes node
+# (assigned during VM creation in Terraform)
+# https://docs.ansible.com/projects/ansible/latest/playbook_guide/playbooks_privilege_escalation.html#become-connection-variables
+ansible_become_password: Irre1evant.{{ inventory_hostname | capitalize }}
 # password overrides in inventory/host_vars/*.yml
-ansible_become_pass: "{{ sudo_pass['default'] }}"
 
 default_python_interpreter: /usr/bin/python3
 ansible_python_interpreter: "{{ default_python_interpreter }}"

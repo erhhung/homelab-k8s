@@ -8,15 +8,6 @@ alias omp &> /dev/null || {
   source         /etc/profile
   source "$HOME/.bash_profile"
 }
-export ANSIBLE_CONFIG="./ansible.cfg"
-export VAULTFILE="group_vars/all/vault.yml"
-
-alias al='ansible-lint'
-alias ap='ansible-playbook'
-alias av='ansible-vault'
-
-ev() { ansible-vault edit "${1:-$VAULTFILE}"; }
-vv() { ansible-vault view "${1:-$VAULTFILE}"; }
 
 git_root() {
   local root
@@ -28,6 +19,22 @@ git_root() {
   }
   echo "$root"
 }
+
+export ANSIBLE_CONFIG="./ansible.cfg"
+export VAULTFILE="group_vars/all/vault.yml"
+
+alias al='ansible-lint'
+alias ap='ansible-playbook'
+alias av='ansible-vault'
+
+ev() (
+  cd "$(git_root)" || exit
+  ansible-vault edit "${1:-$VAULTFILE}"
+)
+vv() (
+  cd "$(git_root)" || exit
+  ansible-vault view "${1:-$VAULTFILE}"
+)
 
 gzage() {
   local root

@@ -13,7 +13,7 @@
 # shellcheck disable=SC2155 # Declare and assign separately
 # shellcheck disable=SC2206 # Quote to avoid word splitting
 
-cd ~
+cd "$(dirname "$0")"
 
 [ "$1" ] || {
   cat<<EOF
@@ -28,7 +28,7 @@ EOF
   exit
 }
 
-export STEPPATH="$HOME/.step"
+export STEPPATH="${STEPPATH:-$HOME/.step}"
 
 step_opts=(
   --force
