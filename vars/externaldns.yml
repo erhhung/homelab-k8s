@@ -1,0 +1,106 @@
+externaldns_namespace: external-dns
+
+externaldns_secrets:
+  unbound-certs: external-dns-unbound-certs
+
+# see `control-interface` and `control-port`
+# in pfSense /var/unbound/remotecontrol.conf
+unbound_host: pfsense.{{ homelab_domain }}
+unbound_port: 953
+
+# https://github.com/kubernetes-sigs/external-dns/tree/master/charts/external-dns
+externaldns_chart_version: "1.20.0"
+externaldns_release_name: external-dns
+
+# https://github.com/kubernetes-sigs/external-dns/tree/master/charts/external-dns/values.yaml
+externaldns_chart_values:
+  revisionHistoryLimit: 2
+
+  logLevel: info # panic|debug|info|warning|error|fatal
+  logFormat: text # text|json
+
+  # interval between syncs with provider
+  interval: 5m
+  # trigger syncs on create/update/delete
+  # events in addition to regular interval?
+  triggerLoopOnEvent: true
+
+  # kubernetes resources to
+  # monitor for DNS entries
+  sources: |
+    {% set srcs = ['service','ingress'] %}
+    {% if gateway_api_crds_installed %}
+    {%   set _ = srcs.append('gateway-httproute') %}
+    {% endif %}
+    {{ srcs  }}
+
+  domainFilters: "{{ [homelab_domain] }}"
+  managedRecordTypes: ["A"]
+
+  # sync method between sources and provider
+  policy: sync # create-only|sync|upsert-only
+
+  # how ExternalDNS prevents "split-brain" by
+  # writing an "ownership" record per FQDN so
+  # that it's only managed by one ExternalDNS
+  # instance: use TXT records
+  registry: txt # txt|noop|...
+  # https://kubernetes-sigs.github.io/external-dns/latest/docs/registry/txt
+  txtPrefix: "%{record_type}-"
+  txtOwnerId: homelab-{{ cluster }}
+
+  provider:
+    name: webhook
+    webhook:
+      image:
+        # https://github.com/guillomep/external-dns-unbound-webhook/pkgs/container/external-dns-unbound-webhook
+        repository: ghcr.io/guillomep/external-dns-unbound-webhook
+        tag: v0.1.3
+      env:
+        - name: UNBOUND_HOST
+          # host:port must include "tcp://" protocol prefix!
+          value: tcp://{{ unbound_host }}:{{ unbound_port }}
+        - name: UNBOUND_CA_PEM_PATH
+          value: /usr/local/etc/unbound/ca.pem
+        - name: UNBOUND_CERT_PEM_PATH
+          value: /usr/local/etc/unbound/client.pem
+        - name: UNBOUND_KEY_PEM_PATH
+          value: /usr/local/etc/unbound/client.key
+        - name: DOMAIN_FILTER
+          value: "{{ homelab_domain }}"
+      readinessProbe:
+        httpGet:
+          path: /ready
+          port: http-webhook
+        initialDelaySeconds: 10
+        timeoutSeconds: 5
+      livenessProbe:
+        httpGet:
+          path: /health
+          port: http-webhook
+        initialDelaySeconds: 10
+        timeoutSeconds: 5
+      extraVolumeMounts:
+        - name: unbound-certs
+          mountPath: /usr/local/etc/unbound/
+
+  extraVolumes:
+    - name: unbound-certs
+      secret:
+        secretName: "{{ externaldns_secrets['unbound-certs'] }}"
+
+  extraArgs:
+    # monitor LoadBalancer Services only:
+    # https://kubernetes-sigs.github.io/external-dns/latest/docs/sources/service
+    - --service-type-filter=LoadBalancer
+
+  resources:
+    requests:
+      cpu: 10m
+      memory: 64Mi
+
+  serviceMonitor:
+    enabled: "{{ prometheus_crds_installed }}"
+    additionalLabels:
+      release: "{{ monitoring_release_name }}"
+    interval: 1m

@@ -302,7 +302,7 @@ postgresql_chart_values:
                 name: '{% raw %}{{ include "postgresql-ha.pgpoolSecretName" . }}{% endraw %}'
                 key: sr-check-password
           - name: PGDATABASE
-            value: '{% raw %}{{ .Values.pgpool.srCheckDatabase }}{% endraw %}'
+            value: "{% raw %}{{ .Values.pgpool.srCheckDatabase }}{% endraw %}"
 
     sidecars:
       # https://github.com/pgpool/pgpool2_exporter
@@ -357,6 +357,8 @@ postgresql_chart_values:
     annotations:
       # replaces to-be-deprecated .spec.loadBalancerIP field
       metallb.io/loadBalancerIPs: "{{ metallb_vips['postgresql'] }}"
+      # https://kubernetes-sigs.github.io/external-dns/latest/docs/annotations/annotations#external-dnsalphakubernetesiohostname
+      external-dns.alpha.kubernetes.io/hostname: "{{ postgresql_fqdns | join(',') }}"
 
     sessionAffinity: ClientIP
     sessionAffinityConfig:

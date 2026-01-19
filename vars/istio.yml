@@ -4,7 +4,7 @@ istio_bin_dir: /opt/istio/bin
 
 # https://istio.io/latest/docs/ambient/install/istioctl#install-or-upgrade-the-kubernetes-gateway-api-crds
 # https://github.com/kubernetes-sigs/gateway-api/releases
-k8s_gateway_api_version: "1.4.0"
+k8s_gateway_api_version: "1.4.1"
 k8s_gateway_api_crds_url: >-
   https://github.com/kubernetes-sigs/gateway-api/releases/download/v{{
     k8s_gateway_api_version }}/standard-install.yaml
@@ -95,7 +95,7 @@ kiali_cr_spec:
             # redirect root domain to dashboard at /kiali
             nginx.ingress.kubernetes.io/server-snippet: |
               location = / {
-                return 302 $scheme://$host/kiali;
+                return 308 $scheme://$host/kiali;
               }
         spec:
           ingressClassName: "{{ rke_ingress_class }}"

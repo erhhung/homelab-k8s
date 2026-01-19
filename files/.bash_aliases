@@ -170,7 +170,7 @@ EOT
 # show details of certificate chain from
 # stdin, PEM file, website or K8s secret
 cert() {
-  local stdin host port args
+  local stdin args
   if [ -p /dev/stdin ]; then
     stdin=$(cat)
   else
@@ -203,12 +203,15 @@ EOT
       }
       stdin=$(kubectl get secret $secret "${args[@]}" \
         -o jsonpath='{ .data.tls\.crt }' | base64 -d)
+    elif [ -f "$1" ]; then
+      # certs from file
+      local file=$1
     else
-      host=${1:-localhost}
+      local host=${1:-localhost}
       [ "$host" == . ] && host=localhost
       # strip scheme & path if is an URL
       host=${host#*://}; host=${host%%/*}
-      port=${2:-443}
+      local port=${2:-443}
 
       # handle host:port syntax
       [[ "$host" == *:* ]] && {
@@ -242,9 +245,9 @@ EOT
     if [ "$stdin" ]; then
       # certs from stdin
       echo "$stdin"
-    elif [ -f "$host" ]; then
+    elif [ "$file" ]; then
       # certs from file
-      cat "$host"
+      cat "$file"
     else
       # certs from host
       args=(

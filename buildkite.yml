@@ -149,27 +149,27 @@
                 group: monitoring.coreos.com
                 version: v1
                 kind: PodMonitor
-                name: "{{ buildkite_release_name }}-podmonitor"
-                namespace: "{{ buildkite_namespace }}"
+                name: {{ buildkite_release_name }}-podmonitor
+                namespace: {{ buildkite_namespace }}
               patch:
                 - op: replace
                   path: /metadata/name
-                  value: "{{ buildkite_release_name }}"
+                  value: {{ buildkite_release_name }}
                 - op: add
                   path: /metadata/labels/release
-                  value: "{{ monitoring_release_name }}"
+                  value: {{ monitoring_release_name }}
               ---
               {% endif %}
               {% if monitoring.deployGrafanaDashboard %}
               target:
                 version: v1
                 kind: ConfigMap
-                name: "{{ buildkite_release_name }}-grafana-dashboard"
-                namespace: "{{ buildkite_namespace }}"
+                name: {{ buildkite_release_name }}-grafana-dashboard
+                namespace: {{ buildkite_namespace }}
               patch:
                 - op: replace
                   path: /metadata/name
-                  value: "{{ buildkite_release_name }}-dashboard"
+                  value: {{ buildkite_release_name }}-dashboard
               {% endif %}
 
         extras: # adopt extra resources into Helm release
