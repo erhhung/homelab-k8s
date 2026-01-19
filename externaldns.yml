@@ -1,0 +1,73 @@
+# https://kubernetes-sigs.github.io/external-dns
+# pfSense uses Unbound for DNS Resolver service:
+# https://github.com/guillomep/external-dns-unbound-webhook
+# https://unbound.docs.nlnetlabs.nl/en/latest/manpages/unbound.conf.html#remote-control-options
+---
+- name: Install pfSense ExternalDNS
+  tags: install
+  hosts:
+    - "{{ k3s_control_plane_host }}"
+    - "{{ rke_control_plane_host }}"
+  vars_files:
+    - vars/kubernetes.yml
+    - vars/monitoring.yml
+    - vars/externaldns.yml
+  vars:
+    # required kubernetes>=24.2 package only in user virtualenv
+    ansible_python_interpreter: "{{ venv_python_interpreter }}"
+    # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/ternary_filter.html
+    cluster: "{{ (inventory_hostname in groups['k3s_cluster']) | ternary('k3s','rke') }}"
+    kubeconfig: "{{ vars[cluster ~'_kubeconfig'] }}"
+  pre_tasks:
+    - name: Are Gateway API CRDs installed?
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
+      ansible.builtin.include_tasks: tasks/istio/crds.yml
+      when: gateway_api_crds_installed is undefined
+
+    - name: Is the monitoring stack ready?
+      ansible.builtin.include_tasks: tasks/monitoring/stackready.yml
+      when: monitoring_stack_ready is undefined
+  tasks:
+    - name: Create Unbound certificates secret
+      vars:
+        secret_name: "{{ externaldns_secrets['unbound-certs'] }}"
+        secret_ns: "{{ externaldns_namespace }}"
+        secret_data:
+          # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/file_lookup.html
+          ca.pem: "{{ lookup('ansible.builtin.file', 'files/unbound/ca.pem', rstrip=false) }}"
+          client.pem: "{{ lookup('ansible.builtin.file', 'files/unbound/client.pem', rstrip=false) }}"
+          # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/unvault_lookup.html
+          client.key: "{{ lookup('ansible.builtin.unvault', 'files/unbound/client.key') }}"
+      ansible.builtin.include_tasks: tasks/k8s/secrets/generic.yml
+
+    - name: Install ExternalDNS Helm chart
+      vars:
+        repo_name: external-dns
+        repo_url: https://kubernetes-sigs.github.io/external-dns
+        chart_ref: external-dns
+        chart_ver: "{{ externaldns_chart_version }}"
+        release: "{{ externaldns_release_name }}"
+        release_ns: "{{ externaldns_namespace }}"
+        values: "{{ externaldns_chart_values }}"
+
+        patches:
+          json_patches:
+            # remove serviceMonitor/external-dns/external-dns/1
+            # endpoint for http-webhook because Unbound webhook
+            # doesn't expose any metrics
+            - |
+              {% if prometheus_crds_installed %}
+              target:
+                group: monitoring.coreos.com
+                version: v1
+                kind: ServiceMonitor
+                name: {{ externaldns_release_name }}
+                namespace: {{ externaldns_namespace }}
+              patch:
+                - op: remove
+                  path: /spec/endpoints/1
+              {% endif %}
+
+        extras: # adopt extra resources into Helm release
+          - v1 Secret {{ externaldns_secrets['unbound-certs'] }}
+      ansible.builtin.include_tasks: tasks/helm/helmfile.yml

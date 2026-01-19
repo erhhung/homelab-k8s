@@ -176,7 +176,7 @@ qdrant_chart_values:
       # redirect root domain to UI at /dashboard
       nginx.ingress.kubernetes.io/server-snippet: |
         location = / {
-          return 302 $scheme://$host/dashboard;
+          return 308 $scheme://$host/dashboard;
         }
     hosts:
       - host: "{{ qdrant_fqdn }}"

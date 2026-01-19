@@ -134,6 +134,12 @@ spec:
         # nodes since pfSense is already doing that via ECMP
         externalTrafficPolicy: Local
 
+      publishService:
+        # like with Service, chart default value is enabled, but RKE2
+        # patched it to disabled--we want to publish a single virtual
+        # IP instead of all node IPs so ECMP balancing works properly
+        enabled: true
+
     # additional TCP/UDP ports to expose
     # on external service and Nginx pods
     tcp: {{ nginx_tcp_services }}

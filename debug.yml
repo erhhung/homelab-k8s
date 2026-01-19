@@ -10,7 +10,7 @@
   vars:
     # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/ternary_filter.html
     cluster: "{{ (inventory_hostname in groups['k3s_cluster']) | ternary('K3s','RKE') }}"
-    cp_host: "{{ vars[cluster | lower ~'_control_plane_host'] }}"
+    kubeconfig: "{{ vars[cluster | lower ~'_kubeconfig'] }}"
   pre_tasks:
     - name: Gather facts about controller
       run_once: true
@@ -18,10 +18,11 @@
       ansible.builtin.include_tasks: tasks/localfacts.yml
 
     - name: Gather facts about {{ cluster }} cluster
-      when: inventory_hostname == cp_host
-      vars:
-        kubeconfig: "{{ vars[cluster | lower ~'_kubeconfig'] }}"
       ansible.builtin.include_tasks: tasks/k8s/clusterfacts.yml
+
+    - name: Are Gateway API CRDs installed?
+      ansible.builtin.include_tasks: tasks/istio/crds.yml
+      when: kubernetes_version is defined
   tasks:
     - name: Show controller facts
       run_once: true
@@ -35,14 +36,13 @@
         var: facts
 
     - name: Show {{ cluster }} cluster facts
-      when:
-        - inventory_hostname == cp_host
-        - kubernetes_version is defined
+      when: kubernetes_version is defined
       vars:
         facts:
           kubernetes_version: "{{ kubernetes_version }}"
-          # list of CRDs can be very long!
-          kubernetes_apis: "{{ kubernetes_apis }}"
+          # kubernetes_apis: "{{  kubernetes_apis }}" # long list of CRDs!
+          gateway_api_crds_installed: "{{   gateway_api_crds_installed }}"
+          service_mesh_crds_installed: "{{ service_mesh_crds_installed }}"
       ansible.builtin.debug:
         var: facts
 
@@ -369,7 +369,7 @@
             ansible.builtin.import_playbook: basics.yml
         # does NOT work: {{ runlist | map(attribute='ansible.builtin.import_playbook') }}
         # https://docs.ansible.com/projects/ansible/latest/collections/community/general/json_query_filter.html
-        playbooks1: "{{ runlist | community.general.json_query('[].\"ansible.builtin.import_playbook\"') }}"
+        playbooks1: '{{ runlist | community.general.json_query(''[]."ansible.builtin.import_playbook"'') }}'
         playbooks2: |
           {% set pbs = [] %}
           {% for pb in runlist %}
