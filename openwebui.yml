@@ -480,7 +480,7 @@
             gather_subset: user_dir
 
         - name: Ensure DNS resolution works
-          ansible.builtin.include_tasks: tasks/hosts/dns.yml
+          ansible.builtin.include_tasks: tasks/dns/check.yml
 
         - name: Find ~/accounts/*.txt files
           # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/find_module.html

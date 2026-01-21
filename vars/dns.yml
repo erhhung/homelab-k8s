@@ -1,0 +1,187 @@
+# curl -s -H "X-API-Key: $PFSENSE_API_KEY" \
+#   https://pfsense.fourteeners.local/api/v2/services/dns_resolver/host_overrides | \
+#   jq --arg IP '^192\.168\.4\.\d+$' --arg DOMAIN fourteeners.local \
+#     '[  .data[] | select(.ip[0] | test($IP)) | . as $r |
+#      { ip:.ip[], host, domain, desc:.descr, aliases: (.aliases  |
+#      if . then map({ host, domain, desc:.descr }) else . end) } |
+#      delpaths([
+#        paths | select(. as $p | $p[-1] as $k | ($r | getpath($p)) as $v |
+#        $k == "aliases" and $v == null or $k == "domain" and $v == $DOMAIN
+#      )]) ]' | \
+#   yq -pj -oy '{ "pfsense_dns_records": sort_by(.ip) }' | \
+#   sed -E 's/^([[:space:]]+- ip:.+)$/\n\1/' # add newlines
+
+pfsense_dns_records:
+  - ip: 192.168.4.222
+    host: ingress
+    desc: RKE Nginx Ingress
+    aliases:
+      - host: nginx
+        desc: RKE Nginx Ingress
+      - host: velero
+        desc: Velero Dashboard
+      - host: minio
+        desc: MinIO Console
+      - host: s3
+        desc: MinIO S3 API
+      - host: awx
+        desc: Ansible AWX
+      - host: ansible
+        desc: Ansible AWX
+      - host: kibana
+        desc: OpenSearch Dashboards
+      - host: grafana
+        desc: Grafana Dashboards
+      - host: monitoring
+        desc: Grafana Dashboards
+      - host: metrics
+        desc: Prometheus UI
+      - host: prometheus
+        desc: Prometheus UI
+      - host: alerts
+        desc: Alertmanager UI
+      - host: alertmanager
+        desc: Alertmanager UI
+      - host: thanos
+        desc: Thanos Query UI
+      - host: query
+        domain: "{{ thanos_subdomain }}"
+        desc: Thanos Query UI
+      - host: querier
+        domain: "{{ thanos_subdomain }}"
+        desc: Thanos Query UI
+      - host: rule
+        domain: "{{ thanos_subdomain }}"
+        desc: Thanos Rule UI
+      - host: ruler
+        domain: "{{ thanos_subdomain }}"
+        desc: Thanos Rule UI
+      - host: store
+        domain: "{{ thanos_subdomain }}"
+        desc: Thanos Store UI
+      - host: storegateway
+        domain: "{{ thanos_subdomain }}"
+        desc: Thanos Store UI
+      - host: bucket
+        domain: "{{ thanos_subdomain }}"
+        desc: Thanos Bucket Web
+      - host: bucketweb
+        domain: "{{ thanos_subdomain }}"
+        desc: Thanos Bucket Web
+      - host: compact
+        domain: "{{ thanos_subdomain }}"
+        desc: Thanos Compactor UI
+      - host: compactor
+        domain: "{{ thanos_subdomain }}"
+        desc: Thanos Compactor UI
+      - host: sidecar
+        domain: "{{ thanos_subdomain }}"
+        desc: Thanos Sidecar UI
+      - host: keycloak
+        desc: Keycloak IAM
+      - host: iam
+        desc: Keycloak IAM
+      - host: sso
+        desc: Keycloak IAM
+      - host: kiali
+        desc: Kiali Dashboard
+      - host: istio
+        desc: Kiali Dashboard
+      - host: vault
+        desc: HashiCorp Vault
+      - host: gitlab
+        desc: GitLab CI/CD
+      - host: pages
+        domain: "{{ gitlab_subdomain }}"
+        desc: GitLab Pages
+      - host: argocd
+        desc: Argo CD GitOps
+      - host: ollama
+        desc: Ollama Server
+      - host: qdrant
+        desc: Qdrant Dashboard
+      - host: openwebui
+        desc: Open WebUI
+      - host: chatgpt
+        desc: Open WebUI
+      - host: chat
+        desc: Open WebUI
+      - host: flowise
+        desc: Flowise Designer
+      - host: void
+        desc: No Such Host
+
+  - ip: 192.168.4.223
+    host: ingresspt
+    desc: RKE Nginx Ingress (SSL Passthrough)
+    aliases:
+      - host: nginxpt
+        desc: RKE Nginx Ingress (SSL Passthrough)
+      - host: testing
+        domain: "{{ vcluster_subdomain }}"
+        desc: vCluster "testing"
+      - host: staging
+        domain: "{{ vcluster_subdomain }}"
+        desc: vCluster "staging"
+
+  - ip: 192.168.4.224
+    host: opensearch
+    desc: OpenSearch Cluster
+    aliases:
+      - host: es
+        desc: OpenSearch Cluster
+
+  - ip: 192.168.4.225
+    host: postgresql
+    desc: PostgreSQL
+    aliases:
+      - host: postgres
+        desc: PostgreSQL
+      - host: pg
+        desc: PostgreSQL
+
+  - ip: 192.168.4.231
+    host: valkey1
+    desc: Valkey Node 1
+    aliases:
+      - host: redis1
+        desc: Valkey Node 1
+      - host: valkey
+        desc: Valkey Node 1
+      - host: redis
+        desc: Valkey Node 1
+
+  - ip: 192.168.4.232
+    host: valkey2
+    desc: Valkey Node 2
+    aliases:
+      - host: redis2
+        desc: Valkey Node 2
+
+  - ip: 192.168.4.233
+    host: valkey3
+    desc: Valkey Node 3
+    aliases:
+      - host: redis3
+        desc: Valkey Node 3
+
+  - ip: 192.168.4.234
+    host: valkey4
+    desc: Valkey Node 4
+    aliases:
+      - host: redis4
+        desc: Valkey Node 4
+
+  - ip: 192.168.4.235
+    host: valkey5
+    desc: Valkey Node 5
+    aliases:
+      - host: redis5
+        desc: Valkey Node 5
+
+  - ip: 192.168.4.236
+    host: valkey6
+    desc: Valkey Node 6
+    aliases:
+      - host: redis6
+        desc: Valkey Node 6

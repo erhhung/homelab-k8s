@@ -27,6 +27,10 @@
   ansible.builtin.import_playbook: metallb.yml
   tags: metallb
 
+- name: Include pfSense DNS records playbook
+  ansible.builtin.import_playbook: dns.yml
+  tags: dns
+
 - name: Include pfSense ExternalDNS playbook
   ansible.builtin.import_playbook: externaldns.yml
   tags: externaldns

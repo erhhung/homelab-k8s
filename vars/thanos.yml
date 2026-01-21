@@ -21,6 +21,7 @@ thanos_host_names:
 # remember to add all domain names to pfSense DNS as
 # aliases of ingress.fourteeners.local: 192.168.4.222
 # https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_filters.html#products
+thanos_subdomain: thanos.{{ homelab_domain }}
 thanos_fqdns: |
   {% set fqdns = {} %}
   {% for service, hosts in thanos_host_names.items() %}
