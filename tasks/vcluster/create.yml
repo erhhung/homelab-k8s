@@ -74,7 +74,7 @@
 
     - name: Install vCluster Helm chart
       vars:
-        vcluster_fqdn: "{{ vcluster.name }}.{{ vcluster_domain }}"
+        vcluster_fqdn: "{{ vcluster.name }}.{{ vcluster_subdomain }}"
         vcluster_ns: vcluster-{{ vcluster.name }}
       block:
         - name: Install vCluster Helm chart

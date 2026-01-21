@@ -19,15 +19,14 @@ vcluster_pv_sizes:
   etcd: 2Gi
   data: 2Gi
 
-vcluster_domain: "{{ ['vcluster'] | product(search_domains) | map('join','.') | first }}"
-
 # vCluster kube API server
 # external ingress domains
+vcluster_subdomain: vcluster.{{ homelab_domain }}
 vcluster_fqdns: |
   {% set fqdns = {} %}
   {% for vc in vclusters %}
   {%   set _ = fqdns.update({
-         vc.name: vc.name ~'.'~ vcluster_domain,
+         vc.name: vc.name ~'.'~ vcluster_subdomain,
        })   %}
   {% endfor %}
   {{ fqdns  }}

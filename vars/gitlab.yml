@@ -20,6 +20,7 @@ gitlab_host_names:
 # add gitlab.fourteeners.local and its subdomains to pfSense
 # DNS as aliases of ingress.fourteeners.local: 192.168.4.222
 # https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_filters.html#products
+gitlab_subdomain: gitlab.{{ homelab_domain }}
 gitlab_fqdns: |
   {% set fqdns = {} %}
   {% for service, host in gitlab_host_names.items() %}

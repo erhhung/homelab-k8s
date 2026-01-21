@@ -146,8 +146,8 @@ All cluster services will be provisioned with TLS certificates from Erhhung's pr
 
 - [X] Migrate manually provisioned certificates and secrets to ones issued by `cert-manager` with auto-rotation
 - [ ] Switch the CNI on the RKE2 cluster from Canal to Cilium and install Hubble web UI to visualize L3/L4 traffic
+- [X] Automate creation of static DNS records in pfSense _(dynamically assigned IPs are managed by ExternalDNS)_
 - [ ] Identify and upload additional sources of personal documents into Open WebUI knowledge base collections
-- [ ] Automate creation of DNS records in pfSense via custom Ansible module that invokes pfSense REST APIs
 
 ## Ansible Vault
 
@@ -173,17 +173,20 @@ ansible-vault view   $VAULTFILE
 | `docker_access_token`             | `minio_admin_pass`
 | `github_access_token`             | `velero_admin_pass`
 | `age_secret_key`                  | `harbor_admin_pass`
-| `metallb_secret`                  | `opensearch_admin_pass`
-| `step_ca_provisioner_pass`        | `keycloak_admin_pass`
-| `minio_client_pass`               | `thanos_admin_pass`
-| `velero_repo_pass`                | `grafana_admin_pass`
-| `velero_passphrase`               | `vault_admin_pass`
-| `harbor_secret`                   | `gitlab_root_pass`
-| `dashboards_os_pass`              | `gitlab_user_pass`
-| `fluent_os_pass`                  | `argocd_admin_pass`
-| `valkey_pass`                     | `awx_admin_pass`
-| `postgresql_pass`                 | `openwebui_admin_pass`
-| `keycloak_db_pass`                | `flowise_admin_pass`
+| `sops_encryption_key`             | `opensearch_admin_pass`
+| `yubikey_unlock_pin`              | `keycloak_admin_pass`
+| `pfsense_api_key`                 | `thanos_admin_pass`
+| `metallb_secret`                  | `grafana_admin_pass`
+| `step_ca_provisioner_pass`        | `vault_admin_pass`
+| `minio_client_pass`               | `gitlab_root_pass`
+| `velero_repo_pass`                | `gitlab_user_pass`
+| `velero_passphrase`               | `argocd_admin_pass`
+| `harbor_secret`                   | `awx_admin_pass`
+| `dashboards_os_pass`              | `openwebui_admin_pass`
+| `fluent_os_pass`                  | `flowise_admin_pass`
+| `valkey_pass`                     |
+| `postgresql_pass`                 |
+| `keycloak_db_pass`                |
 | `monitoring_pass`                 |
 | `monitoring_oidc_client_secret.*` |
 | `slack_webhook_urls.*`            |
@@ -279,56 +282,63 @@ however, all privileged operations using `sudo` will require the password stored
     ```
 </details>
 
-7. <details><summary>Install <strong>ExternalDNS</strong> to manage DNS records in pfSense</summary><br/>
+7. <details><summary>Create static DNS records in <strong>pfSense</strong> DNS Resolver</summary><br/>
 
-    7.1. Deploy webhook provider **Unbound** used by pfSense
+    ```bash
+    ./play.sh dns
+    ```
+</details>
+
+8. <details><summary>Install <strong>ExternalDNS</strong> to manage DNS records in <strong>pfSense</strong></summary><br/>
+
+    8.1. Deploy webhook provider **Unbound** used by pfSense
 
     ```bash
     ./play.sh externaldns
     ```
 </details>
 
-8. <details><summary>Install <strong><code>cert-manager</code></strong> to automate certificate issuing</summary><br/>
+9. <details><summary>Install <strong><code>cert-manager</code></strong> to automate certificate issuing</summary><br/>
 
-    8.1. Connect to **Step CA** `pki.fourteeners.local` as a `StepClusterIssuer`
+    9.1. Connect to **Step CA** `pki.fourteeners.local` as a `StepClusterIssuer`
 
     ```bash
     ./play.sh certmanager
     ```
 </details>
 
-9. <details><summary>Install <strong>Node Feature Discovery</strong> to identify GPU nodes</summary><br/>
+10. <details><summary>Install <strong>Node Feature Discovery</strong> to identify GPU nodes</summary><br/>
 
-    9.1. Install Intel Device Plugins and `GpuDevicePlugin`
+    10.1. Install Intel Device Plugins and `GpuDevicePlugin`
 
     ```bash
     ./play.sh nodefeatures
     ```
 </details>
 
-10. <details><summary>Install <strong>Wave</strong> to monitor <code>ConfigMaps</code> and <code>Secrets</code></summary><br/>
+11. <details><summary>Install <strong>Wave</strong> to monitor <code>ConfigMaps</code> and <code>Secrets</code></summary><br/>
 
     ```bash
     ./play.sh wave
     ```
 </details>
 
-11. <details><summary>Install <strong>Longhorn</strong> dynamic PV provisioner<br/> &nbsp; &nbsp; Install <strong>MinIO</strong> object storage in <em><strong>HA</strong></em> mode<br/> &nbsp; &nbsp; Install <strong>Velero</strong> backup and restore tools</summary><br/>
+12. <details><summary>Install <strong>Longhorn</strong> dynamic PV provisioner<br/> &nbsp; &nbsp; Install <strong>MinIO</strong> object storage in <em><strong>HA</strong></em> mode<br/> &nbsp; &nbsp; Install <strong>Velero</strong> backup and restore tools</summary><br/>
 
-    11.1. Create a pool of LVM logical volumes  
-    11.2. Install Longhorn storage components  
-    11.3. Install NFS dynamic PV provisioner  
-    11.4. Install MinIO tenant using NFS PVs  
-    11.5. Create MinIO buckets, users, groups  
-    11.6. Install Velero using MinIO as target  
-    11.7. Install Velero Dashboard
+    12.1. Create a pool of LVM logical volumes  
+    12.2. Install Longhorn storage components  
+    12.3. Install NFS dynamic PV provisioner  
+    12.4. Install MinIO tenant using NFS PVs  
+    12.5. Create MinIO buckets, users, groups  
+    12.6. Install Velero using MinIO as target  
+    12.7. Install Velero Dashboard
 
     ```bash
     ./play.sh storage minio velero
     ```
 </details>
 
-12. <details><summary>Create resources from manifest files</summary><br/>
+13. <details><summary>Create resources from manifest files</summary><br/>
 
     **IMPORTANT**: Resource manifests must specify the namespaces they wished to be installed  
     into because the playbook simply applies each one without targeting a specific namespace
@@ -338,162 +348,162 @@ however, all privileged operations using `sudo` will require the password stored
     ```
 </details>
 
-13. <details><summary>Install <strong>Harbor</strong> OCI & Helm registry</summary><br/>
+14. <details><summary>Install <strong>Harbor</strong> OCI & Helm registry</summary><br/>
 
-    13.1. Automatically populate Harbor with select images from external registries
+    14.1. Automatically populate Harbor with select images from external registries
 
     ```bash
     ./play.sh harbor
     ```
 </details>
 
-14. <details><summary>Install <strong>OpenSearch</strong> cluster in <em><strong>HA</strong></em> mode</summary><br/>
+15. <details><summary>Install <strong>OpenSearch</strong> cluster in <em><strong>HA</strong></em> mode</summary><br/>
 
-    14.1. Configure the OpenSearch security plugin (users and roles) for downstream applications  
-    14.2. Install **OpenSearch Dashboards** UI
+    15.1. Configure the OpenSearch security plugin (users and roles) for downstream applications  
+    15.2. Install **OpenSearch Dashboards** UI
 
     ```bash
     ./play.sh opensearch
     ```
 </details>
 
-15. <details><summary>Install <strong>Fluent Bit</strong> to ingest logs into OpenSearch</summary><br/>
+16. <details><summary>Install <strong>Fluent Bit</strong> to ingest logs into <strong>OpenSearch</strong></summary><br/>
 
     ```bash
     ./play.sh logging
     ```
 </details>
 
-16. <details><summary>Install <strong>PostgreSQL</strong> database in <em><strong>HA</strong></em> mode</summary><br/>
+17. <details><summary>Install <strong>PostgreSQL</strong> database in <em><strong>HA</strong></em> mode</summary><br/>
 
-    16.1. Run initialization SQL script to create roles and databases for downstream applications  
-    16.2. Create users in both PostgreSQL and **Pgpool**
+    17.1. Run initialization SQL script to create roles and databases for downstream applications  
+    17.2. Create users in both PostgreSQL and **Pgpool**
 
     ```bash
     ./play.sh postgresql
     ```
 </details>
 
-17. <details><summary>Install <strong>Keycloak</strong> IAM & OIDC provider</summary><br/>
+18. <details><summary>Install <strong>Keycloak</strong> IAM & OIDC provider</summary><br/>
 
-    17.1. Bootstrap **PostgreSQL** database with realm `homelab`, user `erhhung`, and OIDC clients
+    18.1. Bootstrap **PostgreSQL** database with realm `homelab`, user `erhhung`, and OIDC clients
 
     ```bash
     ./play.sh keycloak
     ```
 </details>
 
-18. <details><summary>Install <strong>Valkey</strong> key-value store in <em><strong>HA</strong></em> mode</summary><br/>
+19. <details><summary>Install <strong>Valkey</strong> key-value store in <em><strong>HA</strong></em> mode</summary><br/>
 
-    18.1. Deploy 6 nodes in total: 3 primaries and 3 replicas
+    19.1. Deploy 6 nodes in total: 3 primaries and 3 replicas
 
     ```bash
     ./play.sh valkey
     ```
 </details>
 
-19. <details><summary>Install <strong>Prometheus</strong>, <strong>Thanos</strong>, and <strong>Grafana</strong> in <em><strong>HA</strong></em> mode</summary><br/>
+20. <details><summary>Install <strong>Prometheus</strong>, <strong>Thanos</strong>, and <strong>Grafana</strong> in <em><strong>HA</strong></em> mode</summary><br/>
 
-    19.1. Expose Prometheus & Alertmanager UIs via `oauth2-proxy` integration with **Keycloak**  
-    19.2. Connect Thanos sidecars to **MinIO** to store scraped metrics in the `metrics` bucket  
-    19.3. Deploy and integrate other Thanos components with Prometheus and Alertmanager
+    20.1. Expose Prometheus & Alertmanager UIs via `oauth2-proxy` integration with **Keycloak**  
+    20.2. Connect Thanos sidecars to **MinIO** to store scraped metrics in the `metrics` bucket  
+    20.3. Deploy and integrate other Thanos components with Prometheus and Alertmanager
 
     ```bash
     ./play.sh monitoring thanos
     ```
 </details>
 
-20. <details><summary>Install <strong>Istio</strong> service mesh in <em><strong>ambient</strong></em> mode</summary><br/>
+21. <details><summary>Install <strong>Istio</strong> service mesh in <em><strong>ambient</strong></em> mode</summary><br/>
 
     ```bash
     ./play.sh istio
     ```
 </details>
 
-21. <details><summary>Create <strong>virtual Kubernetes clusters</strong> in RKE</summary><br/>
+22. <details><summary>Create <strong>virtual Kubernetes clusters</strong> in RKE</summary><br/>
 
     ```bash
     ./play.sh vclusters
     ```
 </details>
 
-22. <details><summary>Install <strong>HashiCorp Vault</strong> in <em><strong>HA</strong></em> mode<br/> &nbsp; &nbsp; Install <strong>External Secrets Operator</strong></summary><br/>
+23. <details><summary>Install <strong>HashiCorp Vault</strong> in <em><strong>HA</strong></em> mode<br/> &nbsp; &nbsp; Install <strong>External Secrets Operator</strong></summary><br/>
 
-    22.1. Initialize Vault cluster and unseal cluster pods  
-    22.2. Create policies, `Userpass` accounts, k8s roles  
-    22.3. Create `KV` mounts and populate secrets data  
-    22.4. Create ESO's `ClusterSecretStore` for Vault
+    23.1. Initialize Vault cluster and unseal cluster pods  
+    23.2. Create policies, `Userpass` accounts, k8s roles  
+    23.3. Create `KV` mounts and populate secrets data  
+    23.4. Create ESO's `ClusterSecretStore` for Vault
 
     ```bash
     ./play.sh vault externalsecrets
     ```
 </details>
 
-23. <details><summary>Install <strong>GitLab EE</strong> CI/CD Platform to build local images</summary><br/>
+24. <details><summary>Install <strong>GitLab EE</strong> CI/CD Platform to build local images</summary><br/>
 
-    23.1. Import Erhhung's SSH and GPG public keys, and create the `Homelab` group  
-    23.2. Configure **Harbor** and **Slack** integrations, and access GitHub using OmniAuth  
-    23.3. Configure and deploy **Kubernetes runner** for building images using `buildah`  
-    23.4. Use [`al2023-devops`](https://github.com/erhhung/al2023-devops) as the build container and load common pre-build script  
-    23.5. Deploy **CI Pipelines Exporter** to export metrics and visualize them in Grafana
+    24.1. Import Erhhung's SSH and GPG public keys, and create the `Homelab` group  
+    24.2. Configure **Harbor** and **Slack** integrations, and access GitHub using OmniAuth  
+    24.3. Configure and deploy **Kubernetes runner** for building images using `buildah`  
+    24.4. Use [`al2023-devops`](https://github.com/erhhung/al2023-devops) as the build container and load common pre-build script  
+    24.5. Deploy **CI Pipelines Exporter** to export metrics and visualize them in Grafana
 
     ```bash
     ./play.sh gitlab
     ```
 </details>
 
-24. <details><summary>Install <strong>Buildkite</strong> agent connected to <code>buildkite.com</code></summary><br/>
+25. <details><summary>Install <strong>Buildkite</strong> agent connected to <code>buildkite.com</code></summary><br/>
 
     ```bash
     ./play.sh buildkite
     ```
 
-25. <details><summary>Install <strong>Argo CD</strong> GitOps delivery in <em><strong>HA</strong></em> mode</summary><br/>
+26. <details><summary>Install <strong>Argo CD</strong> GitOps delivery in <em><strong>HA</strong></em> mode</summary><br/>
 
-    25.1. Configure Argo CD to use **Valkey** for caching  
-    25.2. Configure **GitLab** as an allowed SCM provider
+    26.1. Configure Argo CD to use **Valkey** for caching  
+    26.2. Configure **GitLab** as an allowed SCM provider
 
     ```bash
     ./play.sh argocd
     ```
 </details>
 
-26. <details><summary>Install <strong>Ansible AWX</strong> automation platform</summary><br/>
+27. <details><summary>Install <strong>Ansible AWX</strong> automation platform</summary><br/>
 
-    26.1. Create organization and custom execution environments based on [`al2023-devops`](https://github.com/erhhung/al2023-devops)  
-    26.2. Create credentials for all homelab hosts and access tokens for GitHub and GitLab  
-    26.3. Import this project and [`homelab-xcp`](https://github.com/erhhung/homelab-xcp), and inventories from their `hosts.ini` files
+    27.1. Create organization and custom execution environments based on [`al2023-devops`](https://github.com/erhhung/al2023-devops)  
+    27.2. Create credentials for all homelab hosts and access tokens for GitHub and GitLab  
+    27.3. Import this project and [`homelab-xcp`](https://github.com/erhhung/homelab-xcp), and inventories from their `hosts.ini` files
 
     ```bash
     ./play.sh awx
     ```
 </details>
 
-27. <details><summary>Install <strong>Metacontroller</strong> to create Operators</summary><br/>
+28. <details><summary>Install <strong>Metacontroller</strong> to create Operators</summary><br/>
 
     ```bash
     ./play.sh metacontroller
     ```
 </details>
 
-28. <details><summary>Install <strong>Qdrant</strong> vector database in <em><strong>HA</strong></em> mode</summary><br/>
+29. <details><summary>Install <strong>Qdrant</strong> vector database in <em><strong>HA</strong></em> mode</summary><br/>
 
     ```bash
     ./play.sh qdrant
     ```
 </details>
 
-29. <details><summary>Install <strong>Ollama</strong> LLM server with common models<br/> &nbsp; &nbsp; Install <strong>Open WebUI</strong> AI platform with <strong>Pipelines</strong></summary><br/>
+30. <details><summary>Install <strong>Ollama</strong> LLM server with common models<br/> &nbsp; &nbsp; Install <strong>Open WebUI</strong> AI platform with <strong>Pipelines</strong></summary><br/>
 
-    29.1. Create `Accounts` knowledge base, and then `Accounts` custom model that embeds that KB  
-    29.2. **NOTE**: Populate `Accounts` KB by running `./play.sh openwebui -t knowledge` separately
+    30.1. Create `Accounts` knowledge base, and then `Accounts` custom model that embeds that KB  
+    30.2. **NOTE**: Populate `Accounts` KB by running `./play.sh openwebui -t knowledge` separately
 
     ```bash
     ./play.sh ollama openwebui
     ```
 </details>
 
-30. <details><summary>Install <strong>Flowise</strong> AI platform and integrations</summary><br/>
+31. <details><summary>Install <strong>Flowise</strong> AI platform and integrations</summary><br/>
 
     Current deployment uses local images in Harbor registry that were built by GitLab CI.
 

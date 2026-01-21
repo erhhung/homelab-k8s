@@ -27,7 +27,7 @@
 
     - name: Ensure DNS resolution works
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
-      ansible.builtin.include_tasks: tasks/hosts/dns.yml
+      ansible.builtin.include_tasks: tasks/dns/check.yml
 
     - name: Is Longhorn already installed?
       become: false
