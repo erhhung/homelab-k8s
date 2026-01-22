@@ -6,7 +6,7 @@ The approach taken on all service deployments is to treat the clusters as a **pr
 
 ## Overview
 
-The top-level Ansible playbook `main.yml` run by `play.sh` will provision 7 VM hosts (`rancher` and `k8s1`..`k8s6`)
+The top-level Ansible playbook `main.yml` run by `make` will provision 7 VM hosts (`rancher` and `k8s1`..`k8s6`)
 in the existing XCP-ng `Homelab` pool, all running Ubuntu Server 24.04 Minimal without customizations besides basic networking
 and authorized SSH key for user `erhhung`.
 
@@ -225,7 +225,7 @@ however, all privileged operations using `sudo` will require the password stored
     1.5. **Debugging** — Tools like `tcpdump`, `tshark`
 
     ```bash
-    ./play.sh packages
+    make packages
     ```
 </details>
 
@@ -238,7 +238,7 @@ however, all privileged operations using `sudo` will require the password stored
     2.5. **Certs** — add CA certificates to trust store
 
     ```bash
-    ./play.sh basics
+    make basics
     ```
 </details>
 
@@ -248,14 +248,14 @@ however, all privileged operations using `sudo` will require the password stored
     3.2. **Config files**: `htop`, `fastfetch`
 
     ```bash
-    ./play.sh files
+    make files
     ```
 </details>
 
 4. <details><summary>Install <strong>Rancher Server</strong> on single-node <strong>K3s</strong> cluster</summary><br/>
 
     ```bash
-    ./play.sh rancher
+    make rancher
     ```
 </details>
 
@@ -268,7 +268,7 @@ however, all privileged operations using `sudo` will require the password stored
     5.1. Deploy another NGINX ingress controller for SSL passthrough
 
     ```bash
-    ./play.sh cluster
+    make cluster
     ```
 </details>
 
@@ -278,14 +278,14 @@ however, all privileged operations using `sudo` will require the password stored
          to complement **FRR BGP** configuration on **pfSense**, the local router
 
     ```bash
-    ./play.sh metallb
+    make metallb
     ```
 </details>
 
 7. <details><summary>Create static DNS records in <strong>pfSense</strong> DNS Resolver</summary><br/>
 
     ```bash
-    ./play.sh dns
+    make dns
     ```
 </details>
 
@@ -294,7 +294,7 @@ however, all privileged operations using `sudo` will require the password stored
     8.1. Deploy webhook provider **Unbound** used by pfSense
 
     ```bash
-    ./play.sh externaldns
+    make externaldns
     ```
 </details>
 
@@ -303,7 +303,7 @@ however, all privileged operations using `sudo` will require the password stored
     9.1. Connect to **Step CA** `pki.fourteeners.local` as a `StepClusterIssuer`
 
     ```bash
-    ./play.sh certmanager
+    make certmanager
     ```
 </details>
 
@@ -312,14 +312,14 @@ however, all privileged operations using `sudo` will require the password stored
     10.1. Install Intel Device Plugins and `GpuDevicePlugin`
 
     ```bash
-    ./play.sh nodefeatures
+    make nodefeatures
     ```
 </details>
 
 11. <details><summary>Install <strong>Wave</strong> to monitor <code>ConfigMaps</code> and <code>Secrets</code></summary><br/>
 
     ```bash
-    ./play.sh wave
+    make wave
     ```
 </details>
 
@@ -334,7 +334,7 @@ however, all privileged operations using `sudo` will require the password stored
     12.7. Install Velero Dashboard
 
     ```bash
-    ./play.sh storage minio velero
+    make storage minio velero
     ```
 </details>
 
@@ -344,7 +344,7 @@ however, all privileged operations using `sudo` will require the password stored
     into because the playbook simply applies each one without targeting a specific namespace
 
     ```bash
-    ./play.sh manifests
+    make manifests
     ```
 </details>
 
@@ -353,7 +353,7 @@ however, all privileged operations using `sudo` will require the password stored
     14.1. Automatically populate Harbor with select images from external registries
 
     ```bash
-    ./play.sh harbor
+    make harbor
     ```
 </details>
 
@@ -363,14 +363,14 @@ however, all privileged operations using `sudo` will require the password stored
     15.2. Install **OpenSearch Dashboards** UI
 
     ```bash
-    ./play.sh opensearch
+    make opensearch
     ```
 </details>
 
 16. <details><summary>Install <strong>Fluent Bit</strong> to ingest logs into <strong>OpenSearch</strong></summary><br/>
 
     ```bash
-    ./play.sh logging
+    make logging
     ```
 </details>
 
@@ -380,7 +380,7 @@ however, all privileged operations using `sudo` will require the password stored
     17.2. Create users in both PostgreSQL and **Pgpool**
 
     ```bash
-    ./play.sh postgresql
+    make postgresql
     ```
 </details>
 
@@ -389,7 +389,7 @@ however, all privileged operations using `sudo` will require the password stored
     18.1. Bootstrap **PostgreSQL** database with realm `homelab`, user `erhhung`, and OIDC clients
 
     ```bash
-    ./play.sh keycloak
+    make keycloak
     ```
 </details>
 
@@ -398,7 +398,7 @@ however, all privileged operations using `sudo` will require the password stored
     19.1. Deploy 6 nodes in total: 3 primaries and 3 replicas
 
     ```bash
-    ./play.sh valkey
+    make valkey
     ```
 </details>
 
@@ -409,21 +409,21 @@ however, all privileged operations using `sudo` will require the password stored
     20.3. Deploy and integrate other Thanos components with Prometheus and Alertmanager
 
     ```bash
-    ./play.sh monitoring thanos
+    make monitoring thanos
     ```
 </details>
 
 21. <details><summary>Install <strong>Istio</strong> service mesh in <em><strong>ambient</strong></em> mode</summary><br/>
 
     ```bash
-    ./play.sh istio
+    make istio
     ```
 </details>
 
 22. <details><summary>Create <strong>virtual Kubernetes clusters</strong> in RKE</summary><br/>
 
     ```bash
-    ./play.sh vclusters
+    make vclusters
     ```
 </details>
 
@@ -435,7 +435,7 @@ however, all privileged operations using `sudo` will require the password stored
     23.4. Create ESO's `ClusterSecretStore` for Vault
 
     ```bash
-    ./play.sh vault externalsecrets
+    make vault externalsecrets
     ```
 </details>
 
@@ -448,14 +448,14 @@ however, all privileged operations using `sudo` will require the password stored
     24.5. Deploy **CI Pipelines Exporter** to export metrics and visualize them in Grafana
 
     ```bash
-    ./play.sh gitlab
+    make gitlab
     ```
 </details>
 
 25. <details><summary>Install <strong>Buildkite</strong> agent connected to <code>buildkite.com</code></summary><br/>
 
     ```bash
-    ./play.sh buildkite
+    make buildkite
     ```
 
 26. <details><summary>Install <strong>Argo CD</strong> GitOps delivery in <em><strong>HA</strong></em> mode</summary><br/>
@@ -464,7 +464,7 @@ however, all privileged operations using `sudo` will require the password stored
     26.2. Configure **GitLab** as an allowed SCM provider
 
     ```bash
-    ./play.sh argocd
+    make argocd
     ```
 </details>
 
@@ -475,58 +475,59 @@ however, all privileged operations using `sudo` will require the password stored
     27.3. Import this project and [`homelab-xcp`](https://github.com/erhhung/homelab-xcp), and inventories from their `hosts.ini` files
 
     ```bash
-    ./play.sh awx
+    make awx
     ```
 </details>
 
 28. <details><summary>Install <strong>Metacontroller</strong> to create Operators</summary><br/>
 
     ```bash
-    ./play.sh metacontroller
+    make metacontroller
     ```
 </details>
 
 29. <details><summary>Install <strong>Qdrant</strong> vector database in <em><strong>HA</strong></em> mode</summary><br/>
 
     ```bash
-    ./play.sh qdrant
+    make qdrant
     ```
 </details>
 
 30. <details><summary>Install <strong>Ollama</strong> LLM server with common models<br/> &nbsp; &nbsp; Install <strong>Open WebUI</strong> AI platform with <strong>Pipelines</strong></summary><br/>
 
-    30.1. Create `Accounts` knowledge base, and then `Accounts` custom model that embeds that KB  
-    30.2. **NOTE**: Populate `Accounts` KB by running `./play.sh openwebui -t knowledge` separately
+    30.1. Create `Accounts` knowledge base and `Accounts` custom model that embeds that KB  
+    30.2. **NOTE**: Populate `Accounts` KB by running `make openwebui -t knowledge` separately
 
     ```bash
-    ./play.sh ollama openwebui
+    make ollama openwebui
     ```
 </details>
 
 31. <details><summary>Install <strong>Flowise</strong> AI platform and integrations</summary><br/>
 
-    Current deployment uses local images in Harbor registry that were built by GitLab CI.
+    Current deployment uses local images in Harbor registry that were built by GitLab CI.  
+    31.1. **NOTE**: Populate documents by running `make flowise -t documents` separately
 
     ```bash
-    ./play.sh flowise
+    make flowise
     ```
 </details>
 
 Alternatively, **run all playbooks** automatically in order:
 
 ```bash
-# pass options like -v and --step
-./play.sh [ansible-playbook-opts]
+# specify options like -v or -t
+make -- [ansible-playbook-opts]
 
 # run all playbooks starting from "storage"
 # ("storage" is a playbook tag in main.yml)
-./play.sh storage-
+make -- storage-
 
-# run all playbooks up to "wave" (inclusive)
-./play.sh -wave
+# run all playbooks up to "dns" (inclusive)
+make -- -dns
 ```
 
-Output from `play.sh` will be logged in "`ansible.log`".
+Output from playbook runs will be logged in "`ansible.log`".
 
 ### VS Code Shortcuts
 
@@ -541,7 +542,7 @@ Due to the dependency chain of the **Prometheus monitoring stack** (Keycloak and
 1. Shut down all/specific VMs
 
     ```bash
-    ansible-playbook vms.shutdown.yml [-e targets={group|host|,...}]
+    make vmshutdown [{group|host}] [{group|host}]...
     ```
 
 2. Create/revert/delete VM snapshots
@@ -549,35 +550,33 @@ Due to the dependency chain of the **Prometheus monitoring stack** (Keycloak and
     <details><summary>2.1. Create new snaphots</summary><br/>
 
     ```bash
-    ansible-playbook vms.snapshot.yml [-e targets={group|host|,...}] \
-                                       -e '{"desc":"text description"}'
+    make vmsnapshot create [targets={group|host},...] \
+                               desc="text description"
     ```
     </details>
 
     <details><summary>2.2. Revert to snapshots</summary><br/>
 
     ```bash
-    ansible-playbook vms.snapshot.yml -e do=revert \
-                                     [-e targets={group|host|,...}]  \
-                                      -e '{"desc":"text to search"}' \
-                                     [-e '{"date":"YYYY-mm-dd prefix"}']
+    make vmsnapshot revert [targets={group|host},...]  \
+                               desc="text description" \
+                              [date="YYYY-mm-dd prefix"]
     ```
     </details>
 
     <details><summary>2.3. Delete old snaphots</summary><br/>
 
     ```bash
-    ansible-playbook vms.snapshot.yml -e do=delete \
-                                     [-e targets={group|host|,...}]  \
-                                      -e '{"desc":"text to search"}' \
-                                      -e '{"date":"YYYY-mm-dd prefix"}'
+    make vmsnapshot delete [targets={group|host},...]  \
+                               desc="text description" \
+                               date="YYYY-mm-dd prefix"
     ```
     </details>
 
 3. Start all/specific VMs
 
     ```bash
-    ansible-playbook vms.start.yml [-e targets={group|host|,...}]
+    make vmstart [{group|host}] [{group|host}]...
     ```
 
 ## VM Storage
