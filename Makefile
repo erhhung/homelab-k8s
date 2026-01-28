@@ -15,6 +15,7 @@ endif
 
  PHONY := all play debug check lint tags
  PHONY += vmstart vmshutdown vmsnapshot
+ PHONY += diskfree unseal
 .PHONY: $(PHONY)
 
 # targets are playbook names with optional dash prefix/suffix (refer to
@@ -53,17 +54,6 @@ endif
 play:
 	@./play.sh $(play_args)
 
-# `make <vmstart|vmshutdown> [target1] [target2]...
-vmstart vmshutdown:
-	@$(VMSTART_VMSHUTDOWN)
-
-# `make vmsnapshot <create|<revert|delete>
-#   [targets=target1,target2,...]
-#      [desc="text to search"]
-#      [date="YYYY-mm prefix"]`
-vmsnapshot:
-	@$(VMSNAPSHOT)
-
 # run the debugging playbook (usually invoked by
 # `make debug -- -t <tag>` to run specific play)
 debug:
@@ -81,6 +71,10 @@ lint:
 tags:
 	@printf "%s\n" $(PLAYBOOKS)
 
+# `make <vmstart|vmshutdown> [target1] [target2]...`
+vmstart vmshutdown:
+	@$(VMSTART_VMSHUTDOWN)
+
 # with `.ONESHELL:` defined above,
 # all lines are run in same shell
 define VMSTART_VMSHUTDOWN
@@ -92,6 +86,13 @@ args=("$${args// /,}")
 ansible-playbook "$${args[@]}" "$$playbook"
 endef
 
+# `make vmsnapshot <create|<revert|delete>
+#   [targets=target1,target2,...]
+#      [desc="text to search"]
+#      [date="YYYY-mm prefix"]`
+vmsnapshot:
+	@$(VMSNAPSHOT)
+
 define VMSNAPSHOT
 args=(-s do="$(firstword $(rest_goals))")
 [ "$(targets)" ] && args+=(-s targets="$(targets)")
@@ -100,3 +101,12 @@ args=(-s do="$(firstword $(rest_goals))")
 args=(--extra-vars "$$(jo -- "$${args[@]}")")
 ansible-playbook "$${args[@]}" vms.snapshot.yml
 endef
+
+# show available disk space on all cluster nodes
+diskfree:
+	@./diskfree.sh || true
+
+# unseal Vault pods, optionally restarting them first
+#  `make unseal [-r|--restart] [index1] [index2]...`
+unseal:
+	@./files/vault/unseal.sh $(rest_goals) || true
