@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 
+# shellcheck disable=SC2164 # Use cd ... || exit if cd fails
+# shellcheck disable=SC2181 # Check exit code with: if ! ...
+
 cd "$(dirname "$0")"
 SCD_FILE="$(pwd)/$(basename "$0" .sh).scd"
 
