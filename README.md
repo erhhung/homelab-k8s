@@ -58,6 +58,7 @@ All cluster services will be provisioned with TLS certificates from Erhhung's pr
 |         https://qdrant.fourteeners.local | Qdrant dashboard
 |         https://ollama.fourteeners.local | Ollama API server
 |      https://openwebui.fourteeners.local | Open WebUI portal
+|           https://mcpo.fourteeners.local | MCP OpenAPI proxy
 |        https://flowise.fourteeners.local | Flowise designer
 
 ## Installation Sources
@@ -132,6 +133,7 @@ All cluster services will be provisioned with TLS certificates from Erhhung's pr
 - [X] [Open WebUI AI Platform](https://github.com/open-webui/open-webui) — extensible AI platform with Ollama integration and local RAG support
     * Install on main RKE cluster using the [`open-webui`](https://github.com/open-webui/helm-charts/tree/main/charts/open-webui) Helm chart
     * [X] Replace the default Chroma vector DB with [Qdrant](https://github.com/qdrant/qdrant) — install using the [`qdrant`](https://github.com/qdrant/qdrant-helm) Helm chart
+    * [X] Deploy [MCP OpenAPI (`mcpo`)](https://docs.openwebui.com/features/plugin/tools/openapi-servers/mcp) proxy server with select tools using the [`mcpo`](https://github.com/first-it-consulting/helm-mcpo) Helm chart
 - [X] [Flowise Agentic Workflows](https://flowiseai.com/) — build AI agents using visual workflows
     * Install on main RKE cluster using the [`flowise`](https://github.com/cowboysysop/charts/tree/master/charts/flowise) Helm chart
 - [ ] [Backstage Developer Portal](https://backstage.io/) — software catalog and developer portal
@@ -148,6 +150,7 @@ All cluster services will be provisioned with TLS certificates from Erhhung's pr
 - [ ] Switch the CNI on the RKE2 cluster from Canal to Cilium and install Hubble web UI to visualize L3/L4 traffic
 - [X] Automate creation of static DNS records in pfSense _(dynamically assigned IPs are managed by ExternalDNS)_
 - [ ] Identify and upload additional sources of personal documents into Open WebUI knowledge base collections
+- [ ] Enable OIDC authentication for additional services: AWX, ArgoCD, Open WebUI
 
 ## Ansible Vault
 
@@ -200,7 +203,8 @@ ansible-vault view   $VAULTFILE
 | `hass_access_token`               |
 | `qdrant_api_key.*`                |
 | `openwebui_secret_key`            |
-| `pipelines_api_key`               |
+| `openwebui_pipelines_api_key`     |
+| `openwebui_mcpo_api_key`          |
 | `flowise_encryption_key`          |
 | `anthropic_api_key`               |
 | `openai_api_key`                  |
@@ -323,7 +327,9 @@ however, all privileged operations using `sudo` will require the password stored
     ```
 </details>
 
-12. <details><summary>Install <strong>Longhorn</strong> dynamic PV provisioner<br/> &nbsp; &nbsp; Install <strong>MinIO</strong> object storage in <em><strong>HA</strong></em> mode<br/> &nbsp; &nbsp; Install <strong>Velero</strong> backup and restore tools</summary><br/>
+12. <details><summary>Install <strong>Longhorn</strong> dynamic PV provisioner<br/>
+    &nbsp; &nbsp; Install <strong>MinIO</strong> object storage in <em><strong>HA</strong></em> mode<br/>
+    &nbsp; &nbsp; Install <strong>Velero</strong> backup and restore tools</summary><br/>
 
     12.1. Create a pool of LVM logical volumes  
     12.2. Install Longhorn storage components  
@@ -427,7 +433,8 @@ however, all privileged operations using `sudo` will require the password stored
     ```
 </details>
 
-23. <details><summary>Install <strong>HashiCorp Vault</strong> in <em><strong>HA</strong></em> mode<br/> &nbsp; &nbsp; Install <strong>External Secrets Operator</strong></summary><br/>
+23. <details><summary>Install <strong>HashiCorp Vault</strong> in <em><strong>HA</strong></em> mode<br/>
+    &nbsp; &nbsp; Install <strong>External Secrets Operator</strong></summary><br/>
 
     23.1. Initialize Vault cluster and unseal cluster pods  
     23.2. Create policies, `Userpass` accounts, k8s roles  
@@ -493,7 +500,9 @@ however, all privileged operations using `sudo` will require the password stored
     ```
 </details>
 
-30. <details><summary>Install <strong>Ollama</strong> LLM server with common models<br/> &nbsp; &nbsp; Install <strong>Open WebUI</strong> AI platform with <strong>Pipelines</strong></summary><br/>
+30. <details><summary>Install <strong>Ollama</strong> LLM server with common models<br/>
+    &nbsp; &nbsp; Install <strong>Open WebUI</strong> AI platform with <strong>Pipelines</strong><br/>
+    &nbsp; &nbsp; Install <strong>MCP OpenAPI</strong> proxy with MCP servers</summary><br/>
 
     30.1. Create `Accounts` knowledge base and `Accounts` custom model that embeds that KB  
     30.2. **NOTE**: Populate `Accounts` KB by running `make openwebui -t knowledge` separately

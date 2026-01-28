@@ -1,0 +1,144 @@
+# openwebui_mcpo_api_key: {vault.yml}
+
+mcpo_namespace: open-webui
+mcpo_host_names: # aliases of "ingress"
+  - mcpo
+  - mcp
+
+# remember to add mcpo.fourteeners.local and mcp. to pfSense
+# DNS as aliases of ingress.fourteeners.local: 192.168.4.222
+# https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_filters.html#products
+mcpo_fqdns: "{{ mcpo_host_names | product(search_domains) | map('join','.') }}"
+
+mcpo_service_host: "{{ mcpo_release_name }}.{{
+  mcpo_namespace }}.svc.{{ cluster_domain }}"
+mcpo_service_port: 8000
+mcpo_service_url: http://{{ mcpo_service_host }}:{{ mcpo_service_port }}
+
+mcpo_secrets:
+  ingress: mcpo-ingress-tls
+  api-key: mcpo-api-key
+
+# https://github.com/first-it-consulting/helm-mcpo
+mcpo_chart_version: "0.2.7" # uses old mcpo image
+mcpo_release_name: mcpo
+
+# https://github.com/first-it-consulting/helm-mcpo/tree/main/values.yaml
+mcpo_chart_values:
+  replicaCount: 1
+
+  image:
+    # https://github.com/open-webui/mcpo/pkgs/container/mcpo/versions?filters%5Bversion_type%5D=tagged
+    tag: git-91e8f94
+
+  env:
+    # /.npm is on read-only filesystem:
+    # use writable cache volume instead
+    NPM_CONFIG_CACHE: /.cache/npm
+  envSecrets:
+    MCPO_API_KEY: # referenced by container args
+      secretName: "{{ mcpo_secrets['api-key'] }}"
+      secretKey: MCPO_API_KEY
+
+  podSecurityContext:
+    fsGroup: 2000
+  securityContext:
+    capabilities:
+      drop: ["ALL"]
+    readOnlyRootFilesystem: true
+    runAsNonRoot: true
+    runAsUser: 1000
+
+  resources:
+    requests:
+      cpu: 10m
+      memory: 256Mi
+
+  ingress:
+    enabled: true
+    tls:
+      - secretName: "{{ mcpo_secrets['ingress'] }}"
+        hosts: "{{ mcpo_fqdns }}"
+    className: "{{ rke_ingress_class }}"
+    annotations:
+      nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+      nginx.ingress.kubernetes.io/backend-protocol: HTTP
+      # redirect root domain to Swagger UI at /docs
+      nginx.ingress.kubernetes.io/server-snippet: |
+        location = / {
+          return 308 $scheme://$host/docs;
+        }
+    hosts: "{{ mcpo_fqdns }}"
+    path: /
+    pathType: Prefix
+
+  # https://github.com/open-webui/mcpo#-using-a-config-file
+  config:
+    mcpServers:
+      # https://github.com/modelcontextprotocol/servers/tree/main/src/time
+      time:
+        command: uvx
+        args:
+          - mcp-server-time
+          - --local-timezone={{ system_time_zone }}
+      # https://github.com/modelcontextprotocol/servers/tree/main/src/memory
+      memory:
+        command: npx
+        args:
+          - -y
+          - "@modelcontextprotocol/server-memory"
+      # https://github.com/modelcontextprotocol/servers/tree/main/src/sequentialthinking
+      sequential-thinking:
+        command: npx
+        args:
+          - -y
+          - "@modelcontextprotocol/server-sequential-thinking"
+
+# each tool server corresponds to an MCP
+# server, even if a single MCPO instance
+# hosts multiple MCP servers
+mcp_tool_servers:
+  - &tool
+    info:
+      id: time
+      # https://github.com/modelcontextprotocol/servers/tree/main/src/time
+      name: Time Server
+      description: >-
+        Provides time and timezone conversion capabilities
+        by allowing models to get current time information
+        and perform conversions using IANA timezone names,
+        with automatic system timezone detection.
+    type: openapi
+    spec_type: url
+    url: "{{ mcpo_service_url }}/time"
+    path: openapi.json
+    auth_type: bearer
+    key: "{{ openwebui_mcpo_api_key }}"
+    config:
+      enable: true
+      access_control:
+        read:
+          group_ids:
+            # fact set by earlier task
+            - "{{ family_group_id }}"
+
+  - <<: *tool
+    info:
+      id: memory
+      # https://github.com/modelcontextprotocol/servers/tree/main/src/memory
+      name: Memory Server
+      description: >-
+        Implements persistent memory using local knowledge
+        graph, allowing Open WebUI to remember information
+        about the user across chats.
+    url: "{{ mcpo_service_url }}/memory"
+
+  - <<: *tool
+    info:
+      id: sequential-thinking
+      # https://github.com/modelcontextprotocol/servers/tree/main/src/sequentialthinking
+      name: Sequential Thinking Server
+      description: >-
+        Enables reflective problem-solving through
+        a structured, step-by-step thinking process.
+    url: "{{ mcpo_service_url }}/sequential-thinking"
