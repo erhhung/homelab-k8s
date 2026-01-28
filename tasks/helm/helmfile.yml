@@ -21,7 +21,12 @@
 #   extras:      [optional] adoptees flatten(1)
 #     - <apiVersion> <kind> <name> [?] pre-created (string)
 #                                  '?' ignore if not found
-#     - {apiVersion,  kind,  ...}      full object (dict)
+#     - {apiVersion,  kind, ...}       full resource (dict)
+#   helm_hooks:  [optional] run before helm command
+#                           ($CHART_DIR is defined)
+#     template:  [optional] Bash commands
+#     install:   [optional] Bash commands
+#     upgrade:   [optional] Bash commands
 #   ignore:      [optional] ignore diffs
 #     lines      [optional] line regexes
 #     kinds      [optional] object kinds
@@ -177,9 +182,10 @@
           # https://github.com/bedag/helm-charts/tree/master/charts/raw#examples
           # https://github.com/bedag/helm-charts/tree/master/charts/raw/values.yaml
           - | # keep extras values at index 0
-            {{ { extras_chart.dependency.alias:
-                   { 'resources': objects }
-               }            if has_extras        else [] }}
+            {{ { extras_chart.dependency.alias: {
+                   'enabled':   true,
+                   'resources': objects,
+               } }          if has_extras        else [] }}
           - "{{ values_file if values is defined else [] }}"
 
         # https://helmfile.readthedocs.io/en/latest#configuration
@@ -192,6 +198,12 @@
           apiVersions: |
             {{ (kubernetes_apis.spec.keys() +
                 kubernetes_apis.kinds) | sort }}
+
+          # use wrapper script to allow running custom
+          # Bash commands before `helm` if helm_hooks.*
+          # [template|install|upgrade] are defined (see
+          # templates/packages/install/helmfile.sh)
+          helmBinary: /usr/local/bin/helm.sh
 
           # use wrapper script to sanitize chart templates
           # (dedup keys) before running `kustomize build`
@@ -354,6 +366,16 @@
         }
         clean_up
         chmod 600 $TMPDIR/*.yaml
+
+        {% for hook in ['template','install','upgrade'] -%}
+        {%   if helm_hooks[hook] is defined -%}
+        export HELM_{{ hook | upper }}_HOOK="$(
+        cat <<'EOT'
+        {{ helm_hooks[hook] | trim }}
+        EOT
+        )"
+        {%   endif -%}
+        {% endfor  -%}
 
         # --skip-diff-on-install prevents "missing CRD"
         # errors when CRs are installed alongside CRDs;

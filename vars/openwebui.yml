@@ -1,7 +1,7 @@
-# openwebui_admin_pass: {vault.yml}
-# openwebui_secret_key: {vault.yml}
-#    pipelines_api_key: {vault.yml}
-#       openai_api_key: {vault.yml}
+# openwebui_admin_pass:        {vault.yml}
+# openwebui_secret_key:        {vault.yml}
+# openwebui_pipelines_api_key: {vault.yml}
+#              openai_api_key: {vault.yml}
 
 # API request body for
 # /api/v1/auths/signup
@@ -174,7 +174,7 @@ openwebui_extras:
 
 # https://github.com/open-webui/helm-charts/tree/main/charts/open-webui
 openwebui_chart_repo_url: https://helm.openwebui.com
-openwebui_chart_version: "8.22.0"
+openwebui_chart_version: "10.2.1"
 # openwebui_app_version: {fact}
 openwebui_release_name: open-webui
 
@@ -398,23 +398,29 @@ openwebui_chart_values:
     limits:
       cpu: 1000m
 
-  readinessProbe:
-    httpGet:
-      path: /health/db
-      port: http
-    initialDelaySeconds: 30
-    periodSeconds: 10
-    timeoutSeconds: 5
-    failureThreshold: 6
-
-  livenessProbe:
+  # database bootstrapping and model downloads can take a
+  # long time, especially if cluster load is already high
+  startupProbe:
     httpGet:
       path: /health
       port: http
-    initialDelaySeconds: 30
+    initialDelaySeconds: 180
+    periodSeconds: 5
+    timeoutSeconds: 5
+    failureThreshold: 24
+  readinessProbe: &probe
+    httpGet:
+      path: /health/db
+      port: http
+    initialDelaySeconds: 10
     periodSeconds: 10
     timeoutSeconds: 5
     failureThreshold: 6
+  livenessProbe:
+    <<: *probe
+    httpGet:
+      path: /health
+      port: http
 
   # mount database TLS secret and
   # PVCs for vector DB and cache

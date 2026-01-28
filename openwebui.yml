@@ -16,7 +16,7 @@
     - vars/ollama.yml
     - vars/qdrant.yml
     - vars/openwebui.yml
-  vars:
+  vars: &vars
     # required kubernetes>=24.2 package only in user virtualenv
     ansible_python_interpreter: "{{ venv_python_interpreter }}"
     kubeconfig: "{{ rke_kubeconfig }}"
@@ -96,7 +96,7 @@
           OPENAI_API_KEYS: >-
             {% set keys = [openai_api_key] -%}
             {% if pipelines.enabled -%}
-            {%   set _ = keys.insert(0, pipelines_api_key) -%}
+            {%   set _ = keys.insert(0, openwebui_pipelines_api_key) -%}
             {% endif -%}
             {{ keys | join(';') }}
       ansible.builtin.include_tasks: tasks/k8s/secrets/generic.yml
@@ -123,6 +123,117 @@
         task_timeout: 900
       ansible.builtin.include_tasks: tasks/helm/helmfile.yml
 
+# https://docs.openwebui.com/features/plugin/tools/openapi-servers/mcp
+- name: Install MCPO proxy server
+  tags: mcpo
+  hosts: "{{ rke_control_plane_host }}"
+  vars_files:
+    - vars/basics.yml
+    - vars/kubernetes.yml
+    - vars/openwebui.mcpo.yml
+  vars:
+    <<: *vars
+    secret_ns: "{{ mcpo_namespace }}"
+  tasks:
+    - name: Create MCPO ingress secret
+      vars:
+        secret_name: "{{ mcpo_secrets['ingress'] }}"
+        cert_name: mcpo-ingress
+        sans: "{{ mcpo_fqdns }}"
+      ansible.builtin.include_tasks: tasks/k8s/secrets/tls.step.yml
+
+    - name: Create MCPO API key secret
+      vars:
+        secret_name: "{{ mcpo_secrets['api-key'] }}"
+        secret_data:
+          MCPO_API_KEY: "{{ openwebui_mcpo_api_key }}"
+      ansible.builtin.include_tasks: tasks/k8s/secrets/generic.yml
+
+    - name: Install MCPO Helm chart
+      vars:
+        repo_name: mcpo-helm
+        repo_url: https://first-it-consulting.github.io/helm-mcpo
+        chart_ref: mcpo
+        chart_ver: "{{ mcpo_chart_version }}"
+        release: "{{ mcpo_release_name }}"
+        release_ns: "{{ mcpo_namespace }}"
+        values: "{{ mcpo_chart_values }}"
+
+        patches:
+          merge_patches:
+            - apiVersion: apps/v1
+              kind: Deployment
+              metadata:
+                name: "{{ mcpo_release_name }}"
+              spec:
+                template:
+                  spec:
+                    containers:
+                      - name: mcpo
+                        readinessProbe: &probe
+                          periodSeconds: 10
+                          timeoutSeconds: 5
+                          failureThreshold: 6
+                        livenessProbe: *probe
+          json_patches:
+            - target:
+                group: apps
+                version: v1
+                kind: Deployment
+                name: "{{ mcpo_release_name }}"
+              patch:
+                # chart doesn't currently support extra args:
+                # https://github.com/first-it-consulting/helm-mcpo/issues/3
+
+                # add --hot-reload after --config */config.json:
+                # https://github.com/open-webui/mcpo#-using-a-config-file
+                - op: add
+                  path: /spec/template/spec/containers/0/args/2
+                  value: --hot-reload
+                # add --api-key to secure /openapi.json endpoint:
+                # https://github.com/open-webui/mcpo#-quick-usage
+                - &mcpo-args
+                  op: add
+                  path: /spec/template/spec/containers/0/args/-
+                  value: --api-key
+                - <<: *mcpo-args
+                  value: $(MCPO_API_KEY)
+
+                # writable $XDG_CACHE_HOME and $XDG_DATA_HOME:
+                # https://docs.astral.sh/uv/reference/environment
+                - &mcpo-mounts
+                  op: add
+                  path: /spec/template/spec/containers/0/volumeMounts/-
+                  value:
+                    name: cache
+                    mountPath: /.cache
+                - <<: *mcpo-mounts
+                  value:
+                    name: data
+                    mountPath: /.local/share
+                - &mcpo-volumes
+                  op: add
+                  path: /spec/template/spec/volumes/-
+                  value:
+                    name: cache
+                    emptyDir: {}
+                - <<: *mcpo-volumes
+                  value:
+                    name: data
+                    emptyDir: {}
+
+        extras: # adopt extra resources into Helm release
+          - cert-manager.io/v1 Certificate {{ mcpo_secrets['ingress'] }}
+          - v1 Secret {{ mcpo_secrets['api-key'] }}
+
+        helm_hooks:
+          # fix charts/*.tgz files being ignored, causing: "error
+          # occurred while checking for chart dependencies: found
+          # in Chart.yaml, but missing in charts/ directory: raw":
+          # https://github.com/first-it-consulting/helm-mcpo/issues/2
+          template: rm -f $CHART_DIR/.helmignore
+      ansible.builtin.include_tasks: tasks/helm/helmfile.yml
+
 # https://openwebui.fourteeners.local/docs
 - name: Configure Open WebUI installation
   tags:
@@ -130,11 +241,13 @@
     - knowledge
   hosts: localhost
   vars_files:
+    - vars/kubernetes.yml
     - vars/openwebui.yml
+    - vars/openwebui.mcpo.yml
     - vars/ollama.yml
   vars:
-    vars_file: vars/ollama.{{ use_ollama_chart_by }}.yml
     api_base: https://{{ openwebui_fqdns | first }}/api
+    vars_file: vars/ollama.{{ use_ollama_chart_by }}.yml
     group_name: Family
     knowledge_name: Accounts
     model_name: Accounts
@@ -269,6 +382,16 @@
               list_groups.json | selectattr('name', '==', group_name)
                                |        map(attribute='id') | first }}
 
+    - name: Configure MCP tool server
+      vars:
+        auth_token: "{{ admin_token }}"
+        mcp_server: "{{ item }}"
+      ansible.builtin.include_tasks: tasks/openwebui/mcp.yml
+      loop: "{{ mcp_tool_servers }}"
+      loop_control:
+        label: "{{ item.info.id }}"
+      # sets mcp_servers fact
+
     - name: Get Open WebUI user memories
       ansible.builtin.uri:
         url: "{{ api_base }}/v1/memories/"
@@ -334,11 +457,15 @@
             return_content: true
           register: get_knowledge
 
+        # this recursive task can take a while
+        # & return lots of data, but it's only
+        # needed when updating knowledge files
         - name: Get Accounts knowledge files
           vars:
             auth_token: "{{ admin_token }}"
             knowledge_id: "{{ knowledge[0].id }}"
           ansible.builtin.include_tasks: tasks/openwebui/files.yml
+          when: "'knowledge' in ansible_run_tags"
           # sets knowledge_files fact
 
     - name: Create Accounts knowledge base
@@ -367,7 +494,8 @@
     - name: Set accounts_knowledge fact
       ansible.builtin.set_fact:
         accounts_knowledge: |
-          {{ get_knowledge.json | ansible.builtin.combine({'files': knowledge_files})
+          {{ get_knowledge.json | ansible.builtin.combine(
+               {'files': knowledge_files | default([]) })
           if get_knowledge.json is defined else create_knowledge.json }}
 
     - name: Get Open WebUI custom models

@@ -1,0 +1,45 @@
+# configure MCP tool server connection
+#
+# pass the following vars:
+#   auth_token <required> user auth token
+#   mcp_server <required> connection spec
+# sets the following facts:
+#   mcp_servers  current connections list
+---
+- name: Configure MCP tool server
+  vars:
+    api_url: https://{{ openwebui_fqdns[0] }}/api/v1/configs/tool_servers
+    headers:
+      Authorization: Bearer {{ auth_token }}
+  block:
+    - name: Get Open WebUI tool servers
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/uri_module.html
+      ansible.builtin.uri:
+        url: "{{ api_url }}"
+        headers: "{{ headers }}"
+        return_content: true
+      register: tool_servers
+      when: mcp_servers is undefined
+
+    - name: Configure MCP {{ mcp_server.info.name }}
+      vars:
+        servers: "{{ mcp_servers | default(tool_servers.json['TOOL_SERVER_CONNECTIONS']) }}"
+        server: "{{ servers | selectattr('info.id', '==', mcp_server.info.id) }}"
+      ansible.builtin.uri:
+        method: POST
+        url: "{{ api_url }}"
+        headers: "{{ headers }}"
+        body_format: json
+        body:
+          TOOL_SERVER_CONNECTIONS: "{{ servers + [mcp_server] }}"
+      register: config_server
+      when: server is falsy
+      changed_when: true
+
+    - name: Set mcp_servers fact
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/set_fact_module.html
+      ansible.builtin.set_fact:
+        mcp_servers: |
+          {{  config_server.json['TOOL_SERVER_CONNECTIONS'] if config_server.json is defined
+          else tool_servers.json['TOOL_SERVER_CONNECTIONS'] if  tool_servers.json is defined
+          else  mcp_servers }}

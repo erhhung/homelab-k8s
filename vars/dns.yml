@@ -106,6 +106,10 @@ pfsense_dns_records:
         desc: Open WebUI
       - host: chat
         desc: Open WebUI
+      - host: mcpo
+        desc: MCP OpenAPI Proxy
+      - host: mcp
+        desc: MCP OpenAPI Proxy
       - host: flowise
         desc: Flowise Designer
       - host: void
