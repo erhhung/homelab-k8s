@@ -54,6 +54,46 @@ mcpo_chart_values:
       cpu: 10m
       memory: 256Mi
 
+  # NOT CURRENTLY USED BY CHART--rendered as patches instead:
+  # https://github.com/first-it-consulting/helm-mcpo/issues/3
+  extraArgs:
+    # add --api-key to secure /openapi.json endpoint:
+    # https://github.com/open-webui/mcpo#-quick-usage
+    - --api-key
+    - $(MCPO_API_KEY)
+
+  # NOT CURRENTLY USED BY CHART
+  # rendered as patches instead
+  extraVolumes:
+    - name: tls
+      secret:
+        secretName: "{{ mcpo_secrets['ingress'] }}"
+    # non-NPM-published MCP server packages
+    - name: mcp
+      nfs:
+        server: qnap.{{ homelab_domain }}
+        path: /k8s_data/mcp
+    # writable $XDG_CACHE_HOME and $XDG_DATA_HOME:
+    # https://docs.astral.sh/uv/reference/environment
+    - name: cache
+      emptyDir: {}
+    - name: data
+      emptyDir: {}
+
+  # NOT CURRENTLY USED BY CHART
+  # rendered as patches instead
+  extraVolumeMounts:
+    - name: tls
+      mountPath: /tls/ca.crt
+      subPath: ca.crt
+    - name: mcp
+      mountPath: /opt/mcp
+      readOnly: true
+    - name: cache
+      mountPath: /.cache
+    - name: data
+      mountPath: /.local/share
+
   ingress:
     enabled: true
     tls:
@@ -81,27 +121,46 @@ mcpo_chart_values:
         args:
           - mcp-server-time
           - --local-timezone={{ system_time_zone }}
+
       # https://github.com/modelcontextprotocol/servers/tree/main/src/memory
       memory:
         command: npx
         args:
           - -y
           - "@modelcontextprotocol/server-memory"
-      # https://github.com/modelcontextprotocol/servers/tree/main/src/sequentialthinking
-      sequential-thinking:
+
+      weather:
         command: npx
         args:
           - -y
-          - "@modelcontextprotocol/server-sequential-thinking"
+          - --loglevel=error
+          # this is a local package created by `npm
+          # pack` and stored on a shared NFS volume
+          - --package=/opt/mcp/weather-server.tgz
+          - weather-server
+        env:
+          OPENWEATHER_API_KEY: "{{ openweather_api_key }}"
+
+      # https://github.com/Koneisto/HomeAssistant-Light-MCP
+      lights:
+        command: npx
+        args:
+          - -y
+          - ha-mcp-server
+        env:
+          HA_URL: https://home.{{ homelab_domain }}:8123
+          HA_TOKEN: "{{ hass_access_token }}"
+          # /tls/ca.crt from volume mount
+          NODE_EXTRA_CA_CERTS: /tls/ca.crt
 
 # each tool server corresponds to an MCP
 # server, even if a single MCPO instance
 # hosts multiple MCP servers
 mcp_tool_servers:
+  # https://github.com/modelcontextprotocol/servers/tree/main/src/time
   - &tool
     info:
       id: time
-      # https://github.com/modelcontextprotocol/servers/tree/main/src/time
       name: Time Server
       description: >-
         Provides time and timezone conversion capabilities
@@ -122,10 +181,10 @@ mcp_tool_servers:
             # fact set by earlier task
             - "{{ family_group_id }}"
 
+  # https://github.com/modelcontextprotocol/servers/tree/main/src/memory
   - <<: *tool
     info:
       id: memory
-      # https://github.com/modelcontextprotocol/servers/tree/main/src/memory
       name: Memory Server
       description: >-
         Implements persistent memory using local knowledge
@@ -135,10 +194,19 @@ mcp_tool_servers:
 
   - <<: *tool
     info:
-      id: sequential-thinking
-      # https://github.com/modelcontextprotocol/servers/tree/main/src/sequentialthinking
-      name: Sequential Thinking Server
+      id: weather
+      name: Weather Server
       description: >-
-        Enables reflective problem-solving through
-        a structured, step-by-step thinking process.
-    url: "{{ mcpo_service_url }}/sequential-thinking"
+        Get the current weather for a city
+        (condition, temperature, humidity).
+    url: "{{ mcpo_service_url }}/weather"
+
+  # https://github.com/Koneisto/HomeAssistant-Light-MCP
+  - <<: *tool
+    info:
+      id: lights
+      name: Lights Server
+      description: >-
+        Control Home Assistant-connected lights and manage
+        scenes (turn on/off, set brightness, change color).
+    url: "{{ mcpo_service_url }}/lights"
