@@ -151,6 +151,11 @@
 
     - name: Install MCPO Helm chart
       vars:
+        extra_args: "{{    mcpo_chart_values.extraArgs }}"
+        extra_volumes: "{{ mcpo_chart_values.extraVolumes }}"
+        extra_mounts: "{{  mcpo_chart_values.extraVolumeMounts }}"
+
+        # === Inputs ===
         repo_name: mcpo-helm
         repo_url: https://first-it-consulting.github.io/helm-mcpo
         chart_ref: mcpo
@@ -175,52 +180,37 @@
                           timeoutSeconds: 5
                           failureThreshold: 6
                         livenessProbe: *probe
+
+          # chart doesn't currently support extra args,
+          # volumes, nor mounts, so add them as patches
           json_patches:
-            - target:
+            - |
+              target:
                 group: apps
                 version: v1
                 kind: Deployment
-                name: "{{ mcpo_release_name }}"
+                name: {{ mcpo_release_name }}
               patch:
-                # chart doesn't currently support extra args:
-                # https://github.com/first-it-consulting/helm-mcpo/issues/3
-
-                # add --hot-reload after --config */config.json:
-                # https://github.com/open-webui/mcpo#-using-a-config-file
-                - op: add
-                  path: /spec/template/spec/containers/0/args/2
+                {% set pspec = '/spec/template/spec'   -%}
+                {% set cspec =  pspec ~'/containers/0' -%}
+                - op:    add
+                  path:  {{ cspec }}/args/2
                   value: --hot-reload
-                # add --api-key to secure /openapi.json endpoint:
-                # https://github.com/open-webui/mcpo#-quick-usage
-                - &mcpo-args
-                  op: add
-                  path: /spec/template/spec/containers/0/args/-
-                  value: --api-key
-                - <<: *mcpo-args
-                  value: $(MCPO_API_KEY)
-
-                # writable $XDG_CACHE_HOME and $XDG_DATA_HOME:
-                # https://docs.astral.sh/uv/reference/environment
-                - &mcpo-mounts
-                  op: add
-                  path: /spec/template/spec/containers/0/volumeMounts/-
-                  value:
-                    name: cache
-                    mountPath: /.cache
-                - <<: *mcpo-mounts
-                  value:
-                    name: data
-                    mountPath: /.local/share
-                - &mcpo-volumes
-                  op: add
-                  path: /spec/template/spec/volumes/-
-                  value:
-                    name: cache
-                    emptyDir: {}
-                - <<: *mcpo-volumes
-                  value:
-                    name: data
-                    emptyDir: {}
+                {% for arg in extra_args -%}
+                - op:    add
+                  path:  {{ cspec }}/args/-
+                  value: {{ arg }}
+                {% endfor -%}
+                {% for vol in extra_volumes -%}
+                - op:    add
+                  path:  {{ pspec }}/volumes/-
+                  value: {{ vol }}
+                {% endfor -%}
+                {% for mnt in extra_mounts -%}
+                - op:    add
+                  path:  {{ cspec }}/volumeMounts/-
+                  value: {{ mnt }}
+                {% endfor -%}
 
         extras: # adopt extra resources into Helm release
           - cert-manager.io/v1 Certificate {{ mcpo_secrets['ingress'] }}

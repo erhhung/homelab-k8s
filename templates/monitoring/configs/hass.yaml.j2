@@ -8,6 +8,6 @@
     ca_file: /tls/scraper/ca.crt
   static_configs:
     - targets:
-        - hass.fourteeners.local:8123
+        - home.{{ homelab_domain }}:8123
   scrape_interval: 60s
   scrape_timeout: 10s
