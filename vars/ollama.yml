@@ -53,11 +53,11 @@ ollama_common_values:
   resources:
     requests:
       cpu: 500m
-      memory: 3Gi
+      memory: 6Gi
       gpu.intel.com/i915: "1"
     limits:
-      cpu: 4000m
-      memory: 6Gi # should be enough for model
+      cpu: 6000m
+      memory: 8Gi # should be enough for model
       gpu.intel.com/i915: "1"
 
   storage:
