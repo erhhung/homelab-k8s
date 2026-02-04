@@ -99,6 +99,7 @@ All cluster services will be provisioned with TLS certificates from Erhhung's pr
     * Instal Fluent Bit using the [`fluent-operator`](https://github.com/fluent/fluent-operator) Helm chart and `FluentBit` CR
 - [X] [PostgreSQL Database](https://www.postgresql.org/docs/current) — SQL database used by Keycloak and other applications
     * Install on main RKE cluster using Bitnami's [`postgresql-ha`](https://github.com/bitnami/charts/tree/main/bitnami/postgresql-ha) Helm chart
+    * [ ] Deploy [StackGres Operator](https://stackgres.io/) to enable app-specific Postgres instances and automatic backups
 - [X] [Keycloak IAM & OIDC Provider](https://www.keycloak.org/) — identity and access management and OpenID Connect provider
     * Install on main RKE cluster using the [`keycloakx`](https://github.com/codecentric/helm-charts/tree/master/charts/keycloakx) Helm chart
 - [X] [Valkey Key/Value Store](https://valkey.io/) — Redis-compatible key/value store
@@ -130,6 +131,8 @@ All cluster services will be provisioned with TLS certificates from Erhhung's pr
     * Install on main RKE cluster using the [`metacontroller`](https://metacontroller.github.io/metacontroller/guide/helm-install.html) Helm chart
 - [X] [Ollama LLM Server](https://github.com/ollama/ollama) with [Ollama CLI](https://github.com/masgari/ollama-cli) — run LLMs on Kubernetes cluster
     * Install on an Intel GPU node using the [`ollama`](https://github.com/cowboysysop/charts/tree/master/charts/ollama) Helm chart and [IPEX-LLM Ollama portable zip](https://github.com/intel/ipex-llm/tree/main/docs/mddocs/Quickstart/ollama_portable_zip_quickstart.md)
+- [ ] [LiteLLM Proxy Server](https://docs.litellm.ai/#litellm-proxy-server-llm-gateway) — track usage and spend across model providers
+    * Install on main RKE cluster using the [`litellm-helm`](https://github.com/BerriAI/litellm/tree/main/deploy/charts/litellm-helm) Helm chart
 - [X] [Open WebUI AI Platform](https://github.com/open-webui/open-webui) — extensible AI platform with Ollama integration and local RAG support
     * Install on main RKE cluster using the [`open-webui`](https://github.com/open-webui/helm-charts/tree/main/charts/open-webui) Helm chart
     * [X] Replace the default Chroma vector DB with [Qdrant](https://github.com/qdrant/qdrant) — install using the [`qdrant`](https://github.com/qdrant/qdrant-helm) Helm chart
@@ -505,7 +508,8 @@ however, all privileged operations using `sudo` will require the password stored
     &nbsp; &nbsp; Install <strong>MCP OpenAPI</strong> proxy with MCP servers</summary><br/>
 
     30.1. Create `Accounts` knowledge base and `Accounts` custom model that embeds that KB  
-    30.2. **NOTE**: Populate `Accounts` KB by running `make openwebui -t knowledge` separately
+    30.2. **NOTE**: Populate `Accounts` KB by running `make openwebui -t knowledge` separately  
+    30.3. Deploy MCP tool servers, including `time`, `memory`, `browser`, `weather`, and `lights`
 
     ```bash
     make ollama openwebui

@@ -134,6 +134,35 @@
   vars:
     <<: *vars
     secret_ns: "{{ mcpo_namespace }}"
+  pre_tasks:
+    - name: Get image tag from Harbor
+      when: crawl4ai_image.registry == harbor_container_registry
+      # use our image with several bug fixes
+      block:
+        - name: Get image tag from Harbor
+          vars:
+            repository: "{{ crawl4ai_image.repository }}"
+            verify_tag: "{{ crawl4ai_image.tag | default(omit) }}"
+          ansible.builtin.include_tasks: tasks/harbor/gettag.yml
+          # sets repo_tag_found fact
+
+        - name: Show which image to deploy
+          vars:
+            image: "{{ crawl4ai_image.registry }}/{{ crawl4ai_image.repository }}"
+          # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/assert_module.html
+          ansible.builtin.assert:
+            that: repo_tag_found is truthy
+            success_msg: >-
+              Using image: {{ image }}:{{ repo_tag_found }}
+            fail_msg: >-
+              Image not found: {{ image -}}
+              {% if crawl4ai_image.tag is defined -%}
+                :{{ crawl4ai_image.tag }}
+              {% endif %}
+
+        - name: Set crawl4ai_image_tag fact
+          ansible.builtin.set_fact:
+            crawl4ai_image_tag: "{{ repo_tag_found }}"
   tasks:
     - name: Create MCPO ingress secret
       vars:
@@ -151,9 +180,11 @@
 
     - name: Install MCPO Helm chart
       vars:
-        extra_args: "{{    mcpo_chart_values.extraArgs }}"
-        extra_volumes: "{{ mcpo_chart_values.extraVolumes }}"
-        extra_mounts: "{{  mcpo_chart_values.extraVolumeMounts }}"
+        extra_args: "{{ values.extraArgs }}"
+        init_containers: "{{ values.initContainers }}"
+        extra_containers: "{{ values.extraContainers }}"
+        extra_mounts: "{{ values.extraVolumeMounts }}"
+        extra_volumes: "{{ values.extraVolumes }}"
 
         # === Inputs ===
         repo_name: mcpo-helm
@@ -173,6 +204,7 @@
               spec:
                 template:
                   spec:
+                    initContainers: "{{ init_containers }}"
                     containers:
                       - name: mcpo
                         readinessProbe: &probe
@@ -180,6 +212,7 @@
                           timeoutSeconds: 5
                           failureThreshold: 6
                         livenessProbe: *probe
+                      - "{{ extra_containers[0] }}"
 
           # chart doesn't currently support extra args,
           # volumes, nor mounts, so add them as patches
@@ -201,15 +234,15 @@
                   path:  {{ cspec }}/args/-
                   value: {{ arg }}
                 {% endfor -%}
-                {% for vol in extra_volumes -%}
-                - op:    add
-                  path:  {{ pspec }}/volumes/-
-                  value: {{ vol }}
-                {% endfor -%}
                 {% for mnt in extra_mounts -%}
                 - op:    add
                   path:  {{ cspec }}/volumeMounts/-
                   value: {{ mnt }}
+                {% endfor -%}
+                {% for vol in extra_volumes -%}
+                - op:    add
+                  path:  {{ pspec }}/volumes/-
+                  value: {{ vol }}
                 {% endfor -%}
 
         extras: # adopt extra resources into Helm release

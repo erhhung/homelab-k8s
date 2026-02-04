@@ -19,6 +19,15 @@ mcpo_secrets:
   ingress: mcpo-ingress-tls
   api-key: mcpo-api-key
 
+crawl4ai_image:
+  pullPolicy: Always
+  registry: "{{ harbor_container_registry }}"
+  repository: library/mcp-crawl4ai
+  # either specify a tag or, if registry is Harbor,
+  # let Ansible task query the most recently pushed
+  # tag, which is not necessarily the tag "latest"
+  # tag: 89f0ae3d
+
 # https://github.com/first-it-consulting/helm-mcpo
 mcpo_chart_version: "0.2.7" # uses old mcpo image
 mcpo_release_name: mcpo
@@ -64,21 +73,50 @@ mcpo_chart_values:
 
   # NOT CURRENTLY USED BY CHART
   # rendered as patches instead
-  extraVolumes:
-    - name: tls
-      secret:
-        secretName: "{{ mcpo_secrets['ingress'] }}"
-    # non-NPM-published MCP server packages
-    - name: mcp
-      nfs:
-        server: qnap.{{ homelab_domain }}
-        path: /k8s_data/mcp
-    # writable $XDG_CACHE_HOME and $XDG_DATA_HOME:
-    # https://docs.astral.sh/uv/reference/environment
-    - name: cache
-      emptyDir: {}
-    - name: data
-      emptyDir: {}
+  initContainers:
+    # create named pipes for stdio-mode communication
+    # between the main mcpo container and MCP servers
+    # deployed as sidecar containers
+    - name: stdio-pipes
+      image: busybox
+      imagePullPolicy: IfNotPresent
+      command: ["sh"]
+      args:
+        - -c
+        - |-
+          set -ex
+          cd /pipes
+          chmod 777 .
+          mkfifo -m 666 crawl4ai-stdin
+          mkfifo -m 666 crawl4ai-stdout
+          ls -la
+      volumeMounts:
+        - name: pipes
+          mountPath: /pipes
+
+  # NOT CURRENTLY USED BY CHART
+  # rendered as patches instead
+  extraContainers:
+    - name: crawl4ai
+      image: "{{ harbor_container_registry }}/{{ crawl4ai_image.repository }}:{{
+        crawl4ai_image.tag | default(crawl4ai_image_tag | default('latest')) }}"
+      imagePullPolicy: "{{ crawl4ai_image.pullPolicy | default('IfNotPresent') }}"
+      command: ["sh"]
+      args:
+        - -c
+        - |-
+          set -e
+          echo "Starting Crawl4AI MCP server using named pipes..."
+          exec  python -m crawler_agent.mcp_server \
+            < /pipes/crawl4ai-stdin \
+            > /pipes/crawl4ai-stdout
+      volumeMounts:
+        - name: pipes
+          mountPath: /pipes
+        # use as `output_dir` for
+        # `scrape`/`crawl*` tools
+        - name: data
+          mountPath: /out
 
   # NOT CURRENTLY USED BY CHART
   # rendered as patches instead
@@ -89,10 +127,33 @@ mcpo_chart_values:
     - name: mcp
       mountPath: /opt/mcp
       readOnly: true
+    - name: pipes
+      mountPath: /pipes
     - name: cache
       mountPath: /.cache
     - name: data
       mountPath: /.local/share
+
+  # NOT CURRENTLY USED BY CHART
+  # rendered as patches instead
+  extraVolumes:
+    - name: tls
+      secret:
+        secretName: "{{ mcpo_secrets['ingress'] }}"
+    # non-NPM-published MCP server packages
+    - name: mcp
+      nfs:
+        server: qnap.{{ homelab_domain }}
+        path: /k8s_data/mcp
+    - name: pipes
+      emptyDir:
+        medium: Memory
+    # writable $XDG_CACHE_HOME and $XDG_DATA_HOME:
+    # https://docs.astral.sh/uv/reference/environment
+    - name: cache
+      emptyDir: {}
+    - name: data
+      emptyDir: {}
 
   ingress:
     enabled: true
@@ -129,6 +190,18 @@ mcpo_chart_values:
           - -y
           - "@modelcontextprotocol/server-memory"
 
+      # https://github.com/erhhung/mcp-crawl4ai
+      # https://github.com/unclecode/crawl4ai
+      browser:
+        command: sh
+        args:
+          - -c
+          - |-
+            echo >&2 "Starting Crawl4AI MCP server stdio bridge..."
+            cat   /pipes/crawl4ai-stdout &
+            cat > /pipes/crawl4ai-stdin
+            wait
+
       weather:
         command: npx
         args:
@@ -161,7 +234,7 @@ mcp_tool_servers:
   - &tool
     info:
       id: time
-      name: Time Server
+      name: Time Tool
       description: >-
         Provides time and timezone conversion capabilities
         by allowing models to get current time information
@@ -185,7 +258,7 @@ mcp_tool_servers:
   - <<: *tool
     info:
       id: memory
-      name: Memory Server
+      name: Memory Tool
       description: >-
         Implements persistent memory using local knowledge
         graph, allowing Open WebUI to remember information
@@ -194,8 +267,17 @@ mcp_tool_servers:
 
   - <<: *tool
     info:
+      id: browser
+      name: Browser Tool
+      description: >-
+        Provides web browsing capabilities by scraping
+        and crawling websites.
+    url: "{{ mcpo_service_url }}/browser"
+
+  - <<: *tool
+    info:
       id: weather
-      name: Weather Server
+      name: Weather Tool
       description: >-
         Get the current weather for a city
         (condition, temperature, humidity).
@@ -205,7 +287,7 @@ mcp_tool_servers:
   - <<: *tool
     info:
       id: lights
-      name: Lights Server
+      name: Light Tool
       description: >-
         Control Home Assistant-connected lights and manage
         scenes (turn on/off, set brightness, change color).
