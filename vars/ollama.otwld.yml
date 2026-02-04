@@ -87,11 +87,11 @@ ollama_chart_values:
 # Massive Text Embedding Benchmark leaderboard:
 # https://huggingface.co/spaces/mteb/leaderboard
 ollama_models:
+  - gemma3:4b # 3.3GB
+  - llama3.2:3b # 2.0GB
+  - smollm2:1.7b # 1.8GB
   - qwen3:1.7b # 1.4GB
   - deepseek-r1:1.5b # 1.1GB
-  - gemma3:1b # 815MB
-  - gemma2:2b # 1.6GB
-  - llama3.2:3b # 2.0GB
 
   # NOTE: using this or other embedding models with
   # older llama.cpp versions may cause Ollama to log
