@@ -25,3 +25,9 @@ spec:
             readTimeout: 10m
             writeTimeout: 10m
             idleTimeout: 10m
+
+    additionalArguments:
+      # https://doc.traefik.io/traefik-hub/api-gateway/reference/install/ref-defaultserverstransport
+      - --serverstransport.forwardingtimeouts.dialtimeout=30s
+      - --serverstransport.forwardingtimeouts.responseheadertimeout=10m
+      - --serverstransport.forwardingtimeouts.idleconntimeout=10m
