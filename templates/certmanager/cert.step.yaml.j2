@@ -49,10 +49,23 @@ spec:
     # https://cert-manager.io/docs/usage/certificate#issuance-behavior-rotation-of-the-private-key
     rotationPolicy: Always
 
+# add binary file "key.der"
 {% if der_key is defined and
       der_key is truthy %}
   additionalOutputFormats:
     - type: DER
+{% endif %}
+
+# add binary PKCS#12 files "keystore.p12" (key and cert) and "truststore.p12" (CA cert):
+# https://cert-manager.io/docs/reference/api-docs#cert-manager.io/v1.CertificateKeystores
+{% if pkcs12 is defined and
+      pkcs12 is truthy %}
+  keystores:
+    pkcs12:
+      create: true
+      # https://cert-manager.io/docs/faq#why-are-passwords-on-jks-or-pkcs12-files-not-helpful
+      password: changeit
+      profile: Modern2023
 {% endif %}
 
   isCA: false
