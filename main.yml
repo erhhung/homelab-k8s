@@ -145,17 +145,22 @@
   ansible.builtin.import_playbook: metacontroller.yml
   tags: metacontroller
 
-- name: Include Qdrant vector database playbook
-  ansible.builtin.import_playbook: qdrant.yml
-  tags: qdrant
-
 # Ollama depends on Node Feature Discovery
 - name: Include Ollama LLM server playbook
   ansible.builtin.import_playbook: ollama.yml
   tags: ollama
 
-# Open WebUI depends on PostgreSQL,
-# Valkey, Qdrant, MinIO, and Ollama
+# LiteLLM depends on PostgreSQL and Valkey
+- name: Include LiteLLM AI Gateway playbook
+  ansible.builtin.import_playbook: litellm.yml
+  tags: litellm
+
+- name: Include Qdrant vector database playbook
+  ansible.builtin.import_playbook: qdrant.yml
+  tags: qdrant
+
+# Open WebUI depends on PostgreSQL, Valkey,
+# MinIO, Ollama, LiteLLM, Qdrant, (GitLab)
 - name: Include Open WebUI platform playbook
   ansible.builtin.import_playbook: openwebui.yml
   tags: openwebui

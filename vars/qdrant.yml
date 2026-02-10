@@ -12,8 +12,9 @@ qdrant_http_port: 6333
 qdrant_grpc_port: 6334
 qdrant_p2p_port: 6335
 
-qdrant_service_url: https://{{ qdrant_release_name }}.{{ qdrant_namespace }}.svc.{{
-  cluster_domain }}:{{ qdrant_http_port }}
+qdrant_service_host: "{{ qdrant_release_name }}.{{
+  qdrant_namespace }}.svc.{{ cluster_domain }}"
+qdrant_service_url: https://{{ qdrant_service_host }}:{{ qdrant_http_port }}
 
 qdrant_secrets:
   node-tls: qdrant-node-tls # inter-node and ingress
@@ -93,14 +94,14 @@ qdrant_chart_values:
     ## Qdrant stores collections with replicas
     storageClassName: "{{ storage_classes['default'] }}"
     accessModes: ["ReadWriteOnce"]
-    size: 2Gi
+    size: 1Gi
 
   snapshotPersistence:
     enabled: true
     snapshotsVolumeName: qdrant-snapshots
     storageClassName: "{{ storage_classes['nfs'] }}"
     accessModes: ["ReadWriteOnce"]
-    size: 2Gi
+    size: 1Gi
 
   resources:
     requests:

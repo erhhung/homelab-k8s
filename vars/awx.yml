@@ -58,6 +58,10 @@ awx_operator_chart_values:
       username: "{{ awx_db_user }}"
       password: "{{ pgpool_pass }}"
 
+      # IMPORTANT: add "awx:primary" to PgPool's `database_redirect_preference_list`
+      # so that AWX upsert queries don't fail due to read-after-write inconsistency:
+      # InventoryUpdate.DoesNotExist: InventoryUpdate matching query does not exist
+
     spec:
       # https://docs.ansible.com/projects/awx-operator/en/latest/user-guide/admin-user-account-configuration.html
       admin_user: "{{ awx_admin_user }}"
@@ -255,18 +259,18 @@ awx_operator_chart_values:
                   # uses connection params added
                   # by PG* environment variables
                   db_found=$(psql -d postgres -tAc "
-                    SELECT COUNT(*) FROM pg_catalog.pg_database WHERE datname = '{{ awx_db_name }}'
+                    SELECT COUNT(*) FROM pg_catalog.pg_database WHERE datname = '$PGDATABASE'
                   ") || exit $?
                   echo "db_found=$db_found"
 
                   [ "$db_found" -eq 1 ] || {
-                    echo -e "\nCreating '{{ awx_db_name }}' database..."
-                    psql -d postgres <<'EOT'
+                    echo -e "\nCreating '$PGDATABASE' database..."
+                    psql -d postgres <<EOT
 
                   -- https://www.postgresql.org/docs/current/sql-createdatabase.html
-                  CREATE DATABASE {{ awx_db_name }} WITH OWNER {{ awx_db_user }};
-                  REVOKE ALL ON DATABASE {{ awx_db_name }} FROM PUBLIC;
-                  GRANT  ALL ON DATABASE {{ awx_db_name }} TO {{ awx_db_user }};
+                  CREATE DATABASE $PGDATABASE WITH OWNER $PGUSER;
+                  REVOKE ALL ON DATABASE $PGDATABASE FROM PUBLIC;
+                  GRANT  ALL ON DATABASE $PGDATABASE  TO $PGUSER;
                   EOT
                   }
                   echo -e "\nDatabase initialization completed ✓"
@@ -276,6 +280,8 @@ awx_operator_chart_values:
                   value: "{{ pgpool_service_host }}"
                 - name: PGUSER
                   value: "{{ awx_db_user }}"
+                - name: PGDATABASE
+                  value: "{{ awx_db_name }}"
                 - name: PGSSLMODE
                   value: verify-full
                 - name: PGSSLCERT

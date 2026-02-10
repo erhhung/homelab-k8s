@@ -115,7 +115,7 @@ awx_notifiers:
       use_ssl: false
       username: "{{ icloud_smtp.username }}"
       password: "{{ icloud_smtp.passwords['awx'] }}"
-      sender: "Ansible AWX <{{ icloud_smtp.from_email }}>"
+      sender: Ansible AWX <{{ icloud_smtp.from_email }}>
       recipients:
         - "{{ user_erhhung.fullname }} <{{ user_erhhung.email }}>"
       headers:

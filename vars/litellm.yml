@@ -1,0 +1,377 @@
+# litellm_admin_pass: {vault.yml}
+# litellm_master_key: {vault.yml}
+#  anthropic_api_key: {vault.yml}
+#     openai_api_key: {vault.yml}
+#       groq_api_key: {vault.yml}
+
+litellm_namespace: litellm
+litellm_host_name: litellm # alias of "ingress"
+
+# remember to add litellm.fourteeners.local to pfSense DNS
+# as an alias of  ingress.fourteeners.local: 192.168.4.222
+# https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_filters.html#products
+litellm_fqdn: "{{ [litellm_host_name] | product(search_domains) | map('join','.') | first }}"
+
+litellm_service_host: "{{ litellm_release_name }}.{{
+  litellm_namespace }}.svc.{{ cluster_domain }}"
+litellm_service_port: 4000
+litellm_service_url: http://{{ litellm_service_host }}:{{ litellm_service_port }}
+
+litellm_secrets:
+  ingress: litellm-ingress-tls
+  database: litellm-database-tls
+  env-vars: litellm-env-variables
+  api-keys: litellm-api-keys
+
+litellm_db_name: litellm
+litellm_db_user: litellm
+# use {{ pgpool_pass }}
+
+# LiteLLM uses Prisma for ORM, which requires the client cert
+# in PKCS#12 format, and uses different URL params than libpq:
+# https://prisma.github.io/quaint/src/quaint/pooled.rs.html
+litellm_postgresql_url: >-
+  {% set params = {
+       'sslmode':     'require',
+       'sslcert':     '/tls/database/ca.crt',
+       'sslidentity': '/tls/database/keystore.p12',
+       'sslpassword': 'changeit',
+       'sslaccept':   'strict',
+     } -%}
+  {% set items = params | dict2items -%}
+  {% set params = items | map(attribute='key')    |
+              zip(items | map(attribute='value')) |
+                    map('join','=') -%}
+  {% set query = params | join('&') -%}
+  postgresql://$(DATABASE_USERNAME):$(DATABASE_PASSWORD){{
+    '@' }}$(DATABASE_HOST)/$(DATABASE_NAME)?{{ query }}
+
+# https://docs.litellm.ai/docs/proxy/deploy#helm-chart
+litellm_chart_oci_url: oci://docker.litellm.ai/berriai/litellm-helm
+# https://github.com/BerriAI/litellm/tree/main/deploy/charts/litellm-helm
+litellm_chart_version: "0.1.837"
+litellm_release_name: litellm
+
+# https://github.com/BerriAI/litellm/tree/main/deploy/charts/litellm-helm/values.yaml
+litellm_chart_values:
+  replicaCount: 1
+  # numWorkers: 2
+
+  envVars:
+    # https://docs.litellm.ai/docs/proxy/ui#4-change-default-username--password
+    UI_USERNAME: admin
+    # https://docs.litellm.ai/docs/proxy/ui#5-configure-root-redirect-url
+    ROOT_REDIRECT_URL: /ui
+    DOCS_URL: /docs
+
+    # https://docs.litellm.ai/docs/proxy/email
+    SMTP_HOST: "{{ icloud_smtp.host }}"
+    SMTP_PORT: "{{ icloud_smtp.port }}"
+    SMTP_TLS: true
+    SMTP_SENDER_EMAIL: LiteLLM <{{ icloud_smtp.from_email }}>
+
+  environmentSecrets:
+    # UI_PASSWORD, LITELLM_MASTER_KEY, ...
+    - "{{ litellm_secrets['env-vars'] }}"
+
+  masterkeySecretName: "{{ litellm_secrets['env-vars'] }}"
+  masterkeySecretKey: LITELLM_MASTER_KEY # $PROXY_MASTER_KEY
+
+  # https://docs.litellm.ai/docs/proxy/config_settings
+  proxy_config:
+    model_list: "{{ litellm_models }}"
+
+    general_settings:
+      master_key: os.environ/PROXY_MASTER_KEY
+      # disable Prisma schema migration on
+      # startup--use migration Job instead
+      disable_prisma_schema_update: true
+      # enable storing models and credentials in the
+      # database instead of only in the config file,
+      # which isn't persistent for a volume-mounted
+      # ConfigMap
+      store_model_in_db: true
+
+      # https://docs.litellm.ai/docs/proxy/alerting
+      alerting:
+        - slack
+        - email
+      # https://docs.litellm.ai/docs/proxy/alerting#all-possible-alert-types
+      alert_types:
+        - db_exceptions
+        - llm_exceptions
+        # - llm_too_slow
+        - llm_requests_hanging
+        - budget_alerts
+        - spend_reports
+        # - daily_reports
+        # - new_model_added
+        # - cooldown_deployment
+      alerting_threshold: 300 # 5m
+      spend_report_frequency: 7d
+
+    litellm_settings:
+      # https://docs.litellm.ai/docs/proxy/caching
+      cache: true
+      cache_params:
+        type: redis
+        # redis_startup_nodes is list of {host,port} dicts:
+        # https://docs.ansible.com/ansible/latest/collections/community/general/dict_kv_filter.html
+        redis_startup_nodes: "{{ valkey_node_fqdns |
+          map('community.general.dict_kv', 'host') |
+          map('ansible.builtin.combine',  {'port': valkey_service_port}) }}"
+        # redis-py kwargs for mTLS:
+        # https://docs.litellm.ai/docs/proxy/caching#step-2-add-redis-credentials-to-env
+        ssl: true
+        ssl_check_hostname: true
+        ssl_cert_reqs: required
+        ssl_ca_certs: /tls/database/ca.crt
+        ssl_certfile: /tls/database/tls.crt
+        ssl_keyfile: /tls/database/tls.key
+        password: os.environ/REDIS_PASSWORD
+        namespace: "{litellm}"
+        ttl: 600
+
+      # enable /metrics endpoint for ServiceMonitor:
+      # https://docs.litellm.ai/docs/proxy/prometheus
+      callbacks:
+        - prometheus
+
+      # https://docs.litellm.ai/docs/proxy/ai_hub
+      # mark models as public in the Model Hub (this config file
+      # method is currently undocumented but mentioned in issue):
+      # https://github.com/BerriAI/litellm/issues/14776#issuecomment-3321512091
+      public_model_groups: "{{ litellm_models | map(attribute='model_name') }}"
+
+  redis:
+    # don't install Redis as we already
+    # have a multi-node Valkey cluster
+    enabled: false
+
+  db:
+    # don't install PostgreSQL as we already
+    # have a PostgreSQL HA cluster deployed
+    deployStandalone: false
+    useExisting: true
+
+    secret:
+      name: "{{ litellm_secrets['env-vars'] }}"
+      usernameKey: database_username # $(DATABASE_USERNAME)
+      passwordKey: database_password # $(DATABASE_PASSWORD)
+    database: "{{ litellm_db_name }}" # $(DATABASE_NAME)
+    endpoint: "{{ pgpool_service_host }}:{{ pgpool_service_port }}" # $(DATABASE_HOST)
+    url: "{{ litellm_postgresql_url }}" # contains $(DATABASE_*) env var references
+
+    # IMPORTANT: add "litellm:primary" to PgPool's `database_redirect_preference_list`
+    # so that Prisma upsert queries don't fail due to read-after-write inconsistency:
+    # HTTP 500: Query upsertOneXXX is required to return data, but found no record(s)
+
+  # perform Prisma schema migration via
+  # Helm hook instead of on pod startup
+  # in case there are multiple replicas
+  migrationJob:
+    enabled: true
+    retries: 1
+    hooks:
+      helm:
+        enabled: true
+      argocd:
+        enabled: false
+    # support for extraInitContainers is a new
+    # chart feature that hasn't been published,
+    # so also add it as a Helmfile merge patch
+    extraInitContainers:
+      - "{{ litellm_job_init_container }}"
+    ttlSecondsAfterFinished: 600
+
+  serviceAccount:
+    create: true
+    # add Helm hook annotations so that the
+    # migration Job pod starts successfully:
+    # https://github.com/BerriAI/litellm/issues/20571
+    annotations:
+      helm.sh/hook: pre-install,pre-upgrade
+      helm.sh/hook-delete-policy: before-hook-creation
+      helm.sh/hook-weight: "1"
+
+  podSecurityContext:
+    fsGroup: 1000
+  securityContext:
+    # all files & dirs in container are owned by root
+    runAsUser: 0
+    capabilities:
+      drop: ["ALL"]
+    allowPrivilegeEscalation: false
+    # both LiteLLM and Prisma require write access to
+    # various paths in addition to /.cache, /.npm and
+    # /tmp, such as /usr/lib/python3.13/site-packages
+    # and /app/litellm/proxy/_experimental/out
+    readOnlyRootFilesystem: false
+
+  resources:
+    requests:
+      cpu: 10m
+      memory: 512Mi
+
+  volumes:
+    - name: database-tls
+      secret:
+        secretName: "{{ litellm_secrets['database'] }}"
+        defaultMode: 416 # "0640"
+
+  volumeMounts:
+    # client TLS cert to connect to PostgreSQL
+    - name: database-tls
+      mountPath: /tls/database
+      readOnly: true
+
+  ingress:
+    enabled: true
+    tls:
+      - secretName: "{{ litellm_secrets['ingress'] }}"
+        hosts: "{{ [litellm_fqdn] }}"
+    className: "{{ rke_ingress_class }}"
+    annotations:
+      nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+      nginx.ingress.kubernetes.io/backend-protocol: HTTP
+    hosts:
+      - host: "{{ litellm_fqdn }}"
+        paths:
+          - path: /
+            pathType: Prefix
+
+  serviceMonitor:
+    enabled: true
+    labels:
+      release: "{{ monitoring_release_name }}"
+    interval: 30s
+
+# create litellm database if it doesn't
+# exist before running Prisma migration
+litellm_job_init_container:
+  name: create-database
+  image: "{{ postgresql_image }}"
+  imagePullPolicy: IfNotPresent
+  command: ["bash"]
+  args:
+    - -c
+    - |-
+      # uses connection params added
+      # by PG* environment variables
+      db_found=$(psql -d postgres -tAc "
+        SELECT COUNT(*) FROM pg_catalog.pg_database WHERE datname = '$PGDATABASE'
+      ") || exit $?
+      echo "db_found=$db_found"
+
+      [ "$db_found" -eq 1 ] || {
+        echo -e "\nCreating '$PGDATABASE' database..."
+        psql -d postgres <<EOT
+
+      -- https://www.postgresql.org/docs/current/sql-createdatabase.html
+      CREATE DATABASE $PGDATABASE WITH OWNER $PGUSER;
+      REVOKE ALL ON DATABASE $PGDATABASE FROM PUBLIC;
+      GRANT  ALL ON DATABASE $PGDATABASE  TO $PGUSER;
+      EOT
+      }
+      echo -e "\nDatabase initialization completed ✓"
+  env:
+    # https://www.postgresql.org/docs/current/libpq-envars.html
+    - name: PGHOST
+      value: "{{ pgpool_service_host }}"
+    - name: PGUSER
+      value: "{{ litellm_db_user }}"
+    - name: PGDATABASE
+      value: "{{ litellm_db_name }}"
+    - name: PGSSLMODE
+      value: verify-full
+    - name: PGSSLCERT
+      value: /tls/tls.crt
+    - name: PGSSLKEY
+      value: /tls/tls.key
+    - name: PGSSLROOTCERT
+      value: /tls/ca.crt
+  volumeMounts:
+    - name: database-tls
+      mountPath: /tls
+      readOnly: true
+
+# https://docs.litellm.ai/docs/routing#what-is-a-deployment
+litellm_models:
+  # https://platform.openai.com/docs/models/gpt-5-nano
+  - model_name: gpt-5-nano
+    # https://docs.litellm.ai/docs/providers/openai
+    litellm_params: &openai
+      model: openai/gpt-5-nano
+      api_base: https://api.openai.com/v1
+      api_key: os.environ/OPENAI_API_KEY
+
+  # https://platform.openai.com/docs/models/gpt-5.2
+  - model_name: gpt-5.2
+    litellm_params:
+      <<: *openai
+      model: openai/gpt-5.2
+
+  # https://www.anthropic.com/claude/sonnet
+  - model_name: claude-sonnet-4-5
+    # https://docs.litellm.ai/docs/providers/anthropic
+    litellm_params: &anthropic # don't prepend anthropic/ to name
+      model: claude-sonnet-4-5-20250929
+      # don't append /v1 to Anthropic URL
+      api_base: https://api.anthropic.com
+      api_key: os.environ/ANTHROPIC_API_KEY
+
+  # https://www.anthropic.com/claude/haiku
+  - model_name: claude-haiku-4-5
+    litellm_params:
+      <<: *anthropic
+      model: claude-haiku-4-5-20251001
+
+  # https://www.anthropic.com/claude/opus
+  - model_name: claude-opus-4-5
+    litellm_params:
+      <<: *anthropic
+      model: claude-opus-4-5-20251101
+
+  # https://console.groq.com/docs/model/llama-3.3-70b-versatile
+  - model_name: llama-3.3-70b-versatile
+    # https://docs.litellm.ai/docs/providers/groq
+    litellm_params: &groq
+      model: groq/llama-3.3-70b-versatile
+      api_base: https://api.groq.com/openai/v1
+      api_key: os.environ/GROQ_API_KEY
+
+  # https://console.groq.com/docs/model/meta-llama/llama-4-maverick-17b-128e-instruct
+  - model_name: llama-4-maverick-17b-instruct
+    litellm_params:
+      <<: *groq
+      model: groq/meta-llama/llama-4-maverick-17b-128e-instruct
+
+  # https://ollama.com/library/gemma3
+  # - model_name: gemma3-4b
+  #   litellm_params:
+  #     model: ollama/gemma3:4b
+  #     api_base: "{{ ollama_service_url }}"
+
+# POST /team/new
+litellm_teams:
+  # all properties match
+  # expected API payload
+  - team_alias: Family
+    max_budget: 20 # USD
+    budget_duration: 30d
+    models: "{{ litellm_models | map(attribute='model_name') }}"
+
+# POST /user/new
+litellm_users:
+  - user_id: default_user_id # expected value
+    user_alias: "{{ homelab_admin.fullname }}"
+    user_email: "{{ homelab_admin.email }}"
+    user_role: proxy_admin
+
+  - user_id: "{{ user_erhhung.username }}"
+    user_alias: "{{ user_erhhung.fullname }}"
+    user_email: "{{ user_erhhung.email }}"
+    # https://github.com/BerriAI/litellm/tree/main/litellm/proxy/_types.py#L93
+    user_role: internal_user
+    # team_ids is fact set by task
+    teams: "{{ [team_ids['Family']] }}"

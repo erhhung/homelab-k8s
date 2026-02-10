@@ -27,7 +27,7 @@
           ansible.builtin.include_tasks: tasks/oci/build.yml
 
 - name: Install Ollama on RKE cluster
-  tags: deploy
+  tags: install
   hosts: "{{ rke_control_plane_host }}"
   vars_files: *vars_files
   vars:

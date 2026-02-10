@@ -23,9 +23,9 @@ openwebui_host_names: # aliases of "ingress"
 openwebui_fqdns: "{{ openwebui_host_names | product(search_domains) | map('join','.') }}"
 
 openwebui_secrets:
-  env-vars: open-webui-env-variables
-  database: open-webui-database-tls
   ingress: open-webui-ingress-tls
+  database: open-webui-database-tls
+  env-vars: open-webui-env-variables
 
 openwebui_replicas: 1
 
@@ -39,11 +39,11 @@ openwebui_db_user: openwebui
 # (references "pgpool_service_url" var from vars/postgresql.yml)
 openwebui_postgresql_url: >-
   {% set params = {
-    'sslmode':     'verify-full',
-    'sslcert':     '/tls/database/tls.crt',
-    'sslkey':      '/tls/database/tls.key',
-    'sslrootcert': '/tls/database/ca.crt'
-  } -%}
+       'sslmode':     'verify-full',
+       'sslcert':     '/tls/database/tls.crt',
+       'sslkey':      '/tls/database/tls.key',
+       'sslrootcert': '/tls/database/ca.crt'
+     } -%}
   {% set items = params | dict2items -%}
   {% set params = items | map(attribute='key')    |
               zip(items | map(attribute='value')) |
@@ -59,11 +59,11 @@ openwebui_postgresql_url: >-
 # ssl_cert_reqs: none|optional|required
 openwebui_redis_url: >-
   {% set params = {
-    'ssl_cert_reqs': 'required',
-    'ssl_certfile':  '/tls/database/tls.crt',
-    'ssl_keyfile':   '/tls/database/tls.key',
-    'ssl_ca_certs':  '/tls/database/ca.crt'
-  } -%}
+       'ssl_cert_reqs': 'required',
+       'ssl_certfile':  '/tls/database/tls.crt',
+       'ssl_keyfile':   '/tls/database/tls.key',
+       'ssl_ca_certs':  '/tls/database/ca.crt'
+     } -%}
   {% set items = params | dict2items -%}
   {% set params = items | map(attribute='key')    |
               zip(items | map(attribute='value')) |
@@ -252,10 +252,13 @@ openwebui_chart_values:
     enabled: false
   ollamaUrls: "{{ [ollama_service_url] }}"
 
+  # use LiteLLM's OpenAI-compatible API
+  # to proxy requests to external model
+  # providers and track their spending
   enableOpenaiApi: true
   # if Pipelines is enabled, its endpoint
   # will be first in OPENAI_API_BASE_URLS
-  openaiBaseApiUrl: https://api.openai.com/v1
+  openaiBaseApiUrl: "{{ litellm_service_url }}"
 
   image: "{{ openwebui_image }}"
 
@@ -404,10 +407,10 @@ openwebui_chart_values:
     httpGet:
       path: /health
       port: http
-    initialDelaySeconds: 180
+    initialDelaySeconds: 60
     periodSeconds: 5
     timeoutSeconds: 5
-    failureThreshold: 24
+    failureThreshold: 48
   readinessProbe: &probe
     httpGet:
       path: /health/db
@@ -441,18 +444,18 @@ openwebui_chart_values:
           # uses connection params added
           # by PG* environment variables
           db_found=$(psql -d postgres -tAc "
-            SELECT COUNT(*) FROM pg_catalog.pg_database WHERE datname = '{{ openwebui_db_name }}'
+            SELECT COUNT(*) FROM pg_catalog.pg_database WHERE datname = '$PGDATABASE'
           ") || exit $?
           echo "db_found=$db_found"
 
           [ "$db_found" -eq 1 ] || {
-            echo -e "\nCreating '{{ openwebui_db_name }}' database..."
-            psql -d postgres <<'EOT'
+            echo -e "\nCreating '$PGDATABASE' database..."
+            psql -d postgres <<EOT
 
           -- https://www.postgresql.org/docs/current/sql-createdatabase.html
-          CREATE DATABASE {{ openwebui_db_name }} WITH OWNER {{ openwebui_db_user }};
-          REVOKE ALL ON DATABASE {{ openwebui_db_name }} FROM PUBLIC;
-          GRANT  ALL ON DATABASE {{ openwebui_db_name }} TO {{ openwebui_db_user }};
+          CREATE DATABASE $PGDATABASE WITH OWNER $PGUSER;
+          REVOKE ALL ON DATABASE $PGDATABASE FROM PUBLIC;
+          GRANT  ALL ON DATABASE $PGDATABASE  TO $PGUSER;
           EOT
           }
           echo -e "\nDatabase initialization completed ✓"
@@ -462,6 +465,8 @@ openwebui_chart_values:
           value: "{{ pgpool_service_host }}"
         - name: PGUSER
           value: "{{ openwebui_db_user }}"
+        - name: PGDATABASE
+          value: "{{ openwebui_db_name }}"
         - name: PGSSLMODE
           value: verify-full
         - name: PGSSLCERT

@@ -121,7 +121,7 @@ requests:
         id: '{{ concat([''"'',model_name,''"'']) | jq(''ascii_downcase | gsub(" ";"_")'') }}'
         name: "{{ model_name }}"
         meta:
-          description: Qwen3 base model RAG-enhanced with {{ knowledge_name }} knowledge base
+          description: Gemma3 base model RAG-enhanced with {{ knowledge_name }} knowledge base
           tags:
             - name: private
           profile_image_url: >-
@@ -135,7 +135,7 @@ requests:
             citations: true
           knowledge: >-
             {{ jq('add', [my_knowledge, {'type':'collection','user':admin_user}], mode='array') }}
-        base_model_id: qwen3:1.7b
+        base_model_id: gemma3:4b
         params:
           system: >-
             You are a personal assistant that has intimate knowledge of all

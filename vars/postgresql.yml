@@ -13,6 +13,7 @@ postgresql_users:
   - "{{  keycloak_db_user }}"
   - "{{       awx_db_user }}"
   - "{{    gitlab_db_user }}"
+  - "{{   litellm_db_user }}"
   - "{{ openwebui_db_user }}"
   - "{{   flowise_db_user }}"
 
@@ -191,12 +192,14 @@ postgresql_chart_values:
     # https://www.pgpool.net/docs/latest/en/html/runtime-config-load-balancing.html#RUNTIME-CONFIG-LOAD-BALANCING-SETTINGS
     disableLoadBalancingOnWrite: "off" # must be quoted
 
-    configuration: |-
-      # always use primary DB for reads to "awx" database
-      # to avoid read-after-write inconsistency among AWX
-      # clients due to replication lag:
+    # "postgresql-pgpool-configuration" ConfigMap
+    configuration: |
+      # for affected databases, always read from the primary node to
+      # avoid read-after-write inconsistency due to replication lag:
       # https://www.pgpool.net/docs/latest/en/html/runtime-config-load-balancing.html#GUC-DATABASE-REDIRECT-PREFERENCE-LIST
-      database_redirect_preference_list = 'postgres:primary,{{ awx_db_name }}:primary'
+      {% set use_primary  = ['postgres', 'awx', 'litellm'] -%}
+      {% set db_redirects = use_primary | product(['primary']) | map('join',':') -%}
+      database_redirect_preference_list = '{{ db_redirects | join(',') }}'
 
     # num_init_children = number of preforked Pgpool server
     # processes, or the concurrent client connections limit
