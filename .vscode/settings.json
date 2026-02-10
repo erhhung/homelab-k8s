@@ -21,5 +21,6 @@
     "*.sh.j2": "shellscript",
     "*.js.j2": "javascript",
     "*.py.j2": "python"
-  }
+  },
+  "makefile.configureOnOpen": false
 }

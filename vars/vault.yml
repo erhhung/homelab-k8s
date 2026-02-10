@@ -10,7 +10,8 @@ vault_fqdn: "{{ [vault_host_name] | product(search_domains) | map('join','.') | 
 
 vault_url: https://{{ vault_fqdn }}
 
-vault_service_host: "{{ vault_release_name }}-active.{{ vault_namespace }}.svc.{{ cluster_domain }}"
+vault_service_host: "{{ vault_release_name }}-active.{{
+  vault_namespace }}.svc.{{ cluster_domain }}"
 vault_service_port: 8200
 vault_service_url: "https://{{ vault_service_host }}:{{ vault_service_port }}"
 

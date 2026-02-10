@@ -55,8 +55,9 @@ All cluster services will be provisioned with TLS certificates from Erhhung's pr
 | https://*.pages.gitlab.fourteeners.local | GitLab Pages websites
 |         https://argocd.fourteeners.local | Argo CD console
 |            https://awx.fourteeners.local | Ansible AWX UI
-|         https://qdrant.fourteeners.local | Qdrant dashboard
 |         https://ollama.fourteeners.local | Ollama API server
+|        https://litellm.fourteeners.local | LiteLLM dashboard
+|         https://qdrant.fourteeners.local | Qdrant  dashboard
 |      https://openwebui.fourteeners.local | Open WebUI portal
 |           https://mcpo.fourteeners.local | MCP OpenAPI proxy
 |        https://flowise.fourteeners.local | Flowise designer
@@ -131,7 +132,7 @@ All cluster services will be provisioned with TLS certificates from Erhhung's pr
     * Install on main RKE cluster using the [`metacontroller`](https://metacontroller.github.io/metacontroller/guide/helm-install.html) Helm chart
 - [X] [Ollama LLM Server](https://github.com/ollama/ollama) with [Ollama CLI](https://github.com/masgari/ollama-cli) — run LLMs on Kubernetes cluster
     * Install on an Intel GPU node using the [`ollama`](https://github.com/cowboysysop/charts/tree/master/charts/ollama) Helm chart and [IPEX-LLM Ollama portable zip](https://github.com/intel/ipex-llm/tree/main/docs/mddocs/Quickstart/ollama_portable_zip_quickstart.md)
-- [ ] [LiteLLM Proxy Server](https://docs.litellm.ai/#litellm-proxy-server-llm-gateway) — track usage and spend across model providers
+- [X] [LiteLLM AI Gateway](https://docs.litellm.ai/#litellm-proxy-server-llm-gateway) — track usage and spend across model providers
     * Install on main RKE cluster using the [`litellm-helm`](https://github.com/BerriAI/litellm/tree/main/deploy/charts/litellm-helm) Helm chart
 - [X] [Open WebUI AI Platform](https://github.com/open-webui/open-webui) — extensible AI platform with Ollama integration and local RAG support
     * Install on main RKE cluster using the [`open-webui`](https://github.com/open-webui/helm-charts/tree/main/charts/open-webui) Helm chart
@@ -153,7 +154,7 @@ All cluster services will be provisioned with TLS certificates from Erhhung's pr
 - [ ] Switch the CNI on the RKE2 cluster from Canal to Cilium and install Hubble web UI to visualize L3/L4 traffic
 - [X] Automate creation of static DNS records in pfSense _(dynamically assigned IPs are managed by ExternalDNS)_
 - [ ] Identify and upload additional sources of personal documents into Open WebUI knowledge base collections
-- [ ] Enable OIDC authentication for additional services: AWX, ArgoCD, Open WebUI
+- [ ] Enable OIDC authentication for additional services: AWX, ArgoCD, LiteLLM, Open WebUI
 
 ## Ansible Vault
 
@@ -170,7 +171,7 @@ ansible-vault view   $VAULTFILE
 </details>
 
 <details>
-<summary>Some variables stored in Ansible Vault <em>(there are many more)</em></summary><br/>
+<summary>Some variables stored in Ansible Vault <em>(there are more)</em></summary><br/>
 
 |      Infrastructure Secrets       |    User Passwords
 |:---------------------------------:|:-------------------:
@@ -188,9 +189,9 @@ ansible-vault view   $VAULTFILE
 | `velero_repo_pass`                | `gitlab_user_pass`
 | `velero_passphrase`               | `argocd_admin_pass`
 | `harbor_secret`                   | `awx_admin_pass`
-| `dashboards_os_pass`              | `openwebui_admin_pass`
-| `fluent_os_pass`                  | `flowise_admin_pass`
-| `valkey_pass`                     |
+| `dashboards_os_pass`              | `litellm_admin_pass`
+| `fluent_os_pass`                  | `openwebui_admin_pass`
+| `valkey_pass`                     | `flowise_admin_pass`
 | `postgresql_pass`                 |
 | `keycloak_db_pass`                |
 | `monitoring_pass`                 |
@@ -204,6 +205,7 @@ ansible-vault view   $VAULTFILE
 | `argocd_signing_key`              |
 | `awx_secret_key`                  |
 | `hass_access_token`               |
+| `litellm_master_key`              |
 | `qdrant_api_key.*`                |
 | `openwebui_secret_key`            |
 | `openwebui_pipelines_api_key`     |
@@ -213,6 +215,16 @@ ansible-vault view   $VAULTFILE
 | `openai_api_key`                  |
 | `groq_api_key`                    |
 </details>
+
+### Passwords & API Keys
+
+Some useful commands to generate random passwords and API keys:
+
+* Passwords
+    - `pwgen -cnys -r '"!&*\'"'" 12 1`
+* API keys
+    - _alpha-numeric_: `head -c 4096 /dev/urandom | LC_CTYPE=C tr -cd '0-9a-zA-Z' | head -c 32`
+    - _hex-digits only_: `head -c 4096 /dev/urandom | LC_CTYPE=C tr -cd '0-9a-f' | head -c 32`
 
 ## Connections
 
@@ -504,15 +516,17 @@ however, all privileged operations using `sudo` will require the password stored
 </details>
 
 30. <details><summary>Install <strong>Ollama</strong> LLM server with common models<br/>
+    &nbsp; &nbsp; Install <strong>LiteLLM</strong> AI gateway with vendor models<br/>
     &nbsp; &nbsp; Install <strong>Open WebUI</strong> AI platform with <strong>Pipelines</strong><br/>
     &nbsp; &nbsp; Install <strong>MCP OpenAPI</strong> proxy with MCP servers</summary><br/>
 
-    30.1. Create `Accounts` knowledge base and `Accounts` custom model that embeds that KB  
-    30.2. **NOTE**: Populate `Accounts` KB by running `make openwebui -t knowledge` separately  
-    30.3. Deploy MCP tool servers, including `time`, `memory`, `browser`, `weather`, and `lights`
+    30.1. Add LiteLLM connection in Open WebUI to proxy OpenAI, Anthropic, and Groq models  
+    30.2. Create `Accounts` knowledge base and `Accounts` custom model that embeds that KB  
+    30.3. **NOTE**: Populate `Accounts` KB by running `make openwebui -t knowledge` separately  
+    30.4. Deploy MCP tool servers, including `time`, `memory`, `browser`, `weather`, and `lights`
 
     ```bash
-    make ollama openwebui
+    make ollama litellm openwebui
     ```
 </details>
 

@@ -1,0 +1,266 @@
+# https://docs.litellm.ai/docs#litellm-proxy-server-llm-gateway
+# https://docs.litellm.ai/docs/proxy/deploy#helm-chart
+---
+- name: Install LiteLLM on RKE cluster
+  tags: install
+  hosts: "{{ rke_control_plane_host }}"
+  vars_files:
+    - vars/kubernetes.yml
+    - vars/postgresql.yml
+    - vars/valkey.yml
+    - vars/ollama.yml
+    - vars/monitoring.yml
+    - vars/litellm.yml
+  vars: &vars
+    # required kubernetes>=24.2 package only in user virtualenv
+    ansible_python_interpreter: "{{ venv_python_interpreter }}"
+    kubeconfig: "{{ rke_kubeconfig }}"
+    secret_ns: "{{ litellm_namespace }}"
+    create_ns: false
+  pre_tasks:
+    - name: Get the PostgreSQL image used
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
+      ansible.builtin.include_tasks: tasks/postgresql/image.yml
+      when: postgresql_image is undefined
+  tasks:
+    - name: Create LiteLLM ingress secret
+      vars:
+        secret_name: "{{ litellm_secrets['ingress'] }}"
+        create_ns: true
+        cert_name: litellm-ingress
+        sans: "{{ [litellm_fqdn] }}"
+      ansible.builtin.include_tasks: tasks/k8s/secrets/tls.step.yml
+
+    - name: Create LiteLLM database secret
+      vars:
+        secret_name: "{{ litellm_secrets['database'] }}"
+        cert_name: litellm-database
+        # LiteLLM uses Prisma for ORM, which requires
+        # the client cert/key to be in PKCS#12 format
+        pkcs12: true
+        days: 365
+        sans:
+          - "{{ litellm_db_user }}"
+          - "{{ litellm_db_user }}@{{ homelab_domain }}"
+      ansible.builtin.include_tasks: tasks/k8s/secrets/tls.step.yml
+
+    - name: Create LiteLLM env vars secret
+      vars:
+        secret_name: "{{ litellm_secrets['env-vars'] }}"
+        secret_data:
+          UI_PASSWORD: "{{ litellm_admin_pass }}"
+          # chart also exports this as $PROXY_MASTER_KEY
+          LITELLM_MASTER_KEY: "{{ litellm_master_key }}"
+
+          # NOTE: keys in lower case are secretKeyRef set by
+          # the chart to their identical upper case env vars
+          database_username: "{{ litellm_db_user }}"
+          database_password: "{{ pgpool_pass }}"
+          REDIS_PASSWORD: "{{ valkey_pass }}"
+
+          # https://docs.litellm.ai/docs/providers
+          OPENAI_API_KEY: "{{ openai_api_key }}"
+          ANTHROPIC_API_KEY: "{{ anthropic_api_key }}"
+          GROQ_API_KEY: "{{ groq_api_key }}"
+
+          # https://docs.litellm.ai/docs/proxy/email
+          SMTP_USERNAME: "{{ icloud_smtp.username }}"
+          SMTP_PASSWORD: "{{ icloud_smtp.passwords['litellm'] }}"
+          # https://docs.litellm.ai/docs/proxy/alerting
+          SLACK_WEBHOOK_URL: "{{ slack_webhook_urls['litellm'] }}"
+      ansible.builtin.include_tasks: tasks/k8s/secrets/generic.yml
+
+    - name: Install LiteLLM Helm chart
+      vars:
+        tmpdir_name: litellm
+        chart_ref: "{{ litellm_chart_oci_url }}"
+        chart_ver: "{{ litellm_chart_version }}"
+        release: "{{ litellm_release_name }}"
+        release_ns: "{{ litellm_namespace }}"
+        values: "{{ litellm_chart_values }}"
+
+        patches:
+          # support for migrationJob.extraInitContainers is
+          # a new chart feature that hasn't been published
+          # yet, so also add it as a Helmfile merge patch
+          merge_patches:
+            - apiVersion: batch/v1
+              kind: Job
+              metadata:
+                name: "{{ litellm_release_name }}-migrations"
+              spec:
+                template:
+                  spec:
+                    initContainers: "{{ [litellm_job_init_container] }}"
+
+        extras: # adopt extra resources into Helm release
+          - cert-manager.io/v1 Certificate {{ litellm_secrets['ingress']  }}
+          - cert-manager.io/v1 Certificate {{ litellm_secrets['database'] }}
+          - v1 Secret {{ litellm_secrets['env-vars'] }}
+          - v1 Secret {{ litellm_secrets['api-keys'] }} ? # optional (created later)
+      ansible.builtin.include_tasks: tasks/helm/helmfile.yml
+
+# https://litellm.fourteeners.local/docs
+- name: Configure LiteLLM installation
+  tags: configure
+  hosts: localhost
+  vars_files:
+    - vars/kubernetes.yml
+    - vars/litellm.yml
+  vars:
+    api_base: https://{{ litellm_fqdn }}
+    auth_headers:
+      X-LiteLLM-API-Key: "{{ litellm_master_key }}"
+    # some APIs record extra header as audit trail
+    post_headers: "{{ auth_headers |
+      combine({'LiteLLM-Changed-By': 'Ansible'}) }}"
+  pre_tasks:
+    - name: Wait until LiteLLM is ready
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/uri_module.html
+      ansible.builtin.uri:
+        url: "{{ api_base }}/health/readiness"
+        # returns {status,litellm_version,...}
+        return_content: true
+      # https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_loops.html#retrying-a-task-until-a-condition-is-met
+      register: worker_ready
+      retries: 20
+      delay: 3
+  tasks:
+    - name: Get LiteLLM teams
+      ansible.builtin.uri:
+        url: "{{ api_base }}/team/list"
+        headers: "{{ auth_headers }}"
+        return_content: true
+      register: list_teams
+
+    - name: Create/update LiteLLM team
+      vars:
+        teams: "{{ list_teams.json }}"
+      block:
+        - name: Create LiteLLM team
+          vars:
+            team: "{{ teams | selectattr('team_alias', '==', item.team_alias) }}"
+          ansible.builtin.uri:
+            url: "{{ api_base }}/team/new"
+            method: POST
+            headers: "{{ post_headers }}"
+            body_format: json
+            body: "{{ item }}"
+          loop: "{{ litellm_teams }}"
+          loop_control:
+            label: "{{ item.team_alias }}"
+          when: team is falsy
+          register: create_team
+          changed_when: true
+
+        - name: Update LiteLLM team
+          vars:
+            team: "{{ teams | selectattr('team_alias', '==', item.team_alias) }}"
+            # https://docs.ansible.com/projects/ansible/latest/collections/community/general/keep_keys_filter.html
+            existing: "{{ team | community.general.keep_keys(target=item.keys()) | first }}"
+            body: "{{ item | combine({'team_id': team[0].team_id}) }}"
+          ansible.builtin.uri:
+            url: "{{ api_base }}/team/update"
+            method: POST
+            headers: "{{ post_headers }}"
+            body_format: json
+            body: "{{ body }}"
+          loop: "{{ litellm_teams }}"
+          loop_control:
+            label: "{{ item.team_alias }}"
+          when:
+            - team is truthy
+            # NOTE: key order doesn't matter
+            # when comparing dicts in Python
+            - existing != item
+          changed_when: true
+
+    # dict: .team_alias => .team_id
+    - name: Set team_ids fact
+      vars:
+        # https://docs.ansible.com/projects/ansible/latest/collections/ansible/builtin/items2dict_filter.html
+        existing: "{{ list_teams.json |
+          ansible.builtin.items2dict(key_name='team_alias', value_name='team_id') }}"
+        created: |
+          {{ create_team.results | selectattr('json', 'defined') | map(attribute='json') |
+             ansible.builtin.items2dict(key_name='team_alias', value_name='team_id') }}
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/set_fact_module.html
+      ansible.builtin.set_fact:
+        team_ids: "{{ existing | combine(created) }}"
+
+    - name: Get LiteLLM users
+      ansible.builtin.uri:
+        url: "{{ api_base }}/user/list"
+        headers: "{{ auth_headers }}"
+        return_content: true
+      register: list_users
+
+    - name: Create/update LiteLLM user
+      vars:
+        users: "{{ list_users.json.users }}"
+      block:
+        - name: Create LiteLLM user
+          vars:
+            user: "{{ users | selectattr('user_id', '==', item.user_id) }}"
+          ansible.builtin.uri:
+            url: "{{ api_base }}/user/new"
+            method: POST
+            headers: "{{ post_headers }}"
+            body_format: json
+            body: "{{ item }}"
+          loop: "{{ litellm_users }}"
+          loop_control:
+            label: "{{ item.user_id }}"
+          register: create_user
+          when: user is falsy
+          changed_when: true
+
+        - name: Update LiteLLM user
+          vars:
+            user: "{{ users | selectattr('user_id', '==', item.user_id) }}"
+            existing: "{{ user | community.general.keep_keys(target=item.keys()) | first }}"
+            body: "{{ item | combine({'user_id': user[0].user_id}) }}"
+          ansible.builtin.uri:
+            url: "{{ api_base }}/user/update"
+            method: POST
+            headers: "{{ post_headers }}"
+            body_format: json
+            body: "{{ body }}"
+          loop: "{{ litellm_users }}"
+          loop_control:
+            label: "{{ item.user_id }}"
+          when:
+            - user is truthy
+            - existing != item
+          changed_when: true
+
+    # user API keys are only
+    # issued on user creation
+    - name: Save user API keys
+      delegate_to: "{{ rke_control_plane_host }}"
+      vars:
+        <<: *vars
+        api_keys: |
+          {{ create_user.results | selectattr('json', 'defined') | map(attribute='json') |
+             ansible.builtin.items2dict(key_name='user_id', value_name='key') }}
+      when: api_keys is truthy
+      block:
+        - name: Read API keys Secret
+          # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_info_module.html
+          kubernetes.core.k8s_info:
+            kubeconfig: "{{ kubeconfig }}"
+            api_version: v1
+            kind: Secret
+            name: "{{ litellm_secrets['api-keys'] }}"
+            namespace: "{{ secret_ns }}"
+          register: keys_secret
+
+        - name: Write API keys Secret
+          vars:
+            # b64_decode_k8s_secret: filter_plugins/filters.py
+            existing: |
+              {{ keys_secret.resources[0] | b64_decode_k8s_secret
+              if keys_secret.resources is truthy  else {}  }}
+            secret_name: "{{   litellm_secrets['api-keys'] }}"
+            secret_data: "{{ existing | combine(api_keys)  }}"
+          ansible.builtin.include_tasks: tasks/k8s/secrets/generic.yml

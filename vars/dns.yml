@@ -98,6 +98,8 @@ pfsense_dns_records:
         desc: Argo CD GitOps
       - host: ollama
         desc: Ollama Server
+      - host: litellm
+        desc: LiteLLM Dashboard
       - host: qdrant
         desc: Qdrant Dashboard
       - host: openwebui

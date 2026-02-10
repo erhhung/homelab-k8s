@@ -134,3 +134,5 @@
       register: install_app
       changed_when: install_app.rc == 0
       failed_when: install_app.rc not in [0,9]
+      retries: 3
+      delay: 5

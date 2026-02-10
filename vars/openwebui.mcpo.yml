@@ -189,6 +189,9 @@ mcpo_chart_values:
         args:
           - -y
           - "@modelcontextprotocol/server-memory"
+        env:
+          # store memory in persistent NFS volume
+          MEMORY_FILE_PATH: /opt/mcp/memory.jsonl
 
       # https://github.com/erhhung/mcp-crawl4ai
       # https://github.com/unclecode/crawl4ai
@@ -265,6 +268,7 @@ mcp_tool_servers:
         about the user across chats.
     url: "{{ mcpo_service_url }}/memory"
 
+  # https://github.com/erhhung/mcp-crawl4ai
   - <<: *tool
     info:
       id: browser

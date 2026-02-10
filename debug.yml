@@ -674,8 +674,9 @@
             gnet_id: 7645
           - title: Istio / Wasm Extension
             gnet_id: 13277
+        titles: "{{ dashboards | map(attribute='title') }}"
         # https://docs.ansible.com/ansible/latest/collections/community/general/dict_kv_filter.html
-        names: "{{ dashboards | map(attribute='title') | map('community.general.dict_kv', 'name') }}"
+        names: "{{ titles | map('community.general.dict_kv', 'name') }}"
       ansible.builtin.debug:
         var: names
 

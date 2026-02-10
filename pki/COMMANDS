@@ -255,6 +255,24 @@ cd "$HOME"
   \*.argocd.svc
 
 ./cert.sh --exp=365 \
+          --out=awx_db \
+  awx awx@fourteeners.local
+
+./cert.sh --exp=365 \
+      awx.fourteeners.local \
+  ansible.fourteeners.local
+
+./cert.sh --exp=365 \
+  ollama.fourteeners.local
+
+./cert.sh --exp=365 \
+          --out=litellm_db \
+  litellm litellm@fourteeners.local
+
+./cert.sh --exp=365 \
+  litellm.fourteeners.local
+
+./cert.sh --exp=365 \
           --out=qdrant \
      qdrant-node \
      qdrant.fourteeners.local \
@@ -263,9 +281,6 @@ cd "$HOME"
      qdrant-2.qdrant-headless \
   \*.qdrant.svc.cluster.local \
   \*.qdrant.svc
-
-./cert.sh --exp=365 \
-  ollama.fourteeners.local
 
 ./cert.sh --exp=365 \
           --out=openwebui_db \

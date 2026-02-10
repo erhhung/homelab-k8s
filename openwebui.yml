@@ -15,6 +15,7 @@
     - vars/minio.yml
     - vars/ollama.yml
     - vars/qdrant.yml
+    - vars/litellm.yml
     - vars/openwebui.yml
   vars: &vars
     # required kubernetes>=24.2 package only in user virtualenv
@@ -54,6 +55,16 @@
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
       ansible.builtin.include_tasks: tasks/postgresql/image.yml
       when: postgresql_image is undefined
+
+    - name: Get LiteLLM virtual API keys
+      # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_info_module.html
+      kubernetes.core.k8s_info:
+        kubeconfig: "{{ kubeconfig }}"
+        api_version: v1
+        kind: Secret
+        name: "{{ litellm_secrets['api-keys'] }}"
+        namespace: "{{ litellm_namespace }}"
+      register: keys_secret
   tasks:
     - name: Create Open WebUI ingress secret
       vars:
@@ -74,9 +85,13 @@
       ansible.builtin.include_tasks: tasks/k8s/secrets/tls.step.yml
 
     # https://docs.openwebui.com/getting-started/env-configuration
-    - name: Create Open WebUI extraEnv secret
+    - name: Create Open WebUI env vars secret
       vars:
+        # b64_decode_k8s_secret: filter_plugins/filters.py
+        user_keys: "{{ keys_secret.resources | first | b64_decode_k8s_secret }}"
         pipelines: "{{ openwebui_chart_values.pipelines }}"
+
+        # === Inputs ===
         secret_name: "{{ openwebui_secrets['env-vars'] }}"
         secret_data:
           # secret key used to sign JWTs:
@@ -90,11 +105,12 @@
           QDRANT_API_KEY: "{{ qdrant_api_key.read_write }}"
           # https://docs.openwebui.com/getting-started/env-configuration#s3_secret_access_key
           S3_SECRET_ACCESS_KEY: "{{ minio_client_pass }}"
+
           # Pipelines key must be first:
           # https://docs.openwebui.com/getting-started/env-configuration#openai_api_keys
           # https://docs.openwebui.com/pipelines#-quick-start-with-docker
           OPENAI_API_KEYS: >-
-            {% set keys = [openai_api_key] -%}
+            {% set keys = [user_keys[user_erhhung.username]] -%}
             {% if pipelines.enabled -%}
             {%   set _ = keys.insert(0, openwebui_pipelines_api_key) -%}
             {% endif -%}
@@ -273,7 +289,6 @@
     vars_file: vars/ollama.{{ use_ollama_chart_by }}.yml
     group_name: Family
     knowledge_name: Accounts
-    model_name: Accounts
   pre_tasks:
     - name: Include {{ vars_file }}
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_vars_module.html
@@ -531,8 +546,8 @@
     - name: Create Accounts custom model
       vars:
         model: "{{ list_models.json['items'] |
-          selectattr('name', '==', model_name) }}"
-        base_model: "{{ ollama_models | select('search', '^qwen3') | first }}"
+          selectattr('name', '==', 'Accounts') }}"
+        base_model: "{{ ollama_models | select('search', '^gemma3') | first }}"
         # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/file_lookup.html
         image_data: "{{ lookup('ansible.builtin.file', 'images/assistant.png') }}"
         image_url: data:image/png;base64,{{ image_data | b64encode }}
@@ -550,19 +565,23 @@
         body_format: json
         body:
           id: accounts
-          name: "{{ model_name }}"
+          name: Accounts
           meta:
-            description: Qwen3 base model RAG-enhanced with Accounts knowledge base
+            description: Gemma3 base model RAG-enhanced with Accounts knowledge base
             tags:
               - name: private
             profile_image_url: "{{ image_url }}"
             capabilities:
-              citations: true
               file_upload: true
+              file_context: true
+              builtin_tools: true
               web_search: false
-              code_interpreter: false
-              image_generation: false
               vision: false
+              image_generation: false
+              code_interpreter: false
+              status_updates: false
+              citations: true
+              usage: false
             knowledge: "{{ [knowledge] }}"
           base_model_id: "{{ base_model }}"
           params:
@@ -584,10 +603,63 @@
     - name: Set accounts_model fact
       vars:
         model: "{{ list_models.json['items'] |
-          selectattr('name', '==', model_name) }}"
+          selectattr('name', '==', 'Accounts') }}"
       ansible.builtin.set_fact:
         accounts_model: |
           {{ model | first if model is truthy else create_model.json }}
+
+    - name: Create Browsing custom model
+      vars:
+        model: "{{ list_models.json['items'] |
+          selectattr('name', '==', 'Browsing') }}"
+        base_model: "{{ ollama_models | select('search', '^gemma3') | first }}"
+        image_data: "{{ lookup('ansible.builtin.file', 'images/chrome.png') }}"
+        image_url: data:image/png;base64,{{ image_data | b64encode }}
+      ansible.builtin.uri:
+        method: POST
+        url: "{{ api_base }}/v1/models/create"
+        headers: "{{ auth_headers }}"
+        body_format: json
+        body:
+          id: browsing
+          name: Browsing
+          meta:
+            description: Gemma3 base model with commonly used tools, including web browsing
+            profile_image_url: "{{ image_url }}"
+            defaultFeatureIds: ["web_search"]
+            capabilities:
+              file_upload: true
+              file_context: true
+              builtin_tools: true
+              web_search: true
+              vision: false
+              image_generation: false
+              code_interpreter: false
+              status_updates: true
+              citations: true
+              usage: false
+            toolIds:
+              - server:time
+              - server:weather
+              - server:memory
+              - server:browser
+          base_model_id: "{{ base_model }}"
+          params:
+            system: >-
+              You have been given access to various tools with which
+              to look up information about recent events in order to
+              augment your knowledge. If you do choose to browse the
+              Web, always cite the websites you have crawled in your
+              response.
+          access_control:
+            read:
+              group_ids: "{{ [family_group_id] }}"
+            write:
+              user_ids: "{{ [admin_user.id] }}"
+        return_content: true
+      register: create_model
+      when: model is falsy
+      changed_when: true
 
 # NOTE: this play takes a long time to run because it loops through hundreds of files
 # and, for each, checks with Open WebUI whether it exists or has changed, and uploads

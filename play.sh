@@ -56,6 +56,11 @@ install_roles() {
 }
 install_roles
 
+# purge facts cache when re-running all playbooks
+[ "${@: -1}" == temp.yml ] && [ -f temp.yml ] && \
+  diff -q temp.yml main.yml &> /dev/null && \
+    rm -f .ansible/facts/*
+
 # strip ANSI color codes
 no_color() {
   sed -E 's/(\x1B|\\x1B|\033|\\033)\[([0-9]{1,3}(;[0-9]{1,2})?)?[mGK]//g'

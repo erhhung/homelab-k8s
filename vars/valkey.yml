@@ -73,7 +73,7 @@ valkey_release_name: valkey
 valkey_chart_values:
   nameOverride: "{{ valkey_release_name }}"
 
-  tls: # for replication traffic
+  tls:
     enabled: true
     # IRedis doesn't currently support mTLS parameters
     authClients: false # require nodes to authenticate
@@ -91,8 +91,7 @@ valkey_chart_values:
     ## no need for replicas at storage level when
     ## the cluster itself stores data in replicas
     storageClass: "{{ storage_classes['default'] }}"
-    # min XFS volume size is 300Mi
-    size: 384Mi
+    size: 512Mi
 
   persistentVolumeClaimRetentionPolicy:
     enabled: true
