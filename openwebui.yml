@@ -284,6 +284,7 @@
     - vars/openwebui.yml
     - vars/openwebui.mcpo.yml
     - vars/ollama.yml
+    - vars/searxng.yml
   vars:
     api_base: https://{{ openwebui_fqdns | first }}/api
     vars_file: vars/ollama.{{ use_ollama_chart_by }}.yml
@@ -659,6 +660,28 @@
         return_content: true
       register: create_model
       when: model is falsy
+      changed_when: true
+
+    - name: Get web search configuration
+      ansible.builtin.uri:
+        url: "{{ api_base }}/v1/retrieval/config"
+        headers: "{{ auth_headers }}"
+        return_content: true
+      register: retrieval_config
+
+    - name: Configure SearXNG web search
+      vars:
+        web_config: "{{ retrieval_config.json.web }}"
+        # only override values that we want to set; others should be retained
+        new_config: "{{ web_config | combine(openwebui_web_search_config) }}"
+      ansible.builtin.uri:
+        method: POST
+        url: "{{ api_base }}/v1/retrieval/config/update"
+        headers: "{{ auth_headers }}"
+        body_format: json
+        body:
+          web: "{{ new_config }}"
+      when: web_config != new_config
       changed_when: true
 
 # NOTE: this play takes a long time to run because it loops through hundreds of files

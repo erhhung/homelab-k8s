@@ -102,6 +102,12 @@ pfsense_dns_records:
         desc: LiteLLM Dashboard
       - host: qdrant
         desc: Qdrant Dashboard
+      - host: search
+        desc: SearXNG Search UI
+      - host: searxng
+        desc: SearXNG Search UI
+      - host: searx
+        desc: SearXNG Search UI
       - host: openwebui
         desc: Open WebUI
       - host: chatgpt

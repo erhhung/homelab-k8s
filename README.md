@@ -58,6 +58,7 @@ All cluster services will be provisioned with TLS certificates from Erhhung's pr
 |         https://ollama.fourteeners.local | Ollama API server
 |        https://litellm.fourteeners.local | LiteLLM dashboard
 |         https://qdrant.fourteeners.local | Qdrant  dashboard
+|         https://search.fourteeners.local | SearXNG search UI
 |      https://openwebui.fourteeners.local | Open WebUI portal
 |           https://mcpo.fourteeners.local | MCP OpenAPI proxy
 |        https://flowise.fourteeners.local | Flowise designer
@@ -131,13 +132,16 @@ All cluster services will be provisioned with TLS certificates from Erhhung's pr
 - [X] [Kubernetes Metacontroller](https://metacontroller.github.io/metacontroller) — enable easy creation of custom controllers
     * Install on main RKE cluster using the [`metacontroller`](https://metacontroller.github.io/metacontroller/guide/helm-install.html) Helm chart
 - [X] [Ollama LLM Server](https://github.com/ollama/ollama) with [Ollama CLI](https://github.com/masgari/ollama-cli) — run LLMs on Kubernetes cluster
-    * Install on an Intel GPU node using the [`ollama`](https://github.com/cowboysysop/charts/tree/master/charts/ollama) Helm chart and [IPEX-LLM Ollama portable zip](https://github.com/intel/ipex-llm/tree/main/docs/mddocs/Quickstart/ollama_portable_zip_quickstart.md)
+    * Install on an Intel GPU node using the [`ollama`](https://github.com/cowboysysop/charts/tree/master/charts/ollama) Helm chart with [IPEX-LLM](https://github.com/intel/ipex-llm/tree/main/docs/mddocs/Quickstart/ollama_portable_zip_quickstart.md)
+    * [ ] Replace with [vLLM](https://docs.vllm.ai/) for [better scalability](https://developers.redhat.com/articles/2025/08/08/ollama-vs-vllm-deep-dive-performance-benchmarking) if concurrency increases in production
 - [X] [LiteLLM AI Gateway](https://docs.litellm.ai/#litellm-proxy-server-llm-gateway) — track usage and spend across model providers
     * Install on main RKE cluster using the [`litellm-helm`](https://github.com/BerriAI/litellm/tree/main/deploy/charts/litellm-helm) Helm chart
 - [X] [Open WebUI AI Platform](https://github.com/open-webui/open-webui) — extensible AI platform with Ollama integration and local RAG support
     * Install on main RKE cluster using the [`open-webui`](https://github.com/open-webui/helm-charts/tree/main/charts/open-webui) Helm chart
-    * [X] Replace the default Chroma vector DB with [Qdrant](https://github.com/qdrant/qdrant) — install using the [`qdrant`](https://github.com/qdrant/qdrant-helm) Helm chart
-    * [X] Deploy [MCP OpenAPI (`mcpo`)](https://docs.openwebui.com/features/plugin/tools/openapi-servers/mcp) proxy server with select tools using the [`mcpo`](https://github.com/first-it-consulting/helm-mcpo) Helm chart
+    * [X] Replace default Chroma vector DB with [Qdrant](https://github.com/qdrant/qdrant) — install using the [`qdrant`](https://github.com/qdrant/qdrant-helm) Helm chart
+    * [X] Deploy [MCP OpenAPI (mcpo)](https://docs.openwebui.com/features/plugin/tools/openapi-servers/mcp) proxy server with select tools using the [`mcpo`](https://github.com/first-it-consulting/helm-mcpo) Helm chart
+    * [ ] Deploy [Playwright](https://playwright.dev/) server using generic [`app-template`](https://github.com/bjw-s-labs/helm-charts/tree/main/charts/other/app-template) Helm chart with [prebuilt images](https://github.com/JacobLinCool/playwright-docker)
+    * [X] Deploy [SearXNG](https://docs.searxng.org/) metasearch engine using the _forked_ [`searxng`](https://github.com/chr0n1x/searxng-helm-chart) Helm chart
 - [X] [Flowise Agentic Workflows](https://flowiseai.com/) — build AI agents using visual workflows
     * Install on main RKE cluster using the [`flowise`](https://github.com/cowboysysop/charts/tree/master/charts/flowise) Helm chart
 - [ ] [Backstage Developer Portal](https://backstage.io/) — software catalog and developer portal
@@ -207,6 +211,7 @@ ansible-vault view   $VAULTFILE
 | `hass_access_token`               |
 | `litellm_master_key`              |
 | `qdrant_api_key.*`                |
+| `searxng_secret_key`              |
 | `openwebui_secret_key`            |
 | `openwebui_pipelines_api_key`     |
 | `openwebui_mcpo_api_key`          |
@@ -508,32 +513,45 @@ however, all privileged operations using `sudo` will require the password stored
     ```
 </details>
 
-29. <details><summary>Install <strong>Qdrant</strong> vector database in <em><strong>HA</strong></em> mode</summary><br/>
+29. <details><summary>Install <strong>LiteLLM</strong> AI gateway with vendor models</summary><br/>
+
+    ```bash
+    make litellm
+    ```
+</details>
+
+30. <details><summary>Install <strong>Qdrant</strong> vector database in <em><strong>HA</strong></em> mode</summary><br/>
 
     ```bash
     make qdrant
     ```
 </details>
 
-30. <details><summary>Install <strong>Ollama</strong> LLM server with common models<br/>
-    &nbsp; &nbsp; Install <strong>LiteLLM</strong> AI gateway with vendor models<br/>
-    &nbsp; &nbsp; Install <strong>Open WebUI</strong> AI platform with <strong>Pipelines</strong><br/>
-    &nbsp; &nbsp; Install <strong>MCP OpenAPI</strong> proxy with MCP servers</summary><br/>
-
-    30.1. Add LiteLLM connection in Open WebUI to proxy OpenAI, Anthropic, and Groq models  
-    30.2. Create `Accounts` knowledge base and `Accounts` custom model that embeds that KB  
-    30.3. **NOTE**: Populate `Accounts` KB by running `make openwebui -t knowledge` separately  
-    30.4. Deploy MCP tool servers, including `time`, `memory`, `browser`, `weather`, and `lights`
+31. <details><summary>Install <strong>SearXNG</strong> metasearch engine and UI</summary><br/>
 
     ```bash
-    make ollama litellm openwebui
+    make searxng
     ```
 </details>
 
-31. <details><summary>Install <strong>Flowise</strong> AI platform and integrations</summary><br/>
+32. <details><summary>Install <strong>Ollama</strong> LLM server with modest models<br/>
+    &nbsp; &nbsp; Install <strong>Open WebUI</strong> AI platform with <strong>Pipelines</strong><br/>
+    &nbsp; &nbsp; Install <strong>MCP OpenAPI</strong> proxy with MCP servers</summary><br/>
+
+    32.1. Add LiteLLM connection in Open WebUI to proxy OpenAI, Anthropic, and Groq models  
+    32.2. Create `Accounts` knowledge base and `Accounts` custom model that embeds that KB  
+    32.3. **NOTE**: Populate `Accounts` KB by running `make openwebui -t knowledge` separately  
+    32.4. Deploy MCP tool servers, including `time`, `memory`, `browser`, `weather`, and `lights`
+
+    ```bash
+    make ollama openwebui
+    ```
+</details>
+
+33. <details><summary>Install <strong>Flowise</strong> AI platform and integrations</summary><br/>
 
     Current deployment uses local images in Harbor registry that were built by GitLab CI.  
-    31.1. **NOTE**: Populate documents by running `make flowise -t documents` separately
+    33.1. **NOTE**: Populate documents by running `make flowise -t documents` separately
 
     ```bash
     make flowise
