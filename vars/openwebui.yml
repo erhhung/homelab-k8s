@@ -561,3 +561,16 @@ openwebui_system_prompt: |-
   Today is {{CURRENT_DATE}}, and the time is {{CURRENT_TIME}}.
   User's name is {{USER_NAME}}, but address the user as "you".
   {%- endraw %}
+
+# GET /api/v1/retrieval/config
+openwebui_web_search_config:
+  ENABLE_WEB_SEARCH: true
+  WEB_SEARCH_ENGINE: searxng
+  WEB_SEARCH_TRUST_ENV: false
+  WEB_SEARCH_CONCURRENT_REQUESTS: 0
+  WEB_SEARCH_DOMAIN_FILTER_LIST: []
+  WEB_SEARCH_RESULT_COUNT: 3
+  SEARXNG_LANGUAGE: en
+  SEARXNG_QUERY_URL: "{{ searxng_service_url }}/search"
+  BYPASS_WEB_SEARCH_EMBEDDING_AND_RETRIEVAL: false
+  BYPASS_WEB_SEARCH_WEB_LOADER: false

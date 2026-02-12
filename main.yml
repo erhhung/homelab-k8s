@@ -159,6 +159,10 @@
   ansible.builtin.import_playbook: qdrant.yml
   tags: qdrant
 
+- name: Include SearXNG metasearch playbook
+  ansible.builtin.import_playbook: searxng.yml
+  tags: searxng
+
 # Open WebUI depends on PostgreSQL, Valkey,
 # MinIO, Ollama, LiteLLM, Qdrant, (GitLab)
 - name: Include Open WebUI platform playbook

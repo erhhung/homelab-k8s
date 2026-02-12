@@ -1,0 +1,247 @@
+searxng_namespace: searxng
+searxng_hostnames: # aliases of "ingress"
+  - search
+  - searxng
+  - searx
+
+# remember to add searxng.fourteeners.local (also search./searx.) to
+# pfSense DNS as aliases of ingress.fourteeners.local: 192.168.4.222
+# https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_filters.html#products
+searxng_fqdns: "{{ searxng_hostnames | product(search_domains) | map('join','.') }}"
+
+searxng_service_host: "{{ searxng_release_name }}.{{
+  searxng_namespace }}.svc.{{ cluster_domain }}"
+searxng_service_port: 8080
+searxng_service_url: http://{{ searxng_service_host }}:{{ searxng_service_port }}
+
+searxng_secrets:
+  ingress: searxng-ingress-tls
+
+# https://github.com/chr0n1x/searxng-helm-chart/tree/main/searxng
+searxng_chart_version: "1.0.4"
+# https://hub.docker.com/r/searxng/searxng/tags
+searxng_image_tag: 2026.2.6-b5bb27f23
+searxng_release_name: searxng
+
+# https://github.com/chr0n1x/searxng-helm-chart/tree/main/searxng/values.yaml
+searxng_chart_values:
+  image:
+    repository: searxng/searxng
+    tag: "{{ searxng_image_tag }}"
+    pullPolicy: IfNotPresent
+
+  redis:
+    # deploy standalone Redis instance
+    # (but has been replaced by Valkey)
+    # needed only if using rate limiter
+    enabled: false
+
+  # https://docs.searxng.org/admin/installation-docker.html#environment-variables
+  env:
+    # files from Secrets and ConfigMaps will
+    # be copied to an emptyDir volume by the
+    # init container with proper ownership
+    FORCE_OWNERSHIP: "false"
+
+    # SearXNG configuration should be done via
+    # "settings.yml", so remove existing chart
+    # values by setting them to null:
+    # https://searx.github.io/searx/admin/installation-docker.html
+    BASE_URL: null
+    INSTANCE_NAME: null
+    AUTOCOMPLETE: null
+
+  searxng:
+    # https://docs.searxng.org/admin/settings/settings.html
+    config:
+      # inherit default settings; everything
+      # else specified below will override:
+      # https://github.com/searxng/searxng/tree/master/searx/settings.yml
+      use_default_settings: true
+
+      server:
+        base_url: https://{{ searxng_fqdns | first }}
+        secret_key: "{{ searxng_secret_key }}"
+
+      # https://docs.searxng.org/admin/settings/settings_general.html
+      general:
+        # basic auth password to enable
+        # /metrics; username can be any
+        open_metrics: "{{ searxng_metrics_pass }}"
+
+      # https://docs.searxng.org/admin/settings/settings_search.html
+      search:
+        default_lang: en-US
+        autocomplete: "" # disable
+        # show favicons of results
+        favicon_resolver: duckduckgo
+        formats: # results
+          - html # direct usage in web UI
+          - json # Open WebUI integration
+
+      # https://docs.searxng.org/admin/settings/settings_engines.html
+      engines:
+        # disable Tor-related engines
+        # as we don't have Tor client
+        - name: ahmia
+          inactive: true
+        - name: torch
+          inactive: true
+
+      # https://docs.searxng.org/admin/settings/settings_ui.html
+      ui:
+        default_theme: simple
+        theme_args:
+          simple_style: dark # auto|light|dark|black
+        center_alignment: true
+
+  persistence:
+    # NOTE: /etc/searxng and /var/cache/searxng are
+    # expected volumes exposed by the Docker image:
+    # https://github.com/searxng/searxng/tree/master/container/dist.dockerfile
+    # https://github.com/searxng/base/tree/main/Dockerfile
+    config:
+      enabled: true
+      type: emptyDir
+      mountPath: /etc/searxng # don't change!
+
+    cache:
+      enabled: true
+      storageClass: "{{ storage_classes['default'] }}"
+      size: 1Gi
+      accessMode: ReadWriteOnce
+      mountPath: /var/cache/searxng # don't change!
+
+    favicons:
+      enabled: true
+      type: configMap
+      name: "{{ searxng_release_name }}-favicons"
+      mountPath: "-" # init container will mount
+
+    limiter:
+      enabled: true
+      type: configMap
+      name: "{{ searxng_release_name }}-limiter"
+      mountPath: "-" # init container will mount
+
+  configmap:
+    # create ConfigMap containing "favicons.toml":
+    # https://docs.searxng.org/admin/searx.favicons.html
+    favicons:
+      enabled: true
+      data:
+        favicons.toml: |
+          [favicons]
+          cfg_schema = 1
+
+          [favicons.cache]
+          db_url = "/var/cache/searxng/favicons.db"
+          LIMIT_TOTAL_BYTES = {{ 2**30 - 2**20 }} # 1Gi
+          HOLD_TIME = {{ 30 * 60*60*24 }} # 30 days
+          BLOB_MAX_BYTES = {{ 20 * 2**10 }} # 20Ki
+          MAINTENANCE_MODE = "auto"
+          MAINTENANCE_PERIOD = {{ 4 * 60*60 }} # 4h
+
+    # create ConfigMap containing "limiter.toml" even
+    # though rate limiter is disabled because SearXNG
+    # bot detection always loads this file on startup:
+    # https://docs.searxng.org/admin/searx.limiter.html
+    limiter:
+      enabled: true
+      data:
+        limiter.toml: |
+          [botdetection]
+          trusted_proxies = [
+            '127.0.0.0/8',
+            # cluster CIDR
+            '10.42.0.0/16',
+          ]
+          [botdetection.ip_lists]
+          pass_ip = [
+            '192.168.0.0/16',
+            # https://tailscale.com/kb/1015/100.x-addresses
+            '100.64.0.0/10',
+          ]
+
+  initContainers:
+    fix-owners:
+      image: busybox
+      imagePullPolicy: IfNotPresent
+      command: ["sh"]
+      args:
+        - -c
+        - |-
+          set   -x
+          cp    -a /tmp/searxng/* /etc/searxng
+          chown -R  977:977 /var/cache/searxng \
+                 /etc/searxng
+          ls -al /etc/searxng
+      volumeMounts:
+        - name: "{{ searxng_release_name }}-config"
+          mountPath: /tmp/searxng/settings.yml
+          subPath: settings.yml
+        - name: favicons
+          mountPath: /tmp/searxng/favicons.toml
+          subPath: favicons.toml
+        - name: limiter
+          mountPath: /tmp/searxng/limiter.toml
+          subPath: limiter.toml
+        - name: config
+          mountPath: /etc/searxng
+        - name: cache
+          mountPath: /var/cache/searxng
+
+  serviceAccount:
+    create: true
+
+  podSecurityContext:
+    fsGroup: 977 # searxng
+  securityContext:
+    runAsUser: 0
+    capabilities:
+      drop: ["ALL"]
+    allowPrivilegeEscalation: false
+    # container needs to write merged
+    # CA bundle under /etc/ssl/certs/
+    readOnlyRootFilesystem: false
+
+  resources:
+    requests:
+      cpu: 10m
+      memory: 128Mi
+
+  probes:
+    startup:
+      enabled: false
+    liveness: &probe
+      spec:
+        httpGet:
+          # add client IP header to appease SearXNG bot
+          # detection complaining about no proxy header
+          httpHeaders:
+            - name: X-Real-IP
+              value: 127.0.0.1
+        periodSeconds: 10
+        timeoutSeconds: 5
+        failureThreshold: 6
+    readiness: *probe
+
+  ingress:
+    main:
+      enabled: true
+      tls:
+        - secretName: "{{ searxng_secrets['ingress'] }}"
+          hosts: "{{ searxng_fqdns }}"
+      ingressClassName: "{{ rke_ingress_class }}"
+      annotations:
+        nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+        nginx.ingress.kubernetes.io/backend-protocol: HTTP
+      hosts: |
+        {% set hosts = [] %}
+        {% for host in searxng_fqdns %}
+        {%   set _ = hosts.append({
+               'host':     host,
+               'paths': [{'path': '/'}],
+             })   %}
+        {% endfor %}
+        {{ hosts  }}

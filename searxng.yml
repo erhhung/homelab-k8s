@@ -1,0 +1,55 @@
+# https://docs.searxng.org/
+# https://docs.searxng.org/admin/installation-docker.html
+---
+- name: Install SearXNG on RKE cluster
+  tags: install
+  hosts: "{{ rke_control_plane_host }}"
+  vars_files:
+    - vars/kubernetes.yml
+    - vars/storage.yml
+    - vars/searxng.yml
+  vars:
+    # required kubernetes>=24.2 package only in user virtualenv
+    ansible_python_interpreter: "{{ venv_python_interpreter }}"
+    kubeconfig: "{{ rke_kubeconfig }}"
+    secret_ns: "{{ searxng_namespace }}"
+  tasks:
+    - name: Create SearXNG ingress secret
+      vars:
+        secret_name: "{{ searxng_secrets['ingress'] }}"
+        cert_name: searxng-ingress
+        sans: "{{ searxng_fqdns }}"
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
+      ansible.builtin.include_tasks: tasks/k8s/secrets/tls.step.yml
+
+    - name: Install SearXNG Helm chart
+      vars:
+        repo_name: chr0n1x
+        repo_url: https://chr0n1x.github.io/searxng-helm-chart
+        chart_ref: searxng
+        chart_ver: "{{ searxng_chart_version }}"
+        release: "{{ searxng_release_name }}"
+        release_ns: "{{ searxng_namespace }}"
+        values: "{{ searxng_chart_values }}"
+
+        patches:
+          # remove "settings.yml" volume mount added
+          # by the chart because we will mount a copy
+          # with ownership fixed by the init container
+          merge_patches:
+            - apiVersion: apps/v1
+              kind: Deployment
+              metadata:
+                name: "{{ searxng_release_name }}"
+              spec:
+                template:
+                  spec:
+                    containers:
+                      - name: "{{ searxng_release_name }}"
+                        volumeMounts: # mountPath is merge key
+                          - mountPath: /etc/searxng/settings.yml
+                            $patch: delete
+
+        extras: # adopt extra resources into Helm release
+          - cert-manager.io/v1 Certificate {{ searxng_secrets['ingress'] }}
+      ansible.builtin.include_tasks: tasks/helm/helmfile.yml

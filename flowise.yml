@@ -463,15 +463,15 @@
         body_format: json
         body: "{{ new }}"
       when: >-
-        old.embeddingConfig             is falsy or
-        old.embeddingConfig.config     | to_json !=
-        new.embeddingConfig            | to_json or
-        old.vectorStoreConfig           is falsy or
-        old.vectorStoreConfig.config   | to_json !=
-        new.vectorStoreConfig          | to_json or
-        old.recordManagerConfig         is falsy or
-        old.recordManagerConfig.config | to_json !=
-        new.recordManagerConfig        | to_json
+        old.embeddingConfig     is falsy or
+        old.embeddingConfig.config       !=
+        new.embeddingConfig              or
+        old.vectorStoreConfig   is falsy or
+        old.vectorStoreConfig.config     !=
+        new.vectorStoreConfig            or
+        old.recordManagerConfig is falsy or
+        old.recordManagerConfig.config   !=
+        new.recordManagerConfig
       changed_when: true
 
 # NOTE: this play will only run if it is the only play specified to
