@@ -1,0 +1,51 @@
+# get LiteLLM user API key from Secret
+#
+# pass the following vars:
+#   secret_key <required> key in api-keys Secret
+#                         containing the API key
+#   fact_name  [optional] fact to  store API key
+#                         default=litellm_api_key
+# sets the following facts:
+#   {fact_name}  LiteLLM API key
+---
+- name: Include vars/litellm.yml
+  # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_vars_module.html
+  ansible.builtin.include_vars: vars/litellm.yml
+  when: litellm_secrets is undefined
+
+- name: Get LiteLLM user API key
+  delegate_to: "{{ rke_control_plane_host }}"
+  vars:
+    kubeconfig: "{{ rke_kubeconfig }}"
+    # required kubernetes>=24.2 package only in user virtualenv
+    ansible_python_interpreter: "{{ venv_python_interpreter }}"
+    key_fact: "{{ fact_name | default('litellm_api_key') }}"
+  block:
+    - name: Get LiteLLM user API keys
+      # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_info_module.html
+      kubernetes.core.k8s_info:
+        kubeconfig: "{{ kubeconfig }}"
+        api_version: v1
+        kind: Secret
+        name: "{{ litellm_secrets['api-keys'] }}"
+        namespace: "{{ litellm_namespace }}"
+      register: keys_secret
+
+    - name: Make sure API key exists
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/assert_module.html
+      ansible.builtin.assert:
+        that:
+          - keys_secret.resources is truthy
+          - secret_key in keys_secret.resources[0].data
+        fail_msg: >-
+          Secret key "{{ secret_key }}" not found in
+          Secret "{{ litellm_secrets['api-keys'] }}"
+        quiet: true
+
+    - name: Set {{ key_fact }} fact
+      vars:
+        # b64_decode_k8s_secret: filter_plugins/filters.py
+        user_keys: "{{ keys_secret.resources[0] | b64_decode_k8s_secret }}"
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/set_fact_module.html
+      ansible.builtin.set_fact:
+        "{{ key_fact }}": "{{ user_keys[secret_key] }}"

@@ -145,26 +145,31 @@
   ansible.builtin.import_playbook: metacontroller.yml
   tags: metacontroller
 
+- name: Include Qdrant vector DB playbook
+  ansible.builtin.import_playbook: qdrant.yml
+  tags: qdrant
+
 # Ollama depends on Node Feature Discovery
 - name: Include Ollama LLM server playbook
   ansible.builtin.import_playbook: ollama.yml
   tags: ollama
 
-# LiteLLM depends on PostgreSQL and Valkey
-- name: Include LiteLLM AI Gateway playbook
-  ansible.builtin.import_playbook: litellm.yml
-  tags: litellm
-
-- name: Include Qdrant vector database playbook
-  ansible.builtin.import_playbook: qdrant.yml
-  tags: qdrant
-
 - name: Include SearXNG metasearch playbook
   ansible.builtin.import_playbook: searxng.yml
   tags: searxng
 
+- name: Include Playwright server playbook
+  ansible.builtin.import_playbook: playwright.yml
+  tags: playwright
+
+# LiteLLM depends on PostgreSQL, Valkey, SearXNG
+- name: Include LiteLLM AI Gateway playbook
+  ansible.builtin.import_playbook: litellm.yml
+  tags: litellm
+
 # Open WebUI depends on PostgreSQL, Valkey,
-# MinIO, Ollama, LiteLLM, Qdrant, (GitLab)
+# MinIO, Ollama, LiteLLM, Qdrant, (GitLab),
+# SearXNG, Playwright
 - name: Include Open WebUI platform playbook
   ansible.builtin.import_playbook: openwebui.yml
   tags: openwebui

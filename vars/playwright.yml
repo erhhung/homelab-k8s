@@ -1,0 +1,136 @@
+playwright_namespace: playwright
+playwright_enable_istio: true
+playwright_use_waypoint: true
+
+playwright_host_name: playwright # alias of "ingress"
+
+# remember to add  playwright.fourteeners.local to pfSense
+# DNS as alias of ingress.fourteeners.local: 192.168.4.222
+# https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_filters.html#products
+playwright_fqdn: "{{ [playwright_host_name] | product(search_domains) | map('join','.') | first }}"
+
+playwright_service_host: "{{ playwright_release_name }}.{{
+  playwright_namespace }}.svc.{{ cluster_domain }}"
+playwright_service_port: 3000
+playwright_websocket_url: ws://{{ playwright_service_host }}:{{ playwright_service_port }}
+
+playwright_secrets:
+  ingress: playwright-ingress-tls
+
+# IMPORTANT! the Playwright server version
+# must match the Playwright client version
+# used by Open WebUI. check by running this
+# command against an Open WebUI deployment:
+# kubectl -n open-webui exec deploy/open-webui -c open-webui -- \
+#   pip --no-cache-dir show playwright | sed -n 's/^Version: //p'
+# https://github.com/open-webui/open-webui/tree/main/docker-compose.playwright.yaml
+openwebui_playwright_version: "1.58.0"
+
+# https://mcr.microsoft.com/artifact/mar/playwright
+playwright_image:
+  repository: mcr.microsoft.com/playwright
+  tag: v{{ openwebui_playwright_version }}
+  pullPolicy: IfNotPresent
+
+# NOTE: since Playwright refuses to provide an official
+# Helm chart, use the generic "app-template" Helm chart:
+# https://github.com/microsoft/playwright/issues/35676
+# https://github.com/bjw-s-labs/helm-charts/tree/main/charts/other/app-template
+playwright_chart_version: "4.6.2" # app-template
+playwright_release_name: playwright
+
+# https://github.com/bjw-s-labs/helm-charts/tree/main/charts/library/common/values.yaml
+playwright_chart_values:
+  serviceAccount:
+    default:
+      enabled: true
+
+  defaultPodOptions:
+    securityContext:
+      seccompProfile:
+        type: RuntimeDefault
+
+  controllers:
+    main:
+      type: deployment
+      replicas: 1
+
+      serviceAccount:
+        identifier: default
+
+      defaultContainerOptions:
+        securityContext:
+          runAsUser: 1000
+          capabilities:
+            drop: ["ALL"]
+          allowPrivilegeEscalation: false
+          # both Playwright and Chromium
+          # write to /tmp and cache dirs
+          readOnlyRootFilesystem: false
+
+      containers:
+        playwright:
+          image: "{{ playwright_image }}"
+          command: ["npx"]
+          args:
+            - -y
+            - playwright@{{ openwebui_playwright_version }}
+            - run-server
+            - --host=0.0.0.0
+            - --port={{ playwright_service_port }}
+          env:
+            PLAYWRIGHT_BROWSERS_PATH: /ms-playwright
+
+          ports:
+            - name: ws
+              containerPort: "{{ playwright_service_port }}"
+              protocol: TCP
+
+          resources:
+            requests:
+              cpu: 10m
+              memory: 256Mi
+            limits:
+              cpu: 2000m
+              memory: 2Gi
+
+          probes:
+            liveness: &probe
+              enabled: true
+              custom: true
+              spec:
+                # Playwright has no documented healthcheck
+                # endpoint, so just do a simple port probe
+                tcpSocket:
+                  port: "{{ playwright_service_port }}"
+                periodSeconds: 10
+                timeoutSeconds: 3
+                failureThreshold: 3
+            readiness: *probe
+
+  service:
+    main:
+      type: ClusterIP
+      ports:
+        ws:
+          port: "{{ playwright_service_port }}"
+          targetPort: ws
+          protocol: TCP
+          appProtocol: kubernetes.io/ws
+
+  ingress:
+    main:
+      tls:
+        - secretName: "{{ playwright_secrets['ingress'] }}"
+          hosts: "{{ [playwright_fqdn] }}"
+      ingressClassName: "{{ rke_ingress_class }}"
+      annotations:
+        nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+        nginx.ingress.kubernetes.io/backend-protocol: HTTP
+        # https://kubernetes.github.io/ingress-nginx/user-guide/nginx-configuration/annotations#custom-timeouts
+        nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+        nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+      hosts:
+        - host: "{{ playwright_fqdn }}"
+          paths:
+            - path: /

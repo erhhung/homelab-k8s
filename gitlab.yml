@@ -281,6 +281,11 @@
             v1 Secret {{ name }}
             {%   endif %}
             {% endfor  %}
+          - |
+            {% if gitlab_enable_istio and
+                  gitlab_use_waypoint %}
+            gateway.networking.k8s.io/v1 Gateway {{ gitlab_namespace }}-waypoint ?
+            {% endif %}
 
         # this deplopyment is too large to expect
         # everything to be perfect in one run, so
@@ -297,8 +302,6 @@
         {{ 'Enable' if enabled else 'Disable' }}
         Istio service mesh
       vars:
-        enabled: "{{ gitlab_enable_istio }}"
-        apps_ns: "{{ gitlab_namespace }}"
         praefect: "{{ gitlab_chart_values.global.praefect }}"
         gitaly: gitaly-{{ praefect.virtualStorages[0].name }}
         services:
@@ -314,6 +317,10 @@
           # don't use Waypoint proxy for Redis because
           # it's only for L7 (HTTP/HTTP2/gRPC) traffic
           - redis-metrics
+
+        # === Inputs ===
+        enabled: "{{ gitlab_enable_istio }}"
+        apps_ns: "{{ gitlab_namespace }}"
         resources: |
           {% set res = [] %}
           {% for svc in services %}

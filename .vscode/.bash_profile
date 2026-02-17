@@ -1,5 +1,6 @@
 # shellcheck disable=SC1091
 # shellcheck disable=SC2148
+# shellcheck disable=SC2155
 # shellcheck disable=SC2207
 
 # load ~/.bash_profile only if not
@@ -29,6 +30,7 @@ alias av='ansible-vault'
 
 ev() (
   cd "$(git_root)" || exit
+  export EDITOR=$(which emacs)
   ansible-vault edit "${1:-$VAULTFILE}"
 )
 vv() (

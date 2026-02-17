@@ -197,7 +197,12 @@ postgresql_chart_values:
       # for affected databases, always read from the primary node to
       # avoid read-after-write inconsistency due to replication lag:
       # https://www.pgpool.net/docs/latest/en/html/runtime-config-load-balancing.html#GUC-DATABASE-REDIRECT-PREFERENCE-LIST
-      {% set use_primary  = ['postgres', 'awx', 'litellm'] -%}
+      {% set use_primary = [
+                  'postgres',
+                 awx_db_name,
+             litellm_db_name,
+           openwebui_db_name,
+         ] -%}
       {% set db_redirects = use_primary | product(['primary']) | map('join',':') -%}
       database_redirect_preference_list = '{{ db_redirects | join(',') }}'
 

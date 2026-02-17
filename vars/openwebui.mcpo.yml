@@ -205,6 +205,7 @@ mcpo_chart_values:
             cat > /pipes/crawl4ai-stdin
             wait
 
+      # https://github.com/erhhung/mcp-weather
       weather:
         command: npx
         args:
@@ -212,8 +213,8 @@ mcpo_chart_values:
           - --loglevel=error
           # this is a local package created by `npm
           # pack` and stored on a shared NFS volume
-          - --package=/opt/mcp/weather-server.tgz
-          - weather-server
+          - --package=/opt/mcp/mcp-weather.tgz
+          - mcp-weather
         env:
           OPENWEATHER_API_KEY: "{{ openweather_api_key }}"
 
@@ -278,6 +279,7 @@ mcp_tool_servers:
         and crawling websites.
     url: "{{ mcpo_service_url }}/browser"
 
+  # https://github.com/erhhung/mcp-weather
   - <<: *tool
     info:
       id: weather

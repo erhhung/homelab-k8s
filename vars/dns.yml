@@ -108,6 +108,8 @@ pfsense_dns_records:
         desc: SearXNG Search UI
       - host: searx
         desc: SearXNG Search UI
+      - host: playwright
+        desc: Playwright Server
       - host: openwebui
         desc: Open WebUI
       - host: chatgpt

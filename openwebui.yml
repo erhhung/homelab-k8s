@@ -1,7 +1,7 @@
 # https://docs.openwebui.com/
 # https://docs.openwebui.com/getting-started/quick-start
-# https://docs.openwebui.com/features/rag
-# https://docs.openwebui.com/features/plugin
+# https://docs.openwebui.com/features/chat-conversations/rag
+# https://docs.openwebui.com/features/extensibility/plugin
 # https://openwebui.com/tools
 ---
 - name: Install Open WebUI on RKE cluster
@@ -26,6 +26,7 @@
   pre_tasks:
     # used as image tag in init containers
     - name: Get Open WebUI chart appVersion
+      when: openwebui_app_version is undefined
       block:
         # there isn't a kubernetes.core.* module
         # to get info about a chart, only to get
@@ -56,15 +57,11 @@
       ansible.builtin.include_tasks: tasks/postgresql/image.yml
       when: postgresql_image is undefined
 
-    - name: Get LiteLLM virtual API keys
-      # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_info_module.html
-      kubernetes.core.k8s_info:
-        kubeconfig: "{{ kubeconfig }}"
-        api_version: v1
-        kind: Secret
-        name: "{{ litellm_secrets['api-keys'] }}"
-        namespace: "{{ litellm_namespace }}"
-      register: keys_secret
+    - name: Get LiteLLM user API key
+      vars:
+        secret_key: "{{ user_erhhung.username }}"
+      ansible.builtin.include_tasks: tasks/litellm/apikey.yml
+      # sets litellm_api_key fact
   tasks:
     - name: Create Open WebUI ingress secret
       vars:
@@ -84,33 +81,32 @@
           - "{{ openwebui_db_user }}@{{ homelab_domain }}"
       ansible.builtin.include_tasks: tasks/k8s/secrets/tls.step.yml
 
-    # https://docs.openwebui.com/getting-started/env-configuration
+    # https://docs.openwebui.com/reference/env-configuration
     - name: Create Open WebUI env vars secret
       vars:
-        # b64_decode_k8s_secret: filter_plugins/filters.py
-        user_keys: "{{ keys_secret.resources | first | b64_decode_k8s_secret }}"
         pipelines: "{{ openwebui_chart_values.pipelines }}"
 
         # === Inputs ===
         secret_name: "{{ openwebui_secrets['env-vars'] }}"
         secret_data:
-          # secret key used to sign JWTs:
-          # https://docs.openwebui.com/getting-started/env-configuration#webui_secret_key
+          # the HMAC key used to sign JWTs
+          # (must be 32+ bytes for SHA256):
+          # https://docs.openwebui.com/reference/env-configuration#webui_secret_key
           WEBUI_SECRET_KEY: "{{ openwebui_secret_key }}"
-          # https://docs.openwebui.com/getting-started/env-configuration#database-pool
+          # https://docs.openwebui.com/reference/env-configuration#database-pool
           DATABASE_URL: "{{ openwebui_postgresql_url }}"
-          # https://docs.openwebui.com/getting-started/env-configuration#redis
+          # https://docs.openwebui.com/reference/env-configuration#redis
           REDIS_URL: "{{ openwebui_redis_url }}"
-          # https://docs.openwebui.com/getting-started/env-configuration#qdrant
+          # https://docs.openwebui.com/reference/env-configuration#qdrant
           QDRANT_API_KEY: "{{ qdrant_api_key.read_write }}"
-          # https://docs.openwebui.com/getting-started/env-configuration#s3_secret_access_key
+          # https://docs.openwebui.com/reference/env-configuration#s3_secret_access_key
           S3_SECRET_ACCESS_KEY: "{{ minio_client_pass }}"
 
           # Pipelines key must be first:
-          # https://docs.openwebui.com/getting-started/env-configuration#openai_api_keys
-          # https://docs.openwebui.com/pipelines#-quick-start-with-docker
+          # https://docs.openwebui.com/reference/env-configuration#openai_api_keys
+          # https://docs.openwebui.com/features/extensibility/pipelines#-quick-start-with-docker
           OPENAI_API_KEYS: >-
-            {% set keys = [user_keys[user_erhhung.username]] -%}
+            {% set keys = [litellm_api_key] -%}
             {% if pipelines.enabled -%}
             {%   set _ = keys.insert(0, openwebui_pipelines_api_key) -%}
             {% endif -%}
@@ -139,8 +135,9 @@
         task_timeout: 900
       ansible.builtin.include_tasks: tasks/helm/helmfile.yml
 
-# https://docs.openwebui.com/features/plugin/tools/openapi-servers/mcp
-- name: Install MCPO proxy server
+# https://docs.openwebui.com/features/extensibility/plugin/tools/openapi-servers/mcp
+# https://docs.openwebui.com/features/extensibility/mcp
+- name: Install MCP-OpenAPI proxy server
   tags: mcpo
   hosts: "{{ rke_control_plane_host }}"
   vars_files:
@@ -284,7 +281,9 @@
     - vars/openwebui.yml
     - vars/openwebui.mcpo.yml
     - vars/ollama.yml
+    - vars/litellm.yml
     - vars/searxng.yml
+    - vars/playwright.yml
   vars:
     api_base: https://{{ openwebui_fqdns | first }}/api
     vars_file: vars/ollama.{{ use_ollama_chart_by }}.yml
@@ -295,13 +294,19 @@
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_vars_module.html
       ansible.builtin.include_vars: "{{ vars_file }}"
 
+    - name: Get LiteLLM user API key
+      vars:
+        secret_key: "{{ user_erhhung.username }}"
+      ansible.builtin.include_tasks: tasks/litellm/apikey.yml
+      # sets litellm_api_key fact
+
     - name: Wait until Open WebUI is ready
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/uri_module.html
       ansible.builtin.uri:
         url: "{{ api_base }}/version"
         return_content: true
       # https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_loops.html#retrying-a-task-until-a-condition-is-met
-      register: ui_version
+      register: openwebui_version
       retries: 20
       delay: 3
   tasks:
@@ -321,13 +326,21 @@
       when: admin_signin.status != 200
       block:
         # first user created has admin rights:
-        # https://docs.openwebui.com/features/workspace/roles
+        # https://docs.openwebui.com/features/access-security/rbac/roles#initial-setup
         - name: Create Open WebUI admin user
+          vars:
+            image_url: "{{ openwebui_admin_user.profile_image_url }}"
+            # https://docs.ansible.com/projects/ansible/latest/collections/ansible/builtin/url_lookup.html
+            image_data: "{{ lookup('ansible.builtin.url', image_url, split_lines=false) }}"
+            data_uri: data:image/png;base64,{{ image_data | b64encode }}
           ansible.builtin.uri:
             method: POST
             url: "{{ api_base }}/v1/auths/signup"
             body_format: json
-            body: "{{ openwebui_admin_user }}"
+            body: |
+              {{ openwebui_admin_user | combine({
+                   'profile_image_url': data_uri,
+                 }) }}
             return_content: true
           register: admin_signup
           changed_when: true
@@ -343,7 +356,7 @@
             body_format: json
             body:
               ui:
-                version: "{{ ui_version.json.version }}"
+                version: "{{ openwebui_version.json.version }}"
                 system: "{{ openwebui_system_prompt }}"
                 models: "{{ [ollama_models | first] }}"
                 params: {}
@@ -365,12 +378,19 @@
           'name':  user.name,
           'email': user.email,
           'role':  user.role,
-          'profile_image_url': user.profile_image_url,
           } }}"
-        # use different (all caps) name for fact to prevent
-        # errors due to facts having higher precedence than
-        # vars with the same name at the play level
+        # use different name (all caps) for fact to
+        # prevent errors due to facts having higher
+        # precedence than vars having the same name
+        # at the play level
         API_BASE: "{{ api_base }}"
+
+    - name: Get Open WebUI configuration
+      ansible.builtin.uri:
+        url: "{{ api_base }}/config"
+        headers: "{{ auth_headers }}"
+        return_content: true
+      register: openwebui_config
 
     - name: Get Open WebUI user groups
       ansible.builtin.uri:
@@ -431,6 +451,19 @@
         label: "{{ item.info.id }}"
       # sets mcp_servers fact
 
+    - name: Disable prompt suggestions
+      vars:
+        suggestions: "{{ openwebui_config.json.default_prompt_suggestions }}"
+      ansible.builtin.uri:
+        method: POST
+        url: "{{ api_base }}/v1/configs/suggestions"
+        headers: "{{ auth_headers }}"
+        body_format: json
+        body:
+          suggestions: []
+      when: suggestions is truthy
+      changed_when: true
+
     - name: Get Open WebUI user memories
       ansible.builtin.uri:
         url: "{{ api_base }}/v1/memories/"
@@ -440,8 +473,8 @@
 
     - name: Populate Erhhung's memories
       vars:
-        current: "{{ list_memories.json | selectattr('user_id', '==', admin_user.id) }}"
-      when: current is falsy
+        existing: "{{ list_memories.json | selectattr('user_id', '==', admin_user.id) }}"
+      when: existing is falsy
       block:
         - name: Read encrypted memories.yaml
           vars:
@@ -572,6 +605,7 @@
             tags:
               - name: private
             profile_image_url: "{{ image_url }}"
+            defaultFeatureIds: []
             capabilities:
               file_upload: true
               file_context: true
@@ -583,6 +617,20 @@
               status_updates: false
               citations: true
               usage: false
+            builtinTools:
+              time: true
+              notes: true
+              chats: true
+              memory: true
+              channels: true
+              knowledge: true
+              web_search: false
+              image_generation: false
+              code_interpreter: false
+            toolIds:
+              - server:time
+              - server:weather
+              - server:lights
             knowledge: "{{ [knowledge] }}"
           base_model_id: "{{ base_model }}"
           params:
@@ -614,7 +662,7 @@
         model: "{{ list_models.json['items'] |
           selectattr('name', '==', 'Browsing') }}"
         base_model: "{{ ollama_models | select('search', '^gemma3') | first }}"
-        image_data: "{{ lookup('ansible.builtin.file', 'images/chrome.png') }}"
+        image_data: "{{ lookup('ansible.builtin.file', 'images/chromium.png') }}"
         image_url: data:image/png;base64,{{ image_data | b64encode }}
       ansible.builtin.uri:
         method: POST
@@ -625,9 +673,10 @@
           id: browsing
           name: Browsing
           meta:
-            description: Gemma3 base model with commonly used tools, including web browsing
+            description: Gemma3 base model with commonly used tools, including web search
             profile_image_url: "{{ image_url }}"
-            defaultFeatureIds: ["web_search"]
+            defaultFeatureIds:
+              - web_search
             capabilities:
               file_upload: true
               file_context: true
@@ -639,11 +688,20 @@
               status_updates: true
               citations: true
               usage: false
+            builtinTools:
+              time: true
+              notes: false
+              chats: false
+              memory: false
+              channels: false
+              knowledge: false
+              web_search: true
+              image_generation: false
+              code_interpreter: false
             toolIds:
               - server:time
               - server:weather
               - server:memory
-              - server:browser
           base_model_id: "{{ base_model }}"
           params:
             system: >-
@@ -662,18 +720,18 @@
       when: model is falsy
       changed_when: true
 
-    - name: Get web search configuration
+    - name: Get retrieval configuration
       ansible.builtin.uri:
         url: "{{ api_base }}/v1/retrieval/config"
         headers: "{{ auth_headers }}"
         return_content: true
       register: retrieval_config
 
-    - name: Configure SearXNG web search
+    - name: Configure web search/loader
       vars:
         web_config: "{{ retrieval_config.json.web }}"
-        # only override values that we want to set; others should be retained
-        new_config: "{{ web_config | combine(openwebui_web_search_config) }}"
+        # only override values that we want to set; others must be retained
+        new_config: "{{ web_config | combine(openwebui_retrieval_config) }}"
       ansible.builtin.uri:
         method: POST
         url: "{{ api_base }}/v1/retrieval/config/update"
@@ -703,9 +761,11 @@
     # PLAYBOOKS is extra var passed by play.sh or by AWX workflow survey;
     # strip numbering and padding added for showing as ordered list in UI
     # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/regex_replace_filter.html
-    playbooks:
-      "{{ PLAYBOOKS | map('ansible.builtin.regex_replace', '\\s*(\\d+\\. )?','') if
-      PLAYBOOKS is defined and PLAYBOOKS is sequence and PLAYBOOKS is not string else [] }}"
+    playbooks: |
+      {{ PLAYBOOKS | map('ansible.builtin.regex_replace', '\\s*(\\d+\\. )?','') if
+         PLAYBOOKS is defined  and
+         PLAYBOOKS is sequence and
+         PLAYBOOKS is not string else [] }}
     # this var can be set on the command line
     # to limit the number of files to process
     limit: 0

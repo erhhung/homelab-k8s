@@ -759,13 +759,26 @@
   tags: lookups
   hosts: localhost
   tasks:
-    - name: Debug url lookup
+    - name: Debug url lookup (.cfg)
       vars:
-        url: https://raw.githubusercontent.com/intel/intel-device-plugins-for-kubernetes/refs/heads/main/deployments/nfd/overlays/node-feature-rules/node-feature-rules.yaml
+        url: https://raw.githubusercontent.com/erhhung/homelab-k8s/refs/heads/main/ansible.cfg
         # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/url_lookup.html
-        content: "{{ lookup('ansible.builtin.url', url, split_lines=false) | from_yaml }}"
+        content: "{{ lookup('ansible.builtin.url', url, split_lines=false) }}"
       ansible.builtin.debug:
         var: content
+
+    # url lookup is normally used to read
+    # text files, but it can successfully
+    # read binary files as well
+    - name: Debug url lookup (.png)
+      vars:
+        image_url: "{{ user_erhhung.gravatar }}"
+        image_data: "{{ lookup('ansible.builtin.url', image_url, split_lines=false) }}"
+        data_uri: data:image/png;base64,{{ image_data | b64encode }}
+      ansible.builtin.debug:
+        # so show the image, copy full `data:` URI
+        # and paste into the browser's address bar
+        var: data_uri
 
     # lookup_plugins/one_bucket_iam_policy.py
     - name: Custom one_bucket_iam_policy lookup

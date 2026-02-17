@@ -31,7 +31,7 @@
         headers: "{{ headers }}"
         body_format: json
         body:
-          TOOL_SERVER_CONNECTIONS: "{{ servers + [mcp_server] }}"
+          TOOL_SERVER_CONNECTIONS: "{{ servers | list + [mcp_server] }}"
       register: config_server
       when: server is falsy
       changed_when: true

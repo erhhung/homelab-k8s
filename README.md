@@ -1,13 +1,13 @@
 # Erhhung's Home Kubernetes Cluster
 
-This Ansible-based project provisions Erhhung's high-availability Kubernetes cluster at home named `homelab`, and deploys services for monitoring various IoT appliances, as well as for deploying other personal projects, including self-hosted LLMs and RAG pipelines that enable multi-source hybrid searches and agentic automations using local knowledge base containing vast amounts of personal and sensor data.
+This Ansible-based project provisions Erhhung's high-availability Kubernetes cluster at home named `homelab`, and deploys services for monitoring various IoT appliances, as well as for deploying other personal projects, including self-hosted LLMs and AI pipelines that enable multi-source hybrid searches and agentic automations using local knowledge base containing vast amounts of personal and sensor data.
 
 The approach taken on all service deployments is to treat the clusters as a **production** environment _(to the extent possible with limited resources and scaling capacity across a few mini PCs)_. That means TLS everywhere and requiring authenticated user access, scraping metrics, and configuring dashboards and alerts.
 
 ## Overview
 
 The top-level Ansible playbook `main.yml` run by `make` will provision 7 VM hosts (`rancher` and `k8s1`..`k8s6`)
-in the existing XCP-ng `Homelab` pool, all running Ubuntu Server 24.04 Minimal without customizations besides basic networking
+in the existing XCP-ng `Homelab` pool, created using Terraform by the [`homelab-xcp`](https://github.com/erhhung/homelab-xcp) project, all running Ubuntu Server 24.04 Minimal without customizations besides basic networking
 and authorized SSH key for user `erhhung`.
 
 A single-node K3s Kubernetes cluster will be installed on host `rancher` along with Rancher Server on that cluster, and a 6-node RKE2 Kubernetes cluster with high-availability control plane using a virtual IP will be installed on hosts
@@ -55,10 +55,11 @@ All cluster services will be provisioned with TLS certificates from Erhhung's pr
 | https://*.pages.gitlab.fourteeners.local | GitLab Pages websites
 |         https://argocd.fourteeners.local | Argo CD console
 |            https://awx.fourteeners.local | Ansible AWX UI
+|         https://qdrant.fourteeners.local | Qdrant dashboard
+|         https://search.fourteeners.local | SearXNG search UI
+|       wss://playwright.fourteeners.local | Playwright server
 |         https://ollama.fourteeners.local | Ollama API server
 |        https://litellm.fourteeners.local | LiteLLM dashboard
-|         https://qdrant.fourteeners.local | Qdrant  dashboard
-|         https://search.fourteeners.local | SearXNG search UI
 |      https://openwebui.fourteeners.local | Open WebUI portal
 |           https://mcpo.fourteeners.local | MCP OpenAPI proxy
 |        https://flowise.fourteeners.local | Flowise designer
@@ -136,12 +137,12 @@ All cluster services will be provisioned with TLS certificates from Erhhung's pr
     * [ ] Replace with [vLLM](https://docs.vllm.ai/) for [better scalability](https://developers.redhat.com/articles/2025/08/08/ollama-vs-vllm-deep-dive-performance-benchmarking) if concurrency increases in production
 - [X] [LiteLLM AI Gateway](https://docs.litellm.ai/#litellm-proxy-server-llm-gateway) — track usage and spend across model providers
     * Install on main RKE cluster using the [`litellm-helm`](https://github.com/BerriAI/litellm/tree/main/deploy/charts/litellm-helm) Helm chart
+    * [X] Deploy [SearXNG](https://docs.searxng.org/) metasearch engine using the _forked_ [`searxng`](https://github.com/chr0n1x/searxng-helm-chart) Helm chart
 - [X] [Open WebUI AI Platform](https://github.com/open-webui/open-webui) — extensible AI platform with Ollama integration and local RAG support
     * Install on main RKE cluster using the [`open-webui`](https://github.com/open-webui/helm-charts/tree/main/charts/open-webui) Helm chart
     * [X] Replace default Chroma vector DB with [Qdrant](https://github.com/qdrant/qdrant) — install using the [`qdrant`](https://github.com/qdrant/qdrant-helm) Helm chart
     * [X] Deploy [MCP OpenAPI (mcpo)](https://docs.openwebui.com/features/plugin/tools/openapi-servers/mcp) proxy server with select tools using the [`mcpo`](https://github.com/first-it-consulting/helm-mcpo) Helm chart
-    * [ ] Deploy [Playwright](https://playwright.dev/) server using generic [`app-template`](https://github.com/bjw-s-labs/helm-charts/tree/main/charts/other/app-template) Helm chart with [prebuilt images](https://github.com/JacobLinCool/playwright-docker)
-    * [X] Deploy [SearXNG](https://docs.searxng.org/) metasearch engine using the _forked_ [`searxng`](https://github.com/chr0n1x/searxng-helm-chart) Helm chart
+    * [X] Deploy [Playwright](https://playwright.dev/) Server using generic [`app-template`](https://github.com/bjw-s-labs/helm-charts/tree/main/charts/other/app-template) Helm chart with [official images](https://mcr.microsoft.com/artifact/mar/playwright)
 - [X] [Flowise Agentic Workflows](https://flowiseai.com/) — build AI agents using visual workflows
     * Install on main RKE cluster using the [`flowise`](https://github.com/cowboysysop/charts/tree/master/charts/flowise) Helm chart
 - [ ] [Backstage Developer Portal](https://backstage.io/) — software catalog and developer portal
@@ -156,6 +157,7 @@ All cluster services will be provisioned with TLS certificates from Erhhung's pr
 
 - [X] Migrate manually provisioned certificates and secrets to ones issued by `cert-manager` with auto-rotation
 - [ ] Switch the CNI on the RKE2 cluster from Canal to Cilium and install Hubble web UI to visualize L3/L4 traffic
+- [ ] Harden security posture by applying `seccompProfile.type: RuntimeDefault` to as many pods as possible
 - [X] Automate creation of static DNS records in pfSense _(dynamically assigned IPs are managed by ExternalDNS)_
 - [ ] Identify and upload additional sources of personal documents into Open WebUI knowledge base collections
 - [ ] Enable OIDC authentication for additional services: AWX, ArgoCD, LiteLLM, Open WebUI
@@ -209,9 +211,9 @@ ansible-vault view   $VAULTFILE
 | `argocd_signing_key`              |
 | `awx_secret_key`                  |
 | `hass_access_token`               |
-| `litellm_master_key`              |
 | `qdrant_api_key.*`                |
 | `searxng_secret_key`              |
+| `litellm_master_key`              |
 | `openwebui_secret_key`            |
 | `openwebui_pipelines_api_key`     |
 | `openwebui_mcpo_api_key`          |
@@ -513,24 +515,25 @@ however, all privileged operations using `sudo` will require the password stored
     ```
 </details>
 
-29. <details><summary>Install <strong>LiteLLM</strong> AI gateway with vendor models</summary><br/>
-
-    ```bash
-    make litellm
-    ```
-</details>
-
-30. <details><summary>Install <strong>Qdrant</strong> vector database in <em><strong>HA</strong></em> mode</summary><br/>
+29. <details><summary>Install <strong>Qdrant</strong> vector database in <em><strong>HA</strong></em> mode</summary><br/>
 
     ```bash
     make qdrant
     ```
 </details>
 
-31. <details><summary>Install <strong>SearXNG</strong> metasearch engine and UI</summary><br/>
+30. <details><summary>Install <strong>SearXNG</strong> metasearch engine<br/>
+    &nbsp; &nbsp; Install <strong>Playwright</strong> WebSocket server</summary><br/>
 
     ```bash
-    make searxng
+    make searxng playwright
+    ```
+</details>
+
+31. <details><summary>Install <strong>LiteLLM</strong> AI gateway with vendor models</summary><br/>
+
+    ```bash
+    make litellm
     ```
 </details>
 
