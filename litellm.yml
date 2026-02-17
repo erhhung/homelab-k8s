@@ -10,6 +10,7 @@
     - vars/valkey.yml
     - vars/ollama.yml
     - vars/monitoring.yml
+    - vars/searxng.yml
     - vars/litellm.yml
   vars: &vars
     # required kubernetes>=24.2 package only in user virtualenv
@@ -98,7 +99,24 @@
           - cert-manager.io/v1 Certificate {{ litellm_secrets['database'] }}
           - v1 Secret {{ litellm_secrets['env-vars'] }}
           - v1 Secret {{ litellm_secrets['api-keys'] }} ? # optional (created later)
+          - |
+            {% if litellm_enable_istio and
+                  litellm_use_waypoint %}
+            gateway.networking.k8s.io/v1 Gateway {{ litellm_namespace }}-waypoint ?
+            {% endif %}
       ansible.builtin.include_tasks: tasks/helm/helmfile.yml
+
+    - name: >-
+        {{ 'Enable' if enabled else 'Disable' }}
+        Istio service mesh
+      vars:
+        enabled: "{{ litellm_enable_istio }}"
+        apps_ns: "{{ litellm_namespace }}"
+        resources:
+          - kind: Service
+            name: "{{ litellm_release_name }}"
+            enabled: "{{ litellm_use_waypoint }}"
+      ansible.builtin.include_tasks: tasks/istio/mesh.yml
 
 # https://litellm.fourteeners.local/docs
 - name: Configure LiteLLM installation
@@ -106,6 +124,7 @@
   hosts: localhost
   vars_files:
     - vars/kubernetes.yml
+    - vars/searxng.yml
     - vars/litellm.yml
   vars:
     api_base: https://{{ litellm_fqdn }}
@@ -126,6 +145,34 @@
       retries: 20
       delay: 3
   tasks:
+    - name: Get search tools
+      ansible.builtin.uri:
+        url: "{{ api_base }}/search_tools/list"
+        headers: "{{ auth_headers }}"
+        return_content: true
+      register: search_tools
+
+    # even though search tools have been statically defined in
+    # `proxy_config.search_tools`, and the /search/<tool-name>
+    # endpoint already works, unlike `proxy_config.model_list`,
+    # they won't show in the UI unless also added via REST API
+    - name: Add search tool
+      vars:
+        existing: "{{  search_tools.json.search_tools | selectattr(
+          'search_tool_name', '==', item.search_tool_name) }}"
+      ansible.builtin.uri:
+        url: "{{ api_base }}/search_tools"
+        method: POST
+        headers: "{{ post_headers }}"
+        body_format: json
+        body:
+          search_tool: "{{ item }}"
+      loop: "{{ litellm_search_tools }}"
+      loop_control:
+        label: "{{ item.search_tool_name }}"
+      when: existing is falsy
+      changed_when: true
+
     - name: Get LiteLLM teams
       ansible.builtin.uri:
         url: "{{ api_base }}/team/list"

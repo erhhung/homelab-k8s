@@ -27,7 +27,7 @@
     istio_enabled: "{{ enabled | default(true) }}"
     waypoint_enabled: "{{ istio_enabled and resources |
       default([]) | map(attribute='enabled') is any }}"
-    waypoint_name: "{{ apps_ns ~ '-waypoint' }}"
+    waypoint_name: "{{ apps_ns }}-waypoint"
   block:
     - name: >-
         {{ 'Label' if istio_enabled else 'Unlabel' }}
@@ -72,6 +72,14 @@
                 port: 15090
                 protocol: HTTP
         state: "{{ 'present' if waypoint_enabled else 'absent' }}"
+
+    - name: Wait for Waypoint proxy to be ready
+      vars:
+        res_kind: Deployment
+        res_name: "{{ waypoint_name }}"
+        res_ns: "{{ apps_ns }}"
+      ansible.builtin.include_tasks: tasks/k8s/waitready.yml
+      when: waypoint_enabled
 
     # https://istio.io/latest/docs/ambient/usage/waypoint#useawaypoint
     - name: >-

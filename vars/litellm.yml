@@ -5,6 +5,9 @@
 #       groq_api_key: {vault.yml}
 
 litellm_namespace: litellm
+litellm_enable_istio: true
+litellm_use_waypoint: true
+
 litellm_host_name: litellm # alias of "ingress"
 
 # remember to add litellm.fourteeners.local to pfSense DNS
@@ -80,6 +83,7 @@ litellm_chart_values:
   # https://docs.litellm.ai/docs/proxy/config_settings
   proxy_config:
     model_list: "{{ litellm_models }}"
+    search_tools: "{{ litellm_search_tools }}"
 
     general_settings:
       master_key: os.environ/PROXY_MASTER_KEY
@@ -91,6 +95,7 @@ litellm_chart_values:
       # which isn't persistent for a volume-mounted
       # ConfigMap
       store_model_in_db: true
+      store_prompts_in_spend_logs: true
 
       # https://docs.litellm.ai/docs/proxy/alerting
       alerting:
@@ -351,6 +356,16 @@ litellm_models:
   #   litellm_params:
   #     model: ollama/gemma3:4b
   #     api_base: "{{ ollama_service_url }}"
+
+# TIP: use stable, non-provider-specific tool names so that
+# backing providers can be swapped or additional providers
+# added under the same name for load-balancing and failover
+litellm_search_tools:
+  - search_tool_name: web
+    # https://docs.litellm.ai/docs/search/searxng
+    litellm_params:
+      search_provider: searxng
+      api_base: "{{ searxng_service_url }}"
 
 # POST /team/new
 litellm_teams:

@@ -1,0 +1,55 @@
+# deploy Playwright as WebSocket server to enable Open WebUI to
+# load and scrape websites (web loader engine) found by SearXNG
+# (web search engine): https://playwright.dev/
+---
+- name: Install Playwright on RKE cluster
+  tags: install
+  hosts: "{{ rke_control_plane_host }}"
+  vars_files:
+    - vars/kubernetes.yml
+    - vars/playwright.yml
+  vars:
+    # required kubernetes>=24.2 package only in user virtualenv
+    ansible_python_interpreter: "{{ venv_python_interpreter }}"
+    kubeconfig: "{{ rke_kubeconfig }}"
+    secret_ns: "{{ playwright_namespace }}"
+  tasks:
+    - name: Create Playwright ingress secret
+      vars:
+        secret_name: "{{ playwright_secrets['ingress'] }}"
+        cert_name: playwright-ingress
+        sans: "{{ [playwright_fqdn] }}"
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
+      ansible.builtin.include_tasks: tasks/k8s/secrets/tls.step.yml
+
+    - name: Install Playwright Helm chart
+      vars:
+        tmpdir_name: playwright
+        repo_name: bjw-s
+        repo_url: https://bjw-s-labs.github.io/helm-charts
+        chart_ref: app-template
+        chart_ver: "{{ playwright_chart_version }}"
+        release: "{{ playwright_release_name }}"
+        release_ns: "{{ playwright_namespace }}"
+        values: "{{ playwright_chart_values }}"
+
+        extras: # adopt extra resources into Helm release
+          - cert-manager.io/v1 Certificate {{ playwright_secrets['ingress'] }}
+          - |
+            {% if playwright_enable_istio and
+                  playwright_use_waypoint %}
+            gateway.networking.k8s.io/v1 Gateway {{ playwright_namespace }}-waypoint ?
+            {% endif %}
+      ansible.builtin.include_tasks: tasks/helm/helmfile.yml
+
+    - name: >-
+        {{ 'Enable' if enabled else 'Disable' }}
+        Istio service mesh
+      vars:
+        enabled: "{{ playwright_enable_istio }}"
+        apps_ns: "{{ playwright_namespace }}"
+        resources:
+          - kind: Service
+            name: "{{ playwright_release_name }}"
+            enabled: "{{ playwright_use_waypoint }}"
+      ansible.builtin.include_tasks: tasks/istio/mesh.yml

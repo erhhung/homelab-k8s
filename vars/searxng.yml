@@ -1,4 +1,7 @@
 searxng_namespace: searxng
+searxng_enable_istio: true
+searxng_use_waypoint: true
+
 searxng_hostnames: # aliases of "ingress"
   - search
   - searxng
@@ -128,7 +131,7 @@ searxng_chart_values:
     # create ConfigMap containing "favicons.toml":
     # https://docs.searxng.org/admin/searx.favicons.html
     favicons:
-      enabled: true
+      enabled: true # required!
       data:
         favicons.toml: |
           [favicons]
@@ -228,7 +231,7 @@ searxng_chart_values:
 
   ingress:
     main:
-      enabled: true
+      enabled: true # required!
       tls:
         - secretName: "{{ searxng_secrets['ingress'] }}"
           hosts: "{{ searxng_fqdns }}"

@@ -227,20 +227,27 @@
             {% for vc in vclusters %}
             v1 Secret argocd-cluster-creds-{{ vc.name }}
             {% endfor %}
+          - |
+            {% if argocd_enable_istio and
+                  argocd_use_waypoint %}
+            gateway.networking.k8s.io/v1 Gateway {{ argocd_namespace }}-waypoint ?
+            {% endif %}
       ansible.builtin.include_tasks: tasks/helm/helmfile.yml
 
     - name: >-
         {{ 'Enable' if enabled else 'Disable' }}
         Istio service mesh
       vars:
-        enabled: "{{ argocd_enable_istio }}"
-        apps_ns: "{{ argocd_namespace }}"
         services:
           # names without argocd- prefix
           - server
           - applicationset-controller
           - commit-server
           - repo-server
+
+        # === Inputs ===
+        enabled: "{{ argocd_enable_istio }}"
+        apps_ns: "{{ argocd_namespace }}"
         resources: |
           {% set res = [] %}
           {% for svc in services %}

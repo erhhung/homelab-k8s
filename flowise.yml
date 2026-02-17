@@ -395,6 +395,7 @@
         postgres_cred_id: "{{ external_credentials |
           selectattr('credentialName', '==', 'PostgresApi') | map(attribute='id') | first }}"
         secret_data: "{{ db_secret.resources[0].data }}"
+
         postgres_ssl_config:
           # these properties are options from the
           # DataSource class of `typeorm` package:
@@ -405,6 +406,7 @@
             cert: "{{ secret_data['tls.crt'] }}"
             key: "{{ secret_data['tls.key'] }}"
             ca: "{{ secret_data['ca.crt'] }}"
+
         ollama_config:
           baseUrl: "{{ ollama_service_url }}"
           # must be exact and include tag,
@@ -413,6 +415,7 @@
           # numGpu: ""
           # numThread: ""
           useMMap: true
+
         qdrant_config:
           qdrantServerUrl: "{{ qdrant_service_url }}"
           credential: "{{ qdrant_cred_id }}"
@@ -428,6 +431,7 @@
           metadataPayloadKey: metadata
           fileUpload: true
           batchSize: 10
+
         postgres_config:
           host: "{{ pgpool_service_host }}"
           port: "{{ pgpool_service_port }}"
@@ -442,6 +446,7 @@
           tableName: upsert_records
           sourceIdKey: source
           cleanup: none
+
       ansible.builtin.set_fact:
         vector_store_config:
           storeId: "{{ accounts_doc_store.id }}"
@@ -487,8 +492,11 @@
     # PLAYBOOKS is extra var passed by play.sh or by AWX workflow survey;
     # strip numbering and padding added for showing as ordered list in UI
     # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/regex_replace_filter.html
-    playbooks: "{{ PLAYBOOKS | map('ansible.builtin.regex_replace', '\\s*(\\d+\\. )?','') if
-      PLAYBOOKS is defined and PLAYBOOKS is sequence and PLAYBOOKS is not string else [] }}"
+    playbooks: |
+      {{ PLAYBOOKS | map('ansible.builtin.regex_replace', '\\s*(\\d+\\. )?','') if
+         PLAYBOOKS is defined  and
+         PLAYBOOKS is sequence and
+         PLAYBOOKS is not string else [] }}
     # this var can be set on the command line
     # to limit the number of files to process
     limit: 0
