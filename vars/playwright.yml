@@ -88,11 +88,11 @@ playwright_chart_values:
 
           resources:
             requests:
-              cpu: 10m
-              memory: 256Mi
+              cpu: 50m
+              memory: 512Mi
             limits:
-              cpu: 2000m
-              memory: 2Gi
+              cpu: 3000m
+              memory: 6Gi
 
           probes:
             liveness: &probe

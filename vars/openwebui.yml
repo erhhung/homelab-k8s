@@ -358,8 +358,23 @@ openwebui_chart_values:
   # https://tika.apache.org/
   # NOTE: Open WebUI, out-of-the-box, without
   # Tika, can parse .txt/.md/.docx/.pdf/.html
+  # https://github.com/apache/tika-helm
   tika:
-    enabled: false
+    # https://github.com/apache/tika-helm/tree/main/values.yaml
+    enabled: true
+
+    resources:
+      requests:
+        cpu: 50m
+        memory: 256Mi
+      limits:
+        cpu: 1500m
+        memory: 2Gi
+
+    readinessProbe:
+      periodSeconds: 10
+    livenessProbe:
+      periodSeconds: 10
 
   websocket:
     # enable via .extraEnvVars instead so
@@ -573,10 +588,11 @@ openwebui_chart_values:
 
 # user Settings > General > System prompt
 # https://docs.openwebui.com/features/ai-knowledge/prompts#prompt-variables
-openwebui_system_prompt: |-
+openwebui_system_prompt: >-
   {% raw -%}
-  Today is {{CURRENT_DATE}}, and the time is {{CURRENT_TIME}}.
-  User's name is {{USER_NAME}}, but address the user as "you".
+  Today is {{CURRENT_DATE}}, and the current time is
+  {{CURRENT_TIME}}. User's full name is {{USER_NAME}},
+  but address the user by first name.
   {%- endraw %}
 
 # admin Settings > Web Search > General
@@ -604,4 +620,4 @@ openwebui_retrieval_config:
   WEB_LOADER_ENGINE: playwright
   WEB_LOADER_CONCURRENT_REQUESTS: 1
   PLAYWRIGHT_WS_URL: "{{ playwright_websocket_url }}"
-  PLAYWRIGHT_TIMEOUT: 30000 # ms
+  PLAYWRIGHT_TIMEOUT: 60000 # ms

@@ -629,6 +629,7 @@
               code_interpreter: false
             toolIds:
               - server:time
+              - server:memory
               - server:weather
               - server:lights
             knowledge: "{{ [knowledge] }}"
@@ -692,7 +693,7 @@
               time: true
               notes: false
               chats: false
-              memory: false
+              memory: true
               channels: false
               knowledge: false
               web_search: true
@@ -701,7 +702,7 @@
             toolIds:
               - server:time
               - server:weather
-              - server:memory
+              - server:browser
           base_model_id: "{{ base_model }}"
           params:
             system: >-
