@@ -183,13 +183,13 @@ openwebui_extras:
 # Open WebUI so that both Playwright server and client versions
 # match. See openwebui_playwright_version in vars/playwright.yml
 openwebui_chart_repo_url: https://helm.openwebui.com
-openwebui_chart_version: "12.2.0"
+openwebui_chart_version: "12.5.0"
 openwebui_release_name: open-webui
 
 # comment out `openwebui_app_version` setting below
 # to let playbook get `appVersion` value from chart
 # https://github.com/open-webui/open-webui/pkgs/container/open-webui/versions?filters%5Bversion_type%5D=tagged
-openwebui_app_version: "0.8.3"
+# openwebui_app_version: "0.8.5"
 
 openwebui_image:
   pullPolicy: IfNotPresent
@@ -225,6 +225,11 @@ pipelines_chart_values: &pipelines
 openwebui_chart_values:
   replicaCount: "{{ openwebui_replicas }}"
   revisionHistoryLimit: 2
+
+  # use Recreate deployment strategy to avoid
+  # multi-attach error on ReadWriteOnce PVCs
+  strategy:
+    type: Recreate
 
   # https://docs.openwebui.com/getting-started/advanced-topics/logging
   # (notset/debug/info/warning/error/critical)
