@@ -108,6 +108,7 @@ thanos_metrics_auth:
     name: "{{ monitoring_secrets['credentials'] }}"
     key: thanos-metrics-password
 
+# "alertmanager-prometheus-stack-alertmanager" Secret:
 # https://prometheus.io/docs/alerting/latest/configuration
 # https://github.com/prometheus/alertmanager/tree/main/doc/examples/simple.yml
 # https://prometheus-operator.dev/docs/developer/alerting#using-alertmanagerconfig-resources
@@ -153,7 +154,9 @@ alertmanager_config:
     routes:
       - receiver: "null"
         matchers:
-          - alertname =~ Watchdog|InfoInhibitor
+          # ignore high CPU alerts as that's to be
+          # expected in this overcommitted cluster
+          - alertname =~ Watchdog|InfoInhibitor|CPUThrottlingHigh
       - receiver: "{{ 'erhhung-email' if email_alerts_enabled else 'null' }}"
         continue: true # send to Slack as well if enabled
       - receiver: "{{ 'homelab-slack' if slack_alerts_enabled else 'null' }}"
@@ -1172,7 +1175,7 @@ prometheus_stack_chart_values:
         args:
           - -c
           - |-
-            mkdir     /textfile-private/files
+            mkdir -p  /textfile-private/files
             mkdir -p  /textfile-shared/$NODE_NAME
             chmod 777 /textfile-shared/$NODE_NAME
         volumeMounts: &textfile-mounts
@@ -1198,7 +1201,7 @@ prometheus_stack_chart_values:
             temp=/$dest.$$
 
             while true; do
-              mkdir  $temp
+              mkdir -p $temp
               find $src -type f -name '*.prom' -exec cp {} $temp \;
               mv $dest $dest.rm && \
               mv $temp $dest    && \

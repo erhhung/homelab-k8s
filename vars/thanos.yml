@@ -406,7 +406,7 @@ thanos_chart_values:
       ## no need for storage replicas as
       ## data can be recreated on startup
       storageClass: "{{ storage_classes['default'] }}"
-      size: 512Mi
+      size: 1Gi
 
     persistentVolumeClaimRetentionPolicy:
       enabled: true

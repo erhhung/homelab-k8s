@@ -230,8 +230,12 @@ Some useful commands to generate random passwords and API keys:
 * Passwords
     - `pwgen -cnys -r '"!&*\'"'" 12 1`
 * API keys
-    - _alpha-numeric_: `head -c 4096 /dev/urandom | LC_CTYPE=C tr -cd '0-9a-zA-Z' | head -c 32`
-    - _hex-digits only_: `head -c 4096 /dev/urandom | LC_CTYPE=C tr -cd '0-9a-f' | head -c 32`
+    - _alpha-numeric_:
+        * `head -c 4096 /dev/urandom | LC_CTYPE=C tr -cd '0-9a-zA-Z' | head -c 32`
+        * `openssl rand -base64 32 | head -c 32`
+    - _hex-digits only_:
+        * `head -c 4096 /dev/urandom | LC_CTYPE=C tr -cd '0-9a-f' | head -c 32`
+        * `openssl rand -hex 16`
 
 ## Connections
 
