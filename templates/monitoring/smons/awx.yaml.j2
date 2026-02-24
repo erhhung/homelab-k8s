@@ -44,3 +44,12 @@ spec:
         name: {{ awx_secrets['scraper'] }}
         key: token
       interval: 60s
+      metricRelabelings:
+        # drop all `subsystem_metrics_*` metrics due to bug
+        # that emits duplicate series with different values,
+        # causing PrometheusDuplicateTimestamps alerts:
+        # https://github.com/ansible/awx/issues/15179
+        # https://github.com/ansible/awx/pull/15964
+        - sourceLabels: ["__name__"]
+          regex: subsystem_metrics_.*
+          action: drop
