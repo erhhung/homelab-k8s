@@ -43,20 +43,20 @@
         host override: {{ override.ip }}|{{ override.host }}
       vars:
         method: "{{ 'POST' if existing_override is falsy else 'PATCH' }}"
-        # must retain key order in order
-        # for to_json comparison to work
         override_payload: |
           {% set aliases = [] %}
           {% set payload = {
-            'id':      existing_override.id if method == 'PATCH' else none,
-            'host':    override.host,
-            'domain':  override.domain | default(homelab_domain),
-            'ip':     [override.ip],
-            'descr':   override.desc   | default(none),
-            'aliases': none,
-          }  %}
-          {% if override.aliases is defined  %}
-          {%   for alias in override.aliases %}
+               'id':      existing_override.id if method == 'PATCH' else none,
+               'host':    override.host,
+               'domain':  override.domain | default(homelab_domain),
+               'ip':     [override.ip],
+               'descr':   override.desc   | default(none),
+               'aliases': none,
+             } %}
+          {% if override.aliases is defined %}
+          {#   pfSense API stores aliases sorted by host name,
+               so sort override aliases for proper comparison         #}
+          {%   for alias in override.aliases | sort(attribute='host') %}
           {%     set _ = aliases.append({
                    'host':   alias.host,
                    'domain': alias.domain | default(homelab_domain),
@@ -77,7 +77,5 @@
           X-API-Key: "{{ pfsense_api_key }}"
         body: "{{ override_payload }}"
         body_format: json
-      when: >-
-        existing_override | to_json !=
-        override_payload  | to_json
+      when: existing_override != override_payload
       changed_when: true
