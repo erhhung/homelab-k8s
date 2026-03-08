@@ -34,13 +34,12 @@
         secret_name: "{{ postgresql_secrets['node-tls'] }}"
         create_ns: true
         cert_name: postgresql-node
-        sans_:
+        sans:
           - postgresql-node
           - "{{ postgresql_fqdns }}"
           - "*.{{ postgresql_namespace }}.svc.{{ cluster_domain }}"
           - "*.{{ postgresql_namespace }}.svc"
           - "{{ metallb_vips['postgresql'] }}"
-        sans: "{{ sans_ | flatten }}"
       ansible.builtin.include_tasks: tasks/k8s/secrets/tls.step.yml
 
     - name: Create Pgpool exporter secret

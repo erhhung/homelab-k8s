@@ -77,6 +77,10 @@ pfsense_dns_records:
       - host: sidecar
         domain: "{{ thanos_subdomain }}"
         desc: Thanos Sidecar UI
+      - host: tracing
+        desc: Jaeger UI
+      - host: jaeger
+        desc: Jaeger UI
       - host: keycloak
         desc: Keycloak IAM
       - host: iam
@@ -199,3 +203,7 @@ pfsense_dns_records:
     aliases:
       - host: redis6
         desc: Valkey Node 6
+
+  - ip: 192.168.4.226
+    host: otlp
+    desc: OpenTelemetry Collector

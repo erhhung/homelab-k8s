@@ -277,14 +277,14 @@ argocd_chart_values:
       enabled: false
 
     volumes: &volumes
-      - name: tls-valkey
+      - name: valkey-tls
         secret:
           # "server" secret (as opposed to "valkey") is
           # correct here as it has "argocd" CN for mTLS
           secretName: "{{ argocd_secrets['server'] }}"
 
     volumeMounts: &mounts
-      - name: tls-valkey
+      - name: valkey-tls
         mountPath: /tls/valkey
         readOnly: true
 
@@ -402,7 +402,7 @@ argocd_chart_values:
       - name: cmp-tmp
         emptyDir:
           medium: Memory
-      - name: tls-valkey
+      - name: valkey-tls
         secret:
           # "server" secret (as opposed to "valkey") is
           # correct here as it has "argocd" CN for mTLS

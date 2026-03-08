@@ -111,7 +111,7 @@ ollama_common_values:
     kind: Service
     metadata:
       name: "{{ ollama_release_name }}-external"
-      labels:
+      labels: &svc-labels
         app.kubernetes.io/name: ollama
         app.kubernetes.io/instance: "{{ ollama_release_name }}"
       annotations:
@@ -119,12 +119,10 @@ ollama_common_values:
         metallb.io/loadBalancerIPs: "{{ metallb_vips['ollama'] }}"
     spec:
       type: LoadBalancer
+      selector: *svc-labels
       ports:
         - name: http
           port: "{{ ollama_service_port }}"
           protocol: TCP
           targetPort: http
           appProtocol: http
-      selector:
-        app.kubernetes.io/name: ollama
-        app.kubernetes.io/instance: "{{ ollama_release_name }}"

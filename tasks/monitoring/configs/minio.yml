@@ -1,4 +1,9 @@
 # set minio_scrape_configs fact
+#
+# get scrape configs in Secret:
+#   kubectl get -n monitoring secret prometheus-prometheus-stack-prometheus \
+#     -o jsonpath='{.data.prometheus\.yaml\.gz}' | base64 -d | gunzip | \
+#     yq '.scrape_configs | map(select(.job_name | test("minio-homelab")))'
 ---
 - name: Include vars/minio.yml
   # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_vars_module.html
@@ -10,8 +15,9 @@
   block:
     - name: Define MinIO scrape configs
       vars:
-        target: metrics.{{ minio_tenant_namespace }}.svc.{{ cluster_domain }}
-        types: "{{ minio_collect_metrics_for | join(' ') }}"
+        target: "{{ minio_tenant_name }}-hl.{{ minio_tenant_namespace
+          }}.svc.{{ cluster_domain }}:{{ minio_s3api_port }}"
+        types: "{{  minio_collect_metrics_for | join(' ') }}"
         name_prefix: minio-{{ minio_tenant_name }}-
         path_prefix: /minio/v2/metrics/
         ca_file: /tls/scraper/ca.crt
@@ -28,7 +34,7 @@
         secret_name="prometheus-{{ monitoring_release_name }}-prometheus"
         # secret won`t be found if monitoring stack hasn`t been installed
         secret=$(kubectl get -n {{ monitoring_namespace }} secret $secret_name \
-          -o jsonpath='{ .data.prometheus\.yaml\.gz }')
+          -o jsonpath='{.data.prometheus\.yaml\.gz}')
 
         if [ "$secret" ]; then
           configs=$(base64 -d <<< "$secret" | gunzip | \

@@ -189,7 +189,7 @@ openwebui_release_name: open-webui
 # comment out `openwebui_app_version` setting below
 # to let playbook get `appVersion` value from chart
 # https://github.com/open-webui/open-webui/pkgs/container/open-webui/versions?filters%5Bversion_type%5D=tagged
-# openwebui_app_version: "0.8.5"
+openwebui_app_version: "0.8.8"
 
 openwebui_image:
   pullPolicy: IfNotPresent
@@ -197,7 +197,7 @@ openwebui_image:
   tag: "{{ openwebui_app_version }}"
 
   # use our own image with Redis Cluster support
-  # (REDIS_CLUSTER_MODE="True") and UID+GID=1000
+  # (REDIS_CLUSTER_MODE="true") and UID+GID=1000
   # pullPolicy: Always
   # repository: "{{ harbor_container_registry }}/library/open-webui"
   # tag: latest
@@ -280,7 +280,7 @@ openwebui_chart_values:
   commonEnvVars:
     # https://docs.openwebui.com/reference/env-configuration#important-note-on-persistentconfig-environment-variables
     - name: ENABLE_PERSISTENT_CONFIG
-      value: "False"
+      value: "false"
     # enable API /docs
     # https://docs.openwebui.com/reference/api-endpoints#swagger-documentation-links
     # https://docs.openwebui.com/reference/env-configuration#env
@@ -307,6 +307,16 @@ openwebui_chart_values:
     - name: NLTK_DATA
       # created by init container
       value: /app/backend/data/nltk
+    # https://docs.openwebui.com/reference/monitoring/otel/#%EF%B8%8F-environment-variables
+    - name: ENABLE_OTEL
+      value: "true"
+    - name: ENABLE_OTEL_TRACES
+      value: "true"
+    - name: ENABLE_OTEL_METRICS
+      value: "true"
+    # exporter expects OTLP gRPC endpoint
+    - name: OTEL_EXPORTER_OTLP_ENDPOINT
+      value: "{{ otlp_service_url }}"
 
   extraEnvVars:
     # must be defined in extraEnvVars!
@@ -320,11 +330,11 @@ openwebui_chart_values:
     # the inclusion of WEBSOCKET_REDIS_URL as a literal value directly
     # in the pod template--we want to inject using a secretRef instead
     - name: ENABLE_WEBSOCKET_SUPPORT
-      value: "True"
+      value: "true"
     - name: WEBSOCKET_MANAGER
       value: redis
     - name: REDIS_CLUSTER
-      value: "True"
+      value: "true"
     - name: REDIS_KEY_PREFIX
       value: "{open-webui}"
     # https://docs.openwebui.com/reference/env-configuration#vector-database
@@ -335,15 +345,15 @@ openwebui_chart_values:
       value: "{{ qdrant_service_url }}"
     # must also set GRPC_DEFAULT_SSL_ROOTS_FILE_PATH!
     - name: QDRANT_PREFER_GRPC
-      value: "True"
+      value: "true"
     - name: QDRANT_GRPC_PORT
       value: "{{ qdrant_grpc_port | string }}"
     # https://qdrant.tech/documentation/concepts/storage#vector-storage
     - name: QDRANT_ON_DISK
-      value: "True"
+      value: "true"
     # https://qdrant.tech/documentation/concepts/collections
     - name: ENABLE_QDRANT_MULTITENANCY_MODE
-      value: "True"
+      value: "true"
     - name: QDRANT_COLLECTION_PREFIX
       value: openwebui
 
@@ -408,13 +418,13 @@ openwebui_chart_values:
     s3:
       bucket: openwebui
       keyPrefix: uploads/
-      accessKey: openwebui
-      secretKeyExistingSecret: "{{ openwebui_secrets['env-vars'] }}"
-      secretKeyExistingSecretKey: S3_SECRET_ACCESS_KEY
       # IMPORTANT: since Helm chart provides no method to specify
       # TLS config, environment var AWS_CA_BUNDLE must be defined
       endpointUrl: "{{ minio_service_url }}"
       region: "{{ minio_region }}"
+      accessKey: openwebui
+      secretKeyExistingSecret: "{{ openwebui_secrets['env-vars'] }}"
+      secretKeyExistingSecretKey: S3_SECRET_ACCESS_KEY
 
   podSecurityContext:
     fsGroup: 2000
@@ -445,6 +455,7 @@ openwebui_chart_values:
     periodSeconds: 5
     timeoutSeconds: 5
     failureThreshold: 48
+
   readinessProbe: &probe
     httpGet:
       path: /health/db
@@ -453,6 +464,7 @@ openwebui_chart_values:
     periodSeconds: 10
     timeoutSeconds: 5
     failureThreshold: 6
+
   livenessProbe:
     <<: *probe
     httpGet:

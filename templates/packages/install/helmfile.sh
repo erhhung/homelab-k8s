@@ -33,6 +33,8 @@ get_chart_dir() {
   done
 }
 
+extra_args=()
+
 if [[ "$1" =~ ^(template|install|upgrade)$ ]]; then
   # run custom commands if hook
   # provided as environment var
@@ -48,8 +50,13 @@ if [[ "$1" =~ ^(template|install|upgrade)$ ]]; then
     # run in isolated subshell
     (eval "${!hook_env}") >&2
   fi
+
+  args_env="HELM_${1^^}_ARGS"
+  if [ "${!args_env}" ]; then
+    extra_args+=(${!args_env})
+  fi
 fi
 
-exec helm "$@"
+exec helm "$@" "${extra_args[@]}"
 EOF
 chmod +x $SCRIPT

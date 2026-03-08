@@ -77,6 +77,11 @@ step_issuer_namespace: cert-manager
 step_issuer_secrets:
   provisioners: step-ca-provisioners
 
+step_issuer_ref:
+  group: certmanager.step.sm
+  kind: StepClusterIssuer
+  name: "{{ step_issuer_release_name }}"
+
 # https://github.com/smallstep/helm-charts/tree/master/step-issuer
 step_issuer_chart_version: "1.9.9"
 step_issuer_release_name: step-issuer

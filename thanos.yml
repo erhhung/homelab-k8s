@@ -21,13 +21,12 @@
       vars:
         secret_name: "{{ thanos_secrets[item.name] }}"
         cert_name: thanos-{{ item.name }}-ingress
-        sans_:
+        sans:
           - thanos
           - "{{ item.sans | default([]) }}"
           - "{{ thanos_fqdns[item.name] }}"
           - "*.{{ monitoring_namespace }}.svc.{{ cluster_domain }}"
           - "*.{{ monitoring_namespace }}.svc"
-        sans: "{{ sans_ | flatten }}"
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
       ansible.builtin.include_tasks: tasks/k8s/secrets/tls.step.yml
       loop:

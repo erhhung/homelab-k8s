@@ -1,20 +1,25 @@
-# restart systemd-resolved on host if DNS isn't
-# working (cannot resolve pki.fourteeners.local)
+# restart `systemd-resolved` service on host
+# if DNS isn't working, i.e., cannot resolve
+# the test domain to its expected IP
+#
+# pass the following vars:
+#   test_domain [optional] default=pki.fourteeners.local
+#   expected_ip [optional] default=192.168.0.5
 ---
 - name: Ensure DNS resolution is working
   become: true
   block:
     - name: Is {{ homelab_domain }} DNS working?
       vars:
-        test_domain: pki.{{ homelab_domain }}.
-        expected_ip: "{{ hostvars['pki'].ansible_host }}"
+        _test_domain: "{{ test_domain | default('pki.'~ homelab_domain) }}."
+        _expected_ip: "{{ expected_ip | default(hostvars['pki'].ansible_host) }}"
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/shell_module.html
       ansible.builtin.shell: |
         set -o pipefail
 
         # ignore SIGPIPE (rc=141) with pipefail:
         # https://www.pixelbeat.org/programming/sigpipe_handling.html
-        { dig +short {{ test_domain }} || true; } | grep -q {{ expected_ip }}
+        { dig +short {{ _test_domain }} || true; } | grep -q {{ _expected_ip }}
       args:
         executable: /bin/bash
       register: is_dns_working

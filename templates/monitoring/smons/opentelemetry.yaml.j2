@@ -1,0 +1,59 @@
+---
+{% set smon_labels = otel_collector_labels | combine({
+      'release': monitoring_release_name,
+   }) %}
+{# https://docs.ansible.com/ansible/latest/collections/community/general/keep_keys_filter.html #}
+{% set sel_labels = [otel_collector_labels] | community.general.keep_keys(target=[
+      'app.kubernetes.io/instance',
+      'app.kubernetes.io/component',
+      'app.kubernetes.io/part-of',
+   ]) | first %}
+
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ otel_collector_name }}
+  labels: {{ smon_labels }}
+spec:
+  jobLabel: {{ otel_collector_name }}
+  namespaceSelector:
+    matchNames:
+      - {{ observability_namespace }}
+  selector:
+    matchLabels: {{ sel_labels | combine({
+         'operator.opentelemetry.io/collector-service-type': 'base',
+      }) }}
+  endpoints:
+    - port: prometheus
+      path: /metrics
+      interval: 30s
+
+      metricRelabelings:
+        # drop most labels that just reference the
+        # collector (keeping only `pod` and `job`)
+        # and obscuring labels of actual workloads
+        - action: labeldrop
+          regex: '^(namespace|service|instance|container|endpoint|otel_scope_schema_url)$'
+---
+{% set smon_name = otel_collector_name | replace('collector', 'monitoring-collector') %}
+
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ smon_name }}
+  labels: {{ smon_labels | combine({
+       'app.kubernetes.io/name': smon_name,
+    }) }}
+spec:
+  jobLabel: {{ smon_name }}
+  namespaceSelector:
+    matchNames:
+      - {{ observability_namespace }}
+  selector:
+    matchLabels: {{ sel_labels | combine({
+         'operator.opentelemetry.io/collector-service-type': 'monitoring',
+      }) }}
+  endpoints:
+    - port: monitoring
+      path: /metrics
+      interval: 30s

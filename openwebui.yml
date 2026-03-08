@@ -16,6 +16,7 @@
     - vars/ollama.yml
     - vars/qdrant.yml
     - vars/litellm.yml
+    - vars/observability.yml
     - vars/openwebui.yml
   vars: &vars
     # required kubernetes>=24.2 package only in user virtualenv

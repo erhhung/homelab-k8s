@@ -8,7 +8,8 @@ opensearch_passwords:
   erhhung: "{{ opensearch_admin_pass }}"
   kibana: "{{ kibana_os_pass }}"
   fluent: "{{ fluent_os_pass }}"
-  metrics: "{{ fluent_os_pass }}"
+  grafana: "{{ monitoring_passwords['grafana'] }}"
+  scraper: "{{ monitoring_passwords['scraper'] }}"
 
 opensearch_namespace: opensearch
 opensearch_host_names: # aliases of "ingress"
@@ -123,9 +124,15 @@ opensearch_security_config:
       reserved: true
       backend_roles: []
 
-    metrics:
+    grafana:
+      description: Grafana data source user
+      hash: {{ opensearch_passwords_hashed['grafana'] }}
+      reserved: true
+      backend_roles: []
+
+    scraper:
       description: Prometheus metrics scraper
-      hash: {{ opensearch_passwords_hashed['metrics'] }}
+      hash: {{ opensearch_passwords_hashed['scraper'] }}
       reserved: true
       backend_roles: []
 
@@ -159,7 +166,7 @@ opensearch_security_config:
             - kibana_all_write
             - opensearch_dashboards_all_write
 
-    fluent_writer:
+    logs_writer:
       cluster_permissions:
         - cluster_composite_ops
       index_permissions:
@@ -168,6 +175,15 @@ opensearch_security_config:
           allowed_actions:
             - create_index
             - crud
+
+    logs_reader:
+      cluster_permissions:
+        - cluster_composite_ops_ro
+      index_permissions:
+        - index_patterns:
+            - fluent*
+          allowed_actions:
+            - read
 
     metric_scraper:
       # https://github.com/Aiven-Open/prometheus-exporter-plugin-for-opensearch/issues/60
@@ -201,15 +217,24 @@ opensearch_security_config:
         - erhhung
       and_backend_roles: []
 
+    readall: # predefined
+      reserved: true
+      hidden: false
+      users:
+        - grafana
+
     kibana_system:
       users:
         - kibana
-    fluent_writer:
+    logs_writer:
       users:
         - fluent
+    logs_reader:
+      users:
+        - grafana
     metric_scraper:
       users:
-        - metrics
+        - scraper
 
 opensearch_version: "2.19.4"
 # IMPORTANT! keep opensearch_version and opensearch_chart_version
@@ -424,7 +449,7 @@ opensearch_chart_values:
       enabled: true
       # credentials Secret is expected by the chart
       # template to contain "username" & "password"
-      existingSecret: opensearch-creds-metrics
+      existingSecret: opensearch-creds-scraper
 
 # https://grafana.com/grafana/dashboards/?search=OpenSearch&dataSource=prometheus
 opensearch_grafana_dashboards:

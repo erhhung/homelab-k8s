@@ -102,13 +102,13 @@
 
     - name: Generate subdomain FQDNs
       vars:
-        subdomain: thanos
+        subdomain: .thanos
         thanos_hosts:
           - query
           - rule
           - store
-        # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/regex_replace_filter.html
-        thanos_pqdns: "{{ thanos_hosts | map('regex_replace', '$', '.'~ subdomain)  }}"
+        # append: filter_plugins/filters.py
+        thanos_pqdns: "{{ thanos_hosts | map('append', subdomain) }}"
         thanos_fqdns: "{{ thanos_pqdns | product(search_domains) | map('join', '.') }}"
       ansible.builtin.debug:
         var: thanos_fqdns
@@ -679,6 +679,22 @@
         names: "{{ titles | map('community.general.dict_kv', 'name') }}"
       ansible.builtin.debug:
         var: names
+
+    - name: Convert keys to dict
+      vars:
+        types:
+          - artifacts
+          - packages
+          - uploads
+          - lfs
+          - backups
+          - temp
+          - cache
+        # prepend: filter_plugins/filters.py
+        # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/zip_filter.html
+        buckets: "{{ dict(types | ansible.builtin.zip(types | map('prepend', 'gitlab-'))) }}"
+      ansible.builtin.debug:
+        var: buckets
 
     - name: Debug remove_keys filter
       vars:

@@ -312,13 +312,17 @@ awx_operator_chart_values:
   operator-controller-containers:
     # https://github.com/brancz/kube-rbac-proxy#usage
     kube-rbac-proxy:
+      # replace default image from gcr.io
+      # since GCR is no longer accessible
+      image: quay.io/brancz/kube-rbac-proxy:v0.21.0
+
       args:
         - --secure-listen-address=:8443
         - --upstream=http://127.0.0.1:8080/
         - --proxy-endpoints-port=9443
-        - --tls-cert-file=/tls/tls.crt
-        - --tls-private-key-file=/tls/tls.key
-        - --client-ca-file=/tls/ca.crt
+        - --tls-cert-file=/tls/proxy/tls.crt
+        - --tls-private-key-file=/tls/proxy/tls.key
+        - --client-ca-file=/tls/proxy/ca.crt
         - --config-file=/etc/kube-rbac-proxy/config.yaml
         - --v=0 # klog verbosity
 
@@ -335,7 +339,7 @@ awx_operator_chart_values:
 
       volumeMounts:
         - name: proxy-tls
-          mountPath: /tls
+          mountPath: /tls/proxy
           readOnly: true
         - name: proxy-config
           mountPath: /etc/kube-rbac-proxy

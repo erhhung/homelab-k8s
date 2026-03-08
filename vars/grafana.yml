@@ -1,0 +1,174 @@
+# https://grafana.com/docs/grafana/latest/administration/provisioning#datasources
+# https://grafana.com/docs/grafana/latest/administration/provisioning#use-environment-variables
+# https://boredconsultant.com/2022/06/27/Grafana-Datasource-With-Custom-CA-Certificate
+---
+grafana_data_sources:
+  - name: Prometheus
+    type: prometheus
+    uid: prometheus
+    # Thanos Query Frontend requires downstream
+    # Tripper config with `tls_config` settings
+    url: "{{ thanos_query_frontend_url }}"
+    access: proxy
+    # apparently Grafana ignores basic auth settings if data source access is proxy:
+    # https://github.com/grafana/grafana/tree/main/pkg/api/frontendsettings.go#L517
+    basicAuth: true
+    basicAuthUser: grafana
+    withCredentials: true
+    jsonData:
+      timeInterval: 30s
+      prometheusType: Thanos
+
+      tlsAuthWithCACert: true
+      # need to provide basic auth credentials using
+      # Authorization header (.secureJsonData value):
+      # https://grafana.com/docs/grafana/latest/administration/provisioning#custom-http-headers-for-data-sources
+      httpHeaderName1: Authorization
+    secureJsonData: &secure-data
+      tlsCACert: $TLS_CA_CERT
+      # basicAuthPassword: # use Authorization header
+      httpHeaderValue1: $DS_BASIC_AUTH
+    isDefault: true
+    editable: true
+
+  # https://grafana.com/docs/grafana/latest/datasources/alertmanager
+  - name: Alertmanager
+    type: alertmanager
+    uid: alertmanager
+    url: "{{ alertmanager_service_url }}"
+    access: proxy
+    jsonData:
+      implementation: prometheus
+      handleGrafanaManagedAlerts: false
+
+      tlsAuthWithCACert: true
+    secureJsonData:
+      tlsCACert: $TLS_CA_CERT
+    isDefault: false
+    editable: true
+
+  # https://grafana.com/docs/plugins/grafana-opensearch-datasource/latest#configure-the-data-source-with-provisioning
+  - name: OpenSearch
+    type: grafana-opensearch-datasource
+    uid: opensearch
+    url: "{{ opensearch_service_url }}"
+    access: proxy
+    basicAuth: true
+    basicAuthUser: grafana
+    withCredentials: true
+    jsonData:
+      flavor: opensearch
+      version: "{{ opensearch_version }}"
+      timeField: "@timestamp"
+      logMessageField: log
+      # logLevelField: ""
+
+      # Pipe Processing Language:
+      # https://grafana.com/docs/plugins/grafana-opensearch-datasource/latest#piped-processing-language-ppl
+      pplEnabled: false
+      # https://docs.opensearch.org/latest/search-plugins/searching-data/search-shard-routing#concurrent-shard-request
+      maxConcurrentShardRequests: 2
+
+      tlsAuthWithCACert: true
+      # need to provide basic auth credentials using
+      # Authorization header (.secureJsonData value)
+      httpHeaderName1: Authorization
+    secureJsonData: *secure-data
+    isDefault: false
+    editable: true
+
+  # https://grafana.com/docs/grafana/latest/datasources/tempo/configure-tempo-data-source#example-file
+  - name: Tempo
+    type: tempo
+    uid: tempo
+    url: "{{ tempo_datasource_url }}"
+    access: proxy
+    # NOTE: due to bug in the Tempo data source plugin, basic auth
+    # must be enabled and credentials provided, even if ignored by
+    # Tempo, to enable streaming over TLS; otherwise, Grafana will
+    # log "error reading server preface: EOF":
+    # https://github.com/grafana/grafana/issues/100545
+    basicAuth: true
+    basicAuthUser: ignored
+    withCredentials: true
+    jsonData:
+      # https://grafana.com/docs/grafana/latest/datasources/tempo/configure-tempo-data-source#trace-to-logs
+      tracesToLogsV2:
+        datasourceUid: opensearch
+        spanStartTimeShift: -2m
+        spanEndTimeShift: 2m
+        filterByTraceID: false
+        filterBySpanID: false
+        customQuery: true
+        query: $${__tags}
+
+        tags:
+          - key: k8s.namespace.name
+            value: kubernetes.namespace_name
+          - key: k8s.pod.name
+            value: kubernetes.pod_name
+          # container-level attributes may not be available
+          # (see OTel collector  `k8sattributes` processor)
+          - key: k8s.container.name
+            value: kubernetes.container_name
+
+      # https://grafana.com/docs/grafana/latest/datasources/tempo/configure-tempo-data-source#trace-to-metrics
+      tracesToMetrics:
+        datasourceUid: prometheus
+        tags:
+          # span attribute -> metric label
+          - key: service.name
+            value: exported_job
+          - key: http.route
+            value: http_route
+          - key: http.method
+            value: http_method
+          - key: http.status_code
+            value: http_status_code
+
+        # RED (Rate/Errors/Duration) metrics:
+        # https://www.splunk.com/en_us/blog/learn/red-monitoring.html
+        # NOTE: vars like $__tags need to be escaped,
+        # or else they will be evaluated as env vars:
+        # https://github.com/grafana/grafana/issues/64871
+        queries:
+          - name: Request Rate
+            query: sum(rate(http_server_duration_milliseconds_count{$$__tags}[$$__rate_interval]))
+          - name: 5xx Error Rate
+            query: sum(rate(http_server_duration_milliseconds_count{$$__tags, http_status_code=~"5.."}[$$__rate_interval]))
+          - name: p95 Latency (ms)
+            query: histogram_quantile(0.95, sum by (le)
+              (rate(http_server_duration_milliseconds_bucket{$$__tags}[$$__rate_interval])))
+          - name: p99 Latency (ms)
+            query: histogram_quantile(0.99, sum by (le)
+              (rate(http_server_duration_milliseconds_bucket{$$__tags}[$$__rate_interval])))
+
+      # https://grafana.com/docs/grafana/latest/datasources/tempo/configure-tempo-data-source#trace-to-profiles
+      # https://grafana.com/grafana/plugins/grafana-pyroscope-datasource
+      # tracesToProfiles:
+      #   datasourceUid: pyroscope
+
+      # service graphs require metrics from
+      # Tempo's metrics-generator component:
+      # https://grafana.com/docs/tempo/latest/metrics-from-traces/service_graphs
+      serviceMap:
+        datasourceUid: prometheus
+
+      # https://grafana.com/docs/grafana/latest/visualizations/panels-visualizations/visualizations/node-graph
+      nodeGraph:
+        enabled: true
+      # show additional info in span bar row
+      spanBar:
+        type: Duration # Duration|Tag|None
+      # https://grafana.com/docs/grafana/latest/datasources/tempo/configure-tempo-data-source#streaming
+      streamingEnabled:
+        metrics: true
+        search: true
+
+      tlsAuthWithCACert: true
+      # need to provide basic auth credentials using
+      # Authorization header (.secureJsonData value)
+      httpHeaderName1: Authorization
+    secureJsonData: *secure-data
+    isDefault: false
+    editable: true

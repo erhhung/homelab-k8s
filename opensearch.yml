@@ -51,13 +51,12 @@
         algorithm: RSA
         # IMPORTANT! first SAN will be CN, and must match
         # value of `opensearch_security_plugin.nodes_dn`
-        sans_:
+        sans:
           - opensearch-node
           - "{{ opensearch_fqdns }}"
           - "*.{{ opensearch_namespace }}.svc.{{ cluster_domain }}"
           - "*.{{ opensearch_namespace }}.svc"
           - "{{ metallb_vips['opensearch'] }}"
-        sans: "{{ sans_ | flatten }}"
       ansible.builtin.include_tasks: tasks/k8s/secrets/tls.step.yml
 
     - name: Create OpenSearch admin secret
@@ -76,18 +75,18 @@
     - name: Create OpenSearch passwords secret
       vars:
         secret_name: "{{ opensearch_secrets['passwords'] }}"
-        # metrics user password is stored in separate Secret
+        # scraper user password is stored in separate Secret
         # https://docs.ansible.com/ansible/latest/collections/ansible/utils/remove_keys_filter.html
         secret_data: "{{ opensearch_passwords |
-          ansible.utils.remove_keys(target=['metrics']) }}"
+          ansible.utils.remove_keys(target=['scraper']) }}"
       ansible.builtin.include_tasks: tasks/k8s/secrets/generic.yml
 
     - name: Create OpenSearch credentials secret
       vars:
         users:
-          # opensearch-creds-metrics is used by
+          # opensearch-creds-scraper is used by
           # OpenSearch serviceMonitor.basicAuth
-          - metrics
+          - scraper
         secret_name: opensearch-creds-{{ item }}
         secret_data:
           # these keys are expected by chart template
@@ -140,7 +139,7 @@
           - cert-manager.io/v1 Certificate {{ monitoring_secrets['scraper']   }}
           - v1 Secret {{ opensearch_secrets['passwords'] }}
           - v1 Secret {{ opensearch_secrets['security']  }}
-          - v1 Secret opensearch-creds-metrics
+          - v1 Secret opensearch-creds-scraper
 
         # it can take a long time to pull container images
         # and provision storage and start each StatefulSet

@@ -5,10 +5,10 @@
 # pass the following vars:
 #   kubeconfig  <required> path to kubeconfig
 #   api_version [optional] default based on resource kind
-#   res_kind    <required> resource type (Pod, Deployment,
+#   res_kind    <required> resource kind (Pod, Deployment,
 #                          StatefulSet, DaemonSet)
-#   res_name    <required> resource  name
-#   res_ns      <required> resource  namespace
+#   res_name    <required> resource name
+#   res_ns      <required> resource namespace
 #   probes      <required> dictionary of probes
 #     {container}      <required> container name
 #       readinessProbe [optional]
@@ -18,7 +18,6 @@
 #   max_wait    [optional] default=10 (seconds)
 ---
 - name: Configure container probes
-  become: false
   vars:
     # required kubernetes>=24.2 package only in user virtualenv
     ansible_python_interpreter: "{{ venv_python_interpreter }}"
@@ -39,7 +38,7 @@
       register: res_info
       retries: 10
       delay: "{{ max_wait | default(10) / 10 }}"
-      until: res_info.resources[0] is defined
+      until: res_info.resources is truthy
 
     - name: Find containers in resource
       vars:
