@@ -51,3 +51,16 @@
         method: POST
         headers: "{{ headers }}"
       changed_when: true
+
+- name: Ensure DNS resolution works
+  tags: check
+  hosts:
+    - k8s_hosts
+  vars_files:
+    - vars/dns.yml
+  tasks:
+    - name: Ensure DNS resolution works
+      vars:
+        test_domain: "{{ pfsense_dns_records[0].host }}.{{ homelab_domain }}"
+        expected_ip: "{{ pfsense_dns_records[0].ip   }}"
+      ansible.builtin.include_tasks: tasks/dns/check.yml

@@ -23,10 +23,7 @@ spec:
     annotations: *annotations
 {% endif %}
 
-  issuerRef:
-    name: {{ step_issuer_release_name }}
-    kind: StepClusterIssuer
-    group: certmanager.step.sm
+  issuerRef: {{ step_issuer_ref }}
 
   # https://cert-manager.io/docs/usage/certificate#issuance-triggers
   duration: {{ days * 24 if days is defined and days != omit else 720 }}h

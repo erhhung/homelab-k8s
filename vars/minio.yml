@@ -9,17 +9,11 @@ minio_buckets:
   - name: backups
     # https://min.io/docs/minio/linux/reference/minio-mc/mc-mb.html#parameters
     # options: ["--with-versioning"]
-  # long-term metrics from Thanos
-  - name: metrics
+  # metrics from Thanos, traces from Tempo
+  - name: telemetry
   # GitLab LFS/artifacts/uploads/packages
-  - |
-    {% set buckets = [] %}
-    {% for name in gitlab_buckets.values() %}
-    {%   set _ = buckets.append({
-           'name': name,
-         })    %}
-    {% endfor  %}
-    {{ buckets }}
+  # https://docs.ansible.com/ansible/latest/collections/community/general/dict_kv_filter.html
+  - "{{ gitlab_buckets.values() | map('community.general.dict_kv', 'name')}}"
   # Open WebUI uploads
   - name: openwebui
 
@@ -32,10 +26,10 @@ minio_buckets:
 # https://github.com/vmware-tanzu/velero-plugin-for-aws#option-1-set-permissions-with-an-iam-user
 minio_policies: |
   {{ {
-    'backups-rw': lookup('one_bucket_iam_policy', 'backups'),
-    'metrics-rw': lookup('one_bucket_iam_policy', 'metrics'),
-     'gitlab-rw': lookup('one_bucket_iam_policy', 'gitlab-*'),
-  'openwebui-rw': lookup('one_bucket_iam_policy', 'openwebui'),
+      'backups-rw': lookup('one_bucket_iam_policy', 'backups'),
+    'telemetry-rw': lookup('one_bucket_iam_policy', 'telemetry'),
+       'gitlab-rw': lookup('one_bucket_iam_policy', 'gitlab-*'),
+    'openwebui-rw': lookup('one_bucket_iam_policy', 'openwebui'),
   } }}
 
 minio_users: # non-root
@@ -44,18 +38,24 @@ minio_users: # non-root
     secret_key: "{{ minio_admin_pass }}"
     # https://min.io/docs/minio/linux/administration/identity-access-management/policy-based-access-control.html#built-in-policies
     # policies: ["readwrite"]
+  # user authenticated by the "metrics" alias (mc alias list)
+  # to generate MinIO cluster/node/bucket scrape configs with
+  # the appropriate `bearer_token`
+  scraper:
+    secret_key: "{{ minio_client_pass }}"
+    policies: ["diagnostics"]
   longhorn:
     secret_key: "{{ minio_client_pass }}"
     # policies managed by "backups" group
   velero:
     secret_key: "{{ minio_client_pass }}"
     # policies managed by "backups" group
-  metrics:
-    secret_key: "{{ minio_client_pass }}"
-    # policies managed by "metrics" group
   thanos:
     secret_key: "{{ minio_client_pass }}"
-    # policies managed by "metrics" group
+    # policies managed by "telemetry" group
+  tempo:
+    secret_key: "{{ minio_client_pass }}"
+    # policies managed by "telemetry" group
   gitlab:
     secret_key: "{{ minio_client_pass }}"
     policies: ["gitlab-rw"]
@@ -73,13 +73,11 @@ minio_groups:
       - longhorn
       - velero
     policies: ["backups-rw"]
-  metrics:
+  telemetry:
     members:
-      - metrics
       - thanos
-    policies:
-      - diagnostics
-      - metrics-rw
+      - tempo
+    policies: ["telemetry-rw"]
 
 minio_host_names: # aliases of "ingress"
   - minio # console
@@ -92,6 +90,7 @@ minio_fqdns: "{{ minio_host_names | product(search_domains) | map('join','.') }}
 
 minio_console_fqdn: "{{ minio_fqdns[0] }}"
 minio_s3api_fqdn: "{{ minio_fqdns[1] }}"
+minio_s3api_port: 9000 # internal
 
 minio_operator_namespace: minio-operator
 minio_tenant_namespace: minio
@@ -237,18 +236,13 @@ minio_tenant_chart_values:
     # pre-create users (secrets containing credentials must be created manually beforehand)
     # https://min.io/docs/minio/kubernetes/upstream/reference/operator-crd.html#tenantspec
     # THIS DOES NOT WORK
-    users: |
-      {% set users = [] %}
-      {% for name in minio_users.keys() %}
-      {%   set _ = users.append({
-             'name': 'minio-creds-'~ name
-           }) %}
-      {% endfor %}
-      {{ users  }}
+    # users: "{{ minio_users.keys()    |
+    #   map('prepend', 'minio-creds-') |
+    #   map('community.general.dict_kv', 'name') }}"
 
     # pre-create buckets
     # THIS DOES NOT WORK
-    buckets: "{{ minio_buckets | flatten }}"
+    # buckets: "{{ minio_buckets | flatten }}"
 
     # https://min.io/docs/minio/kubernetes/upstream/operations/network-encryption.html
     # https://min.io/docs/minio/kubernetes/upstream/reference/operator-crd.html#localcertificatereference
@@ -271,7 +265,7 @@ minio_tenant_chart_values:
     metrics:
       enabled: true
       protocol: https
-      port: 9000
+      port: "{{ minio_s3api_port }}"
 
     prometheusOperator: |
       {{ monitoring_stack_ready and

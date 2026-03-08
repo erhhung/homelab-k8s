@@ -28,13 +28,12 @@
         secret_name: "{{ valkey_secrets['node-tls'] }}"
         create_ns: true
         cert_name: valkey-node
-        sans_:
+        sans:
           - valkey-node
           - "{{ valkey_fqdns }}"
           - "*.{{ valkey_namespace }}.svc.{{ cluster_domain }}"
           - "*.{{ valkey_namespace }}.svc"
           - "{{ valkey_lb_ips }}"
-        sans: "{{ sans_ | flatten }}"
       ansible.builtin.include_tasks: tasks/k8s/secrets/tls.step.yml
 
     - name: Create Valkey password secret

@@ -11,14 +11,14 @@ scraper_user:
   firstname: Prometheus
   lastname: Scraper
   email: scraper@{{ homelab_domain }}
-  password: "{{ monitoring_pass }}"
+  password: "{{ monitoring_passwords['scraper'] }}"
 
 # passwords will be hashed and stored
 # in monitoring_passwords_hashed fact
 monitoring_passwords:
   probe: "{{ monitoring_pass }}" # for Thanos probes
-  metrics: "{{ monitoring_pass }}" # to scrape Thanos
   grafana: "{{ monitoring_pass }}" # to Thanos Query
+  scraper: "{{ monitoring_pass }}" # to scrape Thanos
   erhhung: "{{ thanos_admin_pass }}"
 
 # send alerts or just drop
@@ -42,7 +42,7 @@ monitoring_host_names:
     - grafana
     - monitoring
 
-# remember to add all domain names to pfSense DNS as
+# remember to add all domain names  to pfSense DNS as
 # aliases of ingress.fourteeners.local: 192.168.4.222
 # https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_filters.html#products
 monitoring_fqdns: |
@@ -64,6 +64,9 @@ alertmanager_service_host: "{{ monitoring_release_name }}-alertmanager.{{
 alertmanager_service_port: 9093
 alertmanager_service_url: https://{{ alertmanager_service_host }}:{{ alertmanager_service_port }}
 
+grafana_service_host: "{{ monitoring_release_name }}-grafana.{{
+  monitoring_namespace }}.svc.{{ cluster_domain }}"
+grafana_service_url: https://{{ grafana_service_host }}
 grafana_url: https://{{ monitoring_fqdns['grafana'] | first }}
 
 monitoring_secrets:
@@ -72,7 +75,9 @@ monitoring_secrets:
   thanos-tls: thanos-sidecar-tls
   thanos-config: thanos-http-config
   alertmanager: monitoring-alertmanager-tls
-  grafana: monitoring-grafana-tls
+  grafana-tls: monitoring-grafana-tls
+  # env vars in data source configs
+  grafana-env: monitoring-grafana-env
   scraper: monitoring-scraper-tls
   etcd: monitoring-etcd-tls
   oauth-proxy: monitoring-oauth-proxy
@@ -103,10 +108,10 @@ thanos_config_secret_data:
 thanos_metrics_auth:
   username:
     name: "{{ monitoring_secrets['credentials'] }}"
-    key: thanos-metrics-username
+    key: thanos-scraper-username
   password:
     name: "{{ monitoring_secrets['credentials'] }}"
-    key: thanos-metrics-password
+    key: thanos-scraper-password
 
 # "alertmanager-prometheus-stack-alertmanager" Secret:
 # https://prometheus.io/docs/alerting/latest/configuration
@@ -237,6 +242,8 @@ monitoring_oauth2_proxy_config: |
   {% endfor  %}
   {{ configs }}
 
+# ServiceMonitor spec.endpoints[].tlsConfig
+#     PodMonitor spec.podMetricsEndpoints[].tlsConfig
 metric_scraper_tls_config:
   cert: # SecretOrConfigMap
     secret:
@@ -397,8 +404,10 @@ prometheus_stack_chart_values:
         # https://prometheus.io/docs/prometheus/latest/feature_flags#concurrent-evaluation-of-independent-rules
         - concurrent-rule-eval
 
-      # allow default "pull" model only
-      enableRemoteWriteReceiver: false
+      # allow remote writing capability
+      # by Tempo metrics-generator, etc.
+      enableRemoteWriteReceiver: true
+      enableOTLPReceiver: true
 
       externalUrl: https://{{ monitoring_fqdns['prometheus'] | first }}
 
@@ -429,18 +438,18 @@ prometheus_stack_chart_values:
           clientAuthType: RequestClientCert
 
       volumes:
-        - name: tls-server
+        - name: server-tls
           secret:
             secretName: "{{ monitoring_secrets['prometheus'] }}"
-        - name: tls-scraper
+        - name: scraper-tls
           secret:
             secretName: "{{ monitoring_secrets['scraper'] }}"
-        - name: tls-etcd # scraper
+        - name: etcd-tls # scraper
           secret:
             secretName: "{{ monitoring_secrets['etcd'] }}"
         # provide Thanos certs for gRPC server and
         # for verifying MinIO's server certificate
-        - name: tls-thanos
+        - name: thanos-tls
           secret:
             secretName: "{{ monitoring_secrets['thanos-tls'] }}"
         # provide Thanos file for --http.config
@@ -454,13 +463,13 @@ prometheus_stack_chart_values:
       # mounts for all containers except extras
       # like "thanos-sidecar" and "oauth-proxy"
       volumeMounts:
-        - name: tls-server
+        - name: server-tls
           mountPath: /tls/server
           readOnly: true
-        - name: tls-scraper
+        - name: scraper-tls
           mountPath: /tls/scraper
           readOnly: true
-        - name: tls-etcd
+        - name: etcd-tls
           mountPath: /tls/etcd
           readOnly: true
 
@@ -477,7 +486,7 @@ prometheus_stack_chart_values:
         # perform merge patch on operator-generated "thanos-sidecar"
         - name: thanos-sidecar
           volumeMounts:
-            - name: tls-thanos
+            - name: thanos-tls
               mountPath: /tls/thanos
               readOnly: true
             - name: thanos-config
@@ -501,7 +510,7 @@ prometheus_stack_chart_values:
             - --config=/etc/oauth2-proxy.cfg
 
           volumeMounts:
-            - name: tls-server
+            - name: server-tls
               mountPath: /tls/server
               readOnly: true
             - name: oauth-proxy
@@ -527,7 +536,7 @@ prometheus_stack_chart_values:
             config:
               # both bucket and user are
               # created by vars/minio.yml
-              bucket: metrics
+              bucket: telemetry
               endpoint: "{{ minio_service_host }}"
               region: "{{ minio_region }}"
               access_key: thanos
@@ -538,6 +547,7 @@ prometheus_stack_chart_values:
                   cert_file: /tls/thanos/tls.crt
                   key_file: /tls/thanos/tls.key
                   ca_file: /tls/thanos/ca.crt
+            prefix: metrics/
 
         grpcServerTlsConfig:
           # https://github.com/prometheus-operator/prometheus-operator/tree/main/Documentation/api-reference/api.md#tlsconfig
@@ -743,7 +753,7 @@ prometheus_stack_chart_values:
       tlsConfig: *alerts_tls
 
       volumes:
-        - name: tls-server
+        - name: server-tls
           secret:
             secretName: "{{ monitoring_secrets['alertmanager'] }}"
         - name: oauth-proxy
@@ -773,7 +783,7 @@ prometheus_stack_chart_values:
             - --config=/etc/oauth2-proxy.cfg
 
           volumeMounts:
-            - name: tls-server
+            - name: server-tls
               mountPath: /tls/server
               readOnly: true
             - name: oauth-proxy
@@ -836,8 +846,8 @@ prometheus_stack_chart_values:
     defaultDashboardsInterval: 5m
 
     # settings below are defined by Grafana Helm chart:
-    # https://github.com/grafana/helm-charts/tree/main/charts/grafana
-    # https://github.com/grafana/helm-charts/tree/main/charts/grafana/values.yaml
+    # https://github.com/grafana-community/helm-charts/tree/main/charts/grafana
+    # https://github.com/grafana-community/helm-charts/tree/main/charts/grafana/values.yaml
     replicas: 1
     revisionHistoryLimit: 2
 
@@ -849,13 +859,14 @@ prometheus_stack_chart_values:
     # https://docs.grafana.org/installation/configuration
     grafana.ini:
       # maps at this level correspond to INI file sections:
-      # https://github.com/grafana/helm-charts/tree/main/charts/grafana/templates/_config.tpl
+      # https://github.com/grafana-community/helm-charts/tree/main/charts/grafana/templates/_config.tpl
       server:
         # https://grafana.com/docs/grafana/latest/setup-grafana/set-up-https#configure-grafana-https-and-restart-grafana
         # https://grafana.com/docs/grafana/latest/setup-grafana/configure-grafana#server
         protocol: https
         cert_file: /tls/server/tls.crt
         cert_key: /tls/server/tls.key
+
       # https://grafana.com/docs/grafana/latest/setup-grafana/configure-grafana#security
       security:
         admin_user: "{{ user_erhhung.username }}"
@@ -865,22 +876,7 @@ prometheus_stack_chart_values:
         strict_transport_security: true
         allow_embedding: true
 
-    readinessProbe:
-      httpGet:
-        scheme: HTTPS
-    livenessProbe:
-      httpGet:
-        scheme: HTTPS
-
-    persistence:
-      enabled: true
-      type: StatefulSet
-      storageClassName: "{{ storage_classes['default'] }}"
-      accessModes: ["ReadWriteOnce"]
-      size: 2Gi
-      # allow PVC deletion when
-      # Helm release is deleted
-      finalizers: []
+    envFromSecret: "{{ monitoring_secrets['grafana-env'] }}"
 
     resources:
       requests:
@@ -889,6 +885,13 @@ prometheus_stack_chart_values:
       limits:
         cpu: 500m
         memory: 1Gi
+
+    readinessProbe:
+      httpGet:
+        scheme: HTTPS
+    livenessProbe:
+      httpGet:
+        scheme: HTTPS
 
     # run sidecars to watch for ConfigMaps and/or
     # Secrets containing dashboards/data sources:
@@ -934,52 +937,29 @@ prometheus_stack_chart_values:
       notifiers:
         enabled: false
 
-    # https://grafana.com/docs/grafana/latest/administration/provisioning#datasources
-    # https://boredconsultant.com/2022/06/27/Grafana-Datasource-With-Custom-CA-Certificate
-    additionalDataSources:
-      - name: Prometheus
-        type: prometheus
-        uid: prometheus
-        # url: https://{{ monitoring_release_name }}-prometheus.{{
-        #   monitoring_namespace }}.svc.{{ cluster_domain }}:9090
-        # Thanos Query Frontend requires downstream Tripper config with tls_config settings!
-        url: https://thanos-query-frontend.{{ monitoring_namespace }}.svc.{{ cluster_domain }}:9090
-        access: proxy
-        # apparently Grafana ignores basic auth settings if data source access is proxy:
-        # https://github.com/grafana/grafana/tree/main/pkg/api/frontendsettings.go#L517
-        basicAuth: true
-        basicAuthUser: grafana
-        withCredentials: true
-        jsonData:
-          timeInterval: 30s
-          prometheusType: Thanos
-          tlsAuthWithCACert: true
-          # need to provide basic auth credentials using
-          # Authorization header (.secureJsonData value):
-          # https://grafana.com/docs/grafana/latest/administration/provisioning#custom-http-headers-for-data-sources
-          httpHeaderName1: Authorization
-        secureJsonData:
-          tlsCACert: "{{ ca_certificates | join('\n') }}"
-          basicAuthPassword: "{{ monitoring_passwords['grafana'] }}"
-          httpHeaderValue1: Basic {{ ('grafana:'~ monitoring_passwords['grafana']) | b64encode }}
-        isDefault: true
+    # data sources are defined in "vars/grafana.yml"
+    additionalDataSources: "{{ grafana_data_sources }}"
 
-      - name: Alertmanager
-        type: alertmanager
-        uid: alertmanager
-        url: https://{{ monitoring_release_name }}-alertmanager.{{
-          monitoring_namespace }}.svc.{{ cluster_domain }}:9093
-        access: proxy
-        jsonData:
-          tlsAuthWithCACert: true
-          implementation: prometheus
-          handleGrafanaManagedAlerts: false
-        secureJsonData:
-          tlsCACert: "{{ ca_certificates | join('\n') }}"
+    # https://grafana.com/docs/grafana/latest/administration/plugin-management/plugin-install#install-plugins-using-the-grafana-helm-chart
+    plugins:
+      # https://grafana.com/docs/plugins/grafana-opensearch-datasource
+      - grafana-opensearch-datasource
+      # https://grafana.com/docs/plugins/grafana-github-datasource
+      - grafana-github-datasource
+
+    persistence:
+      enabled: true
+      type: StatefulSet
+      storageClassName: "{{ storage_classes['default'] }}"
+      accessModes: ["ReadWriteOnce"]
+      size: 2Gi
+      # allow PVC deletion when
+      # Helm release is deleted
+      finalizers: []
 
     extraSecretMounts:
-      - name: tls-server
-        secretName: "{{ monitoring_secrets['grafana'] }}"
+      - name: server-tls
+        secretName: "{{ monitoring_secrets['grafana-tls'] }}"
         mountPath: /tls/server
         readOnly: true
 
@@ -994,7 +974,7 @@ prometheus_stack_chart_values:
     ingress:
       enabled: true
       tls:
-        - secretName: "{{ monitoring_secrets['grafana'] }}"
+        - secretName: "{{ monitoring_secrets['grafana-tls'] }}"
           hosts: "{{ monitoring_fqdns['grafana'] }}"
       ingressClassName: "{{ rke_ingress_class }}"
       annotations:
@@ -1049,7 +1029,7 @@ prometheus_stack_chart_values:
     volumes:
       # volume to be mounted in
       # kube-rbac-proxy sidecar
-      - name: tls-proxy
+      - name: proxy-tls
         secret:
           secretName: "{{ monitoring_secrets['prometheus'] }}"
 
@@ -1060,8 +1040,13 @@ prometheus_stack_chart_values:
       # https://github.com/prometheus-community/helm-charts/issues/5529
       enabled: false
 
+      image: &proxy-image
+        registry: quay.io
+        repository: brancz/kube-rbac-proxy
+        tag: v0.21.0
+
       volumeMounts:
-        - name: tls-proxy
+        - name: proxy-tls
           mountPath: /tls/proxy
           readOnly: true
 
@@ -1158,7 +1143,7 @@ prometheus_stack_chart_values:
         persistentVolumeClaim:
           claimName: prometheus-node-exporter-textfile
       # kube-rbac-proxy
-      - name: tls-proxy
+      - name: proxy-tls
         secret:
           secretName: "{{ monitoring_secrets['prometheus'] }}"
 
@@ -1290,9 +1275,10 @@ prometheus_stack_chart_values:
     # https://github.com/brancz/kube-rbac-proxy#usage
     kubeRBACProxy:
       enabled: true
+      image: *proxy-image
 
       extraVolumeMounts:
-        - name: tls-proxy
+        - name: proxy-tls
           mountPath: /tls/proxy
           readOnly: true
 

@@ -39,13 +39,16 @@ sanitize() (
     # https://mikefarah.gitbook.io/yq/usage/tips-and-tricks#logic-without-if-elif-else
     # https://mikefarah.gitbook.io/yq/operators/multiply-merge#objects-and-arrays-merging
 
+    # silently ignore non-parsable
+    # files (e.g. templated files)
     yq -i --header-preprocess=false '{} as $temp
       | with(select(kind == "map"); $temp.init = {})
       | with(select(kind == "seq"); $temp.init = [])
       | . as $item ireduce ($temp.init; . *d $item)
-      | "---\n\(to_yaml | trim)"' "$file"
+      | "---\n\(to_yaml | trim)"' \
+      "$file" 2> /dev/null || true
   done < <(
-    find "$1" \( -name '*.yaml' -o -name '*.yml' \)
+    find "$1" \( -name '*.yaml' -o -name '*.yml' \) -print
   )
 )
 for arg in "$@"; do

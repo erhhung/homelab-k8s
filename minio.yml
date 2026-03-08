@@ -202,11 +202,11 @@
 
         mkdir -p "$MC_CONFIG_DIR"
 
-        # check if alias "metrics" exists as it can`t be
-        # created until user of the same name is created
+        # check if "metrics" alias exists as it cannot be
+        # created until the "scraper" user has been added
         # https://min.io/docs/minio/linux/reference/minio-mc/mc-alias-list.html
         mc alias list --json | jq -r '.alias' | \
-           grep -q metrics && exit 9 # no change
+          grep -q metrics && exit 9 # no change
 
         # https://min.io/docs/minio/linux/reference/minio-mc/mc-alias-set.html
         mc alias set local \
@@ -216,11 +216,11 @@
 
         # https://min.io/docs/minio/linux/reference/minio-mc-admin/mc-admin-user-list.html
         mc admin user list local --json | jq -r .accessKey | \
-           grep -q metrics || exit 0 # skip if no metrics user
+          grep -q scraper || exit 0 # skip if no scraper user
 
         mc alias set metrics \
-           https://{{ minio_s3api_fqdn }} metrics \
-          '{{ minio_users['metrics'].secret_key }}'
+          https://{{ minio_s3api_fqdn }} scraper \
+          '{{ minio_users['scraper'].secret_key }}'
       args:
         executable: /bin/bash
       register: config_mc
@@ -344,7 +344,7 @@
           echo >&2 "Creating bucket: {{ bucket.name }}"
           mc mb {{ bucket.options | join(' ') if
                    bucket.options is defined and
-                   bucket.options is truthy }} \
+                   bucket.options is truthy  }} \
             local/{{ bucket.name }}
           rc=0
         }
@@ -372,6 +372,7 @@
           rc=0
         }
         {% endfor %}
+        sleep 3
 
         # get list of existing users:
         # https://min.io/docs/minio/linux/reference/minio-mc-admin/mc-admin-user-list.html
@@ -386,7 +387,8 @@
             '{{ user.secret_key }}'
           rc=0
 
-          {% if user.policies is defined and user.policies %}
+          {% if user.policies is defined and
+                user.policies is truthy  %}
           # https://min.io/docs/minio/linux/reference/minio-mc-admin/mc-admin-policy-attach.html
           mc admin policy attach local \
             {{ user.policies | join(' ') }} \

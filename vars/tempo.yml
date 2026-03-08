@@ -1,0 +1,295 @@
+tempo_namespace: observability
+jaeger_host_names: # aliases of "ingress"
+  - tracing
+  - jaeger
+
+# remember to add tracing.fourteeners.local and jaeger.fourteeners.local
+# to pfSense DNS as aliases of  ingress.fourteeners.local: 192.168.4.222
+# https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_filters.html#products
+jaeger_fqdns: "{{ jaeger_host_names | product(search_domains) | map('join','.') }}"
+
+tempo_service_host: "{{ tempo_release_name }}.{{
+  tempo_namespace }}.svc.{{ cluster_domain }}"
+tempo_http_port: 3200 #  HTTPS
+tempo_grpc_port: 9095 # non-TLS
+tempo_otlp_url: https://{{ tempo_service_host }}:{{ otlp_grpc_port }}
+tempo_datasource_url: https://{{ tempo_service_host }}:{{ tempo_http_port }}
+
+tempo_secrets:
+  s3-creds: tempo-s3-creds
+  # certificate for Tempo
+  # backend and Jaeger UI
+  ingress: jaeger-ingress-tls
+
+# https://github.com/grafana-community/helm-charts/tree/main/charts/tempo
+tempo_chart_version: "1.26.6"
+tempo_release_name: tempo
+
+# https://github.com/grafana-community/helm-charts/tree/main/charts/tempo/values.yaml
+tempo_chart_values:
+  replicas: 1
+  revisionHistoryLimit: 2
+
+  tempo:
+    # reduces Go GC churn
+    memBallastSizeMbs: 64
+    # disable multi-tenancy in homelab environment;
+    # if enabled, X-Scope-OrgID header is required
+    # on all requests from OTel collector exporter
+    # and Grafana datasource queries
+    multitenancyEnabled: false
+    # disable reporting anonymous
+    # usage data to Grafana Labs
+    reportingEnabled: false
+
+    # https://grafana.com/docs/tempo/latest/metrics-from-traces/metrics-generator
+    # https://grafana.com/docs/tempo/latest/metrics-from-traces/service_graphs
+    # https://grafana.com/docs/tempo/latest/configuration#metrics-generator
+    metricsGenerator:
+      enabled: true
+
+      processor:
+        local_blocks:
+          flush_to_storage: true
+          concurrent_blocks: 2
+
+      traces_storage:
+        path: /var/tempo/generator/traces
+      storage:
+        path: /var/tempo/generator/metrics
+
+        # https://prometheus.io/docs/prometheus/latest/configuration/configuration#remote_write
+        remote_write:
+          - name: "{{ monitoring_release_name }}"
+            url: "{{ prometheus_service_url }}"
+
+    retention: 24h
+    # https://grafana.com/docs/tempo/latest/configuration#storage
+    storage:
+      trace:
+        wal:
+          path: /var/tempo/wal
+
+        backend: s3 # local|s3|gcs|azure
+        # https://grafana.com/docs/tempo/latest/configuration/hosted-storage/s3
+        s3:
+          bucket: telemetry
+          prefix: traces/
+          endpoint: "{{ minio_service_host }}"
+          region: "{{ minio_region }}"
+          forcepathstyle: true
+          access_key: tempo
+          # https://grafana.com/docs/tempo/latest/configuration#use-environment-variables-in-the-configuration
+          secret_key: ${MINIO_SECRET_KEY}
+          tls_ca_path: /tls/ca.crt
+
+        # blocklist_poll must be less than
+        # ingester.complete_block_timeout
+        blocklist_poll: 5m
+
+    # https://grafana.com/docs/tempo/latest/configuration#server
+    server:
+      # query frontend for Grafana datasource
+      http_listen_port: "{{ tempo_http_port }}"
+
+      # NOTE: old tempo-query only works
+      # with HTTP backend/query-frontend
+      # https://grafana.com/docs/tempo/latest/configuration/network/tls
+      http_tls_config: # &tls-config
+        cert_file: /tls/tls.crt
+        key_file: /tls/tls.key
+        client_auth_type: VerifyClientCertIfGiven
+        client_ca_file: /tls/ca.crt
+
+      # inter-component communications
+      # (microservice deployment only)
+      grpc_listen_port: "{{ tempo_grpc_port }}"
+      # grpc_tls_config: *tls-config
+
+    # distributors receive spans and
+    # forward them to the ingesters:
+    # https://grafana.com/docs/tempo/latest/configuration#distributor
+    receivers:
+      otlp:
+        protocols:
+          grpc: &otlp-receiver
+            endpoint: 0.0.0.0:{{ otlp_grpc_port }}
+            # https://grafana.com/docs/tempo/latest/configuration/network/tls#receiver-tls
+            tls:
+              cert_file: /tls/tls.crt
+              key_file: /tls/tls.key
+              ca_file: /tls/ca.crt
+          http:
+            <<: *otlp-receiver
+            endpoint: 0.0.0.0:{{ otlp_http_port }}
+
+    # ingester is responsible for batching
+    # up traces & pushing them to TempoDB:
+    # https://grafana.com/docs/tempo/latest/configuration#ingester
+    ingester:
+      trace_live_period: 30s
+      trace_idle_period: 10s
+      flush_check_period: 10s
+      max_block_bytes: 524288000 # 500 MB
+      max_block_duration: 60m
+      complete_block_timeout: 10m
+
+    # querier is responsible for querying
+    # the backends/cache for the traceID:
+    # https://grafana.com/docs/tempo/latest/configuration#querier
+    querier:
+      frontend_worker:
+        frontend_address: 127.0.0.1:{{ tempo_grpc_port }}
+      max_concurrent_queries: 10
+
+    # query-frontend is responsible for sharding
+    # incoming requests for faster processing in
+    # parallel (by the queriers):
+    # https://grafana.com/docs/tempo/latest/configuration#query-frontend
+    queryFrontend:
+      search:
+        concurrent_jobs: 10
+        target_bytes_per_job: 104857600 # 100 MB
+        max_duration: 72h # 3 days
+        query_backend_after: 15m
+        query_ingesters_until: 30m
+
+    securityContext: &security
+      capabilities:
+        drop: ["ALL"]
+      allowPrivilegeEscalation: false
+      readOnlyRootFilesystem: true
+      runAsNonRoot: true
+
+    resources:
+      requests:
+        cpu: 20m
+        memory: 128Mi
+
+    readinessProbe: &probe
+      httpGet:
+        scheme: HTTPS
+    livenessProbe: *probe
+
+    extraArgs:
+      # https://grafana.com/docs/tempo/latest/configuration#use-environment-variables-in-the-configuration
+      config.expand-env: "true"
+
+    extraEnvFrom:
+      - secretRef:
+          name: "{{ tempo_secrets['s3-creds'] }}"
+
+    extraVolumeMounts:
+      - name: tls
+        mountPath: /tls
+        readOnly: true
+
+  extraVolumes:
+    - name: tls
+      secret:
+        secretName: "{{ tempo_secrets['ingress'] }}"
+        defaultMode: 416 # "0640"
+
+  persistence:
+    enabled: true
+    enableStatefulSetAutoDeletePVC: true
+
+    storageClassName: "{{ storage_classes['default'] }}"
+    accessModes: ["ReadWriteOnce"]
+    # min XFS volume size is 300Mi
+    size: 384Mi
+
+  # IMPORTANT! recent versions of tempo-query (>= v2.6.1) no longer
+  # exposes Jaeger UI on port 16686 (only a Jaeger-compatible query
+  # API on non-TLS gRPC port 7777) but this chart still hasn't been
+  # updated to reflect that; the old tempo-query can also only talk
+  # to non-TLS HTTP backend/query-frontend (NOT configured above!):
+  # https://grafana.com/docs/tempo/latest/release-notes/v2-6#other-breaking-changes
+  tempoQuery:
+    enabled: false
+
+    repository: docker.io/grafana/tempo-query
+    tag: 2.6.0 # last version with Jaeger UI
+
+    securityContext:
+      <<: *security
+      # Jaeger needs writable /tmp
+      readOnlyRootFilesystem: false
+
+    resources:
+      requests:
+        cpu: 10m
+        memory: 32Mi
+
+    ingress:
+      enabled: false
+      tls:
+        - secretName: "{{ tempo_secrets['ingress'] }}"
+          hosts: "{{ jaeger_fqdns }}"
+      ingressClassName: "{{ rke_ingress_class }}"
+      annotations:
+        nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+        nginx.ingress.kubernetes.io/backend-protocol: HTTP
+      hosts: "{{ jaeger_fqdns }}"
+      pathType: Prefix
+      path: /
+
+  serviceMonitor:
+    enabled: true
+    interval: 30s
+    additionalLabels:
+      release: "{{ monitoring_release_name }}"
+
+  # besides `stream_over_http_enabled`, all other
+  # templated config are from default values.yaml
+  config: |
+    # https://grafana.com/docs/tempo/latest/traceql/query-editor#stream-query-results
+    stream_over_http_enabled: true
+
+    {%- raw %}
+    memberlist:
+      cluster_label: "{{ .Release.Name }}.{{ .Release.Namespace }}"
+    multitenancy_enabled: {{ .Values.tempo.multitenancyEnabled }}
+    usage_report:
+      reporting_enabled: {{ .Values.tempo.reportingEnabled }}
+    compactor:
+      compaction:
+        block_retention: {{ .Values.tempo.retention }}
+    distributor:
+      receivers:
+        {{- toYaml .Values.tempo.receivers | nindent 4 }}
+    ingester:
+      {{- toYaml .Values.tempo.ingester | nindent 2 }}
+    server:
+      {{- toYaml .Values.tempo.server | nindent 2 }}
+    storage:
+      {{- toYaml .Values.tempo.storage | nindent 2 }}
+    querier:
+      {{- toYaml .Values.tempo.querier | nindent 2 }}
+    query_frontend:
+      {{- toYaml .Values.tempo.queryFrontend | nindent 2 }}
+    overrides:
+      {{- toYaml .Values.tempo.overrides | nindent 2 }}
+      {{- if .Values.tempo.metricsGenerator.enabled }}
+    metrics_generator:
+      {{- if .Values.tempo.metricsGenerator.processor }}
+      processor:
+        {{- toYaml .Values.tempo.metricsGenerator.processor | nindent 4 }}
+      {{- end }}
+      {{- if .Values.tempo.metricsGenerator.registry }}
+      registry:
+        {{- toYaml .Values.tempo.metricsGenerator.registry | nindent 4 }}
+      {{- end }}
+      storage:
+        path: {{ .Values.tempo.metricsGenerator.storage.path | quote }}
+        {{- if .Values.tempo.metricsGenerator.storage.remote_write }}
+        remote_write:
+          {{- toYaml .Values.tempo.metricsGenerator.storage.remote_write | nindent 6 }}
+        {{- else }}
+        remote_write:
+          - url: {{ .Values.tempo.metricsGenerator.remoteWriteUrl }}
+        {{- end }}
+      traces_storage:
+        path: {{ .Values.tempo.metricsGenerator.traces_storage.path | quote }}
+      {{- end }}
+    {%- endraw %}

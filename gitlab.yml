@@ -61,7 +61,7 @@
         secret_name: "{{ gitlab_secrets['node-tls'] }}"
         create_ns: true
         cert_name: gitlab-node
-        sans_:
+        sans:
           - gitlab-node
           - "{{ gitlab_fqdns.values() }}"
           - "*.{{ gitlab_fqdns['pages'] }}"
@@ -76,7 +76,6 @@
           - "{{ ['*'] | product(svc_domains) | map('join','.') }}"
           # workhorse to webservice
           - localhost
-        sans: "{{ sans_ | flatten }}"
       ansible.builtin.include_tasks: tasks/k8s/secrets/tls.step.yml
 
     # https://docs.gitlab.com/runner/install/kubernetes_helm_chart_configuration#access-gitlab-with-a-custom-certificate

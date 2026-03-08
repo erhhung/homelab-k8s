@@ -74,7 +74,9 @@
   tags: issuer
   hosts: *hosts
   vars_files: *vars_files
-  vars: *vars
+  vars:
+    <<: *vars
+    password_ref: "{{ step_issuer_chart_values.stepClusterIssuer.provisioner.passwordRef }}"
   pre_tasks:
     - name: Gather facts about controller
       ansible.builtin.include_tasks: tasks/localfacts.yml
@@ -105,20 +107,16 @@
   tasks:
     - name: Create CA provisioner secret
       vars:
-        passwordRef: "{{ step_issuer_chart_values.stepClusterIssuer.provisioner.passwordRef }}"
-        secret_name: "{{ passwordRef.name }}"
+        secret_name: "{{ password_ref.name }}"
         secret_ns: "{{ step_issuer_namespace }}"
         create_ns: false
         secret_data: "{{ {
-          passwordRef.key: step_ca_provisioner_pass
+          password_ref.key: step_ca_provisioner_pass
           } }}"
       ansible.builtin.include_tasks: tasks/k8s/secrets/generic.yml
 
     - name: Install Step Issuer Helm chart
       vars:
-        passwordRef: "{{ step_issuer_chart_values.stepClusterIssuer.provisioner.passwordRef }}"
-
-        # === Inputs ===
         repo_name: smallstep
         repo_url: https://smallstep.github.io/helm-charts
         chart_ref: step-issuer
@@ -128,5 +126,5 @@
         values: "{{ step_issuer_chart_values }}"
 
         extras: # adopt extra resources into Helm release
-          - v1 Secret {{ passwordRef.name }}
+          - v1 Secret {{ password_ref.name }}
       ansible.builtin.include_tasks: tasks/helm/helmfile.yml

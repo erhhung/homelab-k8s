@@ -23,7 +23,7 @@
         secret_name: "{{ qdrant_secrets['node-tls'] }}"
         create_ns: true
         cert_name: qdrant-node
-        sans_:
+        sans:
           - qdrant-node
           - "{{ qdrant_fqdn }}"
           - "*.{{ qdrant_namespace }}.svc.{{ cluster_domain }}"
@@ -39,7 +39,6 @@
             {%   set _ = sans.append(qdrant_release_name ~'-'~ i ~'.qdrant-headless') %}
             {% endfor %}
             {{ sans   }}
-        sans: "{{ sans_ | flatten }}"
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
       ansible.builtin.include_tasks: tasks/k8s/secrets/tls.step.yml
 

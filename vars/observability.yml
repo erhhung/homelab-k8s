@@ -1,0 +1,332 @@
+observability_namespace: observability
+
+otlp_host_name: otlp # 192.168.4.226
+otlp_grpc_port: 4317
+otlp_http_port: 4318
+
+# https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_filters.html#products
+otlp_fqdn: "{{ [otlp_host_name] | product(search_domains) | map('join','.') | first }}"
+
+otlp_service_host: "{{ otel_collector_name }}.{{
+  observability_namespace }}.svc.{{ cluster_domain }}"
+otlp_service_url: https://{{ otlp_service_host }}:{{ otlp_grpc_port }}
+
+observability_secrets:
+  service: otel-collector-service-tls
+
+observability_configmaps:
+  rbac-proxy: otel-operator-kube-rbac-proxy-config
+
+otel_collector_name: otel-gateway-collector
+# define common labels applied to external
+# LoadBalancer service and ServiceMonitors
+otel_collector_labels:
+  app.kubernetes.io/name: "{{ otel_collector_name }}"
+  app.kubernetes.io/instance: "{{ observability_namespace }}.{{
+    otel_collector_name | replace('-collector','') }}"
+  app.kubernetes.io/version: "{{ otel_collector_image_tag |
+    default(otel_operator_app_version) }}"
+  app.kubernetes.io/component: opentelemetry-collector
+  app.kubernetes.io/part-of: opentelemetry
+
+# comment out otel_collector_image_tag setting below to use
+# the same tag as OTel Operator (recommended), which is the
+# chart's .appVersion set as otel_operator_app_version fact
+# https://github.com/open-telemetry/opentelemetry-collector-releases/pkgs/container/opentelemetry-collector-releases%2Fopentelemetry-collector-contrib/versions?filters%5Bversion_type%5D=tagged
+otel_collector_image_tag: "0.147.0"
+
+# https://opentelemetry.io/docs/platforms/kubernetes/helm/operator
+otel_operator_namespace: otel-operator
+# https://github.com/open-telemetry/opentelemetry-helm-charts/tree/main/charts/opentelemetry-operator
+otel_operator_chart_repo_url: https://open-telemetry.github.io/opentelemetry-helm-charts
+otel_operator_chart_version: "0.106.0"
+otel_operator_release_name: otel-operator
+
+# https://github.com/open-telemetry/opentelemetry-helm-charts/tree/main/charts/opentelemetry-operator/values.yaml
+otel_operator_chart_values:
+  nameOverride: "{{ otel_operator_release_name }}"
+  revisionHistoryLimit: 2
+
+  crds:
+    create: true
+  role:
+    create: true
+  clusterRole:
+    create: true
+  clusterDomain: "{{ cluster_domain }}"
+
+  manager:
+    # https://github.com/open-telemetry/opentelemetry-operator/tree/main/pkg/featuregate/featuregate.go
+    featureGatesMap: {}
+      # operator.golang.flags: false
+
+    # RBAC perms for collectors
+    createRbacPermissions: true
+
+    env: null # deprecated
+    extraEnvs:
+      - name: ENABLE_WEBHOOKS
+        value: "true"
+
+    resources:
+      requests:
+        cpu: 5m
+        memory: 64Mi
+
+    serviceMonitor:
+      enabled: true
+      extraLabels:
+        release: "{{ monitoring_release_name }}"
+      metricsEndpoints:
+        - port: https # kube-rbac-proxy port
+          scheme: https
+          path: /metrics
+          interval: 60s
+          tlsConfig: "{{ metric_scraper_tls_config }}"
+
+  # https://github.com/brancz/kube-rbac-proxy#usage
+  kubeRBACProxy:
+    enabled: true
+
+    image:
+      repository: quay.io/brancz/kube-rbac-proxy
+      tag: v0.21.0
+
+    extraArgs:
+      - --tls-cert-file=/tls/proxy/tls.crt
+      - --tls-private-key-file=/tls/proxy/tls.key
+      - --client-ca-file=/tls/proxy/ca.crt
+      - --config-file=/etc/kube-rbac-proxy/config.yaml
+
+    # not actually supported chart value
+    # (will be patched by Helmfile task)
+    extraVolumeMounts:
+      - name: proxy-tls
+        mountPath: /tls/proxy
+        readOnly: true
+      - name: proxy-config
+        mountPath: /etc/kube-rbac-proxy
+        readOnly: true
+
+  # admission webhooks make sure only
+  # requests with correctly formatted
+  # rules will be handled by Operator
+  admissionWebhooks:
+    create: true
+    certManager:
+      # use a self-signed cert because chart
+      # template doesn't support enough spec
+      # fields required by StepClusterIssuer
+      enabled: true
+
+  # not actually supported chart value
+  # (will be patched by Helmfile task)
+  extraVolumes:
+    # volume to be mounted in
+    # kube-rbac-proxy sidecar
+    - name: proxy-tls
+      secret:
+        secretName: "{{ monitoring_secrets['scraper'] }}"
+        defaultMode: 416 # "0640"
+    - name: proxy-config
+      configMap: # created by attached extraDeploy manifest
+        name: "{{ observability_configmaps['rbac-proxy'] }}"
+        defaultMode: 416 # "0640"
+
+  # not actually supported chart value
+  # (will be adopted into Helm release)
+  extraDeploy:
+    # create kube-rbac-proxy auth "config.yaml"
+    # so Prometheus can scrape Operator metrics
+    - apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: "{{ observability_configmaps['rbac-proxy'] }}"
+      data:
+        config.yaml: |
+          authorization:
+            static:
+              - user: # cert CN
+                  name: {{ scraper_user.username }}
+                verb: get
+                resourceRequest: false
+                path: /metrics
+
+# https://opentelemetry.io/docs/platforms/kubernetes/operator
+# https://github.com/open-telemetry/opentelemetry-operator/tree/main/docs/api/opentelemetrycollectors.md#opentelemetryiov1beta1
+otel_collector_cr:
+  apiVersion: opentelemetry.io/v1beta1
+  kind: OpenTelemetryCollector
+  metadata:
+    # operator will append "-collector" suffix to all resources
+    name: "{{ otel_collector_name | replace('-collector','') }}"
+  spec:
+    # https://opentelemetry.io/docs/collector/deploy/gateway
+    mode: deployment
+
+    # use the official contrib image containing Prometheus exporter:
+    # https://github.com/open-telemetry/opentelemetry-collector-releases/tree/main/distributions/otelcol-contrib
+    image: >-
+      ghcr.io/open-telemetry/opentelemetry-collector-releases/opentelemetry-collector-contrib:{{
+      otel_collector_image_tag | default(otel_operator_app_version) }}
+
+    # https://opentelemetry.io/docs/collector/configuration#basics
+    configVersions: 1
+    config:
+      # receiver ingests its own format and translates traces, metrics,
+      # and/or logs into the collector's internal telemetry model, then
+      # processors and exporters operate on that common representation:
+      # https://opentelemetry.io/docs/collector/configuration#receivers
+      receivers:
+        otlp:
+          protocols:
+            # https://github.com/open-telemetry/opentelemetry-collector/tree/main/config/configgrpc#server-configuration
+            grpc: &otlp-receiver
+              endpoint: 0.0.0.0:{{ otlp_grpc_port }}
+              # https://github.com/open-telemetry/opentelemetry-collector/tree/main/config/configtls
+              tls:
+                cert_file: /tls/otlp/tls.crt
+                key_file: /tls/otlp/tls.key
+                ca_file: /tls/otlp/ca.crt
+            # https://github.com/open-telemetry/opentelemetry-collector/tree/main/config/confighttp#server-configuration
+            http:
+              <<: *otlp-receiver
+              endpoint: 0.0.0.0:{{ otlp_http_port }}
+
+      # https://opentelemetry.io/docs/collector/configuration#processors
+      # https://github.com/open-telemetry/opentelemetry-collector/tree/main/processor#recommended-processors
+      processors:
+        # https://github.com/open-telemetry/opentelemetry-collector/tree/main/processor/memorylimiterprocessor
+        memory_limiter:
+          check_interval: 5s
+          limit_mib: 1024
+          spike_limit_mib: 256
+
+        # https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/processor/filterprocessor
+        filter:
+          error_mode: ignore
+          metric_conditions:
+            # drop datapoints from Open WebUI routes /_app, /static,
+            # and /health as they're quite chatty but not so useful
+            - conditions:
+                - metric.name == "http_server_duration_milliseconds" and IsMatch(
+                  datapoint.attributes["http.route"], "^/(_app|static|health)/" )
+
+        # https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/processor/k8sattributesprocessor
+        k8sattributes:
+          pod_association:
+            - sources:
+                - from: connection
+          extract:
+            metadata:
+              - k8s.namespace.name
+              - k8s.pod.name
+              # container name may not be available: per docs, either
+              # container.id  or k8s.container.name attribute must be
+              # provided in incoming resource attributes to associate
+              # matching container to resource
+              - k8s.container.name
+
+        # https://github.com/open-telemetry/opentelemetry-collector/tree/main/processor/batchprocessor
+        batch:
+          timeout: 5s
+          send_batch_size: 1024
+
+      # https://opentelemetry.io/docs/collector/configuration#exporters
+      exporters:
+        # https://github.com/open-telemetry/opentelemetry-collector/tree/main/exporter/debugexporter
+        debug:
+          verbosity: normal # basic|normal|detailed
+          sampling_initial: 100
+          sampling_thereafter: 10
+
+        otlp_grpc/tempo:
+          endpoint: "{{ tempo_otlp_url }}"
+          tls:
+            ca_file: /tls/otlp/ca.crt
+
+        # https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/exporter/prometheusexporter
+        prometheus:
+          # port 8888 via the collector's "monitoring"
+          # service is for exposing metrics about the
+          # collector itself, not for relayed metrics
+          endpoint: 0.0.0.0:8889
+          metric_expiration: 10m
+
+      # https://opentelemetry.io/docs/collector/configuration#service
+      service:
+        pipelines:
+          traces: &otlp-pipeline
+            receivers:
+              - otlp
+            # per docs, this is
+            # recommended order
+            processors:
+              - memory_limiter
+              - filter
+              - k8sattributes
+              - batch
+            exporters:
+              # - debug
+              - otlp_grpc/tempo
+          metrics:
+            <<: *otlp-pipeline
+            exporters:
+              # - debug
+              - prometheus
+
+    resources:
+      requests:
+        cpu: 5m
+        memory: 32Mi
+
+    volumes:
+      - name: otlp-tls
+        secret:
+          secretName: "{{ observability_secrets['service'] }}"
+          defaultMode: 416 # "0640"
+
+    volumeMounts:
+      - name: otlp-tls
+        mountPath: /tls/otlp
+        readOnly: true
+
+    # enable ServiceMonitors to scrape metrics for both
+    # the collector itself and the Prometheus exporter:
+    # https://github.com/open-telemetry/opentelemetry-operator/tree/main/docs/api/opentelemetrycollectors.md#opentelemetrycollectorspecobservability
+    observability:
+      metrics:
+        # since the CR spec provides no knobs
+        # to fine-tune ServiceMonitor configs,
+        # we'll just deploy our own resources
+        enableMetrics: false
+        extraLabels:
+          release: "{{ monitoring_release_name }}"
+        disablePrometheusAnnotations: true
+
+# OpenTelemetry Operator's OpenTelemetryCollector
+# CR `spec.ingress` makes it hard to support both
+# OTLP HTTP + gRPC endpoints, so use LoadBalancer
+otlp_lb_service:
+  apiVersion: v1
+  kind: Service
+  metadata:
+    name: "{{ otel_collector_name }}-external"
+    labels: "{{ otel_collector_labels }}"
+    annotations:
+      # replaces to-be-deprecated .spec.loadBalancerIP field
+      metallb.io/loadBalancerIPs: "{{ metallb_vips['otlp'] }}"
+  spec:
+    type: LoadBalancer
+    selector: "{{ otel_collector_labels }}"
+    ports:
+      - name: otlp-grpc # convention
+        port: "{{ otlp_grpc_port }}"
+        protocol: TCP
+        targetPort: "{{ otlp_grpc_port }}"
+        appProtocol: grpcs
+      - name: otlp-http # convention
+        port: "{{ otlp_http_port }}"
+        protocol: TCP
+        targetPort: "{{ otlp_http_port }}"
+        appProtocol: https

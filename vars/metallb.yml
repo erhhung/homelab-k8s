@@ -20,7 +20,11 @@ metallb_vips:
   # Valkey creates a LoadBalancer Service
   # for each node, so reserve 6 IPs total
   valkey: 192.168.4.231 # ..192.168.4.236
-  ollama: 192.168.4.226 # HTTP port 11434
+  # HTTPS port 4318
+  # gRPCs port 4317
+  otlp: 192.168.4.226
+  # HTTP port 11434
+  ollama: 192.168.4.227
 
 metallb_namespace: metallb-system
 

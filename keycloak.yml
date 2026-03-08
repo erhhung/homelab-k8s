@@ -72,11 +72,10 @@
         secret_name: "{{ keycloak_secrets['ingress'] }}"
         create_ns: true
         cert_name: keycloakx-ingress
-        sans_:
+        sans:
           - "{{ keycloak_fqdns }}"
           - "*.{{ keycloak_namespace }}.svc.{{ cluster_domain }}"
           - "*.{{ keycloak_namespace }}.svc"
-        sans: "{{ sans_ | flatten }}"
       ansible.builtin.include_tasks: tasks/k8s/secrets/tls.step.yml
 
     - name: Create Keycloak database secret

@@ -6,13 +6,24 @@ import base64
 class FilterModule(object):
     def filters(self):
         return {
+            "append": self.append,
+            "prepend": self.prepend,
             "to_toml": self.to_toml,
             "b64_decode_k8s_secret": self.b64_decode_k8s_secret,
         }
 
+    def append(self, str, suffix) -> str:
+        "add suffix to string"
+        return str + suffix
+
+    def prepend(self, str, prefix) -> str:
+        "add prefix to string"
+        return prefix + str
+
     # https://www.iops.tech/blog/generate-toml-using-ansible-template
-    def to_toml(self, o) -> str:
-        s = json.dumps(dict(o))
+    def to_toml(self, obj) -> str:
+        "convert dict to TOML string"
+        s = json.dumps(dict(obj))
         d = json.loads(s)
         return toml.dumps(d)
 

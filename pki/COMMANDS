@@ -228,6 +228,16 @@ cd "$HOME"
    \*.monitoring.svc.cluster.local \
    \*.monitoring.svc
 
+./cert.sh --exp=365               otlp.fourteeners.local \
+  otel-gateway-collector.observability.svc.cluster.local \
+  otel-gateway-collector.observability.svc
+
+./cert.sh --exp=365 \
+              tracing.fourteeners.local \
+               jaeger.fourteeners.local \
+  tempo.observability.svc.cluster.local \
+  tempo.observability.svc
+
 ./cert.sh --exp=365 \
   kiali.fourteeners.local \
   istio.fourteeners.local
@@ -264,6 +274,14 @@ cd "$HOME"
 
 ./cert.sh --exp=365 \
   ollama.fourteeners.local
+
+./cert.sh --exp=365 \
+  searxng.fourteeners.local \
+    searx.fourteeners.local \
+   search.fourteeners.local
+
+./cert.sh --exp=365 \
+  playwright.fourteeners.local
 
 ./cert.sh --exp=365 \
           --out=litellm_db \

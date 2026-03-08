@@ -244,6 +244,7 @@
         # also see templates/rke2/canal.yaml.j2
         - name: Patch Canal FelixConfiguration
           become: false
+          # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_module.html
           kubernetes.core.k8s:
             kubeconfig: "{{ rke_kubeconfig }}"
             api_version: crd.projectcalico.org/v1

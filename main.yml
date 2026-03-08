@@ -103,6 +103,16 @@
   ansible.builtin.import_playbook: thanos.yml
   tags: thanos
 
+# OpenTelemetry depends on cert-manager, Prometheus
+- name: Include OTel observability playbook
+  ansible.builtin.import_playbook: observability.yml
+  tags: observability
+
+# Tempo depends on MinIO, Prometheus, OpenTelemetry
+- name: Include Tempo tracing backend playbook
+  ansible.builtin.import_playbook: tempo.yml
+  tags: tempo
+
 # Kiali depends on Prometheus and Keycloak
 - name: Include Istio service mesh playbook
   ansible.builtin.import_playbook: istio.yml

@@ -10,6 +10,10 @@
     - vars/storage.yml
     - vars/minio.yml
     - vars/valkey.yml
+    - vars/thanos.yml
+    - vars/tempo.yml
+    - vars/grafana.yml
+    - vars/opensearch.yml
     - vars/monitoring.yml
   vars:
     # required kubernetes>=24.2 package only in user virtualenv
@@ -21,6 +25,7 @@
     # CA certs to be stored inline with Grafana data
     # source configs for Prometheus and Alertmanager
     - name: Get CA certificates from PKI
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
       ansible.builtin.include_tasks: tasks/pki/cacerts.yml
       when: ca_certificates is undefined
 
@@ -28,15 +33,14 @@
       vars:
         passwords: "{{ monitoring_passwords }}"
         fact_name: monitoring_passwords_hashed
-      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
       ansible.builtin.include_tasks: tasks/hashpwds.yml
 
     # add CORS headers to Grafana responses
     - name: Set grafana_ingress_snippet fact
       vars:
-        location_regex: ^/api
-        backend_url: https://{{ monitoring_release_name }}-grafana.{{
-          monitoring_namespace }}.svc.{{ cluster_domain }}
+        # exclude WebSocket API endpoint!
+        location_regex: ^/api(?!/live/ws)
+        backend_url: "{{ grafana_service_url }}"
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/set_fact_module.html
       ansible.builtin.set_fact:
         # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/template_lookup.html
@@ -74,7 +78,7 @@
         sans_:
           - "*.{{ monitoring_namespace }}.svc.{{ cluster_domain }}"
           - "*.{{ monitoring_namespace }}.svc"
-        sans: "{{ item.sans | flatten }}"
+        sans: "{{ item.sans }}"
       ansible.builtin.include_tasks: tasks/k8s/secrets/tls.step.yml
       loop:
         - name: prometheus
@@ -97,7 +101,7 @@
             - "{{ monitoring_fqdns['alertmanager'] }}"
             - "{{ sans_ }}"
             - 127.0.0.1
-        - name: grafana
+        - name: grafana-tls
           cert: monitoring-grafana
           sans:
             - "{{ monitoring_fqdns['grafana'] }}"
@@ -124,17 +128,30 @@
 
     - name: Create monitoring credentials secret
       vars:
-        passwords: "{{ monitoring_passwords }}"
         thanos: "{{ thanos_metrics_auth }}"
+        passwords: "{{ monitoring_passwords }}"
         grafana: "{{ prometheus_stack_chart_values.grafana }}"
+
+        # === Inputs ===
         secret_name: "{{ monitoring_secrets['credentials'] }}"
         secret_data: |
           {{ {
-             thanos.username.key:                 'metrics',
-             thanos.password.key:       passwords['metrics'],
+             thanos.username.key:                 'scraper',
+             thanos.password.key:       passwords['scraper'],
              grafana.admin.userKey:     grafana_admin_user,
              grafana.admin.passwordKey: grafana_admin_pass,
           } }}
+      ansible.builtin.include_tasks: tasks/k8s/secrets/generic.yml
+
+    - name: Create Grafana env variables secret
+      vars:
+        user_pass: grafana:{{ monitoring_passwords['grafana'] }}
+
+        # === Inputs ===
+        secret_name: "{{ monitoring_secrets['grafana-env'] }}"
+        secret_data:
+          TLS_CA_CERT: "{{ ca_certificates | join('\n') }}"
+          DS_BASIC_AUTH: Basic {{ user_pass | b64encode }}
       ansible.builtin.include_tasks: tasks/k8s/secrets/generic.yml
 
     # install Prometheus CRDs separately using chart
@@ -222,6 +239,7 @@
           - v1 Secret {{ monitoring_secrets['thanos-config'] }}
           - v1 Secret {{ monitoring_secrets['oauth-proxy']   }}
           - v1 Secret {{ monitoring_secrets['credentials']   }}
+          - v1 Secret {{ monitoring_secrets['grafana-env']   }}
           - v1 Secret {{ monitoring_secrets['etcd'] }}
       ansible.builtin.include_tasks: tasks/helm/helmfile.yml
 
@@ -231,18 +249,30 @@
     - name: Add Wave annotations to StatefulSet
       vars:
         res_kind: StatefulSet
-        res_name: "{{ item ~'-'~ monitoring_release_name ~'-'~ item }}"
+        res_name: "{{ item }}"
         res_ns: "{{ monitoring_namespace }}"
+        wait_secs: 3
       ansible.builtin.include_tasks: tasks/k8s/wave.yml
       loop:
-        - prometheus
-        - alertmanager
+        - prometheus-{{ monitoring_release_name }}-prometheus
+        - alertmanager-{{ monitoring_release_name }}-alertmanager
+        - "{{ monitoring_release_name }}-grafana"
+      loop_control:
+        label: "{{ item | regex_replace('^.+-','') }}"
 
 - name: Configure monitoring applications
   tags: configure
   hosts: localhost
   vars_files: &vars_files
     - vars/monitoring.yml
+  pre_tasks:
+    - name: Wait until Grafana API is ready
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/uri_module.html
+      ansible.builtin.uri:
+        url: "{{ grafana_url }}/api/health"
+      # https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_loops.html#retrying-a-task-until-a-condition-is-met
+      retries: 20
+      delay: 3
   tasks:
     - name: Customize Grafana user settings
       vars:

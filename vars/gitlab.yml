@@ -84,8 +84,8 @@ praefect_db_name: praefect
 # https://gitlab.com/gitlab-org/charts/gitlab/tree/master/examples/objectstorage/rails.s3.yaml
 gitlab_minio_config:
   provider: AWS
-  region: "{{ minio_region }}"
   endpoint: "{{ minio_service_url }}"
+  region: "{{ minio_region }}"
   path_style: true
   aws_access_key_id: gitlab
   aws_secret_access_key: "{{ minio_client_pass }}"
@@ -95,15 +95,9 @@ gitlab_minio_config:
 # there does not appear to be prefix support, either:
 # https://docs.gitlab.com/charts/advanced/external-object-storage#lfs-artifacts-uploads-packages-external-diffs-terraform-state-dependency-proxy-secure-files
 gitlab_buckets: |
-  {% set types = [
-       'artifacts', 'packages', 'uploads',
-       'lfs', 'backups', 'temp', 'cache',
-     ] %}
-  {% set buckets = {}  %}
-  {% for type in types %}
-  {%   set _ = buckets.update({type: 'gitlab-'~ type}) %}
-  {% endfor  %}
-  {{ buckets }}
+  {% set types = ['artifacts', 'packages', 'uploads', 'lfs', 'backups', 'temp', 'cache'] %}
+  {# https://docs.ansible.com/ansible/latest/collections/ansible/builtin/zip_filter.html #}
+  {{ dict(types | ansible.builtin.zip(types | map('prepend', 'gitlab-'))) }}
 
 # OmniAuth provider settings will be
 # stored in "gitlab-omniauth" secret
@@ -835,10 +829,10 @@ gitlab_chart_values:
       metrics:
         enabled: true
         tls: *node-tls
-        podMonitor: &metrics-mon-https
+        podMonitor: # &metrics-mon-https
           enabled: true
           additionalLabels: *metrics-mon-labels
-          endpointConfig: &metrics-ep-https
+          endpointConfig: # &metrics-ep-https
             interval: 30s
             scheme: https
             # monitoring-scraper-tls Secret must be recreated

@@ -247,13 +247,13 @@
       ansible.builtin.command: netplan apply
       changed_when: true
 
-- name: Configure network settings
+- name: Ensure DNS resolution works
   tags: network
   hosts: &hosts
     - k8s_hosts
     - cosmos
   tasks:
-    - name: Ensure DNS resolution is working
+    - name: Ensure DNS resolution works
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
       ansible.builtin.include_tasks: tasks/dns/check.yml
 
