@@ -189,7 +189,7 @@ openwebui_release_name: open-webui
 # comment out `openwebui_app_version` setting below
 # to let playbook get `appVersion` value from chart
 # https://github.com/open-webui/open-webui/pkgs/container/open-webui/versions?filters%5Bversion_type%5D=tagged
-openwebui_app_version: "0.8.8"
+openwebui_app_version: "0.8.10"
 
 openwebui_image:
   pullPolicy: IfNotPresent
@@ -445,16 +445,17 @@ openwebui_chart_values:
     limits:
       cpu: 1000m
 
-  # database bootstrapping and model downloads can take a
-  # long time, especially if cluster load is already high
+  # database bootstrapping or migration, as well as model
+  # downloads can take a long time, especially if cluster
+  # load is already high
   startupProbe:
     httpGet:
       path: /health
       port: http
-    initialDelaySeconds: 60
+    initialDelaySeconds: 120
     periodSeconds: 5
     timeoutSeconds: 5
-    failureThreshold: 48
+    failureThreshold: 96
 
   readinessProbe: &probe
     httpGet:

@@ -1,6 +1,16 @@
 # https://docs.fluentbit.io/manual
 # https://chronosphere.io/fluent-bit-academy
 # https://github.com/fluent/fluent-operator
+#
+# UNINSTALLATION STEPS:
+# must delete CRs first, then the Helm release:
+# helm get manifest -n logging  fluent-operator | \
+#   yq '.kind + ((.apiVersion | select(test("/")) |
+#      "." + sub("/.+$"; "")) // "") +
+#      "/\(.metadata.name)"' | \
+#   grep fluentbit.fluent.io | \
+#   xargs -r kubectl delete -n logging --ignore-not-found 2> /dev/null
+# helm delete -n logging fluent-operator
 ---
 - name: Install Fluent Bit on RKE cluster
   tags: fluentbit
@@ -101,6 +111,15 @@
   vars:
     log_search: "{{ saved_log_search }}"
   tasks:
+    - name: Create log viewing workspace
+      vars:
+        ws_name: Log Viewing
+        description: Log viewing workspace
+        features: use-case-observability
+      ansible.builtin.include_tasks: tasks/kibana/workspace.yml
+      when: dashboards_workspace_enabled
+      # sets osd_workspace_id fact
+
     - name: Create index pattern for logs
       vars:
         pattern: "{{ log_search.index_pattern }}"
@@ -113,16 +132,21 @@
         title: "{{ log_search.title }}"
         description: "{{ log_search.description }}"
         fields: "{{ log_search.selected_fields }}"
-        patterns: "{{ [log_search.index_pattern] }}"
+        patterns: "{{ log_search.index_pattern }}"
       ansible.builtin.include_tasks: tasks/kibana/search.yml
-      # sets saved_search_id fact
+      # sets saved_search_id (and saved_explore_id) facts
 
     - name: Set Dashboards landing page
       vars:
         username: admin
         password: "{{ opensearch_admin_pass }}"
+        route_prefix: "{{ '/w/'~ osd_workspace_id if osd_workspace_id is defined else '' }}"
         settings:
-          defaultRoute: "/app/data-explorer/discover/#/view/{{ saved_search_id }}"
+          # show the classic Discover view using saved search
+          # because the Explore view is quite buggy, although
+          # this setting doesn't even work in workspace mode:
+          # https://github.com/opensearch-project/OpenSearch-Dashboards/issues/11497
+          defaultRoute: "{{ route_prefix }}/app/data-explorer/discover/#/view/{{ saved_search_id }}"
       ansible.builtin.include_tasks: tasks/kibana/settings.yml
 
     - name: Import Grafana dashboards

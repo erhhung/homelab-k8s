@@ -1,74 +1,77 @@
-# create index pattern in OpenSearch Dashboards:
-# https://docs.opensearch.org/latest/dashboards/management/index-patterns
-# https://opensearch-project.github.io/OpenSearch-Dashboards/docs/openapi/saved_objects
+# create workspace in OpenSearch Dashboards:
+# https://docs.opensearch.org/latest/dashboards/workspace/apis
+# feature set enums (a.k.a. use case options):
+# https://docs.opensearch.org/latest/dashboards/workspace/workspace#example-workspace-object
 #
 # pass the following vars:
-#   pattern    <required> index pattern
-#   time_field [optional] default=@timestamp
+#   ws_name     <required> workspace name
+#   description [optional] workspace description
+#   features    <required> workspace feature set
 # requires vars from:
 #   vars/opensearch.yml
 #   vars/kibana.yml
-#   vars/logging.yml
 # sets the following facts:
-#   index_pattern_id
+#   osd_workspace_id
 ---
 - name: Gather facts about controller
   # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
   ansible.builtin.include_tasks: tasks/localfacts.yml
   when: local_python_interpreter is undefined
 
-- name: Create index pattern
+- name: Create Dashboards workspace
   delegate_to: localhost
   become: false
   vars:
     ansible_python_interpreter: "{{ local_python_interpreter }}"
-    saved_objs_url: "{{ kibana_api_url }}/saved_objects"
+    workspaces_url: "{{ kibana_api_url }}/workspaces"
 
     uri_params: &uri-params
       url_username: admin
       url_password: "{{ opensearch_admin_pass }}"
       force_basic_auth: true
-      return_content: true
-    post_params: &post-params
       method: POST
       headers:
         osd-xsrf: "true"
       body_format: json
+      return_content: true
   block:
-    - name: Get existing patterns
+    - name: Get existing workspaces
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/uri_module.html
       ansible.builtin.uri:
         <<: *uri-params
-        url: "{{ saved_objs_url }}/_find?type=index-pattern&fields=title&per_page=1000"
+        url: "{{ workspaces_url }}/_list"
+        body:
+          perPage: 1000
       # https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_loops.html#retrying-a-task-until-a-condition-is-met
-      register: index_patterns
+      register: osd_workspaces
       retries: 5
       delay: 2
 
-    - name: Need to create pattern?
+    - name: Need to create workspace?
       vars:
         # https://runebook.dev/en/articles/jinja/templates/index/jinja-filters.selectattr
-        existing: "{{ index_patterns.json.saved_objects |
-          selectattr('attributes.title', '==', pattern) }}"
+        existing: "{{ osd_workspaces.json.result.workspaces |
+          selectattr('name', '==', ws_name) }}"
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/set_fact_module.html
       ansible.builtin.set_fact:
         existing_id: "{{ existing[0].id if existing is truthy else '' }}"
 
-    - name: Create index pattern
+    - name: Create {{ ws_name }} workspace
       ansible.builtin.uri:
-        <<: [*uri-params, *post-params]
-        url: "{{ saved_objs_url }}/index-pattern"
+        <<: *uri-params
+        url: "{{ workspaces_url }}"
         body:
           attributes:
-            title: "{{ pattern }}"
-            timeFieldName: "{{ time_field | default('@timestamp') }}"
-          workspaces: "{{ [osd_workspace_id] if osd_workspace_id is defined else omit }}"
-      register: create_pattern
+            name: "{{ ws_name }}"
+            description: "{{ description | default(omit) }}"
+            features: "{{ [features] | flatten }}"
       when: existing_id is falsy
+      register: osd_workspace
       changed_when: true
       retries: 5
       delay: 2
 
-    - name: Set index_pattern_id
+    - name: Set osd_workspace_id
       ansible.builtin.set_fact:
-        index_pattern_id: "{{ existing_id or create_pattern.json.id }}"
+        osd_workspace_id: "{{ existing_id
+          or osd_workspace.json.result.id }}"

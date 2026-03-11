@@ -13,8 +13,11 @@ kibana_api_url: https://{{ kibana_fqdn }}/api
 kibana_secrets:
   ingress: dashboards-ingress-tls
 
+dashboards_workspace_enabled: true
+dashboards_explore_enabled: true
+
 # https://github.com/opensearch-project/helm-charts/tree/main/charts/opensearch-dashboards
-dashboards_chart_version: "2.32.0"
+dashboards_chart_version: "3.5.0"
 dashboards_release_name: opensearch-dashboards
 
 # https://github.com/opensearch-project/helm-charts/tree/main/charts/opensearch-dashboards/values.yaml
@@ -41,8 +44,11 @@ dashboards_chart_values:
       server.ssl.enabled: true
       server.ssl.certificate: /tls/tls.crt
       server.ssl.key: /tls/tls.key
-      opensearch.ssl.certificateAuthorities: ["/tls/ca.crt"]
+      workspace.enabled: {{ 'true' if dashboards_workspace_enabled else 'false' }}
+      explore.enabled: {{   'true' if dashboards_explore_enabled   else 'false' }}
+      data_source.enabled: true
       data_source.ssl.certificateAuthorities: ["/tls/ca.crt"]
+      opensearch.ssl.certificateAuthorities: ["/tls/ca.crt"]
       opensearch_security.session.ttl: 28800000 # 8 hours
       opensearch_security.session.keepalive: true
       opensearch_security.cookie.ttl: 28800000
@@ -81,7 +87,7 @@ dashboards_chart_values:
 
   plugins:
     enabled: true
-    # https://docs.opensearch.org/docs/latest/install-and-configure/install-dashboards/plugins#available-plugins
+    # https://docs.opensearch.org/latest/install-and-configure/install-dashboards/plugins#available-plugins
     installList: []
       # - dashboards-observability
 
@@ -100,7 +106,8 @@ dashboards_chart_values:
 # old: Dashboards Management => Advanced settings or
 # new: Settings and setup => Application settings page:
 # POST https://kibana.fourteeners.local/api/opensearch-dashboards/settings
+# https://docs.opensearch.org/latest/dashboards/management/advanced-settings
 kibana_admin_settings:
   "theme:darkMode": true
-  "home:useNewHomePage": true
+  # "home:useNewHomePage": true
   "savedObjects:perPage": 50
