@@ -17,17 +17,31 @@ velero_secrets:
   ingress: velero-ingress-tls
 
 # https://github.com/vmware-tanzu/helm-charts/tree/main/charts/velero
-velero_chart_version: "11.3.2"
+velero_chart_repo_url: https://vmware-tanzu.github.io/helm-charts
+velero_chart_version: "11.4.0"
 velero_release_name: velero
 
 # https://github.com/otwld/helm-charts/tree/main/charts/velero-ui
+velero_ui_chart_repo_url: https://helm.otwld.com
 velero_ui_chart_version: "0.14.0"
 velero_ui_release_name: velero-ui
+
+# comment out an `*_app_version` setting below to
+# let playbook get `appVersion` value from chart:
+# https://github.com/vmware-tanzu/velero/releases
+velero_app_version: "1.18.0"
+# https://github.com/otwld/velero-ui/releases
+velero_ui_app_version: "0.10.1"
 
 # https://github.com/vmware-tanzu/helm-charts/tree/main/charts/velero/values.yaml
 velero_chart_values:
   upgradeCRDs: true
   cleanUpCRDs: true
+
+  image:
+    # https://hub.docker.com/r/velero/velero/tags
+    repository: docker.io/velero/velero
+    tag: v{{ velero_app_version }}
 
   # chart default uses bitnamilegacy/kubectl
   # matching cluster version, which is newer
@@ -107,7 +121,7 @@ velero_chart_values:
         default: true
         provider: aws
         bucket: backups
-        prefix: velero
+        prefix: velero/
         caCert: "{{ ca_certificates[1] | b64encode }}"
         credential:
           name: "{{ velero_secrets['minio'] }}"
@@ -191,6 +205,11 @@ velero_chart_values:
 # https://github.com/otwld/helm-charts/tree/main/charts/velero-ui/values.yaml
 velero_ui_chart_values:
   replicaCount: 1
+
+  image:
+    # https://hub.docker.com/r/otwld/velero-ui/tags
+    repository: docker.io/otwld/velero-ui
+    tag: "{{ velero_ui_app_version }}"
 
   configuration:
     general:

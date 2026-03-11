@@ -27,34 +27,16 @@
   pre_tasks:
     # used as image tag in init containers
     - name: Get Open WebUI chart appVersion
+      vars:
+        repo_url: "{{ openwebui_chart_repo_url }}"
+        chart_ref: open-webui
+        chart_ver: "{{ openwebui_chart_version }}"
+        fact_name: openwebui_app_version
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
+      ansible.builtin.include_tasks: tasks/helm/appversion.yml
       when: openwebui_app_version is undefined
-      block:
-        # there isn't a kubernetes.core.* module
-        # to get info about a chart, only to get
-        # info about an installed release
-        - name: Run `helm show chart` command
-          # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/command_module.html
-          ansible.builtin.command:
-            argv:
-              - helm
-              - show
-              - chart
-              - open-webui
-              # don't quote args as this isn't shell!
-              - --repo={{ openwebui_chart_repo_url }}
-              - --version={{ openwebui_chart_version }}
-          register: show_chart
-          changed_when: false
-
-        - name: Set openwebui_app_version fact
-          vars:
-            chart_info: "{{ show_chart.stdout | from_yaml }}"
-          # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/set_fact_module.html
-          ansible.builtin.set_fact:
-            openwebui_app_version: "{{ chart_info.appVersion }}"
 
     - name: Get the PostgreSQL image used
-      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
       ansible.builtin.include_tasks: tasks/postgresql/image.yml
       when: postgresql_image is undefined
 

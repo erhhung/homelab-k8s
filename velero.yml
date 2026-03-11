@@ -17,8 +17,26 @@
     secret_ns: "{{ velero_ui_namespace }}"
     create_ns: false
   pre_tasks:
-    - name: Get CA certificates from PKI
+    - name: Get Velero chart appVersion
+      vars:
+        repo_url: "{{ velero_chart_repo_url }}"
+        chart_ref: velero
+        chart_ver: "{{ velero_chart_version }}"
+        fact_name: velero_app_version
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
+      ansible.builtin.include_tasks: tasks/helm/appversion.yml
+      when: velero_app_version is undefined
+
+    - name: Get Velero UI chart appVersion
+      vars:
+        repo_url: "{{ velero_ui_chart_repo_url }}"
+        chart_ref: velero-ui
+        chart_ver: "{{ velero_ui_chart_version }}"
+        fact_name: velero_ui_app_version
+      ansible.builtin.include_tasks: tasks/helm/appversion.yml
+      when: velero_ui_app_version is undefined
+
+    - name: Get CA certificates from PKI
       ansible.builtin.include_tasks: tasks/pki/cacerts.yml
       when: ca_certificates is undefined
 
@@ -45,7 +63,7 @@
     - name: Install Velero Helm chart
       vars:
         repo_name: vmware-tanzu
-        repo_url: https://vmware-tanzu.github.io/helm-charts
+        repo_url: "{{ velero_chart_repo_url }}"
         chart_ref: velero
         chart_ver: "{{ velero_chart_version }}"
         release: "{{ velero_release_name }}"
@@ -56,7 +74,7 @@
     - name: Install Velero UI Helm chart
       vars:
         repo_name: otwld
-        repo_url: https://helm.otwld.com
+        repo_url: "{{ velero_ui_chart_repo_url }}"
         chart_ref: velero-ui
         chart_ver: "{{ velero_ui_chart_version }}"
         release: "{{ velero_ui_release_name }}"
