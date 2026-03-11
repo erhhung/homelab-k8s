@@ -1,0 +1,205 @@
+# opensearch-security Secret
+opensearch_security_config:
+  # https://docs.opensearch.org/latest/security/configuration/yaml#internal_usersyml
+  # bcrypt hash of plain-text password:
+  # htpasswd -nbBC 11 "" "$ADMIN_PASS" | \
+  #       tr -d ':\n' | sed 's/$2y/$2b/'
+  internal_users.yml: |
+    _meta:
+      type: internalusers
+      config_version: 2
+
+    admin:
+      description: Cluster administrator
+      hash: {{ opensearch_passwords_hashed['admin'] }}
+      reserved: true
+      backend_roles:
+        - admin
+
+    erhhung: # YAML anchor does not work!
+      description: Cluster administrator
+      hash: {{ opensearch_passwords_hashed['erhhung'] }}
+      reserved: false
+      backend_roles:
+        - admin
+
+    kibana:
+      description: Dashboards system user
+      hash: {{ opensearch_passwords_hashed['kibana'] }}
+      reserved: true
+      backend_roles: []
+
+    fluent:
+      description: Fluent Bit/d log writer
+      hash: {{ opensearch_passwords_hashed['fluent'] }}
+      reserved: true
+      backend_roles: []
+
+    grafana:
+      description: Grafana data source user
+      hash: {{ opensearch_passwords_hashed['grafana'] }}
+      reserved: true
+      backend_roles: []
+
+    scraper:
+      description: Prometheus metrics scraper
+      hash: {{ opensearch_passwords_hashed['scraper'] }}
+      reserved: true
+      backend_roles: []
+
+  # https://docs.opensearch.org/latest/security/configuration/yaml#rolesyml
+  roles.yml: |
+    _meta:
+      type: roles
+      config_version: 2
+
+    kibana_system:
+      # https://docs.opensearch.org/latest/security/access-control/default-action-groups#cluster-level
+      cluster_permissions:
+        # https://docs.opensearch.org/latest/security/access-control/permissions#cluster-wide-index-permissions
+        - indices:data/write/bulk*
+        - indices:data/read/scroll*
+        - cluster_monitor
+      # https://docs.opensearch.org/latest/security/access-control/default-action-groups#index-level
+      index_permissions:
+        - index_patterns:
+            - "*"
+          allowed_actions:
+            - manage_aliases
+        - index_patterns:
+            - .kibana*
+            - .opensearch_dashboards*
+          allowed_actions:
+            - indices:data/write/bulk*
+            - indices:data/read/scroll*
+            - manage
+            - search
+            - crud
+      tenant_permissions:
+        - tenant_patterns:
+            - "*"
+          allowed_actions:
+            - kibana_all_write
+            - opensearch_dashboards_all_write
+
+    logs_writer:
+      cluster_permissions:
+        - cluster_composite_ops
+      index_permissions:
+        - index_patterns:
+            - fluent*
+          allowed_actions:
+            - create_index
+            - crud
+
+    logs_reader:
+      cluster_permissions:
+        - cluster_composite_ops_ro
+      index_permissions:
+        - index_patterns:
+            - fluent*
+          allowed_actions:
+            - read
+
+    metric_scraper:
+      # https://github.com/Aiven-Open/prometheus-exporter-plugin-for-opensearch/issues/60
+      cluster_permissions:
+        - cluster:monitor/prometheus/metrics
+        - cluster:monitor/health
+        - cluster:monitor/state
+        - cluster:monitor/nodes/info
+        - cluster:monitor/nodes/stats
+      index_permissions:
+        - index_patterns:
+            - "*"
+          allowed_actions:
+            - indices:monitor/stats
+
+  # https://docs.opensearch.org/latest/security/configuration/yaml#roles_mappingyml
+  # https://docs.opensearch.org/latest/security/access-control/users-roles#predefined-roles
+  roles_mapping.yml: |
+    _meta:
+      type: rolesmapping
+      config_version: 2
+
+    all_access: # predefined
+      reserved: true
+      hidden: false
+      backend_roles:
+        - admin
+      hosts: []
+      users:
+        - admin
+        - erhhung
+      and_backend_roles: []
+
+    readall: # predefined
+      reserved: true
+      hidden: false
+      users:
+        - grafana
+
+    kibana_system:
+      users:
+        - kibana
+    logs_writer:
+      users:
+        - fluent
+    logs_reader:
+      users:
+        - grafana
+    metric_scraper:
+      users:
+        - scraper
+
+# plugins.security in opensearch.yml
+# https://docs.opensearch.org/latest/install-and-configure/configuring-opensearch/security-settings
+opensearch_security_plugin:
+  ssl: # https://docs.opensearch.org/latest/security/configuration/generate-certificates
+    transport:
+      # Java requires key file to be in PKCS#8 / PEM format:
+      # openssl pkcs8 -topk8 -inform PEM -outform PEM -in tls.key \
+      #               -v1 PBE-SHA1-3DES -nocrypt | sponge tls.key
+      # paths must be relative to "<OPENSEARCH_HOME>/config"
+      # "tls/" is created by extraInitContainers and mounted
+      # by extraVolumeMounts
+      pemcert_filepath: tls/node/tls.crt
+      pemkey_filepath: tls/node/tls.key
+      pemtrustedcas_filepath: tls/node/ca.crt
+      enforce_hostname_verification: false
+    http:
+      enabled: true
+      pemcert_filepath: tls/node/tls.crt
+      pemkey_filepath: tls/node/tls.key
+      pemtrustedcas_filepath: tls/node/ca.crt
+
+  allow_unsafe_democertificates: false
+  allow_default_init_securityindex: true
+  authcz:
+    admin_dn:
+      - CN=erhhung,OU=Homelab,O=Fourteeners,L=Home,ST=California,C=US
+  nodes_dn:
+    # openssl x509 -in opensearchnode.pem -subject
+    # -nameopt RFC2253 -noout | sed 's/^subject=//'
+    - CN=opensearch-node,OU=Homelab,O=Fourteeners,L=Home,ST=California,C=US
+
+  audit.type: noop
+  enable_snapshot_restore_privilege: true
+  check_snapshot_restore_write_privileges: true
+  restapi:
+    roles_enabled:
+      - all_access
+      - security_rest_api_access
+  system_indices:
+    enabled: true
+    indices:
+      - .opendistro-alerting-config
+      - .opendistro-alerting-alert*
+      - .opendistro-anomaly-results*
+      - .opendistro-anomaly-detector*
+      - .opendistro-anomaly-checkpoints
+      - .opendistro-anomaly-detection-state
+      - .opendistro-asynchronous-search-response*
+      - .opendistro-notebooks
+      - .opendistro-reports-*
+      - .opendistro-notifications-*

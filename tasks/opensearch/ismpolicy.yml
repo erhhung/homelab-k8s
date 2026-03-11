@@ -13,7 +13,7 @@
   become: false
   vars:
     ansible_python_interpreter: "{{ local_python_interpreter }}"
-    # https://docs.opensearch.org/docs/latest/im-plugin/ism/api
+    # https://docs.opensearch.org/latest/im-plugin/ism/api
     policy_url: "{{ opensearch_url }}/_plugins/_ism/policies/{{ policy['name'] }}"
     uri_params: &uri_params
       url_username: admin
@@ -34,7 +34,7 @@
     # it's too difficult to compare for changes if policy already exists,
     # so just overwrite it by getting ._seq_no and ._primary_term values
     # to use in the PUT request params:
-    # https://docs.opensearch.org/docs/latest/im-plugin/ism/api#update-policy
+    # https://docs.opensearch.org/latest/im-plugin/ism/api#update-policy
     - name: Get policy "seq_no" value
       vars:
         existing: "{{ ism_policy.json }}"

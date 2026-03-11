@@ -99,8 +99,8 @@ All cluster services will be provisioned with TLS certificates from Erhhung's pr
     * [X] Install [Velero Dashboard](https://github.com/otwld/velero-ui) using the [`velero-ui`](https://github.com/otwld/helm-charts/tree/main/charts/velero-ui) Helm chart
 - [X] [Harbor Container Registry](https://goharbor.io/) — private OCI container and [Helm chart](https://goharbor.io/docs/main/working-with-projects/working-with-oci/working-with-helm-oci-charts) registry
     * Install on K3s cluster using the [`harbor`](https://github.com/goharbor/harbor-helm) Helm chart
-- [X] [OpenSearch Logging Stack](https://opensearch.org/docs/latest) — aggregate and filter logs using OpenSearch and Fluent Bit
-    * Install on main RKE cluster using the [`opensearch`](https://opensearch.org/docs/latest/install-and-configure/install-opensearch/helm) and [`opensearch-dashboards`](https://opensearch.org/docs/latest/install-and-configure/install-dashboards/helm) Helm charts
+- [X] [OpenSearch Logging Stack](https://docs.opensearch.org/latest) — aggregate and filter logs using OpenSearch and Fluent Bit
+    * Install on main RKE cluster using the [`opensearch`](https://docs.opensearch.org/latest/install-and-configure/install-opensearch/helm) and [`opensearch-dashboards`](https://docs.opensearch.org/latest/install-and-configure/install-dashboards/helm) Helm charts
     * Instal Fluent Bit using the [`fluent-operator`](https://github.com/fluent/fluent-operator) Helm chart and `FluentBit` CR
 - [X] [PostgreSQL Database](https://www.postgresql.org/docs/current) — SQL database used by Keycloak and other applications
     * Install on main RKE cluster using Bitnami's [`postgresql-ha`](https://github.com/bitnami/charts/tree/main/bitnami/postgresql-ha) Helm chart

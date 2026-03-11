@@ -59,13 +59,16 @@ grafana_data_sources:
     jsonData:
       flavor: opensearch
       version: "{{ opensearch_version }}"
+      database: "[fluent-bit-]YYYY.MM.DD"
+      interval: Daily # ""|Hourly|Daily|Weekly|Monthly|Yearly
       timeField: "@timestamp"
       logMessageField: log
       # logLevelField: ""
 
-      # Pipe Processing Language:
       # https://grafana.com/docs/plugins/grafana-opensearch-datasource/latest#piped-processing-language-ppl
       pplEnabled: false
+      # https://grafana.com/docs/plugins/grafana-opensearch-datasource/latest#private-data-source-connect-pdc
+      pdcInjected: false
       # https://docs.opensearch.org/latest/search-plugins/searching-data/search-shard-routing#concurrent-shard-request
       maxConcurrentShardRequests: 2
 

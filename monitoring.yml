@@ -256,7 +256,7 @@
       loop:
         - prometheus-{{ monitoring_release_name }}-prometheus
         - alertmanager-{{ monitoring_release_name }}-alertmanager
-        - "{{ monitoring_release_name }}-grafana"
+        # - "{{ monitoring_release_name }}-grafana"
       loop_control:
         label: "{{ item | regex_replace('^.+-','') }}"
 

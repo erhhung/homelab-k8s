@@ -909,6 +909,7 @@ prometheus_stack_chart_values:
         labelValue: "1"
 
         env: &sidecar-env
+          HEALTH_PORT: 8080
           REQ_SKIP_TLS_VERIFY: "true"
           PYTHONWARNINGS: ignore:Unverified HTTPS request
         reloadURL: https://localhost:3000/api/admin/provisioning/dashboards/reload
@@ -918,7 +919,9 @@ prometheus_stack_chart_values:
       datasources:
         enabled: true
 
-        env: *sidecar-env
+        env:
+          <<: *sidecar-env
+          HEALTH_PORT: 8081
         reloadURL: https://localhost:3000/api/admin/provisioning/datasources/reload
         # disable default (Prometheus) data source because its endpoint URL in
         # the Helm template does not use HTTPS, and there is no way to specify

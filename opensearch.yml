@@ -1,7 +1,11 @@
-# https://docs.opensearch.org/docs/latest/opensearch
-# https://docs.opensearch.org/docs/latest/dashboards
+# https://docs.opensearch.org/latest/opensearch
+# https://docs.opensearch.org/latest/dashboards
+#
+# UNINSTALLATION STEPS:
+# helm delete -n opensearch opensearch-dashboards
+# helm delete -n opensearch opensearch
 ---
-# https://docs.opensearch.org/docs/latest/install-and-configure/install-opensearch/helm
+# https://docs.opensearch.org/latest/install-and-configure/install-opensearch/helm
 - name: Install OpenSearch on RKE cluster
   tags: install
   hosts: "{{ rke_control_plane_host }}"
@@ -10,6 +14,7 @@
     - vars/metallb.yml
     - vars/storage.yml
     - vars/monitoring.yml
+    - vars/opensearch.security.yml
     - vars/opensearch.yml
     - vars/kibana.yml
   vars: &vars
@@ -117,6 +122,16 @@
 
         patches:
           merge_patches:
+            - apiVersion: apps/v1
+              kind: StatefulSet
+              metadata:
+                name: "{{ opensearch_master_service }}"
+              spec:
+                revisionHistoryLimit: 2
+                persistentVolumeClaimRetentionPolicy:
+                  whenDeleted: Delete
+                  whenScaled: Retain
+
             # https://github.com/opensearch-project/helm-charts/issues/673
             # https://github.com/opensearch-project/helm-charts/pull/674
             # "prometheus.io/scrape" label is added on headless service
@@ -144,8 +159,8 @@
         # it can take a long time to pull container images
         # and provision storage and start each StatefulSet
         # pod sequentially due to the OrderedReady policy
-        wait_timeout: 600
-        task_timeout: 1800
+        wait_timeout: 1200
+        task_timeout: 1600
       ansible.builtin.include_tasks: tasks/helm/helmfile.yml
 
     - name: Initialize OpenSearch Security?
@@ -168,7 +183,7 @@
       # tasks have been refactored into a separate file
       ansible.builtin.include_tasks: tasks/opensearch/security.yml
 
-# https://docs.opensearch.org/docs/latest/install-and-configure/install-dashboards/helm
+# https://docs.opensearch.org/latest/install-and-configure/install-dashboards/helm
 - name: Install OpenSearch Dashboards
   tags:
     - kibana

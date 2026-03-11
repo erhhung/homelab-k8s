@@ -45,7 +45,7 @@ fluent_operator_chart_values:
 
     output:
       # https://github.com/fluent/fluent-operator/tree/master/docs/plugins/fluentbit/output/open_search.md
-      # https://docs.fluentbit.io/manual/pipeline/outputs/opensearch (shows default values)
+      # https://docs.fluentbit.io/manual/data-pipeline/outputs/opensearch (shows default values)
       # https://github.com/fluent/helm-charts/tree/main/charts/fluent-operator/templates/fluentbit-output-opensearch.yaml
       # https://doc.crds.dev/github.com/fluent/fluent-operator/fluentbit.fluent.io/ClusterOutput/v1alpha2#spec-opensearch
       opensearch:
@@ -73,6 +73,7 @@ fluent_operator_chart_values:
         logstashPrefix: fluent-bit
         logstashDateFormat: "%Y.%m.%d" # strftime
         suppressTypeName: true # _type is deprecated in OpenSearch
+        bufferSize: 256KB # validation forbids "False"
 
     filter:
       multiline:
@@ -97,8 +98,14 @@ fluent_operator_chart_values:
 
 # replace ClusterFilter.spec.filters[2].modify.rules in Helm template:
 # https://github.com/fluent/helm-charts/tree/main/charts/fluent-operator/templates/fluentbit-clusterfilter-kubernetes.yaml
+# https://github.com/fluent/fluent-bit/tree/master/conf/parsers.conf
 remove_log_fields:
+  # drop duplicate, unhelpful
+  # fields time/stream/logtag
+  # added by the `cri` parser
+  - time
   - stream
+  - logtag
   - kubernetes_host
   - kubernetes_pod_ip
   - kubernetes_pod_id
@@ -109,7 +116,7 @@ saved_log_search:
   title: k8s-logs
   description: Search Kubernetes logs
   index_pattern: fluent-bit-*
-  time_field: time
+  time_field: "@timestamp"
   selected_fields:
     - kubernetes.namespace_name
     - kubernetes.pod_name
