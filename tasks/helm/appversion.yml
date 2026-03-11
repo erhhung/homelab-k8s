@@ -1,0 +1,50 @@
+# get `appVersion` (without `v`
+# prefix) value from Helm chart
+#
+# pass the following vars:
+#   repo_url  [optional] Helm repository URL
+#   chart_ref <required> name  or oci:// URL
+#   chart_ver [optional] chart version
+#   fact_name [optional] fact to store `appVersion`
+#                        default=chart_app_version
+# sets the following facts:
+#   {fact_name}  chart `appVersion`
+#               (without `v` prefix)
+---
+- name: Get Helm chart appVersion
+  become: false
+  vars:
+    # required kubernetes>=24.2 package only in user virtualenv
+    ansible_python_interpreter: "{{ venv_python_interpreter }}"
+    ver_fact: "{{  fact_name | default('chart_app_version') }}"
+  block:
+    # there isn't a kubernetes.core.* module
+    # to get info about a chart, only to get
+    # info about an installed release
+    - name: Run `helm show chart` command
+      vars:
+        base_args:
+          - helm
+          - show
+          - chart
+        chart_args: |
+          {% set args = [chart_ref] %}
+          {% if repo_url is defined and not chart_ref.startswith('oci://') %}
+          {%   set _ = args.append('--repo=' ~ repo_url) %}
+          {% endif %}
+          {% if chart_ver is defined %}
+          {%   set _ = args.append('--version=' ~ chart_ver) %}
+          {% endif %}
+          {{ args  }}
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/command_module.html
+      ansible.builtin.command:
+        argv: "{{ base_args + chart_args }}"
+      register: show_chart
+      changed_when: false
+
+    - name: Set {{ ver_fact }} fact
+      vars:
+        chart_info: "{{ show_chart.stdout | from_yaml }}"
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/set_fact_module.html
+      ansible.builtin.set_fact:
+        "{{ ver_fact }}": "{{ chart_info.appVersion | regex_replace('^v','') }}"

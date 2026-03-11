@@ -18,35 +18,18 @@
     kubeconfig: "{{ rke_kubeconfig }}"
   pre_tasks:
     - name: Get OTel Operator chart appVersion
-      block:
-        # there isn't a kubernetes.core.* module
-        # to get info about a chart, only to get
-        # info about an installed release
-        - name: Run `helm show chart` command
-          # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/command_module.html
-          ansible.builtin.command:
-            argv:
-              - helm
-              - show
-              - chart
-              - opentelemetry-operator
-              # don't quote args as this isn't shell!
-              - --repo={{ otel_operator_chart_repo_url }}
-              - --version={{ otel_operator_chart_version }}
-          register: show_chart
-          changed_when: false
-
-        - name: Set otel_operator_app_version fact
-          vars:
-            chart_info: "{{ show_chart.stdout | from_yaml }}"
-          # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/set_fact_module.html
-          ansible.builtin.set_fact:
-            otel_operator_app_version: "{{ chart_info.appVersion }}"
+      vars:
+        repo_url: "{{ otel_operator_chart_repo_url }}"
+        chart_ref: opentelemetry-operator
+        chart_ver: "{{ otel_operator_chart_version }}"
+        fact_name: otel_operator_app_version
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
+      ansible.builtin.include_tasks: tasks/helm/appversion.yml
+      when: otel_operator_app_version is undefined
   tasks:
     - name: Create monitoring scraper secret
       vars:
         secret_ns: "{{ otel_operator_namespace }}"
-      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
       ansible.builtin.include_tasks: tasks/monitoring/scraper.yml
 
     - name: Install OTel Operator Helm chart
