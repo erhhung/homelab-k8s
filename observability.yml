@@ -25,7 +25,6 @@
         fact_name: otel_operator_app_version
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
       ansible.builtin.include_tasks: tasks/helm/appversion.yml
-      when: otel_operator_app_version is undefined
   tasks:
     - name: Create monitoring scraper secret
       vars:
@@ -93,3 +92,14 @@
         namespace: "{{ observability_namespace }}"
         state: present
         apply: true
+
+- name: Configure observability dashboards
+  tags: dashboards
+  hosts: localhost
+  vars_files:
+    - vars/observability.yml
+  tasks:
+    - name: Import Grafana dashboards
+      vars:
+        dashboards: "{{ observability_grafana_dashboards }}"
+      ansible.builtin.include_tasks: tasks/grafana/dashboards.yml

@@ -13,7 +13,8 @@
 #         - name
 #           type
 #           value
-#       tags       [optional] additional tags
+#       tags       [optional] additional tags (add '-'
+#                             prefix  to remove a tag)
 #       jq_patches [optional] jq queries list
 #   (following vars are default values for all
 #   dashboards unless overridden individually)
@@ -60,8 +61,14 @@
 
     - name: Import Grafana dashboard
       vars:
-        existing: "{{ existing_dashboards.json | map(attribute='title') }}"
         api_auth: "{{ admin_user }}:'{{ admin_pass }}'"
+        existing: "{{ existing_dashboards.json | map(attribute='title') }}"
+        all_tags: "{{ item.tags | default(tags | default([])) | map('lower') }}"
+        add_tags: "{{  all_tags |  select('search', '^[^-]')  }}"
+        # tags with '-' prefix will be removed from existing set
+        del_tags: |
+          {{ all_tags | select('search', '^-') |
+             map('regex_replace',  '^-', '')  }}
       block:
         - name: Import dashboard by JSON
           vars: &vars
@@ -69,10 +76,14 @@
             script1: |-
               json="$(jq 'del(.id) | .title = "{{ item.title }}"' <<< "$json")"
 
-              tags='{{ item.tags | default(tags | default([])) |
-                                   to_json(separators=[',',':']) }}'
-              [ "$tags" == "[]" ] || json="$(jq ".tags += $tags" <<< "$json")"
-              json="$(jq   '.tags |= map(ascii_downcase)'        <<< "$json")"
+              query='(.tags |= map(ascii_downcase))'
+              {% if add_tags is truthy %}
+              query+=' | (.tags += {{ add_tags | to_json }})'
+              {% endif %}
+              {% if del_tags is truthy %}
+              query+=' | (.tags -= {{ del_tags | to_json }})'
+              {% endif %}
+              json="$(jq "$query" <<< "$json")"
 
               {% if patches is truthy  %}
               {%   for expr in patches %}
