@@ -330,3 +330,24 @@ otlp_lb_service:
         protocol: TCP
         targetPort: "{{ otlp_http_port }}"
         appProtocol: https
+
+# https://grafana.com/grafana/dashboards/?search=OpenTelemetry&dataSource=prometheus
+observability_grafana_dashboards:
+  # https://grafana.com/grafana/dashboards/15983-opentelemetry-collector
+  - title: OpenTelemetry Collector
+    gnet_id: 15983
+    tags:
+      - -monitoringartist
+      - collector
+
+  # https://grafana.com/grafana/dashboards/23242-opentelemetry-tempo
+  - title: OpenTelemetry & Tempo
+    gnet_id: 23242
+    tags: ["-traces"]
+    jq_patches:
+      # `otelcol_receiver*spans` are
+      # counters with suffix `_total`
+      - >-
+        walk(if type=="string" then
+        gsub("(?<metric>otelcol_receiver_\\w+_spans\\b)";
+                .metric + "_total") else . end)
