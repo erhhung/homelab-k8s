@@ -108,7 +108,8 @@ cd "$HOME"
   erhhung erhhung@gmail.com
 
 ./cert.sh --exp=365 \
-  kibana.fourteeners.local
+  kibana.fourteeners.local \
+    logs.fourteeners.local
 
 # OpenSearch client
 ./cert.sh --kty=RSA \
@@ -237,6 +238,10 @@ cd "$HOME"
                jaeger.fourteeners.local \
   tempo.observability.svc.cluster.local \
   tempo.observability.svc
+
+./cert.sh --exp=365 \
+  pyrra.fourteeners.local \
+    slo.fourteeners.local
 
 ./cert.sh --exp=365 \
   kiali.fourteeners.local \

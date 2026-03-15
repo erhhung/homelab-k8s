@@ -13,7 +13,7 @@ tempo_service_host: "{{ tempo_release_name }}.{{
 tempo_http_port: 3200 #  HTTPS
 tempo_grpc_port: 9095 # non-TLS
 tempo_otlp_url: https://{{ tempo_service_host }}:{{ otlp_grpc_port }}
-tempo_datasource_url: https://{{ tempo_service_host }}:{{ tempo_http_port }}
+tempo_frontend_url: https://{{ tempo_service_host }}:{{ tempo_http_port }}
 
 tempo_secrets:
   s3-creds: tempo-s3-creds
@@ -236,9 +236,8 @@ tempo_chart_values:
 
   serviceMonitor:
     enabled: true
+    additionalLabels: "{{ monitoring_selector_labels }}"
     interval: 30s
-    additionalLabels:
-      release: "{{ monitoring_release_name }}"
 
   # besides `stream_over_http_enabled`, all other
   # templated config are from default values.yaml

@@ -315,8 +315,7 @@ argocd_chart_values:
 
       serviceMonitor:
         enabled: true
-        additionalLabels:
-          release: "{{ monitoring_release_name }}"
+        additionalLabels: "{{ monitoring_selector_labels }}"
         # all dedicated *-metrics services
         # expose non-TLS port http-metrics
         scheme: http

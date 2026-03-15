@@ -242,9 +242,8 @@ vault_chart_values:
   serverTelemetry:
     serviceMonitor:
       enabled: true
+      selectors: "{{ monitoring_selector_labels }}"
       interval: 30s
-      selectors:
-        release: "{{ monitoring_release_name }}"
       tlsConfig: "{{ metric_scraper_tls_config }}"
       # unauthenticated_metrics_access is set to true
       # in the listener, so no credentials are needed

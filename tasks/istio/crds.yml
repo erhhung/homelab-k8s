@@ -26,7 +26,7 @@
         api_version: apiextensions.k8s.io/v1
         kind: CustomResourceDefinition
         name: "{{ item }}"
-      register: crd_info
+      register: crds_info
       loop: "{{ check_crds }}"
       loop_control:
         label: "{{ item | split('.') | first }}"
@@ -34,7 +34,7 @@
     - name: Set service_mesh_crds_installed fact
       vars:
         crds_installed: >-
-          {{ crd_info.results | map(attribute='resources') | map('length') | map('bool') }}
+          {{ crds_info.results | map(attribute='resources') | map('length') | map('bool') }}
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/set_fact_module.html
       ansible.builtin.set_fact:
         gateway_api_crds_installed: "{{  crds_installed | first }}"

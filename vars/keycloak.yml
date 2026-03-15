@@ -320,9 +320,8 @@ keycloakx_chart_values:
 
   serviceMonitor:
     enabled: "{{ prometheus_crds_installed }}"
-    labels:
-      release: "{{ monitoring_release_name }}"
-    interval: 60s # not heavily used service
+    labels: "{{ monitoring_selector_labels }}"
+    interval: 1m # not heavily used service
     # not shown in values.yaml but in template
     tlsConfig: "{{ metric_scraper_tls_config }}"
 

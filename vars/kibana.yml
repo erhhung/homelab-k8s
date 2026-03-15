@@ -1,14 +1,16 @@
 # kibana_os_pass: {vault.yml}
 
 kibana_namespace: opensearch
-kibana_host_name: kibana # alias of "ingress"
+kibana_host_names: # aliases of "ingress"
+  - kibana
+  - logs
 
-# remember to add kibana.fourteeners.local to pfSense DNS
-# as an alias of ingress.fourteeners.local: 192.168.4.222
+# remember to add kibana.fourteeners.local (and logs.fourteeners.local)
+# to pfSense DNS as aliases of ingress.fourteeners.local: 192.168.4.222
 # https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_filters.html#products
-kibana_fqdn: "{{ [kibana_host_name] | product(search_domains) | map('join','.') | first }}"
+kibana_fqdns: "{{ kibana_host_names | product(search_domains) | map('join','.') }}"
 
-kibana_api_url: https://{{ kibana_fqdn }}/api
+kibana_api_url: https://{{ kibana_fqdns | first }}/api
 
 kibana_secrets:
   ingress: dashboards-ingress-tls
@@ -71,19 +73,27 @@ dashboards_chart_values:
     enabled: true
     tls:
       - secretName: "{{ kibana_secrets['ingress'] }}"
-        hosts: "{{ [kibana_fqdn] }}"
+        hosts: "{{ kibana_fqdns }}"
     ingressClassName: "{{ rke_ingress_class }}"
     annotations:
       nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
       # nginx.ingress.kubernetes.io/ssl-passthrough: "true"
       nginx.ingress.kubernetes.io/backend-protocol: HTTPS
-    hosts:
-      - host: "{{ kibana_fqdn }}"
-        paths:
-          - path: /
-            pathType: Prefix
-            backend:
-              servicePort: http
+    hosts: |
+      {% set hosts = [] %}
+      {% for fqdn in kibana_fqdns %}
+      {%   set _ = hosts.append({
+             'host':  fqdn,
+             'paths': [{
+               'path':     '/',
+               'pathType': 'Prefix',
+               'backend':  {
+                 'servicePort': 'http',
+               },
+             }],
+           })   %}
+      {% endfor %}
+      {{ hosts  }}
 
   plugins:
     enabled: true
@@ -98,8 +108,7 @@ dashboards_chart_values:
     # Prometheus will try to scrape metrics port 9601, the
     # pod doesn't actually expose nor even listen on 9601!
     enabled: "{{ prometheus_crds_installed and false }}"
-    labels:
-      release: "{{ monitoring_release_name }}"
+    labels: "{{ monitoring_selector_labels }}"
     path: /_prometheus/metrics
 
 # apply custom settings available on

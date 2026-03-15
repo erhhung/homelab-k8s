@@ -82,8 +82,7 @@ longhorn_chart_values:
     # DaemonSet) on port 9500 (non-TLS) on path /metrics
     serviceMonitor:
       enabled: "{{ prometheus_crds_installed }}"
-      additionalLabels:
-        release: "{{ monitoring_release_name }}"
+      additionalLabels: "{{ monitoring_selector_labels }}"
 
   extraObjects:
     # create VolumeSnapshotClass for remote backups (use

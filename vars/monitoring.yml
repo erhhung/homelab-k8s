@@ -16,10 +16,11 @@ scraper_user:
 # passwords will be hashed and stored
 # in monitoring_passwords_hashed fact
 monitoring_passwords:
-  probe: "{{ monitoring_pass }}" # for Thanos probes
-  grafana: "{{ monitoring_pass }}" # to Thanos Query
-  scraper: "{{ monitoring_pass }}" # to scrape Thanos
   erhhung: "{{ thanos_admin_pass }}"
+  probe: "{{ monitoring_pass }}" # for Thanos probes
+  scraper: "{{ monitoring_pass }}" # to scrape Thanos
+  grafana: "{{ monitoring_pass }}" # to Thanos Query
+  pyrra: "{{ monitoring_pass }}" # to Thanos Query
 
 # send alerts or just drop
 email_alerts_enabled: false
@@ -58,11 +59,13 @@ prometheus_service_host: "{{ monitoring_release_name }}-prometheus.{{
   monitoring_namespace }}.svc.{{ cluster_domain }}"
 prometheus_service_port: 9090
 prometheus_service_url: https://{{ prometheus_service_host }}:{{ prometheus_service_port }}
+prometheus_url: https://{{ monitoring_fqdns['prometheus'] | first }}
 
 alertmanager_service_host: "{{ monitoring_release_name }}-alertmanager.{{
   monitoring_namespace }}.svc.{{ cluster_domain }}"
 alertmanager_service_port: 9093
 alertmanager_service_url: https://{{ alertmanager_service_host }}:{{ alertmanager_service_port }}
+alertmanager_url: https://{{ monitoring_fqdns['alertmanager'] | first }}
 
 grafana_service_host: "{{ monitoring_release_name }}-grafana.{{
   monitoring_namespace }}.svc.{{ cluster_domain }}"
@@ -83,6 +86,13 @@ monitoring_secrets:
   oauth-proxy: monitoring-oauth-proxy
   credentials: monitoring-credentials
 
+# labels to select ServiceMonitor, PodMonitor, etc.
+# (see comments about `serviceMonitorSelector` and
+# `serviceMonitorSelectorNilUsesHelmValues` under
+# `prometheus.prometheusSpec`)
+monitoring_selector_labels:
+  release: "{{ monitoring_release_name }}"
+
 # https://thanos.io/tip/operating/https.md
 thanos_config_secret_data:
   # in addition to the Thanos sidecar, this secret
@@ -98,7 +108,7 @@ thanos_config_secret_data:
       http2: true
     basic_auth_users:
       {# https://docs.ansible.com/ansible/latest/collections/ansible/builtin/to_nice_yaml_filter.html -#}
-      {# https://tedboy.github.io/jinja2/templ14.html#indent -#}
+      {# https://jinja.palletsprojects.com/en/stable/templates#jinja-filters.indent -#}
       {{ monitoring_passwords_hashed | ansible.builtin.to_nice_yaml(indent=2, sort_keys=false) |
                                                                     indent(2) }}
 
@@ -123,7 +133,7 @@ alertmanager_config:
     resolve_timeout: 5m
 
     smtp_from: Alertmanager <{{ icloud_smtp.from_email }}>
-    smtp_hello: "{{ monitoring_fqdns['alertmanager'] | first }}"
+    smtp_hello: "{{ alertmanager_url }}"
     smtp_smarthost: "{{ icloud_smtp.host }}:{{ icloud_smtp.port }}"
     smtp_require_tls: true
     smtp_auth_username: "{{ icloud_smtp.username }}"
@@ -302,6 +312,12 @@ prometheus_stack_chart_values:
       - "{{ monitoring_namespace }}"
     alertmanagerConfigNamespaces: []
 
+    # v1 Endpoints is deprecated in Kubernetes v1.33+;
+    # using discovery.k8s.io/v1 EndpointSlice instead:
+    # https://prometheus-operator.dev/docs/platform/troubleshooting#v1-endpoints-is-deprecated-in-v133--warning-in-the-operators-logs
+    kubeletEndpointsEnabled: "{{     kubernetes_version.with_minor <  1.33 }}"
+    kubeletEndpointSliceEnabled: "{{ kubernetes_version.with_minor >= 1.33 }}"
+
     resources:
       requests:
         cpu: 10m
@@ -320,8 +336,10 @@ prometheus_stack_chart_values:
     enabled: true
     agentMode: false
 
-    # view prometheus.yaml:
-    # kubectl get secret -n monitoring prometheus-prometheus-stack-prometheus -o jsonpath='{.data.prometheus\.yaml\.gz}' | base64 -d | gunzip | yq
+    # view prometheus.yaml in ConfigMap:
+    # kubectl get secret -n monitoring prometheus-prometheus-stack-prometheus \
+    #   -o jsonpath='{.data.prometheus\.yaml\.gz}' | base64 -d | gunzip | yq
+    #
     # https://github.com/prometheus-operator/prometheus-operator/tree/main/Documentation/api-reference/api.md#prometheusspec
     prometheusSpec:
       # total pods = replicas * shards
@@ -335,7 +353,7 @@ prometheus_stack_chart_values:
       resources:
         requests:
           cpu: 250m
-          memory: 1Gi
+          memory: 4Gi
 
       # https://github.com/prometheus-operator/prometheus-operator/tree/main/Documentation/platform/storage.md
       storageSpec:
@@ -369,6 +387,11 @@ prometheus_stack_chart_values:
       # https://prometheus-operator.dev/docs/developer/scrapeclass
       scrapeClasses: []
 
+      # service discovery role for discovering targets
+      # from ServiceMonitor and Alertmanager endpoints:
+      # https://prometheus-operator.dev/docs/platform/troubleshooting#v1-endpoints-is-deprecated-in-v133--warning-in-the-operators-logs
+      serviceDiscoveryRole: "{{ 'Endpoints' if kubernetes_version.with_minor < 1.33 else 'EndpointSlice' }}"
+
       # {} value selects all namespaces
       serviceMonitorNamespaceSelector: {}
       # by not providing serviceMonitorSelector and having
@@ -396,7 +419,7 @@ prometheus_stack_chart_values:
       # https://github.com/prometheus-operator/prometheus-operator/tree/main/Documentation/api-reference/api.md#queryspec
       query: # QuerySpec
         maxConcurrency: 4
-        maxSamples: 50000
+        maxSamples: 500000
         timeout: 30s
 
       # https://prometheus.io/docs/prometheus/latest/feature_flags
@@ -409,7 +432,7 @@ prometheus_stack_chart_values:
       enableRemoteWriteReceiver: true
       enableOTLPReceiver: true
 
-      externalUrl: https://{{ monitoring_fqdns['prometheus'] | first }}
+      externalUrl: "{{ prometheus_url }}"
 
       # https://github.com/prometheus-operator/prometheus-operator/tree/main/Documentation/api-reference/api.md#prometheuswebspec
       web: # PrometheusWebSpec
@@ -653,14 +676,13 @@ prometheus_stack_chart_values:
       {%   set _   = smons.append({
              'name':  svc ~'-oauth-proxy',
              'additionalLabels': {
-               'app': svc
+               'app': svc,
              },
              'selector': {
-               'matchLabels': {
+               'matchLabels': monitoring_selector_labels | combine({
                  'app':           svc,
-                 'release':       monitoring_release_name,
-                 'self-monitor': 'true'
-               }
+                 'self-monitor': 'true',
+               }),
              },
              'namespaceSelector': {
                'matchNames': [monitoring_namespace]
@@ -670,9 +692,9 @@ prometheus_stack_chart_values:
                'path':       '/metrics',
                'scheme':     'https',
                'tlsConfig':   metric_scraper_tls_config,
-               'enableHttp2': true
-             }]
-           }) %}
+               'enableHttp2': true,
+             }],
+           })   %}
       {% endfor %}
       {{ smons  }}
 
@@ -699,7 +721,7 @@ prometheus_stack_chart_values:
 
       resources:
         requests:
-          cpu: 50m
+          cpu: 10m
           memory: 64Mi
 
       # https://github.com/prometheus-operator/prometheus-operator/tree/main/Documentation/platform/storage.md
@@ -726,14 +748,14 @@ prometheus_stack_chart_values:
       # {} value selects all configs
       alertmanagerConfigSelector: {}
 
-      externalUrl: https://{{ monitoring_fqdns['alertmanager'] | first }}
+      externalUrl: "{{ alertmanager_url }}"
       scheme: https
 
       # https://github.com/prometheus-operator/prometheus-operator/tree/main/Documentation/api-reference/api.md#alertmanagerwebspec
       web: # AlertmanagerWebSpec
         # WebTLSConfig (web server certificate):
         # https://github.com/prometheus-operator/prometheus-operator/tree/main/Documentation/api-reference/api.md#webtlsconfig
-        tlsConfig: &alerts_tls
+        tlsConfig: &alerts-tls
           cert: # SecretOrConfigMap
             secret: # SecretKeySelector
               name: "{{ monitoring_secrets['alertmanager'] }}"
@@ -750,7 +772,7 @@ prometheus_stack_chart_values:
 
       # TLSConfig (mTLS client certificate):
       # https://github.com/prometheus-operator/prometheus-operator/tree/main/Documentation/api-reference/api.md#tlsconfig
-      tlsConfig: *alerts_tls
+      tlsConfig: *alerts-tls
 
       volumes:
         - name: server-tls
@@ -880,10 +902,7 @@ prometheus_stack_chart_values:
 
     resources:
       requests:
-        cpu: 100m
-        memory: 256Mi
-      limits:
-        cpu: 500m
+        cpu: 50m
         memory: 1Gi
 
     readinessProbe:
@@ -1002,13 +1021,10 @@ prometheus_stack_chart_values:
 
     serviceMonitor:
       enabled: true
-      labels:
-        # Prometheus Operator will not be able to find
-        # this ServiceMonitor without these labels and
-        # the Grafana Overview dashboard will be empty:
-        # https://github.com/prometheus-community/helm-charts/issues/3800
-        app: "{{ monitoring_release_name }}-grafana"
-        release: "{{ monitoring_release_name }}"
+      labels: |
+        {{ monitoring_selector_labels | combine({
+             'app': monitoring_release_name ~'-grafana',
+           }) }}
       scheme: https
       tlsConfig: "{{ metric_scraper_tls_config }}"
 

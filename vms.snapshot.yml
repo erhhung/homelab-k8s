@@ -77,8 +77,8 @@
 
     - name: Parse snapshots JSON
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/set_fact_module.html
-      # https://runebook.dev/en/articles/jinja/templates/index/jinja-filters.selectattr
-      # https://runebook.dev/en/articles/jinja/templates/index/jinja-filters.sort
+      # https://jinja.palletsprojects.com/en/stable/templates#jinja-filters.selectattr
+      # https://jinja.palletsprojects.com/en/stable/templates#jinja-filters.sort
       ansible.builtin.set_fact:
         # Ansible sort is stable,
         # so sort by date first
@@ -162,7 +162,7 @@
         - name: Prompt for confirmation
           # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/pause_module.html
           ansible.builtin.pause:
-            # https://tedboy.github.io/jinja2/templ14.html#capitalize
+            # https://jinja.palletsprojects.com/en/stable/templates#jinja-filters.capitalize
             prompt: "{{ do | capitalize }} snapshots? (y/n)"
           register: confirm
 

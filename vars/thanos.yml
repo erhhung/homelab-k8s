@@ -609,8 +609,7 @@ thanos_chart_values:
 
     serviceMonitor:
       enabled: true
-      labels:
-        release: "{{ monitoring_release_name }}"
+      labels: "{{ monitoring_selector_labels }}"
       extraParameters:
         scheme: https
         # TLSConfig (mTLS client certificate):
@@ -621,5 +620,4 @@ thanos_chart_values:
 
     prometheusRule:
       enabled: true
-      additionalLabels:
-        release: "{{ monitoring_release_name }}"
+      additionalLabels: "{{ monitoring_selector_labels }}"

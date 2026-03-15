@@ -247,8 +247,7 @@ litellm_chart_values:
 
   serviceMonitor:
     enabled: true
-    labels:
-      release: "{{ monitoring_release_name }}"
+    labels: "{{ monitoring_selector_labels }}"
     interval: 30s
 
 # create litellm database if it doesn't

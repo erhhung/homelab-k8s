@@ -81,13 +81,8 @@ fluent_operator_chart_values:
         emitterMemBufLimit: 10 # MB
 
     serviceMonitor:
-      enable: "{{ prometheus_crds_installed }}"
-      # no scraping will happen because this chart
-      # doesn't currently provide a way to add the
-      # labels required for serviceMonitorSelector:
-      # https://github.com/fluent/helm-charts/pull/606
-      labels:
-        release: "{{ monitoring_release_name }}"
+      enable: "{{ prometheus_crds_installed  }}"
+      labels: "{{ monitoring_selector_labels }}"
       path: /api/v2/metrics/prometheus
 
       # https://training.promlabs.com/training/relabeling/introduction-to-relabeling/hidden-labels-and-metadata

@@ -53,8 +53,7 @@ metallb_chart_values:
 
       serviceMonitor:
         enabled: "{{ prometheus_crds_installed }}"
-        labels:
-          release: "{{ monitoring_release_name }}"
+        labels: "{{ monitoring_selector_labels }}"
 
   speaker:
     # RKE2's Canal CNI doesn't use Calico's BGP feature:

@@ -200,7 +200,7 @@
       vars:
         secret_name: "{{ kibana_secrets['ingress'] }}"
         cert_name: dashboards-ingress
-        sans: "{{ [kibana_fqdn] }}"
+        sans: "{{ kibana_fqdns }}"
       ansible.builtin.include_tasks: tasks/k8s/secrets/tls.step.yml
 
     - name: Install Dashboards Helm chart
@@ -228,7 +228,7 @@
 
     - name: Wait until Dashboards is ready
       ansible.builtin.uri:
-        url: https://{{ kibana_fqdn }}/
+        url: https://{{ kibana_fqdns | first }}/
       # https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_loops.html#retrying-a-task-until-a-condition-is-met
       retries: 30
       delay: 3

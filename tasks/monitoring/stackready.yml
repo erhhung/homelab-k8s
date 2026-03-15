@@ -8,6 +8,7 @@
 #   prometheus_crds_installed: true/false
 #   grafana_api_server_online: true/false
 #   monitoring_stack_ready:    true/false
+#   pyrra_crds_installed:      true/false
 ---
 - name: Include vars/monitoring.yml
   # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_vars_module.html
@@ -17,21 +18,26 @@
 - name: Is the monitoring stack ready?
   become: false
   vars:
-    # if one CRD is installed, others should also be
-    check_crd: servicemonitors.monitoring.coreos.com
+    check_crds:
+      - podmonitors.monitoring.coreos.com
+      - servicelevelobjectives.pyrra.dev
     api_base: "{{ grafana_url }}/api"
   block:
     - name: Does CustomResourceDefinition exist?
       vars:
         # required kubernetes>=24.2 package only in user virtualenv
         ansible_python_interpreter: "{{ venv_python_interpreter }}"
+        _kubeconfig: "{{ kubeconfig   | default(rke_kubeconfig) }}"
       # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_info_module.html
       kubernetes.core.k8s_info:
-        kubeconfig: "{{ kubeconfig | default(rke_kubeconfig) }}"
+        kubeconfig: "{{ _kubeconfig }}"
         api_version: apiextensions.k8s.io/v1
         kind: CustomResourceDefinition
-        name: "{{ check_crd }}"
-      register: crd_info
+        name: "{{ item }}"
+      register: crds_info
+      loop: "{{ check_crds }}"
+      loop_control:
+        label: "{{ item | split('.') | first }}"
 
     - name: Is Grafana API server reachable?
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/uri_module.html
@@ -49,13 +55,15 @@
 
     - name: Set facts about stack readiness
       vars: &vars
-        grafana_online: "{{ grafana_api.status == 401    }}"
-        crds_installed: "{{ crd_info.resources is truthy }}"
+        prom_crds_ok: "{{  crds_info.results[0].resources is truthy }}"
+        pyrra_crds_ok: "{{ crds_info.results[1].resources is truthy }}"
+        grafana_online: "{{ grafana_api.status == 401 }}"
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/set_fact_module.html
       ansible.builtin.set_fact:
         grafana_api_server_online: "{{ grafana_online }}"
-        prometheus_crds_installed: "{{ crds_installed }}"
-        monitoring_stack_ready: "{{    crds_installed and grafana_online }}"
+        prometheus_crds_installed: "{{ prom_crds_ok   }}"
+        monitoring_stack_ready: "{{    prom_crds_ok and grafana_online }}"
+        pyrra_crds_installed: "{{     pyrra_crds_ok   }}"
 
     # also set grafana_api_server_online fact
     # on localhost because it's often checked
@@ -75,3 +83,4 @@
           prometheus_crds_installed: {{ prometheus_crds_installed }}
           grafana_api_server_online: {{ grafana_api_server_online }}
              monitoring_stack_ready: {{ monitoring_stack_ready    }}
+               pyrra_crds_installed: {{ pyrra_crds_installed      }}

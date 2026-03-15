@@ -383,9 +383,7 @@ postgresql_chart_values:
     # service on HTTP "metrics" port 9187
     serviceMonitor:
       enabled: "{{ prometheus_crds_installed }}"
-      labels: &smon-labels
-        release: "{{ monitoring_release_name }}"
-      selector: *smon-labels
+      labels: "{{ monitoring_selector_labels }}"
 
   # NOTE: Helm will render these manifests as templates,
   # but the only templating currently used are processed

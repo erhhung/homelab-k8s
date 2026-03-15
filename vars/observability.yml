@@ -9,7 +9,7 @@ otlp_fqdn: "{{ [otlp_host_name] | product(search_domains) | map('join','.') | fi
 
 otlp_service_host: "{{ otel_collector_name }}.{{
   observability_namespace }}.svc.{{ cluster_domain }}"
-otlp_service_url: https://{{ otlp_service_host }}:{{ otlp_grpc_port }}
+otlp_endpoint: "{{ otlp_service_host }}:{{ otlp_grpc_port }}"
 
 observability_secrets:
   service: otel-collector-service-tls
@@ -75,8 +75,7 @@ otel_operator_chart_values:
 
     serviceMonitor:
       enabled: true
-      extraLabels:
-        release: "{{ monitoring_release_name }}"
+      extraLabels: "{{ monitoring_selector_labels }}"
       metricsEndpoints:
         - port: https # kube-rbac-proxy port
           scheme: https
@@ -300,9 +299,8 @@ otel_collector_cr:
         # to fine-tune ServiceMonitor configs,
         # we'll just deploy our own resources
         enableMetrics: false
-        extraLabels:
-          release: "{{ monitoring_release_name }}"
         disablePrometheusAnnotations: true
+        extraLabels: "{{ monitoring_selector_labels }}"
 
 # OpenTelemetry Operator's OpenTelemetryCollector
 # CR `spec.ingress` makes it hard to support both

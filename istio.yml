@@ -1,6 +1,24 @@
 # https://istio.io/latest/about/faq#install-method-selection
 # https://istio.io/latest/docs/overview/dataplane-modes
 # https://istio.io/latest/docs/ambient/install/istioctl
+#
+# UNINSTALLATION STEPS:
+# must delete Kiali CR and other manually created
+# resources first, then Kiali and Istio operators:
+# kubectl delete -n istio-system \
+#   --all --now --ignore-not-found \
+#   kialis,certificates,servicemonitors,prometheusrules
+# kubectl delete -n istio-system \
+#   --now --ignore-not-found \
+#   secret/kiali-credentials \
+#   configmap/kiali-cabundle \
+#   service/ztunnel
+# for ns in istio-system kiali-operator; do
+#   kubectl get-all -n $ns -o name 2> /dev/null | grep istio | \
+#     xargs -r kubectl delete -n $ns --ignore-not-found
+# done
+# helm delete -n kiali-operator kiali-operator
+# ssh k8s1 'bash -lc "istioctl uninstall -f .istio/operator.yaml"'
 ---
 - name: Install istioctl on RKE cluster
   tags: istioctl
@@ -9,6 +27,8 @@
   vars_files: &vars_files
     - vars/kubernetes.yml
     - vars/monitoring.yml
+    - vars/observability.yml
+    - vars/tempo.yml
     - vars/istio.yml
   tasks:
     # https://istio.io/latest/docs/setup/additional-setup/download-istio-release
@@ -133,9 +153,6 @@
       ansible.builtin.include_tasks: tasks/pki/cacerts.yml
       when: ca_certificates is undefined
   tasks:
-    # NOTE: this Helm install cannot adopt resources
-    # created after because those are in istio-system
-    # namespace whereas this goes into kiali-operator
     - name: Install Kiali Operator Helm chart
       vars:
         repo_name: kiali
@@ -145,35 +162,44 @@
         release: "{{ kiali_operator_release_name }}"
         release_ns: "{{ kiali_operator_namespace }}"
         # no custom chart values necessary
-      ansible.builtin.include_tasks: tasks/helm/helmfile.yml
 
-    # https://kiali.io/docs/configuration/authentication/openid#set-up-with-no-namespace-access-control-support
-    - name: Create Kiali OpenID secret
-      vars:
-        secret_name: "{{ kiali_secrets['openid'] }}"
-        secret_data:
-          oidc-secret: "{{ kiali_oidc_client_secret }}"
-      ansible.builtin.include_tasks: tasks/k8s/secrets/generic.yml
+        # NOTE: this Helm release  cannot adopt resources
+        # created after because those are in istio-system
+        # namespace whereas this goes into kiali-operator
+      ansible.builtin.include_tasks: tasks/helm/helmfile.yml
 
     - name: Create Kiali ingress secret
       vars:
         secret_name: "{{ kiali_secrets['ingress'] }}"
+        create_ns: true
         cert_name: kiali-ingress
         sans: "{{ kiali_fqdns }}"
       ansible.builtin.include_tasks: tasks/k8s/secrets/tls.step.yml
 
+    # https://kiali.io/docs/configuration/authentication/openid#set-up-with-no-namespace-access-control-support
+    - name: Create credentials secret
+      vars:
+        secret_name: "{{ kiali_secrets['creds'] }}"
+        secret_data:
+          # oidc-secret key name is expected
+          oidc-secret: "{{ kiali_oidc_client_secret }}"
+          grafana-pass: "{{ grafana_admin_pass }}"
+      ansible.builtin.include_tasks: tasks/k8s/secrets/generic.yml
+
     # https://kiali.io/docs/configuration/authentication/openid#using-an-openid-provider-with-a-self-signed-certificate
-    - name: Create kiali-cabundle ConfigMap
+    # https://kiali.io/docs/configuration/p8s-jaeger-grafana/tls-configuration#adding-custom-certificate-authorities
+    - name: Create CA bundle ConfigMap
       kubernetes.core.k8s:
         kubeconfig: "{{ kubeconfig }}"
+        namespace: "{{ kiali_namespace }}"
         definition:
           apiVersion: v1
           kind: ConfigMap
           metadata:
             name: kiali-cabundle # expected
-            namespace: "{{ kiali_namespace }}"
-          data:
-            openid-server-ca.crt: "{{ ca_certificates | join('\n') }}"
+          data: # .pem key name is expected
+            additional-ca-bundle.pem: "{{ ca_certificates | join('\n') }}"
+            openid-server-ca.crt: "" # suppress warning as .pem is enough
         validate:
           fail_on_error: false
         state: present
@@ -182,12 +208,12 @@
     - name: Create Kiali custom resource
       kubernetes.core.k8s:
         kubeconfig: "{{ kubeconfig }}"
+        namespace: "{{ kiali_namespace }}"
         definition:
           apiVersion: kiali.io/v1alpha1
           kind: Kiali
           metadata:
             name: kiali
-            namespace: "{{ kiali_namespace }}"
           spec: "{{ kiali_cr_spec }}"
         state: present
         apply: true

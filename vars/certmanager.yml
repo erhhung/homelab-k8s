@@ -60,8 +60,7 @@ certmanager_chart_values:
     enabled: true
     servicemonitor:
       enabled: "{{ prometheus_crds_installed }}"
-      labels:
-        release: "{{ monitoring_release_name }}"
+      labels: "{{ monitoring_selector_labels }}"
       # targetPort value before chart
       # version 1.18.x must be number
       targetPort: 9402 # http-metrics

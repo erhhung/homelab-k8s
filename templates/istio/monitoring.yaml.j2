@@ -5,9 +5,8 @@ apiVersion: monitoring.coreos.com/v1
 kind: PrometheusRule
 metadata:
   name: istio-metrics-aggregation
-  labels:
-    # required by Prometheus ruleSelector!
-    release: {{ monitoring_release_name }}
+  # required by Prometheus ruleSelector!
+  labels: {{ monitoring_selector_labels }}
 spec:
   groups:
   - name: istio.metricsAggregation-rules
@@ -52,9 +51,8 @@ apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
   name: istio-controlplane
-  labels:
-    # required by serviceMonitorSelector!
-    release: {{ monitoring_release_name }}
+  # required by serviceMonitorSelector!
+  labels: {{ monitoring_selector_labels }}
 spec:
   jobLabel: istiod
   namespaceSelector:
@@ -94,9 +92,7 @@ apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
   name: istio-ztunnel
-  labels:
-    # required by serviceMonitorSelector!
-    release: {{ monitoring_release_name }}
+  labels: {{ monitoring_selector_labels }}
 spec:
   jobLabel: ztunnel
   namespaceSelector:
@@ -124,9 +120,7 @@ apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
   name: istio-waypoint
-  labels:
-    # required by serviceMonitorSelector!
-    release: {{ monitoring_release_name }}
+  labels: {{ monitoring_selector_labels }}
 spec:
   jobLabel: waypoint
   namespaceSelector:
@@ -151,9 +145,7 @@ apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
   name: kiali
-  labels:
-    # required by serviceMonitorSelector!
-    release: {{ monitoring_release_name }}
+  labels: {{ monitoring_selector_labels }}
 spec:
   jobLabel: kiali
   namespaceSelector:
@@ -166,4 +158,3 @@ spec:
     - port: http-metrics
       path: /metrics
       interval: 30s
----

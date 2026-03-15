@@ -1,6 +1,10 @@
 # https://prometheus-operator.dev/
 # https://github.com/prometheus-operator/kube-prometheus
 # https://runbooks.prometheus-operator.dev/runbooks
+#
+# view prometheus.yaml in ConfigMap:
+# kubectl get secret -n monitoring prometheus-prometheus-stack-prometheus \
+#   -o jsonpath='{.data.prometheus\.yaml\.gz}' | base64 -d | gunzip | yq
 ---
 - name: Install Prometheus monitoring stack
   tags: install

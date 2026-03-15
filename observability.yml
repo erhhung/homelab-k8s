@@ -2,6 +2,10 @@
 # https://opentelemetry.io/docs/collector
 # https://opentelemetry.io/docs/platforms/kubernetes/operator
 # https://www.dash0.com/guides/kubernetes-observability-opentelemetry-operator
+#
+# USEFUL QUERIES:
+# list metrics from specific service:
+# count by (__name__) ({exported_job="service-name"})
 ---
 - name: Install OpenTelemetry Operator
   tags: install
