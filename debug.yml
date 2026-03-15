@@ -23,6 +23,10 @@
     - name: Are Gateway API CRDs installed?
       ansible.builtin.include_tasks: tasks/istio/crds.yml
       when: kubernetes_version is defined
+
+    - name: Is the monitoring stack ready?
+      ansible.builtin.include_tasks: tasks/monitoring/stackready.yml
+      when: monitoring_stack_ready is undefined
   tasks:
     - name: Show controller facts
       run_once: true

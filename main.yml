@@ -103,6 +103,11 @@
   ansible.builtin.import_playbook: thanos.yml
   tags: thanos
 
+# Pyrra depends on cert-manager, Prometheus, Thanos
+- name: Include Pyrra SLO management playbook
+  ansible.builtin.import_playbook: pyrra.yml
+  tags: pyrra
+
 # OpenTelemetry depends on cert-manager, Prometheus
 - name: Include OTel observability playbook
   ansible.builtin.import_playbook: observability.yml

@@ -47,7 +47,6 @@
 
     - name: Need to create pattern?
       vars:
-        # https://runebook.dev/en/articles/jinja/templates/index/jinja-filters.selectattr
         existing: "{{ index_patterns.json.saved_objects |
           selectattr('attributes.title', '==', pattern) }}"
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/set_fact_module.html

@@ -1,0 +1,131 @@
+---
+apiVersion: pyrra.dev/v1alpha1
+kind: ServiceLevelObjective
+metadata:
+  name: openwebui-server-availability
+  # required by Prometheus ruleSelector!
+  labels: {{ monitoring_selector_labels }}
+spec:
+  description: 99.9% of server requests succeed with non-5xx
+  indicator:
+    ratio:
+      errors:
+        metric: http_server_requests_total{exported_job="open-webui",http_status_code=~"5.."}
+      total:
+        metric: http_server_requests_total{exported_job="open-webui"}
+  target: "99.9"
+  window: 2w
+---
+apiVersion: pyrra.dev/v1alpha1
+kind: ServiceLevelObjective
+metadata:
+  name: openwebui-server-latency-250ms
+  labels: {{ monitoring_selector_labels }}
+spec:
+  description: 99% of server GET requests complete within 250ms
+  indicator:
+    latency:
+      success:
+        metric: http_server_duration_milliseconds_bucket{exported_job="open-webui",http_method="GET",le="250.0"}
+      total:
+        metric: http_server_duration_milliseconds_count{exported_job="open-webui",http_method="GET"}
+  target: "99"
+  window: 2w
+---
+apiVersion: pyrra.dev/v1alpha1
+kind: ServiceLevelObjective
+metadata:
+  name: openwebui-litellm-availability
+  labels: {{ monitoring_selector_labels }}
+spec:
+  description: 99.9% of LiteLLM requests succeed with non-5xx
+  indicator:
+    ratio:
+      errors:
+        metric: http_client_duration_milliseconds_count{exported_job="open-webui",net_peer_name=~"litellm.*",http_status_code=~"5.."}
+      total:
+        metric: http_client_duration_milliseconds_count{exported_job="open-webui",net_peer_name=~"litellm.*"}
+  target: "99.9"
+  window: 2w
+---
+apiVersion: pyrra.dev/v1alpha1
+kind: ServiceLevelObjective
+metadata:
+  name: openwebui-litellm-latency-5s
+  labels: {{ monitoring_selector_labels }}
+spec:
+  description: 99% of LiteLLM requests complete within 5s
+  indicator:
+    latency:
+      success:
+        metric: http_client_duration_milliseconds_bucket{exported_job="open-webui",net_peer_name=~"litellm.*",le="5000.0"}
+      total:
+        metric: http_client_duration_milliseconds_count{exported_job="open-webui",net_peer_name=~"litellm.*"}
+  target: "99"
+  window: 2w
+---
+apiVersion: pyrra.dev/v1alpha1
+kind: ServiceLevelObjective
+metadata:
+  name: openwebui-ollama-availability
+  labels: {{ monitoring_selector_labels }}
+spec:
+  description: 99.9% of Ollama requests succeed with non-5xx
+  indicator:
+    ratio:
+      errors:
+        metric: http_client_duration_milliseconds_count{exported_job="open-webui",net_peer_name=~"ollama.*",http_status_code=~"5.."}
+      total:
+        metric: http_client_duration_milliseconds_count{exported_job="open-webui",net_peer_name=~"ollama.*"}
+  target: "99.9"
+  window: 2w
+---
+apiVersion: pyrra.dev/v1alpha1
+kind: ServiceLevelObjective
+metadata:
+  name: openwebui-ollama-latency-30s
+  labels: {{ monitoring_selector_labels }}
+spec:
+  # don't be too ambitious with a CPU-intensive component
+  # running in a heavily resource-constrained environment
+  description: 99% of Ollama requests complete within 30s
+  indicator:
+    latency:
+      success:
+        metric: http_client_duration_milliseconds_bucket{exported_job="open-webui",net_peer_name=~"ollama.*",le="30000.0"}
+      total:
+        metric: http_client_duration_milliseconds_count{exported_job="open-webui",net_peer_name=~"ollama.*"}
+  target: "99"
+  window: 2w
+---
+apiVersion: pyrra.dev/v1alpha1
+kind: ServiceLevelObjective
+metadata:
+  name: openwebui-mcpo-availability
+  labels: {{ monitoring_selector_labels }}
+spec:
+  description: 99.9% of MCPO requests succeed with non-5xx
+  indicator:
+    ratio:
+      errors:
+        metric: http_client_duration_milliseconds_count{exported_job="open-webui",net_peer_name=~"mcpo.*",http_status_code=~"5.."}
+      total:
+        metric: http_client_duration_milliseconds_count{exported_job="open-webui",net_peer_name=~"mcpo.*"}
+  target: "99.9"
+  window: 2w
+---
+apiVersion: pyrra.dev/v1alpha1
+kind: ServiceLevelObjective
+metadata:
+  name: openwebui-mcpo-latency-5s
+  labels: {{ monitoring_selector_labels }}
+spec:
+  description: 99% of MCPO requests complete within 5s
+  indicator:
+    latency:
+      success:
+        metric: http_client_duration_milliseconds_bucket{exported_job="open-webui",net_peer_name=~"mcpo.*",le="5000.0"}
+      total:
+        metric: http_client_duration_milliseconds_count{exported_job="open-webui",net_peer_name=~"mcpo.*"}
+  target: "99"
+  window: 2w

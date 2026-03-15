@@ -3,9 +3,8 @@ apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
   name: awx-operator-controller-manager
-  labels:
-    # required by serviceMonitorSelector!
-    release: {{ monitoring_release_name }}
+  # required by serviceMonitorSelector!
+  labels: {{ monitoring_selector_labels }}
 spec:
   jobLabel: awx-operator-controller-manager
   namespaceSelector:
@@ -25,9 +24,7 @@ apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
   name: awx-instance
-  labels:
-    # required by serviceMonitorSelector!
-    release: {{ monitoring_release_name }}
+  labels: {{ monitoring_selector_labels }}
 spec:
   jobLabel: awx-instance
   namespaceSelector:

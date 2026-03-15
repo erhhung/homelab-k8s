@@ -21,8 +21,8 @@ kiali_host_names: # aliases of "ingress"
 kiali_fqdns: "{{ kiali_host_names | product(search_domains) | map('join','.') }}"
 
 kiali_secrets:
-  openid: kiali-openid
   ingress: kiali-ingress-tls
+  creds: kiali-credentials
 
 kiali_oidc_client_id: kiali
 # kiali_oidc_client_secret: {vault.yml}
@@ -31,7 +31,7 @@ kiali_oidc_issuer_uri: https://sso.{{ homelab_domain }}/realms/homelab
 
 # https://kiali.io/docs/installation/installation-guide/install-with-helm#install-with-operator
 kiali_operator_namespace: kiali-operator
-kiali_operator_chart_version: "2.18.0"
+kiali_operator_chart_version: "2.23.0"
 kiali_operator_release_name: kiali-operator
 
 # https://kiali.io/docs/configuration/kialis.kiali.io
@@ -64,7 +64,7 @@ kiali_cr_spec:
 
   # https://kiali.io/docs/configuration/kialis.kiali.io#.spec.deployment
   deployment:
-    secret_name: "{{ kiali_secrets['openid'] }}"
+    secret_name: "{{ kiali_secrets['creds'] }}"
 
     # https://kiali.io/docs/configuration/kialis.kiali.io#.spec.deployment.custom_secrets
     custom_secrets:
@@ -138,12 +138,21 @@ kiali_cr_spec:
     # don't require auth for
     # the /api endpoint only
     require_auth: false
+
+    # https://kiali.io/docs/configuration/kialis.kiali.io#.spec.server.observability
     observability:
       metrics:
         enabled: true
         port: 9090
       tracing:
-        enabled: false
+        enabled: true
+        sampling_rate: 1.0
+        # collector_url must be "host:port"
+        collector_url: "{{ otlp_endpoint }}"
+        collector_type: otel
+        otel:
+          protocol: grpc
+          tls_enabled: true
 
   external_services:
     # https://kiali.io/docs/configuration/kialis.kiali.io#.spec.external_services.prometheus
@@ -151,31 +160,29 @@ kiali_cr_spec:
       is_core: true
       thanos_proxy:
         enabled: false
-      url: https://{{ monitoring_release_name }}-prometheus.{{
-        monitoring_namespace }}.svc.{{ cluster_domain }}:9090
+      url: "{{ prometheus_service_url }}"
       auth:
-        # CA cert to verify TLS connection to Prometheus from Kiali pod
-        # /tls/ingress is already mounted by .deployment.custom_secrets
-        ca_file: /tls/ingress/ca.crt
-        type: none # or basic|bearer
+        type: none # none|basic|bearer
 
     # https://kiali.io/docs/configuration/kialis.kiali.io#.spec.external_services.grafana
     grafana:
       enabled: true
       is_core: false
       external_url: "{{ grafana_url }}"
-      internal_url: https://{{ monitoring_release_name }}-grafana.{{
-        monitoring_namespace }}.svc.{{ cluster_domain }}
+      internal_url: "{{ grafana_service_url }}"
+      health_check_url: "{{ grafana_service_url }}/api/health"
       auth:
-        # CA cert to verify TLS connection to Grafana from Kiali pod
-        # /tls/ingress already mounted by .deployment.custom_secrets
-        ca_file: /tls/ingress/ca.crt
         type: basic
         username: admin
-        password: "{{ grafana_admin_pass }}"
+        # https://kiali.io/docs/faq/installation#how-can-i-use-a-secret-to-pass-external-service-credentials-to-the-kiali-server
+        password: secret:{{ kiali_secrets['creds'] }}:grafana-pass
+
+      datasource_uid: prometheus
       # https://docs.ansible.com/ansible/latest/collections/community/general/dict_kv_filter.html
       dashboards: |
-        {{ istio_grafana_dashboards | map(attribute='title') | map('community.general.dict_kv', 'name') }}
+        {{ istio_grafana_dashboards |
+           map(attribute='title')   |
+           map('community.general.dict_kv', 'name') }}
 
     # https://kiali.io/docs/configuration/kialis.kiali.io#.spec.external_services.custom_dashboards
     custom_dashboards:
@@ -187,12 +194,21 @@ kiali_cr_spec:
       # prometheus: ~
 
     # https://kiali.io/docs/configuration/kialis.kiali.io#.spec.external_services.tracing
+    # https://kiali.io/docs/configuration/p8s-jaeger-grafana/tracing/tempo
     tracing:
-      enabled: false
+      enabled: true
       is_core: false
-      provider: jaeger
-      external_url: ""
-      internal_url: ""
+      external_url: "{{ grafana_url }}"
+      internal_url: "{{ tempo_frontend_url }}" # HTTPS
+      health_check_url: "{{ tempo_frontend_url }}/ready"
+      use_grpc: false
+
+      provider: tempo
+      tempo_config:
+        datasource_uid: tempo
+        url_format: grafana
+        cache_enabled: true
+        cache_capacity: 100
 
   kiali_feature_flags:
     ui_defaults:

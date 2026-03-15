@@ -36,9 +36,9 @@
         kubernetes_version:
           # with v prefix and +* suffix
           full: "{{ ver.gitVersion }}"
-          major: "{{ ver.major }}"
-          minor: "{{ ver.minor }}"
-          with_minor: "{{ ver.major }}.{{ ver.minor }}"
+          major: "{{ ver.major | int }}"
+          minor: "{{ ver.minor | int }}"
+          with_minor: "{{ ver.major | float + ver.minor | float / 100 }}"
           with_patch: "{{ ver.gitVersion | ansible.builtin.regex_replace('^v?([^+]+).*$','\\1') }}"
         # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_cluster_info_module.html#return-values
         kubernetes_apis:

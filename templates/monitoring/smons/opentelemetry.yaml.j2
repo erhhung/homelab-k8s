@@ -1,7 +1,5 @@
 ---
-{% set smon_labels = otel_collector_labels | combine({
-      'release': monitoring_release_name,
-   }) %}
+{% set smon_labels = otel_collector_labels | combine(monitoring_selector_labels) %}
 {# https://docs.ansible.com/ansible/latest/collections/community/general/keep_keys_filter.html #}
 {% set sel_labels = [otel_collector_labels] | community.general.keep_keys(target=[
       'app.kubernetes.io/instance',

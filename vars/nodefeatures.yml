@@ -94,9 +94,8 @@ nfd_chart_values:
         memory: 32Mi
 
   prometheus: # PodMonitor
-    enable: "{{ prometheus_crds_installed }}"
-    labels:
-      release: "{{ monitoring_release_name }}"
+    enable: "{{ prometheus_crds_installed  }}"
+    labels: "{{ monitoring_selector_labels }}"
     scrapeInterval: 15m
 
 # [{name,url} or {name,def}]

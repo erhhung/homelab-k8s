@@ -8,8 +8,8 @@ opensearch_passwords:
   erhhung: "{{ opensearch_admin_pass }}"
   kibana: "{{ kibana_os_pass }}"
   fluent: "{{ fluent_os_pass }}"
-  grafana: "{{ monitoring_passwords['grafana'] }}"
   scraper: "{{ monitoring_passwords['scraper'] }}"
+  grafana: "{{ monitoring_passwords['grafana'] }}"
 
 opensearch_namespace: opensearch
 opensearch_host_names: # aliases of "ingress"
@@ -66,7 +66,7 @@ opensearch_chart_values:
         # https://docs.opensearch.org/latest/install-and-configure/configuring-opensearch/security-settings
         security:
           {# https://docs.ansible.com/ansible/latest/collections/ansible/builtin/to_nice_yaml_filter.html -#}
-          {# https://tedboy.github.io/jinja2/templ14.html#indent -#}
+          {# https://jinja.palletsprojects.com/en/stable/templates#jinja-filters.indent -#}
           {{ opensearch_security_plugin | ansible.builtin.to_nice_yaml(indent=2, sort_keys=false) |
                                                                        indent(4) }}
 
@@ -234,10 +234,10 @@ opensearch_chart_values:
   # the prometheus-exporter plugin has been installed!
   serviceMonitor:
     enabled: "{{ prometheus_crds_installed }}"
-    labels:
-      release: "{{ monitoring_release_name }}"
+    labels: "{{ monitoring_selector_labels }}"
     # https://github.com/opensearch-project/helm-charts/pull/674
     selectorLabels:
+      # select headless service only
       prometheus.io/scrape: "true"
     path: /_prometheus/metrics
     scheme: https

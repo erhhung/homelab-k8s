@@ -9,7 +9,7 @@
 #      "." + sub("/.+$"; "")) // "") +
 #      "/\(.metadata.name)"' | \
 #   grep fluentbit.fluent.io | \
-#   xargs -r kubectl delete -n logging --ignore-not-found 2> /dev/null
+#   xargs -r kubectl delete -n logging --ignore-not-found
 # helm delete -n logging fluent-operator
 ---
 - name: Install Fluent Bit on RKE cluster
@@ -75,8 +75,7 @@
               metadata:
                 name: fluent-bit
                 namespace: {{ logging_namespace }}
-                labels:
-                  release: {{ monitoring_release_name }}
+                labels: {{ monitoring_selector_labels }}
               {% endif %}
 
           json_patches:

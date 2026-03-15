@@ -1,0 +1,116 @@
+pyrra_namespace: pyrra
+pyrra_host_names: # aliases of "ingress"
+  - slo
+  - pyrra
+
+# remember to add pyrra.fourteeners.local & slo.fourteeners.local to
+# pfSense DNS as aliases of ingress.fourteeners.local: 192.168.4.222
+# https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_filters.html#products
+pyrra_fqdns: "{{ pyrra_host_names | product(search_domains) | map('join','.') }}"
+
+pyrra_secrets:
+  ingress: pyrra-ingress-tls
+  creds: pyrra-credentials
+
+# https://github.com/pyrra-dev/helm-charts/tree/main/charts/pyrra
+pyrra_chart_version: "1.0.1"
+pyrra_release_name: pyrra
+
+# https://github.com/pyrra-dev/helm-charts/tree/main/charts/pyrra/values.yaml
+pyrra_chart_values:
+  prometheusUrl: "{{ thanos_query_frontend_url }}"
+  # prometheusExternalUrl: "{{ prometheus_url }}"
+
+  # not actually supported chart value
+  # (will be patched by Helmfile task)
+  extraApiEnvs:
+    - name: THANOS_PASSWORD
+      valueFrom:
+        secretKeyRef:
+          name: "{{ pyrra_secrets['creds'] }}"
+          key: thanos-pass
+
+  # args for web/API container
+  # (run `pyrra api --help` inside container)
+  extraApiArgs:
+    - --tls-client-ca-file=/tls/ca.crt
+    - --prometheus-basic-auth-username=pyrra
+    - --prometheus-basic-auth-password=$(THANOS_PASSWORD)
+    # use Grafana Explore instead of Prometheus UI for
+    # richer "click-through to investigate" experience
+    - --grafana-external-url={{ grafana_url }}
+    - --grafana-external-datasource-id=prometheus
+
+  # args for operator sidecar
+  # (run `pyrra kubernetes --help` inside container)
+  extraKubernetesArgs: []
+
+  # webhook requires cert-manager
+  validatingWebhookConfiguration:
+    enabled: true
+
+  # should Pyrra generate a separate set of
+  # metrics for each SLO using standardized
+  # metric names (enables reuse of built-in
+  # dashboards)?
+  genericRules:
+    enabled: true
+
+  # deploy Grafana dashboards via ConfigMap?
+  dashboards:
+    enabled: true
+    label: "{{ grafana_dashboard_label }}"
+
+  resources:
+    requests:
+      cpu: 10m
+      memory: 32Mi
+    limits:
+      cpu: 100m
+      memory: 128Mi
+
+  # not actually supported chart value
+  # (will be patched by Helmfile task)
+  extraVolumes:
+    - name: ca-tls
+      secret:
+        secretName: "{{ pyrra_secrets['ingress'] }}"
+        defaultMode: 416 # "0640"
+
+  # not actually supported chart value
+  # (will be patched by Helmfile task)
+  extraVolumeMounts:
+    - name: ca-tls
+      mountPath: /tls/ca.crt
+      subPath: ca.crt
+      readOnly: true
+
+  ingress:
+    enabled: true
+    tls:
+      - secretName: "{{ pyrra_secrets['ingress'] }}"
+        hosts: "{{ pyrra_fqdns }}"
+    className: "{{ rke_ingress_class }}"
+    annotations:
+      nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+      nginx.ingress.kubernetes.io/backend-protocol: HTTP
+    hosts: |
+      {% set hosts = [] %}
+      {% for fqdn in pyrra_fqdns %}
+      {%   set _ = hosts.append({
+             'host':  fqdn,
+             'paths': [{
+               'path':     '/',
+               'pathType': 'Prefix',
+             }],
+           })   %}
+      {% endfor %}
+      {{ hosts  }}
+
+  # monitors web/API server
+  serviceMonitor: &svc-mon
+    enabled: true
+    labels: "{{ monitoring_selector_labels }}"
+    interval: 1m
+  # monitors operator controller
+  serviceMonitorOperator: *svc-mon

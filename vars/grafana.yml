@@ -84,7 +84,7 @@ grafana_data_sources:
   - name: Tempo
     type: tempo
     uid: tempo
-    url: "{{ tempo_datasource_url }}"
+    url: "{{ tempo_frontend_url }}"
     access: proxy
     # NOTE: due to bug in the Tempo data source plugin, basic auth
     # must be enabled and credentials provided, even if ignored by

@@ -144,8 +144,7 @@ velero_chart_values:
 
     serviceMonitor: &prometheus
       enabled: "{{ prometheus_crds_installed }}"
-      additionalLabels:
-        release: "{{ monitoring_release_name }}"
+      additionalLabels: "{{ monitoring_selector_labels }}"
 
     prometheusRule:
       <<: *prometheus

@@ -649,10 +649,10 @@ gitlab_chart_values:
       # using default SSH daemon "openssh"
       metrics: &metrics-smon-http
         enabled: true
+
         serviceMonitor: &metrics-mon-http
           enabled: true
-          additionalLabels: &metrics-mon-labels
-            release: "{{ monitoring_release_name }}"
+          additionalLabels: "{{ monitoring_selector_labels }}"
           endpointConfig: &metrics-ep-http
             interval: 30s
             scheme: http
@@ -829,9 +829,10 @@ gitlab_chart_values:
       metrics:
         enabled: true
         tls: *node-tls
+
         podMonitor: # &metrics-mon-https
           enabled: true
-          additionalLabels: *metrics-mon-labels
+          additionalLabels: "{{ monitoring_selector_labels }}"
           endpointConfig: # &metrics-ep-https
             interval: 30s
             scheme: https
@@ -939,7 +940,7 @@ gitlab_chart_values:
       enabled: true
       serviceMonitor:
         enabled: true
-        additionalLabels: *metrics-mon-labels
+        additionalLabels: "{{ monitoring_selector_labels }}"
 
   # https://docs.gitlab.com/charts/charts/registry
   registry:
@@ -1060,7 +1061,7 @@ gitlab_chart_values:
       enabled: true
       serviceMonitor:
         enabled: true
-        labels: *metrics-mon-labels
+        labels: "{{ monitoring_selector_labels }}"
         <<: *metrics-ep-http
 
     # https://docs.gitlab.com/runner/commands#signals
@@ -1158,8 +1159,7 @@ pipelines_exporter_chart_values:
 
   serviceMonitor:
     enabled: true
-    labels:
-      release: "{{ monitoring_release_name }}"
+    labels: "{{ monitoring_selector_labels }}"
     endpoints:
       - port: http
         scheme: http

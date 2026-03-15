@@ -149,8 +149,7 @@ valkey_chart_values:
 
     serviceMonitor:
       enabled: "{{ prometheus_crds_installed }}"
-      labels:
-        release: "{{ monitoring_release_name }}"
+      labels: "{{ monitoring_selector_labels }}"
 
 # https://grafana.com/grafana/dashboards/?search=Valkey&dataSource=prometheus
 valkey_grafana_dashboards:

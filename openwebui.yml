@@ -16,6 +16,7 @@
     - vars/ollama.yml
     - vars/qdrant.yml
     - vars/litellm.yml
+    - vars/monitoring.yml
     - vars/observability.yml
     - vars/openwebui.yml
   vars: &vars
@@ -98,6 +99,11 @@
 
     - name: Install Open WebUI Helm chart
       vars:
+        # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/template_lookup.html
+        slo_manifests: "{{ lookup('ansible.builtin.template',
+          template_dir ~ '/monitoring/slos/openwebui.yaml.j2') }}"
+
+        # === Inputs ===
         repo_name: open-webui
         repo_url: "{{ openwebui_chart_repo_url }}"
         chart_ref: open-webui
@@ -111,6 +117,8 @@
           - cert-manager.io/v1 Certificate {{ openwebui_secrets['ingress']  }}
           - cert-manager.io/v1 Certificate {{ openwebui_secrets['database'] }}
           - v1 Secret {{ openwebui_secrets['env-vars'] }}
+          # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/from_yaml_all_filter.html
+          - "{{ slo_manifests | from_yaml_all }}"
 
         # pulling custom image from
         # Harbor could take a while

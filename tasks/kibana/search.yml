@@ -89,7 +89,6 @@
     - name: Find existing search
       vars:
         saved_objs: "{{ saved_searches.json.saved_objects }}"
-        # https://runebook.dev/en/articles/jinja/templates/index/jinja-filters.selectattr
         existing: "{{ saved_objs | selectattr('attributes.title', '==', title) }}"
         search: "{{  existing | selectattr('type', '==', 'search')  }}"
         explore: "{{ existing | selectattr('type', '==', 'explore') }}"

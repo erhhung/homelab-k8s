@@ -49,7 +49,6 @@
 
     - name: Need to create workspace?
       vars:
-        # https://runebook.dev/en/articles/jinja/templates/index/jinja-filters.selectattr
         existing: "{{ osd_workspaces.json.result.workspaces |
           selectattr('name', '==', ws_name) }}"
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/set_fact_module.html

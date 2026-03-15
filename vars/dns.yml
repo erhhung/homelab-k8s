@@ -30,6 +30,8 @@ pfsense_dns_records:
         desc: Ansible AWX
       - host: kibana
         desc: OpenSearch Dashboards
+      - host: logs
+        desc: OpenSearch Dashboards
       - host: grafana
         desc: Grafana Dashboards
       - host: monitoring
@@ -81,6 +83,10 @@ pfsense_dns_records:
         desc: Jaeger UI
       - host: jaeger
         desc: Jaeger UI
+      - host: slo
+        desc: Pyrra Dashboard
+      - host: pyrra
+        desc: Pyrra Dashboard
       - host: keycloak
         desc: Keycloak IAM
       - host: iam

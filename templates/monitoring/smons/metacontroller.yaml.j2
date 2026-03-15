@@ -3,9 +3,8 @@ apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
   name: metacontroller
-  labels:
-    # required by serviceMonitorSelector!
-    release: {{ monitoring_release_name }}
+  # required by serviceMonitorSelector!
+  labels: {{ monitoring_selector_labels }}
 spec:
   jobLabel: metacontroller
   namespaceSelector:

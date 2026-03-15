@@ -48,6 +48,7 @@ All cluster services will be provisioned with TLS certificates from Erhhung's pr
 |         https://alerts.fourteeners.local | Alertmanager UI _(Keycloak SSO)_
 |         https://thanos.fourteeners.local | Thanos Query UI
 | https://rule.thanos.fourteeners.local <br/> https://store.thanos.fourteeners.local <br/> https://bucket.thanos.fourteeners.local <br/> https://compact.thanos.fourteeners.local | Thanos components UI
+|            https://slo.fourteeners.local | Pyrra dashboard
 |              otlp.fourteeners.local:4317 _(gRPCs)_ <br/> otlp.fourteeners.local:4318 _(HTTPS)_ | OpenTelemetry collector
 |      ~~https://tracing.fourteeners.local~~ | ~~Jaeger UI _(Tempo Query)_~~
 |          https://kiali.fourteeners.local | Kiali console _(Keycloak SSO)_
@@ -113,6 +114,8 @@ All cluster services will be provisioned with TLS certificates from Erhhung's pr
     * Install on main RKE cluster using the [`kube-prometheus-stack`](https://github.com/prometheus-community/helm-charts/tree/main/charts/kube-prometheus-stack) Helm chart
     * [X] Add authentication to Prometheus and Alertmanager UIs using [`oauth2-proxy`](https://github.com/oauth2-proxy/oauth2-proxy) sidecar
     * [X] Install other [Thanos components](https://thanos.io/tip/thanos/quick-tutorial.md#querierquery) using Bitnami's [`thanos`](https://github.com/bitnami/charts/tree/main/bitnami/thanos) Helm chart for global querying
+- [X] [Pyrra SLO Management](https://github.com/pyrra-dev/pyrra) — define SLOs with error budgets and monitor burn rates
+    * Install on main RKE cluster using the [`pyrra`](https://github.com/pyrra-dev/helm-charts/tree/main/charts/pyrra) Helm chart
 - [X] [OpenTelemetry Collector](https://opentelemetry.io/docs/collector) and [Grafana Tempo](https://grafana.com/docs/tempo) — telemetry collector and distributed tracing backend
     * Install on main RKE cluster using the [OpenTelemetry Operator](https://opentelemetry.io/docs/platforms/kubernetes/helm/operator) Helm chart and collector CR
     * [X] Install Tempo using the [`tempo`](https://github.com/grafana-community/helm-charts/tree/main/charts/tempo) Helm chart
@@ -435,16 +438,19 @@ however, all privileged operations using `sudo` will require the password stored
     ```
 </details>
 
-20. <details><summary>Install <strong>Prometheus</strong>, <strong>Thanos</strong>, and <strong>Grafana</strong> in <em><strong>HA</strong></em> mode</summary><br/>
+20. <details><summary>Install <strong>Prometheus</strong>, <strong>Alertmanager</strong>, and <strong>Thanos</strong><br/>
+    &nbsp; &nbsp; Install <strong>Grafana</strong> for dashboards, traces, and logs<br/>
+    &nbsp; &nbsp; Install <strong>Pyrra</strong> to manage Service Level Objectives</summary><br/>
 
     20.1. Expose Prometheus & Alertmanager UIs via `oauth2-proxy` integration with **Keycloak**  
     20.2. Connect Thanos sidecars to **MinIO** to store scraped metrics in the `telemetry` bucket  
     20.3. Deploy and integrate additional Thanos components with Prometheus & Alertmanager  
-    20.4. Add **OpenSearch** data source to Grafana to display application logs  
-    20.5. Add **Tempo** data source to Grafana with traces-to-logs and -metrics
+    20.4. Import example SLOs to monitor K8s `apiserver`/`kubelet`/`coredns` and Prometheus  
+    20.5. Add **OpenSearch** data source to Grafana to display application logs  
+    20.6. Add **Tempo** data source to Grafana with traces-to-logs and -metrics
 
     ```bash
-    make monitoring thanos
+    make monitoring thanos pyrra
     ```
 </details>
 
@@ -561,7 +567,8 @@ however, all privileged operations using `sudo` will require the password stored
     33.1. Add LiteLLM connection in Open WebUI to proxy OpenAI, Anthropic, and Groq models  
     33.2. Create `Accounts` knowledge base and `Accounts` custom model that embeds that KB  
     33.3. **NOTE**: Populate `Accounts` KB by running `make openwebui -t knowledge` separately  
-    33.4. Deploy MCP tool servers, including `time`, `memory`, `browser`, `weather`, and `lights`
+    33.4. Deploy MCP tool servers, including `time`, `memory`, `browser`, `weather`, and `lights`  
+    33.5. Define **SLOs** for HTTP success rates + latency for server, LiteLLM, Ollama, and MCPO
 
     ```bash
     make ollama openwebui
