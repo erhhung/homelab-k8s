@@ -1,0 +1,71 @@
+# generate NavLink CRs for RKE cluster, which appear
+# under the "Shortcuts" group of the left-navigation
+# pane in Rancher UI:
+rancher_rke_navlinks:
+  - group: Shortcuts
+    links:
+      - name: harbor
+        label: Harbor
+        title: Harbor Registry
+        icon: "{{ icon_dir }}/harbor.png"
+        url: https://harbor.{{ homelab_domain }}
+      - name: keycloak
+        label: Keycloak
+        title: Keycloak Console
+        icon: "{{ icon_dir }}/keycloak.png"
+        url: https://sso.{{ homelab_domain }}
+      - name: minio
+        label: MinIO
+        title: MinIO Console
+        icon: "{{ icon_dir }}/minio.png"
+        url: https://minio.{{ homelab_domain }}
+      - name: velero
+        label: Velero
+        title: Velero Console
+        icon: "{{ icon_dir }}/velero.png"
+        url: https://velero.{{ homelab_domain }}
+      - name: opensearch
+        label: OpenSearch
+        title: OpenSearch Dashboards
+        icon: "{{ icon_dir }}/opensearch.png"
+        url: https://kibana.{{ homelab_domain }}
+      - name: grafana
+        label: Grafana
+        title: Grafana Dashboards
+        icon: "{{ icon_dir }}/grafana.png"
+        url: https://grafana.{{ homelab_domain }}
+      - name: prometheus
+        label: Prometheus
+        title: Prometheus
+        icon: "{{ icon_dir }}/prometheus.png"
+        url: https://metrics.{{ homelab_domain }}
+      - name: alertmanager
+        label: Alertmanager
+        title: Alertmanager
+        icon: "{{ icon_dir }}/prometheus.png"
+        url: https://alerts.{{ homelab_domain }}
+      - name: thanos
+        label: Thanos
+        title: Thanos Query
+        icon: "{{ icon_dir }}/thanos.png"
+        url: https://thanos.{{ homelab_domain }}
+      - name: pyrra
+        label: Pyrra
+        title: Pyrra Dashboard
+        icon: "{{ icon_dir }}/pyrra.png"
+        url: https://pyrra.{{ homelab_domain }}
+      - name: kiali
+        label: Kiali
+        title: Kiali Console
+        icon: "{{ icon_dir }}/kiali.png"
+        url: https://kiali.{{ homelab_domain }}
+      - name: vault
+        label: Vault
+        title: HashiCorp Vault
+        icon: "{{ icon_dir }}/vault.png"
+        url: https://vault.{{ homelab_domain }}
+      - name: awx
+        label: AWX
+        title: Ansible AWX Console
+        icon: "{{ icon_dir }}/awx.png"
+        url: https://awx.{{ homelab_domain }}

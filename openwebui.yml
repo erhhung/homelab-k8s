@@ -574,7 +574,7 @@
           selectattr('name', '==', 'Accounts') }}"
         base_model: "{{ ollama_models | select('search', '^gemma3') | first }}"
         # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/file_lookup.html
-        image_data: "{{ lookup('ansible.builtin.file', 'images/assistant.png') }}"
+        image_data: "{{ lookup('ansible.builtin.file', icon_dir ~ '/assistant.png') }}"
         image_url: data:image/png;base64,{{ image_data | b64encode }}
         knowledge: |
           {% set know = accounts_knowledge %}
@@ -654,7 +654,7 @@
         model: "{{ list_models.json['items'] |
           selectattr('name', '==', 'Browsing') }}"
         base_model: "{{ ollama_models | select('search', '^gemma3') | first }}"
-        image_data: "{{ lookup('ansible.builtin.file', 'images/chromium.png') }}"
+        image_data: "{{ lookup('ansible.builtin.file', icon_dir ~ '/chromium.png') }}"
         image_url: data:image/png;base64,{{ image_data | b64encode }}
       ansible.builtin.uri:
         method: POST

@@ -35,7 +35,7 @@ All cluster services will be provisioned with TLS certificates from Erhhung's pr
 |-----------------------------------------:|:----------------------
 |        https://rancher.fourteeners.local | Rancher Server console
 |         https://harbor.fourteeners.local | Harbor OCI registry
-|         https://velero.fourteeners.local | Velero dashboard
+|         https://velero.fourteeners.local | Velero console
 |          https://minio.fourteeners.local | MinIO console
 |             https://s3.fourteeners.local | MinIO S3 API
 |        opensearch.fourteeners.local:9200 | OpenSearch _(HTTPS only)_

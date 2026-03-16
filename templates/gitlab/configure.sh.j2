@@ -273,7 +273,7 @@ group_homelab() {
       -F 'group[path]=homelab'
       -F "group[description]=Erhhung's homelab projects"
       # image should be 192px square
-      -F 'group[avatar]=@{{ playbook_dir }}/images/homelab.png;type=image/png'
+      -F 'group[avatar]=@{{ icon_dir }}/homelab.png;type=image/png'
       # 0=Private 10=Internal 20=Public
       -F 'group[visibility_level]=20'
       # for company/team or "just me"
