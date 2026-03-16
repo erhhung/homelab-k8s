@@ -386,7 +386,6 @@
     - name: Register cluster with Rancher
       when: inventory_hostname == rke_control_plane_host
       vars:
-        # required kubernetes>=24.2 package only in user virtualenv
         ansible_python_interpreter: "{{ venv_python_interpreter }}"
         kubeconfig: "{{ rke_kubeconfig }}"
       block:
@@ -453,7 +452,6 @@
     # restart a static pod by deleting it
     # - name: Restart kube-proxy static pod
     #   vars:
-    #     # required kubernetes>=24.2 package only in user virtualenv
     #     ansible_python_interpreter: "{{ venv_python_interpreter }}"
     #   kubernetes.core.k8s:
     #     kubeconfig: "{{ rke_kubeconfig }}"
@@ -462,3 +460,52 @@
     #     name: kube-proxy-{{ inventory_hostname }}
     #     namespace: kube-system
     #     state: absent
+
+# https://ranchermanager.docs.rancher.com/how-to-guides/new-user-guides/authentication-permissions-and-global-configuration/custom-branding#custom-navigation-links
+- name: Add Rancher UI NavLinks
+  tags: links
+  hosts: "{{ rke_control_plane_host }}"
+  vars_files:
+    - vars/kubernetes.yml
+    - vars/rancher.rke.yml
+  vars:
+    ansible_python_interpreter: "{{ venv_python_interpreter }}"
+  tasks:
+    - name: Add Rancher UI NavLink
+      vars:
+        links: |
+          {% set links = [] %}
+          {% for group in rancher_rke_navlinks %}
+          {%   if group.group is defined %}
+          {%     set _ = links.extend(group.links |
+                   map('combine', {'group': group.group}
+                 )) %}
+          {%   else %}
+          {%     set _ = links.extend(group.links) %}
+          {%   endif %}
+          {% endfor  %}
+          {{ links   }}
+        # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/file_lookup.html
+        image_data: "{{ lookup('ansible.builtin.file', item.icon) if item.icon is defined else none }}"
+        image_url: "{{ 'data:image/png;base64,' ~ image_data | b64encode if image_data else none }}"
+      kubernetes.core.k8s:
+        kubeconfig: "{{ rke_kubeconfig }}"
+        definition:
+          apiVersion: ui.cattle.io/v1
+          # NavLink is cluster-scoped
+          kind: NavLink
+          metadata:
+            name: "{{ item.name }}"
+          spec:
+            group: "{{     item.group | default(omit) }}"
+            sideLabel: "{{ item.label | default(omit) }}"
+            # https://jinja.palletsprojects.com/en/stable/templates#jinja-filters.capitalize
+            label: "{{ item.title | default(item.label | default(item.name | capitalize)) }}"
+            iconSrc: "{{ image_url or omit }}"
+            toURL: "{{ item.url }}"
+            target: _blank
+        state: present
+        apply: true
+      loop: "{{ links }}"
+      loop_control:
+        label: "{{ item.name }}"

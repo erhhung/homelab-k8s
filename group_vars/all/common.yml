@@ -28,6 +28,7 @@ venv_python_interpreter: "{{ ansible_user_virtualenv }}/bin/python3"
 
 # "playbook_dir" is an Ansible built-in var
 template_dir: "{{ playbook_dir }}/templates"
+icon_dir: "{{ playbook_dir }}/images/icons"
 
 homelab_domain: fourteeners.local
 search_domains:
