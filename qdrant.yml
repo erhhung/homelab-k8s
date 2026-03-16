@@ -81,3 +81,12 @@
         wait_timeout: 600
         task_timeout: 900
       ansible.builtin.include_tasks: tasks/helm/helmfile.yml
+
+    # Qdrant gRPC TLS certificate does not reload
+    # automatically when renewed, so restart pods
+    - name: Add Wave annotations to StatefulSet
+      vars:
+        res_kind: StatefulSet
+        res_name: "{{ qdrant_release_name }}"
+        res_ns: "{{ qdrant_namespace }}"
+      ansible.builtin.include_tasks: tasks/k8s/wave.yml
