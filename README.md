@@ -20,13 +20,19 @@ All cluster services will be provisioned with TLS certificates from Erhhung's pr
 ## Cluster Topology
 
 <p align="center">
-<img src="images/topology.drawio.svg" alt="topology.drawio.svg" />
+<img src="images/diagrams/topology.drawio.svg" alt="topology.drawio.svg" />
 </p>
 
-## Cluster Services
+## Platform Services
 
 <p align="center">
-<img src="images/services.drawio.svg" alt="services.drawio.svg" />
+<img src="images/diagrams/services.platform.drawio.svg" alt="services.platform.drawio.svg" />
+</p>
+
+## AI Services
+
+<p align="center">
+<img src="images/diagrams/services.ai.drawio.svg" alt="services.ai.drawio.svg" />
 </p>
 
 ## Service Endpoints
@@ -152,6 +158,8 @@ All cluster services will be provisioned with TLS certificates from Erhhung's pr
     * [X] Deploy [Playwright](https://playwright.dev/) Server using generic [`app-template`](https://github.com/bjw-s-labs/helm-charts/tree/main/charts/other/app-template) Helm chart with [official images](https://mcr.microsoft.com/artifact/mar/playwright)
 - [X] [Flowise Agentic Workflows](https://flowiseai.com/) — build AI agents using visual workflows
     * Install on main RKE cluster using the [`flowise`](https://github.com/cowboysysop/charts/tree/master/charts/flowise) Helm chart
+- [ ] [OpenClaw Agent Gateway](https://docs.openclaw.ai/) — collaborate with my personal AI assistant using messaging apps
+    * Install on main RKE cluster using the [`openclaw`](https://github.com/serhanekicii/openclaw-helm/tree/main/charts/openclaw) Helm chart
 - [ ] [Backstage Developer Portal](https://backstage.io/) — software catalog and developer portal
 - [ ] [SonarQube Automated Code Reviews](https://docs.sonarsource.com/sonarqube-community-build) — run static code analysis during CI/CD pipelines
     * Install on main RKE cluster using the [`sonarqube`](https://docs.sonarsource.com/sonarqube-community-build/server-installation/on-kubernetes-or-openshift/installing-helm-chart) Helm chart
