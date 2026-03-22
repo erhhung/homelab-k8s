@@ -441,7 +441,7 @@ flowise_custom_chatflows:
     vars:
       ollama_url: "{{ ollama_service_url }}"
       ollama_model:
-        name: gemma2:2b
+        name: gemma3:4b
         temperature: 0.4
         top_p: 0.5
         top_k: 25
@@ -453,7 +453,7 @@ flowise_custom_chatflows:
       openai_cred_id: "{{ external_credentials |
         selectattr('credentialName', '==', 'openAIApi') | map(attribute='id') | first }}"
       openai_model:
-        name: gpt-4o
+        name: gpt-5.2
         temperature: 0.4
         top_p: 0.5
       memory_window: 5

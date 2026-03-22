@@ -24,8 +24,8 @@ rke2_additional_sans: |
 
 # default CIDR ranges in RKE2
 # for pod and service networks
-rke2_cluster_cidr: ["10.42.0.0/16"]
-rke2_service_cidr: ["10.43.0.0/16"]
+rke2_cluster_cidr: "{{ [cluster_cidr] }}"
+rke2_service_cidr: "{{ [service_cidr] }}"
 
 # additional RKE2 server configuration options
 # https://docs.rke2.io/reference/server_config

@@ -147,8 +147,8 @@ kiali_cr_spec:
       tracing:
         enabled: true
         sampling_rate: 1.0
-        # collector_url must be "host:port"
-        collector_url: "{{ otlp_endpoint }}"
+        # collector_url must be "host:port" only
+        collector_url: "{{ otlp_grpc_endpoint }}"
         collector_type: otel
         otel:
           protocol: grpc

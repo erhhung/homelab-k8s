@@ -72,6 +72,7 @@
               {% endif %}
 
         - name: Set argocd_image_tag fact
+          # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/set_fact_module.html
           ansible.builtin.set_fact:
             argocd_image_tag: "{{ repo_tag_found }}"
 
@@ -91,7 +92,6 @@
         # since we're using non-standard SSH port, first field is [host]:port
         # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/regex_replace_filter.html
         svc_hosts: "{{ known_hosts | map('regex_replace', '^[^:]+', '['~ gitlab_shell_host ~']') }}"
-      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/set_fact_module.html
       ansible.builtin.set_fact:
         # contains entries for both external and in-cluster FQDNs
         gitlab_known_hosts: "{{ (known_hosts + svc_hosts) | join('\n') }}"

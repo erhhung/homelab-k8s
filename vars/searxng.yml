@@ -155,15 +155,13 @@ searxng_chart_values:
         limiter.toml: |
           [botdetection]
           trusted_proxies = [
+            '{{ cluster_cidr }}',
             '127.0.0.0/8',
-            # cluster CIDR
-            '10.42.0.0/16',
           ]
           [botdetection.ip_lists]
           pass_ip = [
-            '192.168.0.0/16',
-            # https://tailscale.com/kb/1015/100.x-addresses
-            '100.64.0.0/10',
+            '{{ homelab_cidr }}',
+            '{{ tailnet_cidr }}',
           ]
 
   initContainers:

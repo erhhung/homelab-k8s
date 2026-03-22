@@ -6,6 +6,9 @@ rke_workers_group: "{{ 'rke_workers_ha' if rke_ha_mode else 'rke_workers' }}"
 k3s_control_plane_host: "{{ groups['k3s_control_plane']     | first }}"
 rke_control_plane_host: "{{ groups[rke_control_plane_group] | first }}"
 
+cluster_cidr: 10.42.0.0/16
+service_cidr: 10.43.0.0/16
+
 cluster_domain: cluster.local # don't change!
 kube_api_url: https://kubernetes.default.svc
 

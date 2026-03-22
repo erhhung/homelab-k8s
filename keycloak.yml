@@ -36,7 +36,7 @@
       delegate_to: localhost
       vars:
         # gzip-compressed and base64-encoded SQL is
-        # ~80K, well under 256K limit for ConfigMap
+        # 80K, well under the 256K limit for Secret
         db_file: files/keycloak/keycloak.sql.gz.age
 
         # use the default Python interpreter on Ansible controller
@@ -47,8 +47,7 @@
 
         age_file="{{ db_file }}"
         tmp_file="/tmp/$(basename "$age_file")"
-        b64_file="${tmp_file/%.age/.b64}"
-        sql_file="${b64_file%.gz.b64}"
+        sql_file="${tmp_file%.gz.age}"
 
         cp -f "$age_file" /tmp
         ./gzage.sh "$tmp_file"
@@ -58,14 +57,14 @@
         rm   -f    "$sql_file"
       args:
         executable: /bin/bash
-      register: keycloak_sql
+      register: keycloak_sql_gz_b64
       changed_when: false
 
-    # - name: Show {{ keycloak_sql_gz_b64 }} MD5
+    # - name: Show {{ keycloak_sql_gz }} MD5
     #   # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/debug_module.html
     #   ansible.builtin.debug:
     #     # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/md5_filter.html
-    #     msg: "{{ keycloak_sql.stdout | ansible.builtin.md5 }}"
+    #     msg: "{{ keycloak_sql_gz_b64.stdout | b64decode | ansible.builtin.md5 }}"
   tasks:
     - name: Create Keycloak ingress secret
       vars:
@@ -94,21 +93,13 @@
     - name: Create monitoring scraper secret
       ansible.builtin.include_tasks: tasks/monitoring/scraper.yml
 
-    - name: Create {{ keycloak_configmaps['dbsql'] }} ConfigMap
-      # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_module.html
-      kubernetes.core.k8s:
-        kubeconfig: "{{ kubeconfig }}"
-        definition:
-          apiVersion: v1
-          kind: ConfigMap
-          metadata:
-            name: "{{ keycloak_configmaps['dbsql'] }}"
-            namespace: "{{ keycloak_namespace }}"
-          data: "{{ {keycloak_sql_gz_b64: keycloak_sql.stdout} }}"
-        validate:
-          fail_on_error: false
-        state: present
-        apply: true
+    - name: Create Keycloak init SQL secret
+      vars:
+        secret_name: "{{ keycloak_secrets['init-sql'] }}"
+        secret_data: "{{ {
+          keycloak_sql_gz: keycloak_sql_gz_b64.stdout | b64decode,
+          } }}"
+      ansible.builtin.include_tasks: tasks/k8s/secrets/generic.yml
 
     - name: Create {{ keycloak_configmaps['admin'] }} ConfigMap
       vars:
@@ -150,7 +141,7 @@
           - cert-manager.io/v1 Certificate {{ keycloak_secrets['ingress']   }}
           - cert-manager.io/v1 Certificate {{ keycloak_secrets['database']  }}
           - cert-manager.io/v1 Certificate {{ monitoring_secrets['scraper'] }}
-          - v1 ConfigMap {{ keycloak_configmaps['dbsql'] }}
+          - v1 Secret    {{ keycloak_secrets['init-sql'] }}
           - v1 ConfigMap {{ keycloak_configmaps['admin'] }}
 
         # startup can take a while at max utilization of allocated CPU:

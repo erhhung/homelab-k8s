@@ -1,0 +1,217 @@
+# will be converted into JSON and stored as
+# openclaw.json in the "openclaw" ConfigMap:
+# https://docs.openclaw.ai/gateway/configuration
+openclaw_config:
+  # https://docs.openclaw.ai/gateway/configuration-reference#gateway
+  gateway:
+    port: 18789
+    bind: lan # loopback|lan
+    mode: local # local|remote
+    auth:
+      mode: token # none|token|password|trusted-proxy
+      token: ${OPENCLAW_GATEWAY_TOKEN}
+
+    # https://docs.openclaw.ai/web/control-ui
+    controlUi:
+      enabled: true
+      # prepend: filter_plugins/filters.py
+      allowedOrigins: "{{ openclaw_fqdns | map('prepend', 'https://') }}"
+
+    # NOTE: CIDR notation isn't supported:
+    # https://github.com/openclaw/openclaw/pull/8752
+    trustedProxies: "{{ [cluster_cidr] }}"
+
+    nodes:
+      # run `openclaw nodes status --json` to see
+      # commands that each node actually supports.
+      # allowing commands like system.run.prepare
+      # will not magically grant new capabilities
+      # if the node doesn't implement the command.
+      # https://docs.openclaw.ai/platforms/macos#node-capabilities-mac
+      allowCommands:
+        - invoke
+        - system.which
+        - system.notify
+
+        # in-app UI surface controls
+        # via Apple native WKWebView
+        - canvas.present
+        - canvas.navigate
+        - canvas.snapshot
+        - canvas.hide
+
+        # higher risk: run arbitrary JS
+        # in node-hosted canvas/webview
+        # - canvas.eval
+
+        # canvas streaming controls
+        # https://a2ui.org/
+        - canvas.a2ui.push
+        - canvas.a2ui.pushJSONL
+        - canvas.a2ui.reset
+
+        # higher risk: browser access
+        # with pre-signed-in sessions
+        # https://docs.openclaw.ai/tools/browser#node-browser-proxy-zero-config-default
+        - browser.proxy
+
+        # higher risk: location access
+        # https://docs.openclaw.ai/nodes/location-command
+        # - location.get
+
+        # higher risk: capture screen
+        - screen.capture
+        - screen.record
+        - screen.snap
+
+        # higher risk: camera access
+        # https://docs.openclaw.ai/nodes/camera#commands-via-gateway-node-invoke
+        # - camera.list
+        # - camera.snap
+        # - camera.clip
+
+        # higher risk: arbitrary remote
+        # command execution on the node
+        # - system.run
+        # - system.run.prepare
+
+  # https://docs.openclaw.ai/gateway/configuration-reference#browser
+  browser:
+    enabled: true
+    ssrfPolicy:
+      # allow browsing local network sites
+      dangerouslyAllowPrivateNetwork: true
+    # allow arbitrary JavaScript execution in the page context:
+    # https://docs.openclaw.ai/tools/browser#security-&-privacy
+    evaluateEnabled: false
+
+    defaultProfile: default
+    profiles:
+      default: # Chromium sidecar
+        cdpUrl: http://localhost:9222
+        color: "#4285F4"
+
+  # https://docs.openclaw.ai/concepts/multi-agent
+  agents:
+    # https://docs.openclaw.ai/gateway/configuration-reference#agent-defaults
+    defaults:
+      workspace: "{{ openclaw_data_dir }}/workspace"
+      userTimezone: ${TZ}
+      timeFormat: "12" # auto|12|24
+
+      # https://docs.openclaw.ai/gateway/configuration-reference#agents-defaults-model
+      model:
+        primary: litellm/claude-sonnet-4-6
+      maxConcurrent: 1
+      timeoutSeconds: 600
+
+      # default thinking budget level when no `/think` directive
+      thinkingDefault: low # "off"|minimal|low|medium|high|xhigh|adaptive
+      # default tool/output verbosity when no `/verbose` directive
+      verboseDefault: "off" # "off"|"on"|full
+      # default elevated-execution mode when no `/elevated` directive
+      elevatedDefault: ask # "off"|"on"|ask|full
+
+    # single "main" agent by default, but can create separate agents like "home"
+    # and "work", each with independent workspaces, policies, skills, and memory
+    # https://docs.openclaw.ai/gateway/configuration-reference#agents-list-per-agent-overrides
+    list:
+      # https://docs.openclaw.ai/concepts/multi-agent#single-agent-mode-default
+      - id: main
+        default: true
+        identity:
+          name: OpenClaw
+          emoji: 🦞
+        # https://docs.openclaw.ai/gateway/configuration-reference#agents-defaults-sandbox
+        sandbox:
+          mode: "off" # "off"|non-main|all
+
+  # channel setup is not required--the
+  # Control UI is suitable chat client
+  # https://docs.openclaw.ai/gateway/configuration-reference#channels
+  # channels:
+
+  # https://docs.openclaw.ai/gateway/configuration-reference#session
+  session:
+    scope: per-sender
+    store: "{{ openclaw_data_dir }}/sessions"
+    reset:
+      mode: idle
+      idleMinutes: 240
+
+  # https://docs.openclaw.ai/gateway/configuration-reference#logging
+  logging:
+    # `level` is for file-based logging;
+    # `consoleLevel` is container stdout:
+    # https://docs.openclaw.ai/logging
+    level: info # error|warn|info|debug|trace
+    file: /tmp/openclaw.log # JSONL format
+    consoleLevel: info
+    consoleStyle: compact # pretty|compact|json
+    redactSensitive: tools
+
+  # https://docs.openclaw.ai/logging#export-to-opentelemetry
+  diagnostics:
+    enabled: true
+    otel:
+      enabled: false
+      endpoint: https://{{ otlp_http_endpoint }}
+      protocol: http/protobuf # no gRPC support
+      serviceName: openclaw-gateway
+      traces: true
+      metrics: true
+      logs: false
+      sampleRate: 1.0
+      flushIntervalMs: 30000
+
+  # https://docs.openclaw.ai/tools/plugin
+  # list plugins: `openclaw plugins list`
+  plugins:
+    allow:
+      - diagnostics-otel
+    entries:
+      diagnostics-otel:
+        # broken: "Cannot find module '@opentelemetry/api'"
+        # https://github.com/openclaw/openclaw/issues/28222
+        enabled: false
+
+  # https://docs.openclaw.ai/gateway/local-models#other-openai-compatible-local-proxies
+  models:
+    providers:
+      # https://docs.openclaw.ai/providers/ollama
+      ollama:
+        baseUrl: "{{ ollama_service_url }}"
+        # no auth currently enforced
+        # apiKey: ${OLLAMA_API_KEY}
+        api: ollama
+        # see `ollama_models`
+        # in vars/ollama.*.yml
+        models:
+          # https://ollama.com/library/gemma3
+          - id: gemma3:4b
+            name: Gemma 3:4b via Ollama
+
+      # https://docs.openclaw.ai/providers/litellm
+      # https://docs.litellm.ai/docs/tutorials/openclaw_integration#config-reference
+      litellm:
+        baseUrl: "{{ litellm_service_url }}"
+        apiKey: ${LITELLM_API_KEY}
+        api: openai-completions
+        # see `litellm_models`
+        # in vars/litellm.yml
+        models:
+          # https://www.anthropic.com/claude/opus
+          - id: claude-sonnet-4-6
+            name: Claude Sonnet 4.6 via LiteLLM
+          # https://platform.openai.com/docs/models/gpt-5.4
+          - id: gpt-5.4
+            name: GPT-5.4 via LiteLLM
+
+  # https://docs.openclaw.ai/gateway/configuration-reference#tools
+  tools:
+    profile: full # minimal|coding|messaging|full
+    web:
+      search:
+        enabled: true
+      fetch:
+        enabled: true

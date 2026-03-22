@@ -178,7 +178,7 @@
   tags: playwright
 
 # LiteLLM depends on PostgreSQL, Valkey, SearXNG
-- name: Include LiteLLM AI Gateway playbook
+- name: Include LiteLLM AI gateway playbook
   ansible.builtin.import_playbook: litellm.yml
   tags: litellm
 
@@ -193,3 +193,8 @@
 - name: Include Flowise AI platform playbook
   ansible.builtin.import_playbook: flowise.yml
   tags: flowise
+
+# OpenClaw depends on Ollama and LiteLLM
+- name: Include OpenClaw AI agents playbook
+  ansible.builtin.import_playbook: openclaw.yml
+  tags: openclaw

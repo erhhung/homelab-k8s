@@ -37,7 +37,7 @@
       ansible.builtin.include_tasks: tasks/helm/appversion.yml
       when: openwebui_app_version is undefined
 
-    - name: Get the PostgreSQL image used
+    - name: Get PostgreSQL image used
       ansible.builtin.include_tasks: tasks/postgresql/image.yml
       when: postgresql_image is undefined
 
@@ -66,7 +66,7 @@
       ansible.builtin.include_tasks: tasks/k8s/secrets/tls.step.yml
 
     # https://docs.openwebui.com/reference/env-configuration
-    - name: Create Open WebUI env vars secret
+    - name: Create Open WebUI envFrom secret
       vars:
         pipelines: "{{ openwebui_chart_values.pipelines }}"
 
@@ -165,6 +165,7 @@
               {% endif %}
 
         - name: Set crawl4ai_image_tag fact
+          # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/set_fact_module.html
           ansible.builtin.set_fact:
             crawl4ai_image_tag: "{{ repo_tag_found }}"
   tasks:
