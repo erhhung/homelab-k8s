@@ -110,7 +110,7 @@
             https://{{ gitlab_creds }}@{{ gitlab_service_host }}:{{ gitlab_service_port }}
       ansible.builtin.include_tasks: tasks/k8s/secrets/generic.yml
 
-    - name: Create pipeline env vars secret
+    - name: Create pipeline envFrom secret
       vars:
         ci_reg_path: "{{ harbor_container_registry }}/{{ harbor_default_project }}"
         secret_name: "{{ buildkite_secrets['env-vars'] }}"

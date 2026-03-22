@@ -1,0 +1,418 @@
+# openclaw_gateway_token: {vault.yml}
+# gogcli_keyring_pass:    {vault.yml}
+
+openclaw_namespace: openclaw
+openclaw_host_names: # aliases of "ingress"
+  - openclaw
+  - agents
+
+# remember to add openclaw.fourteeners.local & agents.fourteeners.local
+# to pfSense DNS as aliases of ingress.fourteeners.local: 192.168.4.222
+# https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_filters.html#products
+openclaw_fqdns: "{{ openclaw_host_names | product(search_domains) | map('join','.') }}"
+
+openclaw_secrets:
+  ingress: openclaw-ingress-tls
+  env-vars: openclaw-env-variables
+  skills: openclaw-skills-config
+
+openclaw_data_dir: /home/node/.openclaw
+
+# container env vars that app-template renders into `env[]` list.
+# Note the use of alternate form with `dependsOn` so that $(VAR)
+# expansions are evaluated in the proper order due to otherwise
+# alphabetical ordering of dictionary keys
+openclaw_common_env:
+  TZ: "{{ system_time_zone }}"
+  OPENCLAW_HOME: "{{ openclaw_data_dir }}"
+  XDG_CONFIG_HOME: $(OPENCLAW_HOME)/config
+  OPENCLAW_CONFIG_PATH:
+    value: $(OPENCLAW_HOME)/openclaw.json
+    dependsOn: OPENCLAW_HOME
+  NODE_OPTIONS: --max-old-space-size=4096
+  NPM_CONFIG_UPDATE_NOTIFIER: "false"
+  PNPM_HOME: $(OPENCLAW_HOME)/pnpm
+  PNPM_STORE_DIR: $(PNPM_HOME)/store
+  PATH:
+    value: $(OPENCLAW_HOME)/bin:$(PNPM_HOME):/usr/local/bin:/usr/local/sbin:/usr/bin:/usr/sbin:/bin:/sbin
+    dependsOn:
+      - OPENCLAW_HOME
+      - PNPM_HOME
+
+# https://github.com/serhanekicii/openclaw-helm/tree/main/charts/openclaw
+openclaw_chart_version: "1.5.5"
+openclaw_release_name: openclaw
+
+# https://github.com/serhanekicii/openclaw-helm/tree/main/charts/openclaw/values.yaml
+openclaw_chart_values:
+  # https://github.com/bjw-s-labs/helm-charts/tree/main/charts/other/app-template
+  # https://github.com/bjw-s-labs/helm-charts/tree/main/charts/library/common/values.yaml
+  app-template:
+    # `merge` preserves runtime changes
+    # use `overwrite` for strict GitOps
+    configMode: overwrite # merge|overwrite
+    configMaps:
+      config:
+        data:
+          openclaw.json: "{{ openclaw_config | ansible.builtin.to_nice_json(indent=2) }}"
+
+          # ~/.bash_aliases for admin
+          # interactive shell session
+          bash_aliases: |
+            cd $OPENCLAW_HOME
+
+            # set color prompt
+            PS1="\[\033[1;36m\]\$(id -un 2> /dev/null)\[\033[1;31m\]@\[\033[1;32m\]\h:\[\033[1;35m\]\w\[\033[1;31m\]\$\[\033[0m\] "
+            export LESS='-RFKLMi -x4 -z-4'
+
+            lj() { # less on JSON
+              __lj() { jq -C . | less; }
+              (($#)) && { cat "$@" | __lj; } || __lj
+            }
+            ly() { # less on YAML
+              __ly() { yq -C . | less; }
+              (($#)) && { cat "$@" | __ly; } || __ly
+            }
+            alias openclaw='node /app/dist/index.js'
+            alias cdd='cd $OLDPWD'
+            alias  ls='ls --color=auto '
+            alias  ll='ls -alF '
+            alias  lt='ll -tr '
+            alias   l='less'
+
+    controllers:
+      main:
+        # must be 1: OpenClaw doesn't
+        # support horizontal scaling!
+        replicas: 1
+
+        initContainers:
+          ca-bundle:
+            image: &openclaw-image
+              repository: ghcr.io/openclaw/openclaw
+              tag: "{% raw %}{{ .Values.openclawVersion }}{% endraw %}"
+            securityContext:
+              runAsUser: 0
+            command: ["bash"]
+            args:
+              - -c
+              - |-
+                # ca.crt is already mounted
+                CA_CERT="/usr/local/share/ca-certificates/ca.crt"
+                CA_BUNDLE="/etc/ssl/certs/ca-certificates.crt"
+                # /certs is mounted emptyDir
+                NSSDB_DIR="/certs/nssdb"
+
+                # also install missing Linux utils
+                BIN_DIR="{{ openclaw_data_dir }}/bin"
+                mkdir -p $BIN_DIR $NSSDB_DIR
+                packages=(libnss3-tools)
+                [ -f $BIN_DIR/less ] || packages+=(less)
+                apt-get update && apt-get install -y "${packages[@]}"
+                [ -f $BIN_DIR/less ] || cp -a $(which less) $BIN_DIR
+
+                echo -e "\nCreating NSS database..."
+                # use certificate's CN as nickname
+                nickname="$(openssl x509 -in $CA_CERT -noout -subject -nameopt RFC2253 | \
+                              sed -n 's/^subject=.*CN=\([^,]*\)\(,.*\)\?$/\1/p')"
+                # https://www.linux.org/docs/man1/certutil.html
+                certutil -d sql:$NSSDB_DIR -N --empty-password
+                certutil -d sql:$NSSDB_DIR -A -t "C,," -n "$nickname" -i $CA_CERT
+                certutil -d sql:$NSSDB_DIR -L
+
+                echo -e "\nUpdating trust store..."
+                # ignore "rehash: warning:" output
+                update-ca-certificates 2> /dev/null || exit
+                cp $CA_BUNDLE /certs/ca-bundle.crt
+                echo; tail -n 11 $CA_BUNDLE
+
+          init-config:
+            image: *openclaw-image
+            env: "{{ openclaw_common_env }}"
+            command: ["bash"]
+            args:
+              - -c
+              - |-
+                set -eo pipefail
+
+                mkdir -p $OPENCLAW_HOME/{bin,config}
+                export BIN_DIR="$OPENCLAW_HOME/bin"
+                export ARCH="$(uname -m | sed -e 's/aarch64/arm64/' \
+                                              -e  's/x86_64/amd64/')"
+                log() {
+                  if [ "$1" == -n ]; then echo; shift; fi
+                  echo "[$(date +"%Y-%m-%d %H:%M:%S")] $*"
+                }
+                install_bin() (
+                  bin=$1 src=$2
+                  cd $BIN_DIR
+
+                  [ -f "$bin" ] || {
+                    log  "Installing $bin..."
+                    curl -fsSLo $bin $src
+                    chmod    +x $bin
+                  }
+                  ( set -x; $bin --version )
+                )
+                install_bin jq "https://github.com/stedolan/jq/releases/latest/download/jq-linux-$ARCH"
+                install_bin yq "https://github.com/mikefarah/yq/releases/latest/download/yq_linux_$ARCH"
+
+                 TMP_CONFIG="/tmp/openclaw.json"
+                 SRC_CONFIG="/conf/openclaw.json"
+                DEST_CONFIG="$OPENCLAW_CONFIG_PATH"
+                CONFIG_MODE="${CONFIG_MODE:-merge}"
+
+                if [[ $CONFIG_MODE == merge && -f $DEST_CONFIG ]]; then
+                  log -n "Merging Helm config into existing config..."
+                  jq -s '.[0] * .[1]' $DEST_CONFIG $SRC_CONFIG > $TMP_CONFIG
+                  mv -f   $TMP_CONFIG $DEST_CONFIG
+                else
+                  log -n "Using Helm config as the official config..."
+                  jq  . $SRC_CONFIG > $DEST_CONFIG
+                fi
+                ( set -x; jq . $OPENCLAW_CONFIG_PATH )
+
+                log -n "Config initialization completed ✓"
+
+          # install ClawHub (https://clawhub.com)
+          # skills and their runtime dependencies
+          init-skills:
+            image: *openclaw-image
+            env: "{{ openclaw_common_env }}"
+            command: ["bash"]
+            args:
+              - -c
+              - |-
+                set -eo pipefail
+
+                export BIN_DIR="$OPENCLAW_HOME/bin"
+                export CONFIG_DIR="/conf/skills"
+                export ARCH="$(uname -m | sed -e 's/aarch64/arm64/' \
+                                              -e  's/x86_64/amd64/')"
+                log() {
+                  if [ "$1" == -n ]; then echo; shift; fi
+                  echo "[$(date +"%Y-%m-%d %H:%M:%S")] $*"
+                }
+                [ -f $BIN_DIR/uv ] || {
+                  log -n "Installing uv..."
+                  # https://docs.astral.sh/uv/getting-started/installation
+                  curl -sfL https://astral.sh/uv/install.sh | UV_INSTALL_DIR=$BIN_DIR sh
+                }
+                [ -f $PNPM_HOME/pnpm ] || {
+                  log -n "Installing pnpm..."
+                  # https://pnpm.io/installation#in-a-docker-container
+                  curl -fsL https://get.pnpm.io/install.sh | ENV=/dev/null SHELL=/bin/sh sh
+                }
+
+                WORKSPACE_DIR="{{ openclaw_data_dir }}/workspace"
+                SKILLS_DIR="$WORKSPACE_DIR/skills"
+                mkdir -p $SKILLS_DIR
+
+                clawhub_install() (
+                  skill="$1" name="$(basename "$1")"
+                  if [ -d "$SKILLS_DIR/$name" ]; then
+                    log "Skill is already installed."
+                    exit
+                  fi
+
+                  cd $WORKSPACE_DIR
+                  ATTEMPTS=6 delay=5
+
+                  for i in $(seq 1 $ATTEMPTS); do
+                    log "Running clawhub install..."
+                    if npx -y clawhub install "$skill" --no-input; then
+                      log "Skill installed successfully."
+                      exit
+                    elif [ $i -lt $ATTEMPTS ]; then
+                      jitter=$((RANDOM % 5))
+                      log "Install failed! (attempt $i of $ATTEMPTS)"
+                      log "Trying again in $((delay + jitter)) seconds..."
+                      sleep $((delay + jitter))
+                      ((delay *= 2))
+                    fi
+                  done
+                  log "Install failed after $ATTEMPTS attempts!"
+                  exit 1
+                )
+                {% for skill in openclaw_clawhub_skills %}
+
+                log -n "Installing skill: {{ skill.name }}"
+                {%   if skill.setup is defined %}
+                log "Performing skill setup..."
+                (
+                {{ skill.setup }}
+                )
+                {%   endif %}
+                clawhub_install {{ skill.name }}
+                {% endfor  %}
+
+                log -n "Skills initialization completed ✓"
+
+        containers:
+          main: # gateway container
+            env: |
+              {% set env = openclaw_common_env %}
+              {% for skill in openclaw_clawhub_skills %}
+              {%   if skill.env is defined %}
+              {%     set _ = env.update(skill.env) %}
+              {%   endif %}
+              {% endfor  %}
+              {{ env }}
+            envFrom:
+              - secretRef:
+                  name: "{{ openclaw_secrets['env-vars'] }}"
+
+          # NOTE: browser sidecar only has /tmp as writable
+          # emptyDir, so session persistence isn't possible
+          chromium:
+            env:
+              TZ: "{{ system_time_zone }}"
+              NSS_DEFAULT_DB_DIR: /usr/local/share/pki/nssdb
+
+    persistence:
+      config:
+        # https://bjw-s-labs.github.io/helm-charts/docs/common-library/storage/types/configmap
+        type: configMap # persistentVolumeClaim|emptyDir|nfs|hostPath|secret|configMap|custom
+        identifier: config
+        advancedMounts:
+          main:
+            init-config:
+              - path: /conf
+
+      # PVC for /home/node/.openclaw
+      data:
+        type: persistentVolumeClaim
+        storageClass: "{{ storage_classes['default'] }}"
+        size: 2Gi
+        accessMode: ReadWriteOnce
+        retain: false
+        advancedMounts:
+          main:
+            ca-bundle: # supplemental mount
+              - path: "{{ openclaw_data_dir }}"
+
+      ca-certs:
+        enabled: true
+        type: secret
+        name: "{{ openclaw_secrets['ingress'] }}"
+        defaultMode: 420 # "0644"
+        advancedMounts:
+          main:
+            ca-bundle:
+              - path: /usr/local/share/ca-certificates/ca.crt
+                subPath: ca.crt
+                readOnly: true
+
+      ca-bundle:
+        enabled: true
+        type: emptyDir
+        advancedMounts:
+          main:
+            ca-bundle:
+              - path: /certs
+            main:
+              - path: /etc/ssl/certs/ca-certificates.crt
+                subPath: ca-bundle.crt
+                readOnly: true
+            chromium:
+              - path: /etc/ssl/certs/ca-certificates.crt
+                subPath: ca-bundle.crt
+                readOnly: true
+              # container has no $HOME, and WORKDIR is /
+              - path: /usr/local/share/pki/nssdb
+                subPath: nssdb
+
+      skill-configs:
+        enabled: true
+        type: secret
+        name: "{{ openclaw_secrets['skills'] }}"
+        defaultMode: 420 # "0644"
+        advancedMounts:
+          main:
+            init-skills:
+              - path: /conf/skills
+
+    ingress:
+      main:
+        enabled: true
+        tls:
+          - secretName: "{{ openclaw_secrets['ingress'] }}"
+            hosts: "{{ openclaw_fqdns }}"
+        className: "{{ rke_ingress_class }}"
+        annotations:
+          nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+          nginx.ingress.kubernetes.io/backend-protocol: HTTP
+        hosts: |
+          {% set hosts = [] %}
+          {% for fqdn in openclaw_fqdns %}
+          {%   set _ = hosts.append({
+                 'host':  fqdn,
+                 'paths': [{
+                   'path':     '/',
+                   'pathType': 'Prefix',
+                   'service':  {
+                     'identifier': 'main',
+                     'port':       'http',
+                   },
+                 }],
+               })   %}
+          {% endfor %}
+          {{ hosts  }}
+
+# https://clawhub.ai/skills
+openclaw_clawhub_skills:
+  # https://clawhub.ai/steipete/gog
+  - name: gog
+    setup: |-
+      REL="https://github.com/steipete/gogcli/releases"
+      VER=$(curl -Is "$REL/latest" | sed -En 's/^location:.+\/tag\/v(.+)\r$/\1/p')
+
+      # $BIN_DIR, $CONFIG_DIR, and $ARCH
+      # are already defined by container
+      cd $BIN_DIR
+
+      # check if latest version already installed
+      [ -f gog ] && {
+        ver=$(v=(`./gog version`); echo ${v[0]})
+        [ "$ver" == "$VER" ] && {
+          log "gogcli is already installed."
+          exit
+        }
+      }
+      curl -fsSL "$REL/download/v${VER}/gogcli_${VER}_linux_${ARCH}.tar.gz" | \
+        tar -xz --no-same-owner gog
+      ( set -x; gog version )
+
+      cd $XDG_CONFIG_HOME
+      [ -d gogcli ] || {
+        # copy credential files in Secret
+        tar -xzf "$CONFIG_DIR/gog.tar.gz"
+        ( set -x; find gogcli/ )
+      }
+    # https://github.com/steipete/gogcli#environment-variables
+    env:
+      GOG_JSON: "true"
+      GOG_TIMEZONE: $(TZ)
+      GOG_ACCOUNT: "{{ user_erhhung.email }}"
+      # GOG_KEYRING_PASSWORD stored in Secret
+
+  # https://clawhub.ai/steipete/video-frames
+  - name: video-frames
+    setup: |-
+      cd $BIN_DIR
+
+      # there's new FFmpeg build every day,
+      # so don't bother upgrading to latest
+      [ -f ffmpeg ] && {
+        log "ffmpeg is already installed."
+        exit
+      }
+
+      REL="https://github.com/BtbN/FFmpeg-Builds/releases"
+      ARCH="$(uname -m | sed -e 's/aarch64/arm64/' \
+                             -e     's/x86_64/64/')"
+      BUILD="ffmpeg-master-latest-linux${ARCH}-gpl"
+
+      curl -fsSL "$REL/download/latest/$BUILD.tar.xz" | \
+        tar -xJ --no-same-owner --strip-components=2 $BUILD/bin/{ffmpeg,ffprobe}
+      ( set -x; ffmpeg -version )

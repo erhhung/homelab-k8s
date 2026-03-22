@@ -316,7 +316,7 @@ openwebui_chart_values:
       value: "true"
     # exporter expects OTLP gRPC endpoint
     - name: OTEL_EXPORTER_OTLP_ENDPOINT
-      value: "{{ otlp_endpoint }}"
+      value: "{{ otlp_grpc_endpoint }}"
 
   extraEnvVars:
     # must be defined in extraEnvVars!

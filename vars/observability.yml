@@ -9,7 +9,9 @@ otlp_fqdn: "{{ [otlp_host_name] | product(search_domains) | map('join','.') | fi
 
 otlp_service_host: "{{ otel_collector_name }}.{{
   observability_namespace }}.svc.{{ cluster_domain }}"
-otlp_endpoint: "{{ otlp_service_host }}:{{ otlp_grpc_port }}"
+# TLS is required for both gRPC and HTTP endpoints
+otlp_grpc_endpoint: "{{ otlp_service_host }}:{{ otlp_grpc_port }}"
+otlp_http_endpoint: "{{ otlp_service_host }}:{{ otlp_http_port }}"
 
 observability_secrets:
   service: otel-collector-service-tls

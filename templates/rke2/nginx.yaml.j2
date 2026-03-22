@@ -55,7 +55,7 @@ spec:
         # https://kubernetes.github.io/ingress-nginx/user-guide/nginx-configuration/configmap#compute-full-forwarded-for
         compute-full-forwarded-for: "true"
         # https://kubernetes.github.io/ingress-nginx/user-guide/nginx-configuration/configmap#proxy-real-ip-cidr
-        proxy-real-ip-cidr: 192.168.0.0/16,100.64.0.0/10
+        proxy-real-ip-cidr: {{ homelab_cidr }},{{ tailnet_cidr }}
 
         # https://kubernetes.github.io/ingress-nginx/user-guide/nginx-configuration/configmap#enable-brotli
         enable-brotli: "true"

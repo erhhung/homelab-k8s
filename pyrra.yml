@@ -94,12 +94,12 @@
     - name: Add SLO to platform_slos
       vars:
         patches:
-          - search: job="kube-dns"
-            replace: job="coredns"
-          - search: job="prometheus-k8s"
-            replace: job="{{ monitoring_release_name }}-prometheus"
-          - search: job="prometheus-operator"
-            replace: job="{{ monitoring_release_name }}-operator"
+          - replace: job="kube-dns"
+            with: job="coredns"
+          - replace: job="prometheus-k8s"
+            with: job="{{ monitoring_release_name }}-prometheus"
+          - replace: job="prometheus-operator"
+            with: job="{{ monitoring_release_name }}-operator"
         file_urls: |
           {{ example_slos.json |
              selectattr('type', '==',     'file') |
@@ -112,8 +112,8 @@
           {# https://jinja.palletsprojects.com/en/stable/templates#assignments #}
           {% set ns = namespace(yaml=manifest) %}
           {% for patch in patches %}
-          {%   set ns.yaml = ns.yaml | replace(patch.search,
-                                               patch.replace) %}
+          {%   set ns.yaml = ns.yaml | replace(patch.replace,
+                                               patch.with) %}
           {% endfor %}
           {{ ns.yaml | from_yaml }}
         res_name: "{{ resource.metadata.name }}"

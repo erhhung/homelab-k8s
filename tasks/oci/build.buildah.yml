@@ -42,18 +42,18 @@
       changed_when: false
 
     - name: Log into Harbor registry as "{{ harbor_admin_user }}"
-      vars:
+      ansible.builtin.command:
         argv:
           - buildah
           - login
           - "{{ harbor_container_registry   }}"
           - --username={{ harbor_admin_user }}
           - --password={{ harbor_admin_pass }}
-      ansible.builtin.command:
-        argv: "{{ argv | flatten }}"
       # not important enough
       # to report as changed
       changed_when: false
+      retries: 3
+      delay: 5
 
     - name: Count current repository artifacts
       delegate_to: &delegate >-

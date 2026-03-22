@@ -1,0 +1,181 @@
+# https://docs.openclaw.ai/
+# https://docs.openclaw.ai/concepts/architecture
+# https://docs.openclaw.ai/gateway/configuration
+# https://docs.openclaw.ai/gateway/security
+# https://docs.openclaw.ai/security/THREAT-MODEL-ATLAS
+# https://docs.openclaw.ai/platforms/macos
+# https://github.com/openclaw/openclaw
+---
+- name: Install OpenClaw on RKE cluster
+  tags: install
+  hosts: "{{ rke_control_plane_host }}"
+  vars_files:
+    - vars/kubernetes.yml
+    - vars/storage.yml
+    - vars/ollama.yml
+    - vars/litellm.yml
+    - vars/openclaw.yml
+    - vars/openclaw.config.yml
+    - vars/observability.yml
+  vars:
+    # required kubernetes>=24.2 package only in user virtualenv
+    ansible_python_interpreter: "{{ venv_python_interpreter }}"
+    kubeconfig: "{{ rke_kubeconfig }}"
+    secret_ns: "{{ openclaw_namespace }}"
+    create_ns: false
+  pre_tasks:
+    - name: Get LiteLLM user API key
+      vars:
+        secret_key: "{{ user_erhhung.username }}"
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
+      ansible.builtin.include_tasks: tasks/litellm/apikey.yml
+      # sets litellm_api_key fact
+
+    - name: Read skill config file
+      delegate_to: localhost
+      vars:
+        src_dir: files/openclaw/skills
+        src_files: "{{ query('ansible.builtin.fileglob', src_dir ~'/*') |
+          map('ansible.builtin.basename') | select('search', '^[^.].+') }}"
+        filename: "{{ item | regex_replace('(\\.age)?$', '') }}"
+
+        # use the default Python interpreter on Ansible controller
+        ansible_python_interpreter: "{{ default_python_interpreter }}"
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/shell_module.html
+      ansible.builtin.shell: |
+        set -eo pipefail
+
+        src_file="{{ src_dir }}/{{ item }}"
+        if [[ "$src_file" != *.age ]]; then
+          jo name="{{ filename }}" data="$(base64 < "$src_file")"
+          exit
+        fi
+        if [[ "$src_file" != *.gz.age ]]; then
+          echo >&2 "age-encrypted file must be gzipped!"
+          exit 1
+        fi
+
+        age_file="$src_file"
+        tmp_file="/tmp/$(basename "$age_file")"
+        src_file="${tmp_file%.gz.age}"
+
+        cp -f "$age_file" /tmp
+        ./gzage.sh "$tmp_file"
+
+        # --no-name ignores timestamp!
+        jo name="{{ filename }}" data="$(gzip -9ncq "$src_file" | base64)"
+        rm -f "$src_file"
+      args:
+        executable: /bin/bash
+      loop: "{{ src_files }}"
+      loop_control:
+        label: "{{ filename }}"
+      register: skill_config_b64
+      changed_when: false
+  tasks:
+    - name: Create OpenClaw ingress secret
+      vars:
+        secret_name: "{{ openclaw_secrets['ingress'] }}"
+        create_ns: true
+        cert_name: openclaw-ingress
+        sans: "{{ openclaw_fqdns }}"
+      ansible.builtin.include_tasks: tasks/k8s/secrets/tls.step.yml
+
+    - name: Create OpenClaw envFrom secret
+      vars:
+        secret_name: "{{ openclaw_secrets['env-vars'] }}"
+        secret_data:
+          OPENCLAW_GATEWAY_TOKEN: "{{ openclaw_gateway_token }}"
+          # https://docs.openclaw.ai/gateway/authentication
+          LITELLM_API_KEY: "{{ litellm_api_key }}"
+          # https://github.com/steipete/gogcli#keyring-backend-keychain-vs-encrypted-file
+          GOG_KEYRING_PASSWORD: "{{ gogcli_keyring_pass }}"
+      ansible.builtin.include_tasks: tasks/k8s/secrets/generic.yml
+
+    # create Secret containing (decrypted) files in
+    # "files/openclaw/skills" used by `init-skills`
+    # init container
+    - name: Create OpenClaw skills secret
+      vars:
+        secret_name: "{{ openclaw_secrets['skills'] }}"
+        secret_data: |
+          {% set files = {} %}
+          {% for result in skill_config_b64.results %}
+          {%   if result.stdout is truthy %}
+          {%     set file = result.stdout | from_json %}
+          {%     set _    =  files.update({
+                   file.name: file.data | b64decode,
+                 })  %}
+          {%   endif %}
+          {% endfor  %}
+          {{ files   }}
+      ansible.builtin.include_tasks: tasks/k8s/secrets/generic.yml
+
+    - name: Install OpenClaw Helm chart
+      vars:
+        repo_name: openclaw
+        repo_url: https://serhanekicii.github.io/openclaw-helm
+        chart_ref: openclaw
+        chart_ver: "{{ openclaw_chart_version }}"
+        release: "{{ openclaw_release_name }}"
+        release_ns: "{{ openclaw_namespace }}"
+        values: "{{ openclaw_chart_values }}"
+
+        extras: # adopt extra resources into Helm release
+          - cert-manager.io/v1 Certificate {{ openclaw_secrets['ingress'] }}
+          - v1 Secret {{ openclaw_secrets['env-vars'] }}
+          - v1 Secret {{ openclaw_secrets['skills']   }}
+      ansible.builtin.include_tasks: tasks/helm/helmfile.yml
+
+- name: Configure OpenClaw installation
+  tags: configure
+  hosts: "{{ rke_control_plane_host }}"
+  vars_files:
+    - vars/kubernetes.yml
+    - vars/openclaw.yml
+  vars:
+    ansible_python_interpreter: "{{ venv_python_interpreter }}"
+  pre_tasks:
+    - name: Get name of OpenClaw pod
+      # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_info_module.html
+      kubernetes.core.k8s_info:
+        kubeconfig: "{{ rke_kubeconfig }}"
+        namespace: "{{ openclaw_namespace }}"
+        api_version: v1
+        kind: Pod
+        label_selectors:
+          - app.kubernetes.io/name       = {{ openclaw_release_name }}
+          - app.kubernetes.io/controller = main
+      register: openclaw_pod
+
+    - name: Set openclaw_pod_name fact
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/set_fact_module.html
+      ansible.builtin.set_fact:
+        openclaw_pod_name: "{{ openclaw_pod.resources[0].metadata.name }}"
+  tasks:
+    # https://docs.openclaw.ai/channels/pairing#2-node-device-pairing-ios/android/macos/headless-nodes
+    - name: Get devices pending pairing
+      # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_exec_module.html
+      kubernetes.core.k8s_exec: &k8s-exec
+        kubeconfig: "{{ rke_kubeconfig }}"
+        namespace: "{{ openclaw_namespace }}"
+        pod: "{{ openclaw_pod_name }}"
+        container: main
+        command: openclaw devices list --json
+      register: openclaw_devices
+      changed_when: false
+      retries: 5
+      delay: 5
+
+    - name: Approve device pairing request
+      vars:
+        devices: "{{ openclaw_devices.stdout | from_json }}"
+        # https://docs.ansible.com/projects/ansible/latest/collections/community/general/keep_keys_filter.html
+        pending: "{{ devices.pending | community.general.keep_keys(target=['requestId','clientId']) }}"
+      kubernetes.core.k8s_exec:
+        <<: *k8s-exec
+        command: openclaw devices approve {{ item.requestId }}
+      loop: "{{ pending }}"
+      loop_control:
+        label: "{{ item.clientId }}"
+      changed_when: true

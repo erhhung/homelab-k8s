@@ -13,14 +13,14 @@ keycloak_host_names: # aliases of "ingress"
 keycloak_fqdns: "{{ keycloak_host_names | product(search_domains) | map('join','.') }}"
 
 keycloak_secrets:
+  ingress: keycloakx-ingress-tls
+  database: keycloakx-database-tls
+  init-sql: keycloakx-database-sql
   # keycloakx-passwords Secret will be
   # created automatically by the chart
   passwords: keycloakx-passwords
-  database: keycloakx-database-tls
-  ingress: keycloakx-ingress-tls
 
 keycloak_configmaps:
-  dbsql: keycloakx-dbsql
   admin: keycloakx-admin
 
 keycloak_db_name: keycloak
@@ -48,8 +48,8 @@ keycloak_jdbc_url: >-
   {% set query = params | join('&') -%}
   jdbc:{{ pgpool_service_url }}/{{ keycloak_db_name }}?{{ query }}
 
-# file is in "keycloakx-dbsql" ConfigMap
-keycloak_sql_gz_b64: keycloak.sql.gz.b64
+# "keycloakx-database-sql" Secret
+keycloak_sql_gz: keycloak.sql.gz
 
 # NOTE: iCloud SMTP server configuration
 # has been pre-baked into the SQL script
@@ -122,33 +122,35 @@ keycloakx_chart_values:
     port: "{{ pgpool_service_port }}"
     database: "{{ keycloak_db_name }}"
     username: "{{ keycloak_db_user }}"
+    # "keycloakx-database" Secret
     password: "{{ pgpool_pass }}"
 
   dbchecker:
     enabled: true
 
   extraVolumes: |
+    - name: ingress-tls
+      secret:
+        secretName: {{ keycloak_secrets['ingress'] }}
     - name: database-tls
       secret:
         secretName: {{ keycloak_secrets['database'] }}
         defaultMode: 416 # "0640"
-    - name: ingress-tls
-      secret:
-        secretName: {{ keycloak_secrets['ingress'] }}
     - name: keycloak-sql
-      configMap:
-        name: {{ keycloak_configmaps['dbsql'] }}
+      secret:
+        secretName: {{ keycloak_secrets['init-sql'] }}
+        defaultMode: 384 # "0600"
     - name: profile-sh
       configMap:
         name: {{ keycloak_configmaps['admin'] }}
 
   # keycloak container
   extraVolumeMounts: |
-    - name: database-tls
-      mountPath: /opt/keycloak/tls/database
-      readOnly: true
     - name: ingress-tls
       mountPath: /opt/keycloak/tls/ingress
+      readOnly: true
+    - name: database-tls
+      mountPath: /opt/keycloak/tls/database
       readOnly: true
     - name: profile-sh
       mountPath: /etc/profile.d/sh.local
@@ -195,7 +197,7 @@ keycloakx_chart_values:
           EOT
           }
           echo -e "\nImporting database from keycloak.sql..."
-          base64 -d /sql/{{ keycloak_sql_gz_b64 }} | gzip -dq | \
+          gzip -dq /sql/{{ keycloak_sql_gz }} | \
             psql -d $PGDATABASE -v ON_ERROR_STOP=1 -e
 
           echo -e "\nDatabase bootstrapping completed ✓"

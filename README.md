@@ -71,6 +71,8 @@ All cluster services will be provisioned with TLS certificates from Erhhung's pr
 |        https://litellm.fourteeners.local | LiteLLM dashboard
 |      https://openwebui.fourteeners.local | Open WebUI portal
 |           https://mcpo.fourteeners.local | MCP OpenAPI proxy
+|       https://openclaw.fourteeners.local | OpenClaw control
+|         wss://openclaw.fourteeners.local | OpenClaw gateway
 |        https://flowise.fourteeners.local | Flowise designer
 
 ## Installation Sources
@@ -156,10 +158,10 @@ All cluster services will be provisioned with TLS certificates from Erhhung's pr
     * [X] Replace default Chroma vector DB with [Qdrant](https://github.com/qdrant/qdrant) — install using the [`qdrant`](https://github.com/qdrant/qdrant-helm) Helm chart
     * [X] Deploy [MCP OpenAPI (mcpo)](https://docs.openwebui.com/features/plugin/tools/openapi-servers/mcp) proxy server with select tools using the [`mcpo`](https://github.com/first-it-consulting/helm-mcpo) Helm chart
     * [X] Deploy [Playwright](https://playwright.dev/) Server using generic [`app-template`](https://github.com/bjw-s-labs/helm-charts/tree/main/charts/other/app-template) Helm chart with [official images](https://mcr.microsoft.com/artifact/mar/playwright)
+- [X] [OpenClaw Agent Gateway](https://docs.openclaw.ai/) — collaborate with my personal AI assistant using messaging apps
+    * Install on main RKE cluster using the [`openclaw`](https://github.com/serhanekicii/openclaw-helm/tree/main/charts/openclaw) Helm chart
 - [X] [Flowise Agentic Workflows](https://flowiseai.com/) — build AI agents using visual workflows
     * Install on main RKE cluster using the [`flowise`](https://github.com/cowboysysop/charts/tree/master/charts/flowise) Helm chart
-- [ ] [OpenClaw Agent Gateway](https://docs.openclaw.ai/) — collaborate with my personal AI assistant using messaging apps
-    * Install on main RKE cluster using the [`openclaw`](https://github.com/serhanekicii/openclaw-helm/tree/main/charts/openclaw) Helm chart
 - [ ] [Backstage Developer Portal](https://backstage.io/) — software catalog and developer portal
 - [ ] [SonarQube Automated Code Reviews](https://docs.sonarsource.com/sonarqube-community-build) — run static code analysis during CI/CD pipelines
     * Install on main RKE cluster using the [`sonarqube`](https://docs.sonarsource.com/sonarqube-community-build/server-installation/on-kubernetes-or-openshift/installing-helm-chart) Helm chart
@@ -229,6 +231,8 @@ ansible-vault view   $VAULTFILE
 | `openwebui_secret_key`            |
 | `openwebui_pipelines_api_key`     |
 | `openwebui_mcpo_api_key`          |
+| `gogcli_keyring_pass`             |
+| `openclaw_gateway_token`          |
 | `flowise_encryption_key`          |
 | `anthropic_api_key`               |
 | `openai_api_key`                  |
@@ -583,10 +587,17 @@ however, all privileged operations using `sudo` will require the password stored
     ```
 </details>
 
-34. <details><summary>Install <strong>Flowise</strong> AI platform and integrations</summary><br/>
+34. <details><summary>Install <strong>OpenClaw</strong> AI agent gateway and skills</summary><br/>
+
+    ```bash
+    make openclaw
+    ```
+</details>
+
+35. <details><summary>Install <strong>Flowise</strong> AI platform and integrations</summary><br/>
 
     Current deployment uses local images in Harbor registry that were built by GitLab CI.  
-    34.1. **NOTE**: Populate documents by running `make flowise -t documents` separately
+    35.1. **NOTE**: Populate documents by running `make flowise -t documents` separately
 
     ```bash
     make flowise

@@ -11,6 +11,8 @@ k3s_version: v1.34.3+k3s1 # 12/15/2025
 k3s_opts:
   - --token '{{ k3s_token }}'
   - --tls-san {{ k3s_fqdn }}
+  - --cluster-cidr {{ cluster_cidr }}
+  - --service-cidr {{ service_cidr }}
   - --write-kubeconfig {{ k3s_kubeconfig }}
   - --write-kubeconfig-mode 644
 # k3s_token: {vault.yml}

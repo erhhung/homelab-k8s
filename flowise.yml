@@ -23,6 +23,7 @@
       # and client certificate environment variables
       block:
         - name: Clear repo_tag_found fact
+          # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/set_fact_module.html
           ansible.builtin.set_fact:
             repo_tag_found: ""
 
@@ -133,7 +134,6 @@
     - documents
   hosts: localhost
   vars_files:
-    - vars/basics.yml
     - vars/flowise.yml
     - vars/kubernetes.yml
     - vars/postgresql.yml

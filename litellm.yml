@@ -45,7 +45,7 @@
           - "{{ litellm_db_user }}@{{ homelab_domain }}"
       ansible.builtin.include_tasks: tasks/k8s/secrets/tls.step.yml
 
-    - name: Create LiteLLM env vars secret
+    - name: Create LiteLLM envFrom secret
       vars:
         secret_name: "{{ litellm_secrets['env-vars'] }}"
         secret_data:

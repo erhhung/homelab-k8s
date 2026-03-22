@@ -321,4 +321,8 @@ cd "$HOME"
           --out=flowise_db \
   flowise flowise@fourteeners.local
 
+./cert.sh --exp=365 \
+  openclaw.fourteeners.local \
+    agents.fourteeners.local
+
 rsync certs cosmos:.

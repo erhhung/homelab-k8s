@@ -724,10 +724,9 @@ gitlab_chart_values:
       trusted_proxies:
         # do NOT add to workhorse.trustedCIDRsFor*
         - 127.0.0.1/32
-        - 10.42.0.0/16
-        - 192.168.0.0/16
-        # https://tailscale.com/kb/1015/100.x-addresses
-        - 100.64.0.0/10
+        - "{{ cluster_cidr }}"
+        - "{{ homelab_cidr }}"
+        - "{{ tailnet_cidr }}"
 
       workerTimeout: 60
       extraEnv:
@@ -782,10 +781,9 @@ gitlab_chart_values:
 
         # see webservice.trusted_proxies below
         trustedCIDRsForXForwardedFor: &xff-cidrs
-          - 10.42.0.0/16
-          - 192.168.0.0/16
-          # https://tailscale.com/kb/1015/100.x-addresses
-          - 100.64.0.0/10
+          - "{{ cluster_cidr }}"
+          - "{{ homelab_cidr }}"
+          - "{{ tailnet_cidr }}"
         trustedCIDRsForPropagation: *xff-cidrs
 
         readinessProbe: *ws-readiness

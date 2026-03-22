@@ -1,4 +1,6 @@
 # https://github.com/wave-k8s/wave
+# Reloader is an alternative product:
+# https://github.com/stakater/Reloader
 ---
 - name: Install Wave on RKE cluster
   tags: install

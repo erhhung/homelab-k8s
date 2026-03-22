@@ -68,6 +68,40 @@ playwright_chart_values:
           # write to /tmp and cache dirs
           readOnlyRootFilesystem: false
 
+      initContainers:
+        ca-bundle:
+          image: "{{ playwright_image }}"
+          securityContext:
+            runAsUser: 0
+          command: ["bash"]
+          args:
+            - -c
+            - |-
+              # ca.crt is already mounted
+              CA_CERT="/usr/local/share/ca-certificates/ca.crt"
+              CA_BUNDLE="/etc/ssl/certs/ca-certificates.crt"
+              # /certs is mounted emptyDir
+              NSSDB_DIR="/certs/nssdb"
+
+              # create NSS database with custom CA for Chromium
+              apt-get update && apt-get install -y libnss3-tools
+              mkdir -p $NSSDB_DIR
+
+              echo -e "\nCreating NSS database..."
+              # use certificate's CN as nickname
+              nickname="$(openssl x509 -in $CA_CERT -noout -subject -nameopt RFC2253 | \
+                            sed -n 's/^subject=.*CN=\([^,]*\)\(,.*\)\?$/\1/p')"
+              # https://www.linux.org/docs/man1/certutil.html
+              certutil -d sql:$NSSDB_DIR -N --empty-password
+              certutil -d sql:$NSSDB_DIR -A -t "C,," -n "$nickname" -i $CA_CERT
+              certutil -d sql:$NSSDB_DIR -L
+
+              echo -e "\nUpdating trust store..."
+              # ignore "rehash: warning:" output
+              update-ca-certificates 2> /dev/null || exit
+              cp $CA_BUNDLE /certs/ca-bundle.crt
+              echo; tail -n 11 $CA_BUNDLE
+
       containers:
         playwright:
           image: "{{ playwright_image }}"
@@ -79,7 +113,9 @@ playwright_chart_values:
             - --host=0.0.0.0
             - --port={{ playwright_service_port }}
           env:
+            TZ: "{{ system_time_zone }}"
             PLAYWRIGHT_BROWSERS_PATH: /ms-playwright
+            NSS_DEFAULT_DB_DIR: /home/ubuntu/.local/share/pki/nssdb
 
           ports:
             - name: ws
@@ -108,6 +144,35 @@ playwright_chart_values:
                 failureThreshold: 3
             readiness: *probe
 
+  persistence:
+    ca-certs:
+      enabled: true
+      # https://bjw-s-labs.github.io/helm-charts/docs/common-library/storage/types/secret
+      type: secret # persistentVolumeClaim|emptyDir|nfs|hostPath|secret|configMap|custom
+      name: "{{ playwright_secrets['ingress'] }}"
+      defaultMode: 420 # "0644"
+      advancedMounts:
+        main:
+          ca-bundle:
+            - path: /usr/local/share/ca-certificates/ca.crt
+              subPath: ca.crt
+              readOnly: true
+
+    ca-bundle:
+      enabled: true
+      type: emptyDir
+      advancedMounts:
+        main:
+          ca-bundle:
+            - path: /certs
+          playwright:
+            - path: /etc/ssl/certs/ca-certificates.crt
+              subPath: ca-bundle.crt
+              readOnly: true
+            # $HOME/.local/share/pki/nssdb is standard
+            - path: /home/ubuntu/.local/share/pki/nssdb
+              subPath: nssdb
+
   service:
     main:
       type: ClusterIP
@@ -123,7 +188,7 @@ playwright_chart_values:
       tls:
         - secretName: "{{ playwright_secrets['ingress'] }}"
           hosts: "{{ [playwright_fqdn] }}"
-      ingressClassName: "{{ rke_ingress_class }}"
+      className: "{{ rke_ingress_class }}"
       annotations:
         nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
         nginx.ingress.kubernetes.io/backend-protocol: HTTP
