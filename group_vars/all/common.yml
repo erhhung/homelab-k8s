@@ -1,4 +1,4 @@
-# https://docs.ansible.com/projects/ansible/latest/reference_appendices/special_variables.html
+# https://docs.ansible.com/ansible/latest/reference_appendices/special_variables.html
 
 pki_host: "{{ groups['pki_any'] | first }}"
 xcp_host: "{{ groups['xcp_any'] | first }}"
@@ -16,7 +16,7 @@ ansible_ssh_common_args: >-
 
 # host-specific password for Kubernetes node
 # (assigned during VM creation in Terraform)
-# https://docs.ansible.com/projects/ansible/latest/playbook_guide/playbooks_privilege_escalation.html#become-connection-variables
+# https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_privilege_escalation.html#become-connection-variables
 ansible_become_password: Irre1evant.{{ inventory_hostname | capitalize }}
 # password overrides in inventory/host_vars/*.yml
 
@@ -43,6 +43,10 @@ homelab_cidr: 192.168.0.0/16
 homelab_domain: fourteeners.local
 search_domains:
   - "{{ homelab_domain }}"
+
+homelab_nfs:
+  server: qnap.{{ homelab_domain }}
+  base_path: /k8s_data
 
 # IP addresses of RKE cluster nodes
 cluster_node_ips: |

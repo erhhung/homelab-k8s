@@ -23,14 +23,14 @@
     project_ee: "{{ awx_environments[project.exec_env | default('default')].name }}"
 
   module_defaults:
-    # https://docs.ansible.com/projects/ansible/latest/collections/awx/awx/job_template_module.html
+    # https://docs.ansible.com/ansible/latest/collections/awx/awx/job_template_module.html
     awx.awx.job_template:
       job_type: run
       prevent_instance_group_fallback: true
       become_enabled: false
   block:
     - name: Create AWX project "{{ project.name }}"
-      # https://docs.ansible.com/projects/ansible/latest/collections/awx/awx/project_module.html
+      # https://docs.ansible.com/ansible/latest/collections/awx/awx/project_module.html
       awx.awx.project: # noqa args
         name: "{{ project.name }}"
         description: "{{ project.desc | default(omit) }}"
@@ -50,7 +50,7 @@
         timeout: 60
 
     - name: Create inventory for "{{ project.name }}"
-      # https://docs.ansible.com/projects/ansible/latest/collections/awx/awx/inventory_module.html
+      # https://docs.ansible.com/ansible/latest/collections/awx/awx/inventory_module.html
       awx.awx.inventory:
         name: "{{ project.name }}"
         description: "{{ project.name }} static inventory"
@@ -62,7 +62,7 @@
         state: present
 
     - name: Create inventory source "{{ inv_fname }}"
-      # https://docs.ansible.com/projects/ansible/latest/collections/awx/awx/inventory_source_module.html
+      # https://docs.ansible.com/ansible/latest/collections/awx/awx/inventory_source_module.html
       awx.awx.inventory_source: # noqa args
         name: "{{ inv_fname }}"
         inventory: "{{ project.name }}"
@@ -77,7 +77,7 @@
       register: inv_src
 
     - name: Update inventory source "{{ inv_fname }}"
-      # https://docs.ansible.com/projects/ansible/latest/collections/awx/awx/inventory_source_update_module.html
+      # https://docs.ansible.com/ansible/latest/collections/awx/awx/inventory_source_update_module.html
       awx.awx.inventory_source_update:
         name: "{{ inv_fname }}"
         inventory: "{{ project.name }}"
@@ -180,7 +180,7 @@
           {%   set _ = notifiers.append(awx_notifiers['slack']) %}
           {% endif %}
           {{ notifiers | map(attribute='name') if notifiers is truthy else omit }}
-      # https://docs.ansible.com/projects/ansible/latest/collections/awx/awx/workflow_job_template_module.html
+      # https://docs.ansible.com/ansible/latest/collections/awx/awx/workflow_job_template_module.html
       awx.awx.workflow_job_template: # noqa args
         name: "{{ project.name }}"
         description: "{{ project.desc | default(omit) }}"

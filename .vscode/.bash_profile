@@ -28,15 +28,16 @@ alias al='ansible-lint'
 alias ap='ansible-playbook'
 alias av='ansible-vault'
 
-ev() (
+__av() (
+  cmd="$1" file=$(realpath "$2")
   cd "$(git_root)" || exit
   export EDITOR=$(which emacs)
-  ansible-vault edit "${1:-$VAULTFILE}"
+  ansible-vault "$cmd" "$file"
 )
-vv() (
-  cd "$(git_root)" || exit
-  ansible-vault view "${1:-$VAULTFILE}"
-)
+ev() { __av edit    "${1:-$VAULTFILE}"; }
+vv() { __av view    "${1:-$VAULTFILE}"; }
+ve() { __av encrypt "$1"; }
+vd() { __av decrypt "$1"; }
 
 gzage() {
   local root

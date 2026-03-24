@@ -325,7 +325,7 @@
           # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/combine_filter.html
           - "{{ scraper_user | ansible.builtin.combine({'auditor': true}) }}"
 
-      # https://docs.ansible.com/projects/ansible/latest/collections/awx/awx/user_module.html
+      # https://docs.ansible.com/ansible/latest/collections/awx/awx/user_module.html
       awx.awx.user: # noqa args
         username: "{{   item.username }}"
         first_name: "{{ item.firstname | default(omit) }}"
@@ -346,7 +346,7 @@
       when: secrets_info.results[1].resources is falsy
       block:
         - name: Create scraper OAuth token
-          # https://docs.ansible.com/projects/ansible/latest/collections/awx/awx/token_module.html
+          # https://docs.ansible.com/ansible/latest/collections/awx/awx/token_module.html
           awx.awx.token:
             controller_oauthtoken: "" # don't use admin token
             controller_username: "{{ scraper_user.username }}"
@@ -367,7 +367,7 @@
     # container so that each project's vaultpass.sh can decrypt
     # its encrypted real Vault password
     - name: Override custom EE pod specs
-      # https://docs.ansible.com/projects/ansible/latest/collections/awx/awx/instance_group_module.html
+      # https://docs.ansible.com/ansible/latest/collections/awx/awx/instance_group_module.html
       awx.awx.instance_group:
         name: "{{ item }}"
         is_container_group: true
@@ -382,10 +382,10 @@
     # but there is no way to set pull policy
     - name: Update AWX environments
       vars:
-        # https://docs.ansible.com/projects/ansible/latest/collections/ansible/builtin/dict2items_filter.html
+        # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/dict2items_filter.html
         envs: "{{ awx_environments | ansible.builtin.dict2items |
           selectattr('value.pull', 'defined') }}"
-      # https://docs.ansible.com/projects/ansible/latest/collections/awx/awx/execution_environment_module.html
+      # https://docs.ansible.com/ansible/latest/collections/awx/awx/execution_environment_module.html
       awx.awx.execution_environment:
         name: "{{  item.value.name  }}"
         image: "{{ item.value.image }}"
@@ -395,13 +395,13 @@
         label: "{{ item.key }}"
 
     - name: Create AWX organization
-      # https://docs.ansible.com/projects/ansible/latest/collections/awx/awx/organization_module.html
+      # https://docs.ansible.com/ansible/latest/collections/awx/awx/organization_module.html
       awx.awx.organization:
         name: "{{ awx_organization.name }}"
         description: "{{ awx_organization.desc }}"
 
     # could also use awx.awx.credential module:
-    # https://docs.ansible.com/projects/ansible/latest/collections/awx/awx/credential_module.html
+    # https://docs.ansible.com/ansible/latest/collections/awx/awx/credential_module.html
     - name: Create AWX credentials
       vars:
         # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/unvault_lookup.html
@@ -453,7 +453,7 @@
     - name: Create AWX notifier
       vars:
         notifier: "{{ item.value }}"
-      # https://docs.ansible.com/projects/ansible/latest/collections/awx/awx/notification_template_module.html
+      # https://docs.ansible.com/ansible/latest/collections/awx/awx/notification_template_module.html
       awx.awx.notification_template: # noqa args
         name: "{{ notifier.name }}"
         description: "{{ notifier.desc | default(omit) }}"
@@ -467,7 +467,7 @@
         label: "{{ item.key }}"
 
     - name: Create Localhost inventory
-      # https://docs.ansible.com/projects/ansible/latest/collections/awx/awx/inventory_module.html
+      # https://docs.ansible.com/ansible/latest/collections/awx/awx/inventory_module.html
       awx.awx.inventory:
         name: &inventory >-
           Localhost
@@ -481,7 +481,7 @@
         state: present
 
     - name: Add localhost to inventory
-      # https://docs.ansible.com/projects/ansible/latest/collections/awx/awx/host_module.html
+      # https://docs.ansible.com/ansible/latest/collections/awx/awx/host_module.html
       awx.awx.host:
         name: localhost
         inventory: *inventory

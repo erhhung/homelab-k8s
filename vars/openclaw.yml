@@ -26,6 +26,7 @@ openclaw_common_env:
   TZ: "{{ system_time_zone }}"
   OPENCLAW_HOME: "{{ openclaw_data_dir }}"
   XDG_CONFIG_HOME: $(OPENCLAW_HOME)/config
+  XDG_CACHE_HOME: $(OPENCLAW_HOME)/cache
   OPENCLAW_CONFIG_PATH:
     value: $(OPENCLAW_HOME)/openclaw.json
     dependsOn: OPENCLAW_HOME
@@ -41,6 +42,9 @@ openclaw_common_env:
 
 # https://github.com/serhanekicii/openclaw-helm/tree/main/charts/openclaw
 openclaw_chart_version: "1.5.5"
+# comment out openclaw_app_version
+# to use the chart's default value
+openclaw_app_version: "2026.3.23"
 openclaw_release_name: openclaw
 
 # https://github.com/serhanekicii/openclaw-helm/tree/main/charts/openclaw/values.yaml
@@ -48,6 +52,8 @@ openclaw_chart_values:
   # https://github.com/bjw-s-labs/helm-charts/tree/main/charts/other/app-template
   # https://github.com/bjw-s-labs/helm-charts/tree/main/charts/library/common/values.yaml
   app-template:
+    openclawVersion: "{{ openclaw_app_version | default(omit) }}"
+
     # `merge` preserves runtime changes
     # use `overwrite` for strict GitOps
     configMode: overwrite # merge|overwrite
@@ -110,6 +116,7 @@ openclaw_chart_values:
                 [ -f $BIN_DIR/less ] || packages+=(less)
                 apt-get update && apt-get install -y "${packages[@]}"
                 [ -f $BIN_DIR/less ] || cp -a $(which less) $BIN_DIR
+                chown -R node:node $BIN_DIR
 
                 echo -e "\nCreating NSS database..."
                 # use certificate's CN as nickname
@@ -281,11 +288,10 @@ openclaw_chart_values:
 
       # PVC for /home/node/.openclaw
       data:
-        type: persistentVolumeClaim
-        storageClass: "{{ storage_classes['default'] }}"
-        size: 2Gi
-        accessMode: ReadWriteOnce
-        retain: false
+        # https://bjw-s-labs.github.io/helm-charts/docs/common-library/storage/types/nfs-share
+        type: nfs
+        server: "{{ homelab_nfs.server }}"
+        path: "{{ homelab_nfs.base_path }}/openclaw"
         advancedMounts:
           main:
             ca-bundle: # supplemental mount

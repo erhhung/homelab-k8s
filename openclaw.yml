@@ -1,10 +1,10 @@
 # https://docs.openclaw.ai/
+# https://github.com/openclaw/openclaw
 # https://docs.openclaw.ai/concepts/architecture
 # https://docs.openclaw.ai/gateway/configuration
 # https://docs.openclaw.ai/gateway/security
-# https://docs.openclaw.ai/security/THREAT-MODEL-ATLAS
 # https://docs.openclaw.ai/platforms/macos
-# https://github.com/openclaw/openclaw
+# https://learnopenclaw.com/core-concepts/soul-md
 ---
 - name: Install OpenClaw on RKE cluster
   tags: install
@@ -35,10 +35,11 @@
       delegate_to: localhost
       vars:
         src_dir: files/openclaw/skills
-        src_files: "{{ query('ansible.builtin.fileglob', src_dir ~'/*') |
-          map('ansible.builtin.basename') | select('search', '^[^.].+') }}"
+        # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/fileglob_lookup.html
+        src_files: |
+          {{ query('ansible.builtin.fileglob', src_dir ~ '/*') |
+               map('ansible.builtin.basename') | reject('search', '^\..+') }}
         filename: "{{ item | regex_replace('(\\.age)?$', '') }}"
-
         # use the default Python interpreter on Ansible controller
         ansible_python_interpreter: "{{ default_python_interpreter }}"
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/shell_module.html
@@ -135,12 +136,22 @@
     - vars/openclaw.yml
   vars:
     ansible_python_interpreter: "{{ venv_python_interpreter }}"
+    workspace_src_dir: "{{ playbook_dir }}/files/openclaw/workspace"
+    workspace_dest_dir: "{{ openclaw_data_dir }}/workspace"
+
+  module_defaults:
+    group/k8s:
+      kubeconfig: "{{ rke_kubeconfig }}"
+      namespace: "{{ openclaw_namespace }}"
+    kubernetes.core.k8s_exec: &k8s-pod
+      # pod name determined dynamically in pre_tasks
+      pod: "{{ openclaw_pod_name | default(omit) }}"
+      container: main
+    kubernetes.core.k8s_cp: *k8s-pod
   pre_tasks:
     - name: Get name of OpenClaw pod
       # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_info_module.html
       kubernetes.core.k8s_info:
-        kubeconfig: "{{ rke_kubeconfig }}"
-        namespace: "{{ openclaw_namespace }}"
         api_version: v1
         kind: Pod
         label_selectors:
@@ -152,15 +163,23 @@
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/set_fact_module.html
       ansible.builtin.set_fact:
         openclaw_pod_name: "{{ openclaw_pod.resources[0].metadata.name }}"
+
+    - name: Read workspace config files
+      delegate_to: localhost
+      vars:
+        # use the default Python interpreter on Ansible controller
+        ansible_python_interpreter: "{{ default_python_interpreter }}"
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/find_module.html
+      ansible.builtin.find:
+        paths: "{{ workspace_src_dir }}"
+        excludes: .*
+        recurse: true
+      register: workspace_files
   tasks:
     # https://docs.openclaw.ai/channels/pairing#2-node-device-pairing-ios/android/macos/headless-nodes
     - name: Get devices pending pairing
       # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_exec_module.html
-      kubernetes.core.k8s_exec: &k8s-exec
-        kubeconfig: "{{ rke_kubeconfig }}"
-        namespace: "{{ openclaw_namespace }}"
-        pod: "{{ openclaw_pod_name }}"
-        container: main
+      kubernetes.core.k8s_exec:
         command: openclaw devices list --json
       register: openclaw_devices
       changed_when: false
@@ -170,12 +189,35 @@
     - name: Approve device pairing request
       vars:
         devices: "{{ openclaw_devices.stdout | from_json }}"
-        # https://docs.ansible.com/projects/ansible/latest/collections/community/general/keep_keys_filter.html
+        # https://docs.ansible.com/ansible/latest/collections/community/general/keep_keys_filter.html
         pending: "{{ devices.pending | community.general.keep_keys(target=['requestId','clientId']) }}"
       kubernetes.core.k8s_exec:
-        <<: *k8s-exec
         command: openclaw devices approve {{ item.requestId }}
       loop: "{{ pending }}"
       loop_control:
         label: "{{ item.clientId }}"
       changed_when: true
+
+    - name: Update workspace config file
+      vars:
+        src_files: |
+          {{ workspace_files.files | map(attribute='path') |
+             map('substr', workspace_src_dir | length) }}
+        dest_file: "{{ workspace_dest_dir ~ item }}"
+        src_file: "{{  workspace_src_dir  ~ item }}"
+        # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/file_lookup.html
+        src_data: "{{ lookup('ansible.builtin.file', src_file) }}"
+        # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/unvault_lookup.html
+        content: >
+          {{ src_data if src_data is not search('^\$ANSIBLE_VAULT')
+             else lookup('ansible.builtin.unvault', src_file) }}
+      # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_cp_module.html
+      kubernetes.core.k8s_cp:
+        state: to_pod
+        content: "{{ content }}"
+        remote_path: "{{ dest_file }}"
+      loop: "{{ src_files }}"
+      loop_control:
+        # substr: filter_plugins/filters.py
+        label: "{{ item | substr(1) }}"
+      changed_when: false # not idempotent

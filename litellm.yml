@@ -203,7 +203,7 @@
         - name: Update LiteLLM team
           vars:
             team: "{{ teams | selectattr('team_alias', '==', item.team_alias) }}"
-            # https://docs.ansible.com/projects/ansible/latest/collections/community/general/keep_keys_filter.html
+            # https://docs.ansible.com/ansible/latest/collections/community/general/keep_keys_filter.html
             existing: "{{ team | community.general.keep_keys(target=item.keys()) | first }}"
             body: "{{ item | combine({'team_id': team[0].team_id}) }}"
           ansible.builtin.uri:
@@ -225,7 +225,7 @@
     # dict: .team_alias => .team_id
     - name: Set team_ids fact
       vars:
-        # https://docs.ansible.com/projects/ansible/latest/collections/ansible/builtin/items2dict_filter.html
+        # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/items2dict_filter.html
         existing: "{{ list_teams.json |
           ansible.builtin.items2dict(key_name='team_alias', value_name='team_id') }}"
         created: |

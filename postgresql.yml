@@ -9,6 +9,7 @@
     - vars/storage.yml
     - vars/monitoring.yml
     - vars/postgresql.yml
+
     # these are only needed for
     # their *_db_user variables
     - vars/keycloak.yml

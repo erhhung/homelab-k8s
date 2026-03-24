@@ -71,8 +71,8 @@ ollama_common_values:
   extraVolumes:
     - name: ollama-nfs
       nfs:
-        server: qnap.{{ homelab_domain }}
-        path: /k8s_data/ollama
+        server: "{{ homelab_nfs.server }}"
+        path: "{{ homelab_nfs.base_path }}/ollama"
 
   podSecurityContext:
     fsGroup: 2000

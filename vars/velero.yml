@@ -2,6 +2,17 @@
 # velero_admin_pass: {vault.yml}
 # velero_passphrase: {vault.yml}
 
+# basic settings for Schedule.velero.io/cluster-daily
+# CR defined below under `extraObjects`:
+velero_daily_backup:
+  include_namespaces:
+    # pretty much all data other than PostgreSQL, OpenClaw,
+    # and telemetry can be recreated, but telemetry aren't
+    # too critical in our resource constrained environment
+    - "{{ postgresql_namespace }}"
+  exclude_namespaces:
+    - vcluster-*
+
 velero_namespace: velero
 velero_ui_namespace: velero
 velero_host_name: velero # alias of "ingress"
@@ -189,14 +200,8 @@ velero_chart_values:
           metadata:
             labels:
               velero.io/schedule-name: cluster-daily
-          includedNamespaces:
-            # pretty much all data other than PostgreSQL
-            # and logs/metrics can be recreated, but the
-            # latter aren't too critical in our resource
-            # constrained environment
-            - postgresql
-          excludedNamespaces:
-            - vcluster-*
+          includedNamespaces: "{{ velero_daily_backup.include_namespaces }}"
+          excludedNamespaces: "{{ velero_daily_backup.exclude_namespaces }}"
           itemOperationTimeout: 1h
           csiSnapshotTimeout: 30m
           ttl: 72h0m0s # 3 days

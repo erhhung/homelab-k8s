@@ -322,7 +322,7 @@
         - name: Create Open WebUI admin user
           vars:
             image_url: "{{ openwebui_admin_user.profile_image_url }}"
-            # https://docs.ansible.com/projects/ansible/latest/collections/ansible/builtin/url_lookup.html
+            # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/url_lookup.html
             image_data: "{{ lookup('ansible.builtin.url', image_url, split_lines=false) }}"
             data_uri: data:image/png;base64,{{ image_data | b64encode }}
           ansible.builtin.uri:
@@ -468,25 +468,11 @@
         existing: "{{ list_memories.json | selectattr('user_id', '==', admin_user.id) }}"
       when: existing is falsy
       block:
-        - name: Read encrypted memories.yaml
-          vars:
-            mem_file: files/openwebui/memories.yaml.gz.age
-          # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/shell_module.html
-          ansible.builtin.shell: |
-            age_file="{{ mem_file }}"
-            tmp_file="/tmp/$(basename "$age_file")"
-            yml_file="${tmp_file/%.gz.age/}"
-
-            cp -f "$age_file" /tmp
-            ./gzage.sh "$tmp_file"
-            cat   "$yml_file"
-            rm -f "$yml_file"
-          register: memories_yaml
-          changed_when: false
-
         - name: Add new content to memories
           vars:
-            memories: "{{ memories_yaml.stdout | from_yaml }}"
+            # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/unvault_lookup.html
+            memories: "{{ lookup('ansible.builtin.unvault',
+              'files/openwebui/memories.yaml') | from_yaml }}"
           ansible.builtin.uri:
             method: POST
             url: "{{ api_base }}/v1/memories/add"

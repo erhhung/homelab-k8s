@@ -259,8 +259,8 @@ nfs_provisioner_chart_values:
 nfs_provisioners:
   - cluster: k3s
     name: qnap # release name
-    server: qnap.{{ homelab_domain }}
-    path: /k8s_data/k3s
+    server: "{{ homelab_nfs.server }}"
+    path: "{{ homelab_nfs.base_path }}/k3s"
     storageClass:
       name: "{{ storage_classes['nfs'] }}"
       accessModes: ReadWriteOnce
@@ -270,8 +270,8 @@ nfs_provisioners:
 
   - cluster: rke
     name: qnap # release name
-    server: qnap.{{ homelab_domain }}
-    path: /k8s_data/rke
+    server: "{{ homelab_nfs.server }}"
+    path: "{{ homelab_nfs.base_path }}/rke"
     storageClass:
       name: "{{ storage_classes['nfs'] }}"
       accessModes: ReadWriteOnce

@@ -10,6 +10,10 @@
     - vars/monitoring.yml
     - vars/minio.yml
     - vars/velero.yml
+
+    # these are only required for
+    # their *_namespace variables
+    - vars/postgresql.yml
   vars:
     # required kubernetes>=24.2 package only in user virtualenv
     ansible_python_interpreter: "{{ venv_python_interpreter }}"

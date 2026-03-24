@@ -66,10 +66,10 @@
   post_tasks:
     - name: Output temporary runlist
       vars:
-        # https://docs.ansible.com/projects/ansible/latest/collections/ansible/builtin/file_lookup.html
+        # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/file_lookup.html
         runlist: "{{ lookup('ansible.builtin.file', temp_dir ~ '/temp.yml') | from_yaml }}"
         # using json_query because map(attribute=...) doesn't work on keys containing dots:
-        # https://docs.ansible.com/projects/ansible/latest/collections/community/general/json_query_filter.html
+        # https://docs.ansible.com/ansible/latest/collections/community/general/json_query_filter.html
         playbooks: '{{ runlist | community.general.json_query(
           ''[]."ansible.builtin.import_playbook"'') }}'
       block:

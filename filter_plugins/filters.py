@@ -6,11 +6,18 @@ import base64
 class FilterModule(object):
     def filters(self):
         return {
+            "substr": self.substr,
             "append": self.append,
             "prepend": self.prepend,
             "to_toml": self.to_toml,
             "b64_decode_k8s_secret": self.b64_decode_k8s_secret,
         }
+
+    # Jinja's `slice` filter isn't Python string
+    # slicing, and there isn't a `substr` filter
+    def substr(self, str, start, end=None) -> str:
+        "Python string slicing"
+        return str[start:end]
 
     def append(self, str, suffix) -> str:
         "add suffix to string"

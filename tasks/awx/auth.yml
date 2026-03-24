@@ -12,7 +12,7 @@
   become: false
   vars:
     cli_hosts: "{{ groups['rke_cluster'] }}"
-    # https://docs.ansible.com/projects/ansible/latest/collections/ansible/builtin/random_filter.html
+    # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/random_filter.html
     any_host: "{{  cli_hosts | random }}"
     same_host: "{{ cli_hosts | first  }}"
   block:

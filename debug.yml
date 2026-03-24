@@ -372,7 +372,7 @@
           - name: Include system settings playbook
             ansible.builtin.import_playbook: basics.yml
         # does NOT work: {{ runlist | map(attribute='ansible.builtin.import_playbook') }}
-        # https://docs.ansible.com/projects/ansible/latest/collections/community/general/json_query_filter.html
+        # https://docs.ansible.com/ansible/latest/collections/community/general/json_query_filter.html
         playbooks1: '{{ runlist | community.general.json_query(''[]."ansible.builtin.import_playbook"'') }}'
         playbooks2: |
           {% set pbs = [] %}
@@ -544,7 +544,7 @@
           - /path/to/config.yaml
           # gets .gz not .tar.gz
           - /path/to/file.tar.gz
-        # https://docs.ansible.com/projects/ansible/latest/collections/ansible/builtin/splitext_filter.html
+        # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/splitext_filter.html
         exts: "{{ files | map('ansible.builtin.splitext') }}"
       ansible.builtin.debug:
         var: exts
@@ -812,14 +812,17 @@
       ansible.builtin.debug:
         var: policies
 
+    # fileglob matches files in single directory
+    # only; use find module for recursive search
     - name: Debug fileglob lookup
       vars:
         base_dir: "{{ template_dir }}/argocd/projects"
         # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/fileglob_lookup.html
         # https://docs.ansible.com/ansible/latest/plugins/lookup.html#forcing-lookups-to-return-lists-query-and-wantlist-true
-        manifests:
-          "{{ query('ansible.builtin.fileglob', base_dir ~ '/*.yaml*') |
-          map('ansible.builtin.basename') | select('search', '^[^.].+') }}"
+        # NOTE: fileglob returns absolute paths, even if input path pattern is relative
+        manifests: |
+          {{ query('ansible.builtin.fileglob', base_dir ~ '/*.yaml*') |
+               map('ansible.builtin.basename') | reject('search', '^\..+') }}
       ansible.builtin.debug:
         var: item
       # names not sorted by default

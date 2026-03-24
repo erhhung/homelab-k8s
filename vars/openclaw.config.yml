@@ -148,13 +148,13 @@ openclaw_config:
     file: /tmp/openclaw.log # JSONL format
     consoleLevel: info
     consoleStyle: compact # pretty|compact|json
-    redactSensitive: tools
+    redactSensitive: tools # "off"|tools
 
   # https://docs.openclaw.ai/logging#export-to-opentelemetry
   diagnostics:
     enabled: true
     otel:
-      enabled: false
+      enabled: true
       endpoint: https://{{ otlp_http_endpoint }}
       protocol: http/protobuf # no gRPC support
       serviceName: openclaw-gateway
@@ -169,11 +169,21 @@ openclaw_config:
   plugins:
     allow:
       - diagnostics-otel
+      - perplexity
     entries:
       diagnostics-otel:
-        # broken: "Cannot find module '@opentelemetry/api'"
-        # https://github.com/openclaw/openclaw/issues/28222
-        enabled: false
+        enabled: true
+
+      # use LiteLLM's Perplexity-compatible API to proxy
+      # search queries to backing providers like SearXNG:
+      # https://docs.openclaw.ai/tools/perplexity-search
+      perplexity:
+        enabled: true
+        config:
+          webSearch:
+            apiKey: ${LITELLM_API_KEY}
+            baseUrl: "{{ litellm_service_url }}/search/{{
+              litellm_search_tools[0].search_tool_name }}"
 
   # https://docs.openclaw.ai/gateway/local-models#other-openai-compatible-local-proxies
   models:
@@ -211,7 +221,28 @@ openclaw_config:
   tools:
     profile: full # minimal|coding|messaging|full
     web:
+      # https://docs.openclaw.ai/tools/web
       search:
         enabled: true
+        # see perplexity plugin config for LiteLLM
+        # search API setup (currently not working):
+        # https://github.com/openclaw/openclaw/issues/53586
+        provider: perplexity
+        maxResults: 10
+        timeoutSeconds: 30
+        cacheTtlMinutes: 15
+
+      # https://docs.openclaw.ai/tools/web-fetch
       fetch:
         enabled: true
+        maxChars: 50000 # default max output chars
+        maxCharsCap: 50000 # hard cap for maxChars param
+        # maxResponseBytes: 2000000 # max size before truncation
+        maxRedirects: 3
+        timeoutSeconds: 30
+        cacheTtlMinutes: 15
+        readability: true
+        userAgent: >-
+          Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)
+          AppleWebKit/537.36 (KHTML, like Gecko)
+          Chrome/146.0.0.0 Safari/537.36

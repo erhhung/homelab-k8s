@@ -365,6 +365,7 @@ litellm_models:
 # TIP: use stable, non-provider-specific tool names so that
 # backing providers can be swapped or additional providers
 # added under the same name for load-balancing and failover
+# https://docs.litellm.ai/docs/search#litellm-ai-gateway-usage
 litellm_search_tools:
   - search_tool_name: web
     # https://docs.litellm.ai/docs/search/searxng

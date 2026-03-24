@@ -143,8 +143,8 @@ mcpo_chart_values:
     # non-NPM-published MCP server packages
     - name: mcp
       nfs:
-        server: qnap.{{ homelab_domain }}
-        path: /k8s_data/mcp
+        server: "{{ homelab_nfs.server }}"
+        path: "{{ homelab_nfs.base_path }}/mcp"
     - name: pipes
       emptyDir:
         medium: Memory
