@@ -1,0 +1,53 @@
+# copy a local file or directly provided content to
+# a path inside the specified pod container (if the
+# specified file was encrypted by Ansible Vault, it
+# will be decrypted automatically)
+#
+# pass the following vars:
+#   kubeconfig <required> path to kubeconfig
+#   pod_name   <required> target pod name
+#   pod_ns     <required> target pod namespace
+#   container  [optional] target pod container
+#   src_path   [optional] path to local file
+#   content    [optional] content to copy (mutually
+#                         exclusive  with src_path)
+#   dest_path  <required> path in container
+#   file_mode  [optional] default="0644"
+---
+- name: Copy local file/content into pod
+  vars:
+    # required kubernetes>=24.2 package only in user virtualenv
+    ansible_python_interpreter: "{{ venv_python_interpreter }}"
+    temp_path: /tmp/k8scp/{{ dest_path | basename }}
+  block:
+    - name: Create temp file on Ansible host
+      vars:
+        # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/file_lookup.html
+        raw_data: "{{ content if content is defined else
+          lookup('ansible.builtin.file', src_path, rstrip=false) }}"
+        # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/unvault_lookup.html
+        b64_data: >-
+          {{ (raw_data if raw_data is not search('^\$ANSIBLE_VAULT') else
+              lookup('ansible.builtin.unvault', src_path)) | b64encode }}
+        mode_: "{{ file_mode | default('0644') }}"
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/shell_module.html
+      ansible.builtin.shell: |
+        mkdir -p "{{ temp_path | dirname }}"
+        rm    -f "{{ temp_path }}"
+        base64 -di -     > "{{ temp_path }}"
+        chmod  {{ mode_ }} "{{ temp_path }}"
+      args:
+        stdin: "{{ b64_data }}"
+      changed_when: false
+
+    - name: Copy temp file into pod container
+      # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_cp_module.html
+      kubernetes.core.k8s_cp:
+        kubeconfig: "{{ kubeconfig }}"
+        state: to_pod
+        pod: "{{ pod_name }}"
+        namespace: "{{ pod_ns }}"
+        container: "{{ container | default(omit) }}"
+        local_path: "{{ temp_path }}"
+        remote_path: "{{ dest_path }}"
+      changed_when: false # not idempotent

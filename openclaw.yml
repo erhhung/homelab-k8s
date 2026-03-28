@@ -4,6 +4,7 @@
 # https://docs.openclaw.ai/gateway/configuration
 # https://docs.openclaw.ai/gateway/security
 # https://docs.openclaw.ai/platforms/macos
+# https://docs.openclaw.ai/channels/slack
 # https://learnopenclaw.com/core-concepts/soul-md
 ---
 - name: Install OpenClaw on RKE cluster
@@ -11,12 +12,14 @@
   hosts: "{{ rke_control_plane_host }}"
   vars_files:
     - vars/kubernetes.yml
+    - vars/monitoring.yml
+    - vars/observability.yml
     - vars/storage.yml
     - vars/ollama.yml
     - vars/litellm.yml
+    - vars/searxng.yml
     - vars/openclaw.yml
     - vars/openclaw.config.yml
-    - vars/observability.yml
   vars:
     # required kubernetes>=24.2 package only in user virtualenv
     ansible_python_interpreter: "{{ venv_python_interpreter }}"
@@ -89,8 +92,14 @@
           OPENCLAW_GATEWAY_TOKEN: "{{ openclaw_gateway_token }}"
           # https://docs.openclaw.ai/gateway/authentication
           LITELLM_API_KEY: "{{ litellm_api_key }}"
+
+          # https://docs.openclaw.ai/channels/slack
+          SLACK_APP_TOKEN: "{{ openclaw_channel_secrets['slack'].app_token }}"
+          SLACK_BOT_TOKEN: "{{ openclaw_channel_secrets['slack'].bot_token }}"
+
           # https://github.com/steipete/gogcli#keyring-backend-keychain-vs-encrypted-file
           GOG_KEYRING_PASSWORD: "{{ gogcli_keyring_pass }}"
+          GITHUB_ACCESS_TOKEN: "{{ github_access_token }}"
       ansible.builtin.include_tasks: tasks/k8s/secrets/generic.yml
 
     # create Secret containing (decrypted) files in
@@ -114,6 +123,13 @@
 
     - name: Install OpenClaw Helm chart
       vars:
+        # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/template_lookup.html
+        rule_manifests: "{{ lookup('ansible.builtin.template',
+          template_dir ~ '/monitoring/rules/openclaw.yaml.j2') }}"
+        slo_manifests: "{{ lookup('ansible.builtin.template',
+          template_dir ~ '/monitoring/slos/openclaw.yaml.j2') }}"
+
+        # === Inputs ===
         repo_name: openclaw
         repo_url: https://serhanekicii.github.io/openclaw-helm
         chart_ref: openclaw
@@ -126,6 +142,9 @@
           - cert-manager.io/v1 Certificate {{ openclaw_secrets['ingress'] }}
           - v1 Secret {{ openclaw_secrets['env-vars'] }}
           - v1 Secret {{ openclaw_secrets['skills']   }}
+          # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/from_yaml_all_filter.html
+          - "{{ rule_manifests | from_yaml_all }}"
+          - "{{  slo_manifests | from_yaml_all }}"
       ansible.builtin.include_tasks: tasks/helm/helmfile.yml
 
 - name: Configure OpenClaw installation
@@ -143,11 +162,10 @@
     group/k8s:
       kubeconfig: "{{ rke_kubeconfig }}"
       namespace: "{{ openclaw_namespace }}"
-    kubernetes.core.k8s_exec: &k8s-pod
+    kubernetes.core.k8s_exec:
       # pod name determined dynamically in pre_tasks
       pod: "{{ openclaw_pod_name | default(omit) }}"
       container: main
-    kubernetes.core.k8s_cp: *k8s-pod
   pre_tasks:
     - name: Get name of OpenClaw pod
       # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_info_module.html
@@ -200,24 +218,19 @@
 
     - name: Update workspace config file
       vars:
+        # substr: filter_plugins/filters.py
         src_files: |
           {{ workspace_files.files | map(attribute='path') |
              map('substr', workspace_src_dir | length) }}
-        dest_file: "{{ workspace_dest_dir ~ item }}"
-        src_file: "{{  workspace_src_dir  ~ item }}"
-        # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/file_lookup.html
-        src_data: "{{ lookup('ansible.builtin.file', src_file) }}"
-        # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/unvault_lookup.html
-        content: >
-          {{ src_data if src_data is not search('^\$ANSIBLE_VAULT')
-             else lookup('ansible.builtin.unvault', src_file) }}
-      # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_cp_module.html
-      kubernetes.core.k8s_cp:
-        state: to_pod
-        content: "{{ content }}"
-        remote_path: "{{ dest_file }}"
+
+        # === Inputs ===
+        kubeconfig: "{{ rke_kubeconfig }}"
+        pod_name: "{{ openclaw_pod_name }}"
+        pod_ns: "{{ openclaw_namespace }}"
+        container: main
+        src_path: "{{  workspace_src_dir  ~ item }}"
+        dest_path: "{{ workspace_dest_dir ~ item }}"
+      ansible.builtin.include_tasks: tasks/k8s/copy.yml
       loop: "{{ src_files }}"
       loop_control:
-        # substr: filter_plugins/filters.py
         label: "{{ item | substr(1) }}"
-      changed_when: false # not idempotent

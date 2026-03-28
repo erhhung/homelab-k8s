@@ -111,7 +111,7 @@ grafana_data_sources:
           - key: k8s.pod.name
             value: kubernetes.pod_name
           # container-level attributes may not be available
-          # (see OTel collector  `k8sattributes` processor)
+          # (see OTel collector `k8s_attributes` processor)
           - key: k8s.container.name
             value: kubernetes.container_name
 

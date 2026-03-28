@@ -26,6 +26,16 @@ monitoring_passwords:
 email_alerts_enabled: false
 slack_alerts_enabled: true
 
+# extra alerts (`alertname`) to ignore
+# (besides Watchdog and InfoInhibitor)
+alertmanager_ignore_alerts:
+  # ignore high CPU alert as that's to be
+  # expected in our overcommitted cluster
+  - CPUThrottlingHigh
+  # ignore SLO alert due to lack of metrics
+  # as that's expected if usage is low/none
+  - SLOMetricAbsent
+
 monitoring_namespace: monitoring
 # aliases of "ingress" and direct
 # subdomains of fourteeners.local
@@ -169,9 +179,8 @@ alertmanager_config:
     routes:
       - receiver: "null"
         matchers:
-          # ignore high CPU alerts as that's to be
-          # expected in this overcommitted cluster
-          - alertname =~ Watchdog|InfoInhibitor|CPUThrottlingHigh
+          - alertname =~ {{ (['Watchdog', 'InfoInhibitor']
+            + alertmanager_ignore_alerts) | join('|') }}
       - receiver: "{{ 'erhhung-email' if email_alerts_enabled else 'null' }}"
         continue: true # send to Slack as well if enabled
       - receiver: "{{ 'homelab-slack' if slack_alerts_enabled else 'null' }}"

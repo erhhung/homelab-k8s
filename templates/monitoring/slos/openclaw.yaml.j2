@@ -1,0 +1,18 @@
+---
+apiVersion: pyrra.dev/v1alpha1
+kind: ServiceLevelObjective
+metadata:
+  name: openclaw-message-completion
+  # required by Prometheus ruleSelector!
+  labels: {{ monitoring_selector_labels }}
+spec:
+  description: 99.9% of messages finish processing
+  indicator:
+    ratio:
+      errors:
+        # see templates/monitoring/rules/openclaw.yaml.j2
+        metric: openclaw:messages:errors:rate5m
+      total:
+        metric: openclaw:messages:queued:rate5m
+  target: "99.9"
+  window: 2w

@@ -1,0 +1,18 @@
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: openclaw-sli
+  # required by Prometheus ruleSelector!
+  labels: {{ monitoring_selector_labels }}
+spec:
+  groups:
+    - name: openclaw-sli
+      interval: 30s
+      rules:
+        - record: openclaw:messages:queued:rate5m
+          expr: sum(rate(openclaw_message_queued_total{exported_job="openclaw-gateway",openclaw_source="dispatch"}[5m]))
+        - record: openclaw:messages:completed:rate5m
+          expr: sum(rate(openclaw_message_processed_total{exported_job="openclaw-gateway",openclaw_outcome="completed"}[5m]))
+        - record: openclaw:messages:errors:rate5m
+          expr: clamp_min(openclaw:messages:queued:rate5m - openclaw:messages:completed:rate5m, 0)

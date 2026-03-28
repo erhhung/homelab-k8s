@@ -59,6 +59,15 @@
             {% endif %}
       ansible.builtin.include_tasks: tasks/helm/helmfile.yml
 
+    # add Wave annotations so pod restarts
+    # when "searxng-config" secret changes
+    - name: Add Wave annotations to Deployment
+      vars:
+        res_kind: Deployment
+        res_name: "{{ searxng_release_name }}"
+        res_ns: "{{ searxng_namespace }}"
+      ansible.builtin.include_tasks: tasks/k8s/wave.yml
+
     - name: >-
         {{ 'Enable' if enabled else 'Disable' }}
         Istio service mesh

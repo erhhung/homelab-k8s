@@ -1,5 +1,6 @@
-# openclaw_gateway_token: {vault.yml}
-# gogcli_keyring_pass:    {vault.yml}
+# openclaw_gateway_token:     {vault.yml}
+# openclaw_channel_secrets.*: {vault.yml}
+# gogcli_keyring_pass:        {vault.yml}
 
 openclaw_namespace: openclaw
 openclaw_host_names: # aliases of "ingress"
@@ -30,7 +31,14 @@ openclaw_common_env:
   OPENCLAW_CONFIG_PATH:
     value: $(OPENCLAW_HOME)/openclaw.json
     dependsOn: OPENCLAW_HOME
+  OPENCLAW_STATE_DIR: $(OPENCLAW_HOME)/.openclaw
+  OPENCLAW_PLUGIN_DIR:
+    value: $(OPENCLAW_STATE_DIR)/extensions
+    dependsOn: OPENCLAW_STATE_DIR
   NODE_OPTIONS: --max-old-space-size=4096
+  NPM_CONFIG_CACHE:
+    value: $(OPENCLAW_HOME)/npm/cache
+    dependsOn: OPENCLAW_HOME
   NPM_CONFIG_UPDATE_NOTIFIER: "false"
   PNPM_HOME: $(OPENCLAW_HOME)/pnpm
   PNPM_STORE_DIR: $(PNPM_HOME)/store
@@ -41,10 +49,10 @@ openclaw_common_env:
       - PNPM_HOME
 
 # https://github.com/serhanekicii/openclaw-helm/tree/main/charts/openclaw
-openclaw_chart_version: "1.5.5"
+openclaw_chart_version: "1.5.6"
 # comment out openclaw_app_version
 # to use the chart's default value
-openclaw_app_version: "2026.3.23"
+openclaw_app_version: "2026.3.24"
 openclaw_release_name: openclaw
 
 # https://github.com/serhanekicii/openclaw-helm/tree/main/charts/openclaw/values.yaml
@@ -103,20 +111,23 @@ openclaw_chart_values:
             args:
               - -c
               - |-
+                mkdir  -p {{ openclaw_data_dir }}/{.openclaw,bin,config}
+                chmod 700 {{ openclaw_data_dir }}/{.openclaw,.}
+
                 # ca.crt is already mounted
                 CA_CERT="/usr/local/share/ca-certificates/ca.crt"
                 CA_BUNDLE="/etc/ssl/certs/ca-certificates.crt"
                 # /certs is mounted emptyDir
                 NSSDB_DIR="/certs/nssdb"
+                mkdir -p $NSSDB_DIR
 
+                packages=(libnss3-tools)
                 # also install missing Linux utils
                 BIN_DIR="{{ openclaw_data_dir }}/bin"
-                mkdir -p $BIN_DIR $NSSDB_DIR
-                packages=(libnss3-tools)
                 [ -f $BIN_DIR/less ] || packages+=(less)
                 apt-get update && apt-get install -y "${packages[@]}"
                 [ -f $BIN_DIR/less ] || cp -a $(which less) $BIN_DIR
-                chown -R node:node $BIN_DIR
+                chown -R node:node {{ openclaw_data_dir }}
 
                 echo -e "\nCreating NSS database..."
                 # use certificate's CN as nickname
@@ -142,10 +153,9 @@ openclaw_chart_values:
               - |-
                 set -eo pipefail
 
-                mkdir -p $OPENCLAW_HOME/{bin,config}
-                export BIN_DIR="$OPENCLAW_HOME/bin"
-                export ARCH="$(uname -m | sed -e 's/aarch64/arm64/' \
-                                              -e  's/x86_64/amd64/')"
+                BIN_DIR="$OPENCLAW_HOME/bin"
+                ARCH="$(uname -m | sed -e 's/aarch64/arm64/' \
+                                       -e  's/x86_64/amd64/')"
                 log() {
                   if [ "$1" == -n ]; then echo; shift; fi
                   echo "[$(date +"%Y-%m-%d %H:%M:%S")] $*"
@@ -177,14 +187,30 @@ openclaw_chart_values:
                   log -n "Using Helm config as the official config..."
                   jq  . $SRC_CONFIG > $DEST_CONFIG
                 fi
+
+                if [ $(ls -1 $OPENCLAW_CONFIG_PATH* | wc -l) -gt 1 ]; then
+                  log "Deleting backup/clobbered config files..."
+                  rm -f $OPENCLAW_HOME/*.{bak,clobbered}*
+                fi
                 ( set -x; jq . $OPENCLAW_CONFIG_PATH )
 
+                LOG_FILE="/tmp/openclaw.log"
+                MAX_LINES=1000
+
+                if [[ -f $LOG_FILE && $(wc -l $LOG_FILE) -gt $MAX_LINES ]]; then
+                  log  -n "Trimming log file..."
+                  tail -n $MAX_LINES $LOG_FILE > $LOG_FILE~ && \
+                               mv -f $LOG_FILE~  $LOG_FILE
+                  ls  -lh $LOG_FILE
+                fi
                 log -n "Config initialization completed ✓"
 
-          # install ClawHub (https://clawhub.com)
-          # skills and their runtime dependencies
-          init-skills:
+          # https://docs.openclaw.ai/tools/plugin
+          init-plugins:
             image: *openclaw-image
+            envFrom: &env-from
+              - secretRef:
+                  name: "{{ openclaw_secrets['env-vars'] }}"
             env: "{{ openclaw_common_env }}"
             command: ["bash"]
             args:
@@ -192,33 +218,88 @@ openclaw_chart_values:
               - |-
                 set -eo pipefail
 
-                export BIN_DIR="$OPENCLAW_HOME/bin"
-                export CONFIG_DIR="/conf/skills"
-                export ARCH="$(uname -m | sed -e 's/aarch64/arm64/' \
-                                              -e  's/x86_64/amd64/')"
+                BIN_DIR="$OPENCLAW_HOME/bin"
+
                 log() {
                   if [ "$1" == -n ]; then echo; shift; fi
                   echo "[$(date +"%Y-%m-%d %H:%M:%S")] $*"
                 }
-                [ -f $BIN_DIR/uv ] || {
+                plugin_install() (
+                  id=$1 pkg=$2 ver=$3
+
+                  pkg_dir="$OPENCLAW_PLUGIN_DIR/$id"
+                  if [ -d "$pkg_dir" ]; then
+                    old_ver=$(jq -r .version "$pkg_dir/package.json")
+                    if [ "$old_ver" == "$ver" ]; then
+                      log "Plugin is already installed"
+                      exit
+                    fi
+                    rm -rf "$pkg_dir"
+                  fi
+
+                  mkdir -p $pkg_dir
+                  cd       $pkg_dir
+                  tarball=$(pnpm view $pkg@$ver dist.tarball)
+                  log "Unpacking: $tarball"
+
+                  curl -fsSL $tarball | \
+                    tar -xz --no-same-owner --strip-components=1
+                  pnpm install --prod
+                )
+
+                [ -f "$BIN_DIR/uv" ] || {
                   log -n "Installing uv..."
                   # https://docs.astral.sh/uv/getting-started/installation
                   curl -sfL https://astral.sh/uv/install.sh | UV_INSTALL_DIR=$BIN_DIR sh
                 }
-                [ -f $PNPM_HOME/pnpm ] || {
+                [ -f "$PNPM_HOME/pnpm" ] || {
                   log -n "Installing pnpm..."
                   # https://pnpm.io/installation#in-a-docker-container
                   curl -fsL https://get.pnpm.io/install.sh | ENV=/dev/null SHELL=/bin/sh sh
                 }
+                {% for plugin in openclaw_plugins %}
 
-                WORKSPACE_DIR="{{ openclaw_data_dir }}/workspace"
-                SKILLS_DIR="$WORKSPACE_DIR/skills"
-                mkdir -p $SKILLS_DIR
+                log -n "Installing plugin: {{ plugin.id }}"
+                {%   if plugin.setup is defined %}
+                log "Performing plugin setup..."
+                (
+                {{ plugin.setup }}
+                )
+                {%   endif %}
+                plugin_install {{ plugin.id }} \
+                  {{ plugin.package }} {{ plugin.version }}
+                {% endfor %}
 
+                log -n "Plugins initialization completed ✓"
+
+          # install ClawHub (https://clawhub.com)
+          # skills and their runtime dependencies
+          init-skills:
+            image: *openclaw-image
+            env: "{{ openclaw_common_env }}"
+            envFrom: *env-from
+            command: ["bash"]
+            args:
+              - -c
+              - |-
+                set -eo pipefail
+
+                CONFIG_DIR="/conf/skills"
+                BIN_DIR="$OPENCLAW_HOME/bin"
+                ARCH="$(uname -m | sed -e 's/aarch64/arm64/' \
+                                       -e  's/x86_64/amd64/')"
+                WORKSPACE_DIR="$OPENCLAW_HOME/workspace"
+                SKILL_DIR="$WORKSPACE_DIR/skills"
+                mkdir -p $SKILL_DIR
+
+                log() {
+                  if [ "$1" == -n ]; then echo; shift; fi
+                  echo "[$(date +"%Y-%m-%d %H:%M:%S")] $*"
+                }
                 clawhub_install() (
-                  skill="$1" name="$(basename "$1")"
-                  if [ -d "$SKILLS_DIR/$name" ]; then
-                    log "Skill is already installed."
+                  slug=$1 name=$(basename "$1")
+                  if [ -d "$SKILL_DIR/$name" ]; then
+                    log "Skill is already installed"
                     exit
                   fi
 
@@ -227,7 +308,12 @@ openclaw_chart_values:
 
                   for i in $(seq 1 $ATTEMPTS); do
                     log "Running clawhub install..."
-                    if npx -y clawhub install "$skill" --no-input; then
+
+                    # --force is necessary to install a skill flagged as
+                    # suspicious by ClawHub, but all skills selected for
+                    # installation here should have already been vetted!
+
+                    if npx -y clawhub --no-input install "$slug" --force; then
                       log "Skill installed successfully."
                       exit
                     elif [ $i -lt $ATTEMPTS ]; then
@@ -241,33 +327,42 @@ openclaw_chart_values:
                   log "Install failed after $ATTEMPTS attempts!"
                   exit 1
                 )
-                {% for skill in openclaw_clawhub_skills %}
+                {% for skill in openclaw_skills %}
 
-                log -n "Installing skill: {{ skill.name }}"
+                log -n "Installing skill: {{ skill.slug }}"
                 {%   if skill.setup is defined %}
                 log "Performing skill setup..."
                 (
                 {{ skill.setup }}
                 )
                 {%   endif %}
-                clawhub_install {{ skill.name }}
-                {% endfor  %}
+                clawhub_install {{ skill.slug }}
+                {% endfor %}
 
                 log -n "Skills initialization completed ✓"
 
         containers:
           main: # gateway container
+            envFrom: *env-from
             env: |
-              {% set env = openclaw_common_env %}
-              {% for skill in openclaw_clawhub_skills %}
-              {%   if skill.env is defined %}
-              {%     set _ = env.update(skill.env) %}
+              {% set env = openclaw_common_env | combine({
+                   'NODE_EXTRA_CA_CERTS': '/tls/otlp/ca.crt',
+                 }) %}
+              {% for extra in openclaw_plugins +
+                              openclaw_skills  %}
+              {%   if extra.env is defined     %}
+              {%     set _ = env.update(extra.env) %}
               {%   endif %}
               {% endfor  %}
-              {{ env }}
-            envFrom:
-              - secretRef:
-                  name: "{{ openclaw_secrets['env-vars'] }}"
+              {{ env     }}
+
+            resources:
+              requests:
+                cpu: 200m
+                memory: 512Mi
+              limits:
+                cpu: 1000m
+                memory: 4Gi
 
           # NOTE: browser sidecar only has /tmp as writable
           # emptyDir, so session persistence isn't possible
@@ -275,6 +370,14 @@ openclaw_chart_values:
             env:
               TZ: "{{ system_time_zone }}"
               NSS_DEFAULT_DB_DIR: /usr/local/share/pki/nssdb
+
+            resources:
+              requests:
+                cpu: 50m
+                memory: 256Mi
+              limits:
+                cpu: 1000m
+                memory: 2Gi
 
     persistence:
       config:
@@ -294,7 +397,10 @@ openclaw_chart_values:
         path: "{{ homelab_nfs.base_path }}/openclaw"
         advancedMounts:
           main:
-            ca-bundle: # supplemental mount
+            # also mount into extra containers
+            ca-bundle:
+              - path: "{{ openclaw_data_dir }}"
+            init-plugins:
               - path: "{{ openclaw_data_dir }}"
 
       ca-certs:
@@ -306,6 +412,10 @@ openclaw_chart_values:
           main:
             ca-bundle:
               - path: /usr/local/share/ca-certificates/ca.crt
+                subPath: ca.crt
+                readOnly: true
+            main:
+              - path: /tls/otlp/ca.crt
                 subPath: ca.crt
                 readOnly: true
 
@@ -365,10 +475,25 @@ openclaw_chart_values:
           {% endfor %}
           {{ hosts  }}
 
+# ====================================== Plugins & Skills ===================================
+
+# {id,[setup],package,version,[env]}
+openclaw_plugins:
+  # https://github.com/Martian-Engineering/lossless-claw
+  - id: lossless-claw
+    package: "@martian-engineering/lossless-claw"
+    version: "0.5.2"
+
+  # https://github.com/erhhung/openclaw-searxng-search
+  - id: searxng-search
+    package: "@erhhung/searxng-search"
+    version: "1.0.1"
+
 # https://clawhub.ai/skills
-openclaw_clawhub_skills:
+# {slug,[setup],[env]}
+openclaw_skills:
   # https://clawhub.ai/steipete/gog
-  - name: gog
+  - slug: gog
     setup: |-
       REL="https://github.com/steipete/gogcli/releases"
       VER=$(curl -Is "$REL/latest" | sed -En 's/^location:.+\/tag\/v(.+)\r$/\1/p')
@@ -381,7 +506,7 @@ openclaw_clawhub_skills:
       [ -f gog ] && {
         ver=$(v=(`./gog version`); echo ${v[0]})
         [ "$ver" == "$VER" ] && {
-          log "gogcli is already installed."
+          log "gogcli is already installed"
           exit
         }
       }
@@ -397,20 +522,27 @@ openclaw_clawhub_skills:
       }
     # https://github.com/steipete/gogcli#environment-variables
     env:
+      GOG_TIMEZONE:
+        value: $(TZ)
+        dependsOn: TZ
       GOG_JSON: "true"
-      GOG_TIMEZONE: $(TZ)
       GOG_ACCOUNT: "{{ user_erhhung.email }}"
       # GOG_KEYRING_PASSWORD stored in Secret
 
+  # https://clawhub.ai/conorkenn/openclaw-github-assistant
+  - slug: openclaw-github-assistant
+    # `github.username` & `github.token`
+    # have been added to "openclaw.json"
+
   # https://clawhub.ai/steipete/video-frames
-  - name: video-frames
+  - slug: video-frames
     setup: |-
       cd $BIN_DIR
 
       # there's new FFmpeg build every day,
       # so don't bother upgrading to latest
       [ -f ffmpeg ] && {
-        log "ffmpeg is already installed."
+        log "ffmpeg is already installed"
         exit
       }
 

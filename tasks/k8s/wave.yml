@@ -19,7 +19,6 @@
   when: wave_optin_annotation is undefined
 
 - name: Opt-in to Wave monitoring
-  become: false
   vars:
     # required kubernetes>=24.2 package only in user virtualenv
     ansible_python_interpreter: "{{ venv_python_interpreter }}"

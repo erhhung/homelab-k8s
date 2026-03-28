@@ -233,6 +233,7 @@ ansible-vault view   $VAULTFILE
 | `openwebui_mcpo_api_key`          |
 | `gogcli_keyring_pass`             |
 | `openclaw_gateway_token`          |
+| `openclaw_channel_secrets.*`      |
 | `flowise_encryption_key`          |
 | `anthropic_api_key`               |
 | `openai_api_key`                  |
@@ -587,7 +588,13 @@ however, all privileged operations using `sudo` will require the password stored
     ```
 </details>
 
-34. <details><summary>Install <strong>OpenClaw</strong> AI agent gateway and skills</summary><br/>
+34. <details><summary>Install <strong>OpenClaw</strong> AI agent gateway with skills</summary><br/>
+
+    34.1. Proxy access to primary and fallback models, as well as web search, through LiteLLM  
+    34.2. Install skills, such as `gog` and `github`, from ClawHub to enhance agent capabilities  
+    34.3. Define user and agent identities through `USER.md`, `IDENTITY.md` and `SOUL.md`  
+    34.4. Configure **Slack** messaging _(requires manual creation of `OpenClaw` Slack app)_  
+    34.5. Automatically pair pending devices (clients)
 
     ```bash
     make openclaw

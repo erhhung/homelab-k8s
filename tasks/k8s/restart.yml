@@ -19,7 +19,6 @@
   when: local_tz_offset is undefined
 
 - name: Restart {{ res_name }} {{ res_kind }}
-  become: false
   vars:
     # required kubernetes>=24.2 package only in user virtualenv
     ansible_python_interpreter: "{{ venv_python_interpreter }}"

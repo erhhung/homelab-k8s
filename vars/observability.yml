@@ -214,7 +214,7 @@ otel_collector_cr:
                   datapoint.attributes["http.route"], "^/(_app|static|health)/" )
 
         # https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/processor/k8sattributesprocessor
-        k8sattributes:
+        k8s_attributes:
           pod_association:
             - sources:
                 - from: connection
@@ -265,7 +265,7 @@ otel_collector_cr:
             processors:
               - memory_limiter
               - filter
-              - k8sattributes
+              - k8s_attributes
               - batch
             exporters:
               # - debug

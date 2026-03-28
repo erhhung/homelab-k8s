@@ -33,6 +33,10 @@ searxng_chart_values:
     tag: "{{ searxng_image_tag }}"
     pullPolicy: IfNotPresent
 
+  controller:
+    # required for PVC with RWO access
+    strategy: Recreate
+
   redis:
     # deploy standalone Redis instance
     # (but has been replaced by Valkey)
@@ -83,12 +87,29 @@ searxng_chart_values:
           - json # Open WebUI integration
 
       # https://docs.searxng.org/admin/settings/settings_engines.html
+      # see default list: less /usr/local/searxng/searx/settings.yml
       engines:
         # disable Tor-related engines
         # as we don't have Tor client
         - name: ahmia
           inactive: true
         - name: torch
+          inactive: true
+        # Google pretty much always
+        # returns 403 Access Denied
+        - name: google
+          inactive: true
+        - name: google images
+          inactive: true
+        - name: google news
+          inactive: true
+        - name: google videos
+          inactive: true
+        - name: google scholar
+          inactive: true
+        - name: google play apps
+          inactive: true
+        - name: google play movies
           inactive: true
 
       # https://docs.searxng.org/admin/settings/settings_ui.html

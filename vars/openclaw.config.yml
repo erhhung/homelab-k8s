@@ -100,8 +100,12 @@ openclaw_config:
       timeFormat: "12" # auto|12|24
 
       # https://docs.openclaw.ai/gateway/configuration-reference#agents-defaults-model
-      model:
-        primary: litellm/claude-sonnet-4-6
+      model: &agent-models # prefer more economical
+        primary: litellm/gpt-5.2
+        fallbacks:
+          - litellm/gpt-5.4
+          - litellm/claude-sonnet-4-5
+          - litellm/claude-sonnet-4-6
       maxConcurrent: 1
       timeoutSeconds: 600
 
@@ -125,16 +129,58 @@ openclaw_config:
         # https://docs.openclaw.ai/gateway/configuration-reference#agents-defaults-sandbox
         sandbox:
           mode: "off" # "off"|non-main|all
+        model: *agent-models
 
   # channel setup is not required--the
   # Control UI is suitable chat client
   # https://docs.openclaw.ai/gateway/configuration-reference#channels
-  # channels:
+  channels:
+    # https://docs.openclaw.ai/channels/slack
+    # https://docs.openclaw.ai/gateway/configuration-reference#slack
+    # https://api.slack.com/apps/A0ANTQVU18C/general
+    slack:
+      enabled: true
+      mode: socket # socket|http
+      appToken: ${SLACK_APP_TOKEN}
+      botToken: ${SLACK_BOT_TOKEN}
+      capabilities:
+        # allow agent to generate Slack-specific
+        # UI controls like buttons and dropdowns:
+        # https://docs.openclaw.ai/channels/slack#interactive-replies
+        interactiveReplies: true
+
+      dm:
+        enabled: true
+        groupEnabled: false
+      dmPolicy: allowlist # pairing|allowlist|open|disabled
+      # allow list must use Slack stable IDs (U*), not user
+      # handles (get the ID by clicking on a user's profile
+      # and then selecting ⋮ (More) -> Copy member ID)
+      allowFrom:
+        - "{{ user_erhhung.slack.id }}"
+      channels:
+        # get stable ID from a channel's details -> About
+        # NOTE: bot token scopes must include groups:read
+        # to access private channel metadata
+        C0ANU3H557Y: # #assistant (private)
+          allow: true
+          requireMention: true
+
+      allowBots: false # prevents reply loops
+      # reply into threads? `first` will reuse a single thread
+      # per channel; `all` will create a thread per triggering
+      # message in a channel; `off` to not use threads at all
+      replyToMode: "off" # "off"|first|all
+      # how many recent channel/group messages
+      # to include in the agent's chat context
+      historyLimit: 10
 
   # https://docs.openclaw.ai/gateway/configuration-reference#session
   session:
     scope: per-sender
     store: "{{ openclaw_data_dir }}/sessions"
+    # resetting session limits
+    # the agent's chat context
     reset:
       mode: idle
       idleMinutes: 240
@@ -164,27 +210,6 @@ openclaw_config:
       sampleRate: 1.0
       flushIntervalMs: 30000
 
-  # https://docs.openclaw.ai/tools/plugin
-  # list plugins: `openclaw plugins list`
-  plugins:
-    allow:
-      - diagnostics-otel
-      - perplexity
-    entries:
-      diagnostics-otel:
-        enabled: true
-
-      # use LiteLLM's Perplexity-compatible API to proxy
-      # search queries to backing providers like SearXNG:
-      # https://docs.openclaw.ai/tools/perplexity-search
-      perplexity:
-        enabled: true
-        config:
-          webSearch:
-            apiKey: ${LITELLM_API_KEY}
-            baseUrl: "{{ litellm_service_url }}/search/{{
-              litellm_search_tools[0].search_tool_name }}"
-
   # https://docs.openclaw.ai/gateway/local-models#other-openai-compatible-local-proxies
   models:
     providers:
@@ -199,7 +224,7 @@ openclaw_config:
         models:
           # https://ollama.com/library/gemma3
           - id: gemma3:4b
-            name: Gemma 3:4b via Ollama
+            name: Gemma 3:4b ⟺ Ollama
 
       # https://docs.openclaw.ai/providers/litellm
       # https://docs.litellm.ai/docs/tutorials/openclaw_integration#config-reference
@@ -210,12 +235,16 @@ openclaw_config:
         # see `litellm_models`
         # in vars/litellm.yml
         models:
-          # https://www.anthropic.com/claude/opus
-          - id: claude-sonnet-4-6
-            name: Claude Sonnet 4.6 via LiteLLM
-          # https://platform.openai.com/docs/models/gpt-5.4
+          # https://platform.openai.com/docs/models
+          - id: gpt-5.2
+            name: GPT-5.2 ⟺ LiteLLM
           - id: gpt-5.4
-            name: GPT-5.4 via LiteLLM
+            name: GPT-5.4 ⟺ LiteLLM
+          # https://www.anthropic.com/claude/sonnet
+          - id: claude-sonnet-4-5
+            name: Claude Sonnet 4.5 ⟺ LiteLLM
+          - id: claude-sonnet-4-6
+            name: Claude Sonnet 4.6 ⟺ LiteLLM
 
   # https://docs.openclaw.ai/gateway/configuration-reference#tools
   tools:
@@ -223,7 +252,7 @@ openclaw_config:
     web:
       # https://docs.openclaw.ai/tools/web
       search:
-        enabled: true
+        enabled: false
         # see perplexity plugin config for LiteLLM
         # search API setup (currently not working):
         # https://github.com/openclaw/openclaw/issues/53586
@@ -246,3 +275,84 @@ openclaw_config:
           Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)
           AppleWebKit/537.36 (KHTML, like Gecko)
           Chrome/146.0.0.0 Safari/537.36
+
+  # https://docs.openclaw.ai/tools/plugin
+  # list plugins: `openclaw plugins list`
+  plugins:
+    # only allow listed plugins, whether bundled or
+    # custom, to load (each must still be enabled):
+    allow:
+      - slack
+      - diagnostics-otel
+      - lossless-claw
+      - searxng-search
+      - perplexity
+
+    # declare plugins ALREADY installed by init container
+    # or else OpenClaw annoyingly outputs "loaded without
+    # install/load-path provenance" warnings:
+    # https://github.com/openclaw/openclaw/issues/43655
+    installs: |
+      {% set installs = {} %}
+      {% for plugin in openclaw_plugins %}
+      {%   set _ = installs.update({
+             plugin.id: {
+               'source':      'npm',
+               'spec':         plugin.package,
+               'version':      plugin.version,
+               'installPath': '${OPENCLAW_PLUGIN_DIR}/' ~ plugin.id
+             },
+           })     %}
+      {% endfor   %}
+      {{ installs }}
+
+    load:
+      # prepend: filter_plugins/filters.py
+      paths: "{{ openclaw_plugins | map(attribute='id') |
+        map('prepend', '${OPENCLAW_PLUGIN_DIR}/') }}"
+
+    # https://docs.openclaw.ai/tools/plugin#plugin-slots-exclusive-categories
+    slots:
+      contextEngine: lossless-claw
+
+    entries:
+      slack:
+        enabled: true
+      diagnostics-otel:
+        enabled: true
+
+      # https://github.com/Martian-Engineering/lossless-claw#configuration
+      lossless-claw:
+        enabled: true
+        config:
+          ignoreSessionPatterns:
+            - agent:*:cron:**
+
+      # https://github.com/erhhung/openclaw-searxng-search#configuration
+      searxng-search:
+        enabled: true
+        config:
+          baseUrl: "{{ searxng_service_url }}"
+          defaultCount: 10
+          timeoutMs: 30000
+
+      # use LiteLLM's Perplexity-compatible API to proxy
+      # search queries to backing providers like SearXNG:
+      # https://docs.openclaw.ai/tools/perplexity-search
+      perplexity:
+        enabled: true
+        config:
+          webSearch:
+            apiKey: ${LITELLM_API_KEY}
+            baseUrl: "{{ litellm_service_url }}/search/{{
+              litellm_search_tools[0].search_tool_name }}"
+
+  # https://docs.openclaw.ai/tools/skills#config-overrides-/-openclaw/openclaw-json
+  skills:
+    entries:
+      # https://clawhub.ai/conorkenn/openclaw-github-assistant
+      openclaw-github-assistant:
+        config:
+          github:
+            username: erhhung
+            token: ${GITHUB_ACCESS_TOKEN}

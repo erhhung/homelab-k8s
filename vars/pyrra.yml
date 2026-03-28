@@ -13,7 +13,7 @@ pyrra_secrets:
   creds: pyrra-credentials
 
 # https://github.com/pyrra-dev/helm-charts/tree/main/charts/pyrra
-pyrra_chart_version: "1.0.1"
+pyrra_chart_version: "1.1.1"
 pyrra_release_name: pyrra
 
 # https://github.com/pyrra-dev/helm-charts/tree/main/charts/pyrra/values.yaml
