@@ -1,7 +1,7 @@
 certmanager_namespace: cert-manager
 
 # https://github.com/cert-manager/cert-manager/tree/master/deploy/charts/cert-manager
-certmanager_chart_version: "1.19.2"
+certmanager_chart_version: "1.20.1"
 certmanager_release_name: cert-manager
 
 # https://github.com/cert-manager/cert-manager/tree/master/deploy/charts/cert-manager/values.yaml
@@ -82,7 +82,7 @@ step_issuer_ref:
   name: "{{ step_issuer_release_name }}"
 
 # https://github.com/smallstep/helm-charts/tree/master/step-issuer
-step_issuer_chart_version: "1.9.9"
+step_issuer_chart_version: "1.10.2"
 step_issuer_release_name: step-issuer
 
 # https://github.com/smallstep/helm-charts/tree/master/step-issuer/values.yaml

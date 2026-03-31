@@ -380,7 +380,7 @@
       Referer: "{{ page_url }}"
       Accept: text/html
       <<: *auth-headers
-    json_headers_: &json-headers
+    json_headers_: # &json-headers
       Accept: application/json
       <<: *auth-headers
   pre_tasks:
@@ -472,6 +472,8 @@
       failed_when: configure_sh.stdout is search(':.*(422|500)') or configure_sh.rc != 0
       # outputs ADMIN_PAT and RUNNER_TOKEN
 
+    # this Secret is read by tasks/gitlab/tokens/pat.yml
+    # when creating user-owned tokens
     - name: Create GitLab PATs secret
       delegate_to: "{{ rke_control_plane_host }}"
       when: config_method == 'shell'
@@ -557,6 +559,66 @@
             replicas: 1
         state: patched
         wait: true
+
+- name: Import projects from GitHub
+  tags: import
+  hosts: "{{ rke_control_plane_host }}"
+  vars_files:
+    - vars/kubernetes.yml
+    - vars/gitlab.configure.yml
+    - vars/gitlab.yml
+  vars: *vars
+  pre_tasks:
+    - name: Get PATs in GitLab secret
+      kubernetes.core.k8s_info:
+        kubeconfig: "{{ kubeconfig }}"
+        api_version: v1
+        kind: Secret
+        name: "{{ gitlab_secrets['tokens'] }}"
+        namespace: "{{ gitlab_namespace }}"
+      register: pats_info
+
+    - name: Set gitlab_pats fact
+      ansible.builtin.set_fact:
+        # b64_decode_k8s_secret: filter_plugins/filters.py
+        gitlab_pats: "{{ pats_info.resources[0] | b64_decode_k8s_secret }}"
+  tasks:
+    - name: Verify/rotate or create PAT
+      vars:
+        token: "{{ gitlab_pats['repos'] }}"
+        pat_name: repo-admin
+        pat_owner: "{{ user_erhhung.username }}"
+        scopes:
+          # https://docs.gitlab.com/user/profile/personal_access_tokens#personal-access-token-scopes
+          - api
+          - write_repository
+          - self_rotate
+      ansible.builtin.include_tasks: tasks/gitlab/tokens/pat.yml
+      # sets fact: gitlab_token
+
+    - name: Update GitLab PATs secret
+      vars:
+        secret_name: "{{ gitlab_secrets['tokens'] }}"
+        secret_data: "{{ gitlab_pats |  combine({
+          'repos':       gitlab_token,
+          }) }}"
+      ansible.builtin.include_tasks: tasks/k8s/secrets/generic.yml
+
+    - name: Import project from GitHub
+      vars:
+        projects: "{{ gitlab_import_projects | selectattr('from','==','github') }}"
+
+        # === Inputs ===
+        source_repo: "{{     item.source_repo    }}"
+        target_repo: "{{     item.target_repo    }}"
+        default_branch: "{{  item.default_branch  | default(none) }}"
+        project_avatar: "{{  item.project_avatar  | default(none) }}"
+        run_pipeline: "{{    item.run_pipeline    | default(none) }}"
+        pipeline_inputs: "{{ item.pipeline_inputs | default(none) }}"
+      ansible.builtin.include_tasks: tasks/gitlab/import.github.yml
+      loop: "{{ projects }}"
+      loop_control:
+        label: "{{ item.target_repo | basename }}"
 
 # https://grafana.com/grafana/dashboards/18928-gitlab-jihu-ci-pipelines
 # https://github.com/mvisonneau/gitlab-ci-pipelines-exporter

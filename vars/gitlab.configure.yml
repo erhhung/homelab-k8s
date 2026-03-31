@@ -166,3 +166,32 @@ gitlab_cicd_vars:
     protected: false
     masked: false
     raw: false
+
+# NOTE: only `from: github` is currently supported
+# POST /import/github; POST /projects/:id/pipeline
+gitlab_import_projects:
+  # https://github.com/erhhung/argo-cd/tree/gitlab-ci
+  - from: github
+    source_repo: erhhung/argo-cd
+    target_repo: homelab/argo-cd
+    project_avatar: argocd.png
+    default_branch: gitlab-ci
+    run_pipeline: true
+    pipeline_inputs:
+      purpose: build-deploy
+
+  # https://github.com/erhhung/flowise/tree/gitlab-ci
+  - from: github
+    source_repo: erhhung/flowise
+    target_repo: homelab/flowise
+    project_avatar: flowise.png
+    default_branch: gitlab-ci
+    run_pipeline: true
+    pipeline_inputs:
+      purpose: build-deploy
+
+  # https://github.com/erhhung/xen-exporter-kustomize
+  - from: github
+    source_repo: erhhung/xen-exporter-kustomize
+    target_repo: homelab/xen-exporter
+    project_avatar: xcpng.png

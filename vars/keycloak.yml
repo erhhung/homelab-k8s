@@ -197,7 +197,7 @@ keycloakx_chart_values:
           EOT
           }
           echo -e "\nImporting database from keycloak.sql..."
-          gzip -dq /sql/{{ keycloak_sql_gz }} | \
+          zcat /sql/{{ keycloak_sql_gz }} | \
             psql -d $PGDATABASE -v ON_ERROR_STOP=1 -e
 
           echo -e "\nDatabase bootstrapping completed ✓"

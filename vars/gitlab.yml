@@ -44,6 +44,8 @@ gitlab_shell_url: ssh://git@{{ gitlab_shell_host }}:{{ gitlab_shell_port }}
 
 gitlab_http_url: https://{{ gitlab_fqdns['gitlab'] }}
 gitlab_ssh_url: ssh://git@{{ gitlab_fqdns['gitlab'] }}:{{ gitlab_shell_port }}
+# https://docs.gitlab.com/api/rest#make-a-rest-api-request
+gitlab_api_url: "{{ gitlab_http_url }}/api/v4"
 
 gitlab_secrets:
   # license: gitlab-license

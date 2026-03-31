@@ -1,0 +1,150 @@
+# import project from github.com into GitLab
+#
+# pass the following vars:
+#   gitlab_token    <required>  write_repository PAT
+#   source_repo     <required> "{owner}/{repository}"
+#   target_repo     <required> "{namespace}/{project}"
+#   project_avatar  [optional]  {avatar.png}
+#   default_branch  [optional]  default=main
+#   run_pipeline    [optional]  default=false
+#   pipeline_inputs [optional]  dict of inputs
+---
+- name: Import GitHub project
+  delegate_to: localhost
+  vars:
+    ansible_python_interpreter: "{{ local_python_interpreter }}"
+    # https://docs.gitlab.com/api/rest#namespaced-paths
+    gitlab_proj_id: "{{ target_repo | replace('/','%2F') }}"
+    def_branch: >-
+      {{ default_branch if default_branch is defined and
+                           default_branch is truthy else 'main' }}
+    auth_headers:
+      PRIVATE-TOKEN: "{{ gitlab_token }}"
+  block:
+    - name: Is already imported?
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/uri_module.html
+      ansible.builtin.uri:
+        # https://docs.gitlab.com/api/projects#retrieve-a-project
+        url: "{{ gitlab_api_url }}/projects/{{ gitlab_proj_id }}"
+        headers: "{{ auth_headers }}"
+        status_code: [200, 404]
+      register: target_info
+
+    - name: Set needs_import fact
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/set_fact_module.html
+      ansible.builtin.set_fact:
+        needs_import: "{{ target_info.status == 404 }}"
+
+    - name: Get GitHub project ID
+      ansible.builtin.uri:
+        # https://docs.github.com/en/rest/repos/repos#get-a-repository
+        url: https://api.github.com/repos/{{ source_repo }}
+        headers:
+          Authorization: Bearer {{ github_access_token }}
+        return_content: true
+      register: source_info
+      when: needs_import
+
+    - name: Import "{{ source_repo }}"
+      vars:
+        github_proj_id: "{{ source_info.json.id }}"
+      ansible.builtin.uri:
+        # https://docs.gitlab.com/api/import#import-repository-from-github
+        url: "{{ gitlab_api_url }}/import/github"
+        method: POST
+        headers: "{{ auth_headers }}"
+        body_format: json
+        body:
+          repo_id: "{{ github_proj_id }}"
+          personal_access_token: "{{ github_access_token }}"
+          target_namespace: "{{ target_repo |  dirname }}"
+          new_name: "{{         target_repo | basename }}"
+        status_code: [200, 201]
+        return_content: true
+      register: import_info
+      when: needs_import
+      changed_when: true
+
+    # /import/github API is asynchronous: it returns `id` and
+    # `import_status: scheduled`, so we must wait until status
+    # progresses from scheduled -> started -> finished/failed:
+    # https://docs.gitlab.com/development/import_export#import
+    - name: Wait for import to finish
+      vars:
+        project_id: "{{ import_info.json.id }}"
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/shell_module.html
+      # noqa risky-shell-pipe
+      ansible.builtin.shell: |
+        PROJECT_URL="{{ gitlab_api_url }}/projects/{{ project_id }}"
+         AUTH_TOKEN="{{ gitlab_token }}"
+
+        log() {
+          if [ "$1" == -n ]; then echo; shift; fi
+          echo "[$(date +"%Y-%m-%d %H:%M:%S")] $*"
+        }
+        while :; do
+            json="$(curl -fsSL -H "PRIVATE-TOKEN: $AUTH_TOKEN" $PROJECT_URL)"
+           error="$(jq -r '.import_error'  <<< "$json")"
+          status="$(jq -r '.import_status' <<< "$json")"
+
+          log "Import status: $status"
+          case "$status" in
+            finished)
+              break
+              ;;
+            failed)
+              log -n "Import failed: $error"
+              exit 1
+              ;;
+            scheduled|started)
+              sleep 3.14
+              ;;
+            *)
+              log -n "Unrecognized status!"
+              exit 1
+              ;;
+          esac
+        done
+      when: needs_import
+      changed_when: false
+      timeout: 600
+
+    # couldn't get image upload working using
+    # the `uri` module, so using curl instead
+    - name: Configure project settings
+      vars:
+        argv:
+          - curl
+          - -fsSL
+          - ["-X", "PUT"]
+          - ["-H", "PRIVATE-TOKEN: {{ gitlab_token }}"]
+          - ["-F", "default_branch={{  def_branch  }}"]
+          - >-
+            {{ ['-F', 'avatar=@' ~ icon_dir ~'/'~ project_avatar]
+               if project_avatar is defined and
+                  project_avatar is truthy else [] }}
+          # https://docs.gitlab.com/api/projects#upload-a-project-avatar
+          - "{{ gitlab_api_url }}/projects/{{ gitlab_proj_id }}"
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/command_module.html
+      ansible.builtin.command:
+        argv: "{{ argv | flatten }}"
+      when: needs_import
+      changed_when: true
+
+    - name: Run default branch pipeline
+      ansible.builtin.uri:
+        # https://docs.gitlab.com/api/pipelines#create-a-new-pipeline
+        url: "{{ gitlab_api_url }}/projects/{{ gitlab_proj_id }}/pipeline?ref={{ def_branch }}"
+        method: POST
+        headers: "{{ auth_headers }}"
+        body_format: json
+        body:
+          inputs: |
+            {{ pipeline_inputs if pipeline_inputs is defined and
+                                  pipeline_inputs is truthy else omit }}
+        status_code: [200, 201]
+      when:
+        - needs_import
+        - run_pipeline is defined
+        - run_pipeline is truthy
+      changed_when: true

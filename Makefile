@@ -83,7 +83,7 @@ playbook="$${playbook/#vm/vms.}"
 args="$(rest_goals)"
 args=("$${args// /,}")
 [ "$$args" ] && args=(--extra-vars targets=$$args)
-ansible-playbook "$${args[@]}" "$$playbook"
+ansible-playbook $${args[@]} "$$playbook"
 endef
 
 # `make vmsnapshot <create|<revert|delete>
@@ -98,8 +98,8 @@ args=(-s do="$(firstword $(rest_goals))")
 [ "$(targets)" ] && args+=(-s targets="$(targets)")
 [ "$(desc)"    ] && args+=(-s    desc="$(desc)")
 [ "$(date)"    ] && args+=(-s    date="$(date)")
-args=(--extra-vars "$$(jo -- "$${args[@]}")")
-ansible-playbook "$${args[@]}" vms.snapshot.yml
+args=(--extra-vars "$$(jo -- $${args[@]})")
+ansible-playbook $${args[@]} vms.snapshot.yml
 endef
 
 # show available disk space on all cluster nodes

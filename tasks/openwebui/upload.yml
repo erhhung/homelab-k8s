@@ -15,7 +15,6 @@
 #     mtime:    "%Y-%m-%d %H:%M:%S"
 ---
 - name: 'Upload "{{ file_info.rel_path | basename }}"'
-  become: false
   vars:
     counter: "{{ file_info.index }}/{{ file_info.total }}"
     filename: "{{ file_info.abs_path | basename }}"
