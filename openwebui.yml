@@ -26,8 +26,8 @@
     secret_ns: "{{ openwebui_namespace }}"
     create_ns: false
   pre_tasks:
-    # used as image tag in init containers
-    - name: Get Open WebUI chart appVersion
+    # used as init container image tag
+    - name: Get Open WebUI appVersion
       vars:
         repo_url: "{{ openwebui_chart_repo_url }}"
         chart_ref: open-webui

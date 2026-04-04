@@ -145,7 +145,13 @@
 
         pip freeze | grep -q "^$pkg$"   && \
           [ "$CONTROLLER_OAUTH_TOKEN" ] && exit 9 # no change
-        pip install  $pkg jq # jq to allow --conf.format jq
+
+        # awxkit depends on pkg_resources, which was removed
+        # in setuptools==82, so must constrain setuptools<82:
+        # https://github.com/pypa/setuptools/issues/3085
+        # https://stackoverflow.com/a/79886564/347685
+        pip install --constraint <(echo "setuptools<82") \
+          $pkg jq # jq to allow `--conf.format jq`
 
         # patch installed scripts to suppress
         # pkg_resources is deprecated warning
@@ -174,8 +180,8 @@
           --description "AWX CLI on $HOSTNAME" \
           --conf.username {{ awx_admin_user }} \
           --conf.password {{ awx_admin_pass  | quote }} \
-          --conf.scope write)"
-        [[ "$json" == *Error* ]] && {
+          --conf.scope write)" || exit
+        [[ "$json" == *Error*  ]] && {
           echo >&2 "Error${json#*Error}"
           exit 1
         }
@@ -314,7 +320,7 @@
           token: "{{ awx_gitlab_pat }}"
       ansible.builtin.include_tasks: tasks/k8s/secrets/generic.yml
 
-    - name: Create AWX users
+    - name: Create AWX user
       vars:
         users:
           # admin user already created by awx-operator,

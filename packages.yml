@@ -74,6 +74,13 @@
               [[ "$(stat -c %A $bin)"  == *s* ]] || {
                 chmod u+s $bin
                 rc=0
+
+                # while not related to setuid, enabling setuid indicates
+                # packages were just installed on the host for the first
+                # time, including GPU drivers, which require a reboot to
+                # take effect, so mark the host for reboot after "files"
+                # playbook has been run
+                touch /tmp/reboot-required
               }
             done
             exit $rc

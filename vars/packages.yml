@@ -81,6 +81,9 @@ apt_packages:
 
   # PPA packages below offer support for Intel client GPUs:
   # https://dgpu-docs.intel.com/driver/client/overview.html
+  #
+  # IMPORTANT: GPU hosts must be rebooted after
+  # installation for the drivers to take effect
   - packages:
       - libze-intel-gpu1
       - libze1

@@ -116,8 +116,8 @@
         values: "{{ flowise_chart_values }}"
 
         extras: # adopt extra resources into Helm release
-          - cert-manager.io/v1 Certificate {{ flowise_secrets['ingress']      }}
-          - cert-manager.io/v1 Certificate {{ flowise_secrets['database']     }}
+          - cert-manager.io/v1 Certificate {{    flowise_secrets['ingress']   }}
+          - cert-manager.io/v1 Certificate {{    flowise_secrets['database']  }}
           - cert-manager.io/v1 Certificate {{ postgresql_secrets['superuser'] }}
           - v1 Secret {{ flowise_secrets['encryption']  }}
           - v1 Secret {{ flowise_secrets['credentials'] }}

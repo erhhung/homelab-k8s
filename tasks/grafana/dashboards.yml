@@ -76,7 +76,7 @@
             script1: |-
               json="$(jq 'del(.id) | .title = "{{ item.title }}"' <<< "$json")"
 
-              query='(.tags |= map(ascii_downcase))'
+              query='(.tags |= ((.tags // []) | map(ascii_downcase)))'
               {% if add_tags is truthy %}
               query+=' | (.tags += {{ add_tags | to_json }})'
               {% endif %}
