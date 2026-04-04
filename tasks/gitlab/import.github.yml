@@ -1,4 +1,6 @@
-# import project from github.com into GitLab
+# import project from github.com into GitLab and, optionally,
+# run pipeline on the default branch, or retry failed jobs if
+# pipeline already ran but failed due to app not deployed yet
 #
 # pass the following vars:
 #   gitlab_token    <required>  write_repository PAT
@@ -147,4 +149,31 @@
         - needs_import
         - run_pipeline is defined
         - run_pipeline is truthy
+      changed_when: true
+
+    - name: Get status of pipeline run
+      ansible.builtin.uri:
+        # https://docs.gitlab.com/api/pipelines#retrieve-the-latest-pipeline
+        url: "{{ gitlab_api_url }}/projects/{{ gitlab_proj_id }}/pipelines/latest"
+        headers: "{{ auth_headers }}"
+        status_code: [200, 403]
+      register: pipeline_run
+      when:
+        - not needs_import
+        - run_pipeline is defined
+        - run_pipeline is truthy
+
+    - name: Retry failed pipeline jobs
+      vars:
+        project_id: "{{  pipeline_run.json.project_id }}"
+        pipeline_id: "{{ pipeline_run.json.id }}"
+      ansible.builtin.uri:
+        # https://docs.gitlab.com/api/pipelines#retry-jobs-in-a-pipeline
+        url: "{{ gitlab_api_url }}/projects/{{ project_id }}/pipelines/{{ pipeline_id }}/retry"
+        method: POST
+        headers: "{{ auth_headers }}"
+        status_code: [200, 201]
+      when:
+        - pipeline_run.status | default(403) == 200
+        - pipeline_run.json.status == 'failed'
       changed_when: true

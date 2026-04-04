@@ -504,13 +504,14 @@ however, all privileged operations using `sudo` will require the password stored
     ```
 </details>
 
-25. <details><summary>Install <strong>GitLab EE</strong> CI/CD Platform to build local images</summary><br/>
+25. <details><summary>Install <strong>GitLab EE</strong> CI/CD platform to build local images</summary><br/>
 
     25.1. Import Erhhung's SSH and GPG public keys, and create the `Homelab` group  
     25.2. Configure **Harbor** and **Slack** integrations, and access GitHub using OmniAuth  
     25.3. Configure and deploy **Kubernetes runner** for building images using `buildah`  
     25.4. Use [`al2023-devops`](https://github.com/erhhung/al2023-devops) as the build container and load common pre-build script  
-    25.5. Deploy **CI Pipelines Exporter** to export metrics and visualize them in Grafana
+    25.5. Import projects from GitHub and run pipelines to build images for later installs  
+    25.6. Deploy **CI Pipelines Exporter** to export metrics and visualize them in Grafana
 
     ```bash
     make gitlab

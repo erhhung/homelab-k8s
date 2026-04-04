@@ -180,6 +180,20 @@ gitlab_import_projects:
     pipeline_inputs:
       purpose: build-deploy
 
+  # https://github.com/erhhung/xen-exporter-kustomize
+  - from: github
+    source_repo: erhhung/xen-exporter-kustomize
+    target_repo: homelab/xen-exporter
+    project_avatar: xcpng.png
+
+  # https://github.com/erhhung/mcp-crawl4ai/tree/gitlab-ci
+  - from: github
+    source_repo: erhhung/mcp-crawl4ai
+    target_repo: homelab/mcp-crawl4ai
+    project_avatar: mcp.png
+    default_branch: gitlab-ci
+    run_pipeline: true
+
   # https://github.com/erhhung/flowise/tree/gitlab-ci
   - from: github
     source_repo: erhhung/flowise
@@ -189,9 +203,3 @@ gitlab_import_projects:
     run_pipeline: true
     pipeline_inputs:
       purpose: build-deploy
-
-  # https://github.com/erhhung/xen-exporter-kustomize
-  - from: github
-    source_repo: erhhung/xen-exporter-kustomize
-    target_repo: homelab/xen-exporter
-    project_avatar: xcpng.png
