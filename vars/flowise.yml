@@ -277,9 +277,13 @@ flowise_chart_values:
     annotations:
       nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
       nginx.ingress.kubernetes.io/backend-protocol: HTTP
+
+      # https://websocket.org/guides/infrastructure/kubernetes#quick-start-nginx-ingress
       # https://kubernetes.github.io/ingress-nginx/user-guide/nginx-configuration/annotations#custom-timeouts
+      nginx.ingress.kubernetes.io/proxy-connect-timeout: "3600"
       nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
       nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+
       # allow uploading large files and prevent 413 (Entity
       # Too Large) errors; set to "0" to disable size limit:
       # https://kubernetes.github.io/ingress-nginx/user-guide/nginx-configuration/annotations#custom-max-body-size

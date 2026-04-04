@@ -186,8 +186,8 @@ openwebui_chart_repo_url: https://helm.openwebui.com
 openwebui_chart_version: "12.5.0"
 openwebui_release_name: open-webui
 
-# comment out `openwebui_app_version` setting below
-# to let playbook get `appVersion` value from chart
+# comment out `openwebui_app_version` below
+# to let playbook get  chart's `appVersion`
 # https://github.com/open-webui/open-webui/pkgs/container/open-webui/versions?filters%5Bversion_type%5D=tagged
 openwebui_app_version: "0.8.10"
 
@@ -592,9 +592,13 @@ openwebui_chart_values:
     annotations:
       nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
       nginx.ingress.kubernetes.io/backend-protocol: HTTP
+
+      # https://websocket.org/guides/infrastructure/kubernetes#quick-start-nginx-ingress
       # https://kubernetes.github.io/ingress-nginx/user-guide/nginx-configuration/annotations#custom-timeouts
+      nginx.ingress.kubernetes.io/proxy-connect-timeout: "3600"
       nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
       nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+
       # allow uploading large files and prevent 413 (Entity
       # Too Large) errors; set to "0" to disable size limit:
       # https://kubernetes.github.io/ingress-nginx/user-guide/nginx-configuration/annotations#custom-max-body-size

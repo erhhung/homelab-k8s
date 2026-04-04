@@ -49,18 +49,21 @@ openclaw_common_env:
       - PNPM_HOME
 
 # https://github.com/serhanekicii/openclaw-helm/tree/main/charts/openclaw
-openclaw_chart_version: "1.5.6"
-# comment out openclaw_app_version
-# to use the chart's default value
-openclaw_app_version: "2026.3.24"
+openclaw_chart_repo_url: https://serhanekicii.github.io/openclaw-helm
+openclaw_chart_version: "1.5.10"
 openclaw_release_name: openclaw
+
+# comment out `openclaw_app_version` below
+# to let playbook get chart's `appVersion`
+# https://github.com/openclaw/openclaw/pkgs/container/openclaw/versions?filters%5Bversion_type%5D=tagged
+openclaw_app_version: "2026.4.2"
 
 # https://github.com/serhanekicii/openclaw-helm/tree/main/charts/openclaw/values.yaml
 openclaw_chart_values:
   # https://github.com/bjw-s-labs/helm-charts/tree/main/charts/other/app-template
   # https://github.com/bjw-s-labs/helm-charts/tree/main/charts/library/common/values.yaml
   app-template:
-    openclawVersion: "{{ openclaw_app_version | default(omit) }}"
+    openclawVersion: "{{ openclaw_app_version }}"
 
     # `merge` preserves runtime changes
     # use `overwrite` for strict GitOps
@@ -68,7 +71,16 @@ openclaw_chart_values:
     configMaps:
       config:
         data:
-          openclaw.json: "{{ openclaw_config | ansible.builtin.to_nice_json(indent=2) }}"
+          # match gateway-generated config format so that it
+          # doesn't complain and rewrite the file on startup
+          openclaw.json: |-
+            {# https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_templating_now.html -#}
+            {{ openclaw_config | ansible.builtin.combine({
+                 'meta': {
+                   'lastTouchedVersion': openclaw_app_version,
+                   'lastTouchedAt': now(utc=true, fmt='%Y-%m-%dT%H:%M:%SZ'),
+                 },
+               }) | ansible.builtin.to_nice_json(indent=2) }}
 
           # ~/.bash_aliases for admin
           # interactive shell session
@@ -458,6 +470,17 @@ openclaw_chart_values:
         annotations:
           nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
           nginx.ingress.kubernetes.io/backend-protocol: HTTP
+
+          # https://websocket.org/guides/infrastructure/kubernetes#quick-start-nginx-ingress
+          # https://kubernetes.github.io/ingress-nginx/user-guide/nginx-configuration/annotations#custom-timeouts
+          nginx.ingress.kubernetes.io/proxy-connect-timeout: "3600"
+          nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+          nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+
+          # allow uploading large files and prevent 413 (Entity
+          # Too Large) errors; set to "0" to disable size limit:
+          # https://kubernetes.github.io/ingress-nginx/user-guide/nginx-configuration/annotations#custom-max-body-size
+          nginx.ingress.kubernetes.io/proxy-body-size: 10m
         hosts: |
           {% set hosts = [] %}
           {% for fqdn in openclaw_fqdns %}

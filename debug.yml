@@ -54,6 +54,16 @@
       ansible.builtin.debug:
         var: ansible_date_time
 
+    - name: Show ISO 8601 timestamp
+      vars:
+        iso8601:
+          # https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_templating_now.html
+          current: "{{ now(utc=true, fmt='%Y-%m-%dT%H:%M:%SZ') }}"
+          # ansible_date_time is not accurate due to fact caching!
+          cached: "{{ ansible_date_time.iso8601 }}"
+      ansible.builtin.debug:
+        var: iso8601
+
     - name: Dump "ansible_version"
       run_once: true
       ansible.builtin.debug:
@@ -69,6 +79,12 @@
     - name: Dump "ansible_facts"
       ansible.builtin.debug:
         var: ansible_facts
+
+    - name: Dump "ansible_facts"
+      delegate_to: localhost
+      run_once: true
+      ansible.builtin.debug:
+        var: hostvars.localhost.ansible_facts
 
     - name: Format current time
       run_once: true
@@ -517,7 +533,6 @@
           # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/setup_module.html
           ansible.builtin.setup:
             gather_subset: date_time
-          when: ansible_date_time is undefined
 
         - name: Get days until expiration
           vars:

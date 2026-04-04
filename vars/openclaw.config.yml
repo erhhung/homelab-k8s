@@ -10,6 +10,10 @@ openclaw_config:
     auth:
       mode: token # none|token|password|trusted-proxy
       token: ${OPENCLAW_GATEWAY_TOKEN}
+      rateLimit:
+        maxAttempts: 10
+        windowMs: 60000
+        lockoutMs: 300000
 
     # https://docs.openclaw.ai/web/control-ui
     controlUi:
@@ -61,7 +65,7 @@ openclaw_config:
 
         # higher risk: capture screen
         - screen.capture
-        - screen.record
+        # - screen.record
         - screen.snap
 
         # higher risk: camera access
@@ -72,8 +76,8 @@ openclaw_config:
 
         # higher risk: arbitrary remote
         # command execution on the node
-        # - system.run
-        # - system.run.prepare
+        - system.run
+        - system.run.prepare
 
   # https://docs.openclaw.ai/gateway/configuration-reference#browser
   browser:
@@ -207,7 +211,7 @@ openclaw_config:
       traces: true
       metrics: true
       logs: false
-      sampleRate: 1.0
+      sampleRate: 1
       flushIntervalMs: 30000
 
   # https://docs.openclaw.ai/gateway/local-models#other-openai-compatible-local-proxies
@@ -248,7 +252,14 @@ openclaw_config:
 
   # https://docs.openclaw.ai/gateway/configuration-reference#tools
   tools:
-    profile: full # minimal|coding|messaging|full
+    profile: coding # minimal|coding|messaging|full
+    # https://docs.openclaw.ai/tools#built-in-tools
+    allow:
+      - group:openclaw
+      - lossless-claw
+      - searxng-search
+    deny: []
+
     web:
       # https://docs.openclaw.ai/tools/web
       search:
@@ -281,27 +292,29 @@ openclaw_config:
   plugins:
     # only allow listed plugins, whether bundled or
     # custom, to load (each must still be enabled):
-    allow:
-      - slack
-      - diagnostics-otel
-      - lossless-claw
-      - searxng-search
-      - perplexity
+    allow: |
+      {{ openclaw_plugins | map(attribute='id') + [
+           'slack',
+           'browser',
+           'diagnostics-otel',
+           'perplexity',
+         ] }}
 
     # declare plugins ALREADY installed by init container
     # or else OpenClaw annoyingly outputs "loaded without
     # install/load-path provenance" warnings:
     # https://github.com/openclaw/openclaw/issues/43655
+    # `plugin_integrity` is fact set by task
     installs: |
       {% set installs = {} %}
       {% for plugin in openclaw_plugins %}
       {%   set _ = installs.update({
              plugin.id: {
                'source':      'npm',
-               'spec':         plugin.package,
+               'spec':         plugin.package ~'@'~ plugin.version,
                'version':      plugin.version,
-               'installPath': '${OPENCLAW_PLUGIN_DIR}/' ~ plugin.id
-             },
+               'installPath': '${OPENCLAW_PLUGIN_DIR}/' ~ plugin.id,
+             } | combine(plugin_integrity[plugin.id]),
            })     %}
       {% endfor   %}
       {{ installs }}
@@ -317,6 +330,8 @@ openclaw_config:
 
     entries:
       slack:
+        enabled: true
+      browser:
         enabled: true
       diagnostics-otel:
         enabled: true

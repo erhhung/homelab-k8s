@@ -27,10 +27,19 @@
     secret_ns: "{{ openclaw_namespace }}"
     create_ns: false
   pre_tasks:
+    - name: Get OpenClaw appVersion
+      vars:
+        repo_url: "{{ openclaw_chart_repo_url }}"
+        chart_ref: openclaw
+        chart_ver: "{{ openclaw_chart_version }}"
+        fact_name: openclaw_app_version
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
+      ansible.builtin.include_tasks: tasks/helm/appversion.yml
+      when: openclaw_app_version is undefined
+
     - name: Get LiteLLM user API key
       vars:
         secret_key: "{{ user_erhhung.username }}"
-      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
       ansible.builtin.include_tasks: tasks/litellm/apikey.yml
       # sets litellm_api_key fact
 
@@ -76,6 +85,39 @@
         label: "{{ filename }}"
       register: skill_config_b64
       changed_when: false
+
+    # retrieve values for `plugins.installs.*.{integrity,shasum}`
+    - name: Retrieve plugin integrity
+      delegate_to: localhost
+      vars:
+        ansible_python_interpreter: "{{ default_python_interpreter }}"
+      ansible.builtin.shell: |
+        set -o pipefail
+
+        npm view "{{ item.package }}@{{ item.version }}" \
+          dist.integrity dist.shasum --json | jq '{
+            plugin:     "{{ item.id }}",
+            integrity: ."dist.integrity",
+            shasum:    ."dist.shasum",
+          }'
+      loop: "{{ openclaw_plugins }}"
+      loop_control:
+        label: "{{ item.id }}"
+      register: integrity_json
+      changed_when: false
+
+    # plugin_integrity['plugin_id'].{integrity,shasum}
+    - name: Set plugin_integrity fact
+      vars:
+        results: "{{ integrity_json.results | map(attribute='stdout') | map('from_json') }}"
+        # https://docs.ansible.com/ansible/latest/collections/community/general/remove_keys_filter.html
+        metadata: "{{ results | community.general.remove_keys(target=['plugin']) }}"
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/set_fact_module.html
+      ansible.builtin.set_fact:
+        # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/zip_filter.html
+        # https://docs.ansible.com/ansible/latest/collections/community/general/dict_filter.html
+        plugin_integrity: "{{  results  | map(attribute='plugin') |
+          ansible.builtin.zip(metadata) | community.general.dict }}"
   tasks:
     - name: Create OpenClaw ingress secret
       vars:
@@ -131,7 +173,7 @@
 
         # === Inputs ===
         repo_name: openclaw
-        repo_url: https://serhanekicii.github.io/openclaw-helm
+        repo_url: "{{ openclaw_chart_repo_url }}"
         chart_ref: openclaw
         chart_ver: "{{ openclaw_chart_version }}"
         release: "{{ openclaw_release_name }}"
@@ -178,14 +220,12 @@
       register: openclaw_pod
 
     - name: Set openclaw_pod_name fact
-      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/set_fact_module.html
       ansible.builtin.set_fact:
         openclaw_pod_name: "{{ openclaw_pod.resources[0].metadata.name }}"
 
     - name: Read workspace config files
       delegate_to: localhost
       vars:
-        # use the default Python interpreter on Ansible controller
         ansible_python_interpreter: "{{ default_python_interpreter }}"
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/find_module.html
       ansible.builtin.find:
@@ -234,3 +274,111 @@
       loop: "{{ src_files }}"
       loop_control:
         label: "{{ item | substr(1) }}"
+
+# this setup is workaround because the Mac companion
+# app isn't registering with remote gateway as node:
+# https://github.com/openclaw/openclaw/issues/57243;
+# so create a separate launchd .plist to launch both
+# the companion app and the `openclaw-node` sidekick
+
+# IMPORTANT!! do not reuse the "ai.openclaw.mac" label
+# and "ai.openclaw.mac.plist" filename because the app
+# will promptly overwrite it on startup, and then tear
+# down the process tree launched by the wrapper script
+
+- name: Set up Mac companion app + node
+  tags: mac
+  hosts: localhost
+  vars:
+    host_is_mac: "{{ ansible_system == 'Darwin' }}"
+    helper_file: ai.openclaw.macos.sh
+    plist_file: ai.openclaw.macos.plist
+    home_dir: "{{ ansible_env['HOME'] }}"
+    files_dir: "{{ playbook_dir }}/files/openclaw/mac"
+    plist_dir: "{{ home_dir }}/Library/LaunchAgents"
+    plist_path: "{{ plist_dir }}/{{ plist_file }}"
+    file_list:
+      # brew install --cask openclaw
+      - /Applications/OpenClaw.app/Contents/MacOS/OpenClaw
+      # app should have been configured for
+      # remote gateway WebSocket connection
+      - "{{ home_dir }}/.openclaw/openclaw.json"
+      # npm install --global openclaw
+      - /usr/local/bin/openclaw
+    env_defaults:
+      NODE_PATH: /usr/local/lib/node_modules
+      NODE_OPTIONS: "'--max-old-space-size=4096'"
+      NODE_EXTRA_CA_CERTS: $HOME/certs/homelab_root_ca.crt
+  pre_tasks:
+    - name: Skip play if not on Mac
+      ansible.builtin.meta: end_play
+      when: not host_is_mac
+
+    - name: Does required file exist
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/stat_module.html
+      ansible.builtin.stat:
+        path: "{{ item }}"
+      loop: "{{ file_list }}"
+      register: file_stat
+  tasks:
+    - name: Show file found results
+      vars:
+        stats: "{{ file_stat.results | map(attribute='stat') }}"
+      ansible.builtin.debug:
+        msg: |-
+          {% for  file in stats %}
+          {{ '✅' if file.exists else '❌' }} {{ file.path }}
+          {% endfor %}
+
+    - name: Abort if missing files
+      vars:
+        all_found: "{{ file_stat.results | map(attribute='stat.exists') is all }}"
+      ansible.builtin.meta: end_play
+      when: not all_found
+
+    - name: Create "{{ helper_file }}"
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/copy_module.html
+      ansible.builtin.copy:
+        src: "{{ files_dir }}/{{ helper_file }}"
+        dest: "{{ home_dir }}/.openclaw/"
+        mode: "0755"
+
+    - name: Delete "ai.openclaw.mac.plist"
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/file_module.html
+      ansible.builtin.file:
+        path: "{{ plist_dir }}/ai.openclaw.mac.plist"
+        state: absent
+
+    - name: Create "{{ plist_file }}"
+      vars:
+        src_path: "{{ files_dir }}/{{ plist_file }}"
+        tmp_path: /tmp/{{ plist_file }}
+      ansible.builtin.shell: |
+        set -o pipefail
+
+        {% for env, default in env_defaults.items() %}
+        export {{ env }}="{{ '${'~ env }}:-{{ default ~'}' }}"
+        {% endfor %}
+
+        trap 'rm -f {{ tmp_path }}' EXIT
+        envsubst  < {{ src_path }} | tee {{   tmp_path }}
+        cmp -s      {{ tmp_path }}       {{ plist_path }} && exit 9 # no change
+        mv  -f      {{ tmp_path }}       {{ plist_path }}
+      args:
+        executable: /bin/bash
+      register: create_plist
+      changed_when: create_plist.rc == 0
+      failed_when: create_plist.rc not in [0,9]
+      notify: Launch Mac companion app + node
+  handlers:
+    # useful launchd docs:
+    # https://launchd.info/
+    # https://keith.github.io/xcode-man-pages/launchctl.1.html
+    # https://apple.stackexchange.com/questions/477771/why-does-launchd-bootstap-fail-with-bootstrap-failed-5-input-output-error
+
+    # not sure why community.general.launchd keeps
+    # failing with "Unable to find the plist file"
+    - name: Launch Mac companion app + node
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/command_module.html
+      ansible.builtin.command: launchctl bootstrap gui/{{ ansible_user_uid }} {{ plist_path }}
+      changed_when: true
