@@ -1,6 +1,24 @@
+# explicitly allow tools in sessions because
+# `group:openclaw` doesn't appear to include
+# `exec`/`process`:
+# https://docs.openclaw.ai/tools#built-in-tools
+openclaw_allow_tools:
+  - exec
+  - process
+  - browser
+  - canvas
+  - nodes
+  # plugins:
+  - lcm_grep
+  - lcm_describe
+  - lcm_expand
+  - lcm_expand_query
+  - searxng_search
+
 # will be converted into JSON and stored as
 # openclaw.json in the "openclaw" ConfigMap:
 # https://docs.openclaw.ai/gateway/configuration
+# show config in YAML: yq -pj openclaw.json -Moy
 openclaw_config:
   # https://docs.openclaw.ai/gateway/configuration-reference#gateway
   gateway:
@@ -25,6 +43,7 @@ openclaw_config:
     # https://github.com/openclaw/openclaw/pull/8752
     trustedProxies: "{{ [cluster_cidr] }}"
 
+    # https://docs.openclaw.ai/nodes
     nodes:
       # run `openclaw nodes status --json` to see
       # commands that each node actually supports.
@@ -99,15 +118,16 @@ openclaw_config:
   agents:
     # https://docs.openclaw.ai/gateway/configuration-reference#agent-defaults
     defaults:
-      workspace: "{{ openclaw_data_dir }}/workspace"
+      workspace: ${OPENCLAW_HOME}/workspace
       userTimezone: ${TZ}
       timeFormat: "12" # auto|12|24
 
       # https://docs.openclaw.ai/gateway/configuration-reference#agents-defaults-model
-      model: &agent-models # prefer more economical
-        primary: litellm/gpt-5.2
+      model:
+        # prefer more economical
+        primary: litellm/gpt-5.4
         fallbacks:
-          - litellm/gpt-5.4
+          - litellm/gpt-5.2
           - litellm/claude-sonnet-4-5
           - litellm/claude-sonnet-4-6
       maxConcurrent: 1
@@ -118,7 +138,19 @@ openclaw_config:
       # default tool/output verbosity when no `/verbose` directive
       verboseDefault: "off" # "off"|"on"|full
       # default elevated-execution mode when no `/elevated` directive
-      elevatedDefault: ask # "off"|"on"|ask|full
+      elevatedDefault: full # "off"|"on"|ask|full
+
+      # https://docs.openclaw.ai/gateway/configuration-reference#agents-defaults-sandbox
+      # run `openclaw sandbox explain` on gateway
+      # to see effective sandbox and tool policy;
+      # also `tools.sandbox.tools.alsoAllow|deny`
+      sandbox:
+        # https://docs.openclaw.ai/gateway/sandboxing#modes
+        mode: "off" # "off"|non-main|all
+        # use the same path as `agents.defaults.workspace`
+        workspaceRoot: ${OPENCLAW_HOME}/workspace
+        # https://docs.openclaw.ai/gateway/sandboxing#workspace-access
+        workspaceAccess: rw # none|ro|rw
 
     # single "main" agent by default, but can create separate agents like "home"
     # and "work", each with independent workspaces, policies, skills, and memory
@@ -130,10 +162,8 @@ openclaw_config:
         identity:
           name: OpenClaw
           emoji: 🦞
-        # https://docs.openclaw.ai/gateway/configuration-reference#agents-defaults-sandbox
-        sandbox:
-          mode: "off" # "off"|non-main|all
-        model: *agent-models
+        tools:
+          alsoAllow: "{{ openclaw_allow_tools }}"
 
   # channel setup is not required--the
   # Control UI is suitable chat client
@@ -160,7 +190,7 @@ openclaw_config:
       # allow list must use Slack stable IDs (U*), not user
       # handles (get the ID by clicking on a user's profile
       # and then selecting ⋮ (More) -> Copy member ID)
-      allowFrom:
+      allowFrom: &slack-allow-from
         - "{{ user_erhhung.slack.id }}"
       channels:
         # get stable ID from a channel's details -> About
@@ -182,7 +212,8 @@ openclaw_config:
   # https://docs.openclaw.ai/gateway/configuration-reference#session
   session:
     scope: per-sender
-    store: "{{ openclaw_data_dir }}/sessions"
+    dmScope: per-peer # main|per-peer|per-channel-peer|per-account-channel-peer
+    store: ${OPENCLAW_HOME}/sessions
     # resetting session limits
     # the agent's chat context
     reset:
@@ -194,11 +225,11 @@ openclaw_config:
     # `level` is for file-based logging;
     # `consoleLevel` is container stdout:
     # https://docs.openclaw.ai/logging
-    level: info # error|warn|info|debug|trace
+    level: trace # error|warn|info|debug|trace
     file: /tmp/openclaw.log # JSONL format
-    consoleLevel: info
-    consoleStyle: compact # pretty|compact|json
-    redactSensitive: tools # "off"|tools
+    consoleLevel: trace
+    consoleStyle: pretty # pretty|compact|json
+    redactSensitive: "off" # "off"|tools
 
   # https://docs.openclaw.ai/logging#export-to-opentelemetry
   diagnostics:
@@ -252,32 +283,46 @@ openclaw_config:
 
   # https://docs.openclaw.ai/gateway/configuration-reference#tools
   tools:
-    profile: coding # minimal|coding|messaging|full
-    # https://docs.openclaw.ai/tools#built-in-tools
-    allow:
-      - group:openclaw
-      - lossless-claw
-      - searxng-search
+    profile: full # minimal|coding|messaging|full
+
+    # allow all built-in tools plus additional plugin tools
+    allow: "{{ ['group:openclaw'] + openclaw_allow_tools }}"
     deny: []
 
-    web:
-      # https://docs.openclaw.ai/tools/web
-      search:
-        enabled: false
-        # see perplexity plugin config for LiteLLM
-        # search API setup (currently not working):
-        # https://github.com/openclaw/openclaw/issues/53586
-        provider: perplexity
-        maxResults: 10
-        timeoutSeconds: 30
-        cacheTtlMinutes: 15
+    # https://docs.openclaw.ai/gateway/sandbox-vs-tool-policy-vs-elevated
+    # run `openclaw sandbox explain` on gateway
+    # to see effective sandbox and tool policy
+    sandbox:
+      tools:
+        # enable tools denied by
+        # default sandbox policy
+        alsoAllow: "{{ openclaw_allow_tools }}"
 
+    # https://docs.openclaw.ai/tools/elevated
+    elevated:
+      allowFrom:
+        webchat:
+          - openclaw-control-ui
+        slack: *slack-allow-from
+
+    # https://docs.openclaw.ai/tools/exec
+    # exec host=node routing is currently broken:
+    # https://github.com/openclaw/openclaw/issues/59533
+    # https://github.com/openclaw/openclaw/issues/20669
+    exec:
+      host: node # auto|sandbox|gateway|node
+      # custom node ID is supposed to be set by `openclaw node run --node-id`
+      # arg in files/openclaw/mac/ai.openclaw.macos.sh, but it's not working:
+      # https://github.com/openclaw/openclaw/issues/61569
+      node: Erhhung's i9 MBP # erhhungs-i9-mbp
+
+    web:
       # https://docs.openclaw.ai/tools/web-fetch
       fetch:
         enabled: true
         maxChars: 50000 # default max output chars
         maxCharsCap: 50000 # hard cap for maxChars param
-        # maxResponseBytes: 2000000 # max size before truncation
+        maxResponseBytes: 2000000 # max size before truncation
         maxRedirects: 3
         timeoutSeconds: 30
         cacheTtlMinutes: 15
@@ -286,6 +331,18 @@ openclaw_config:
           Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)
           AppleWebKit/537.36 (KHTML, like Gecko)
           Chrome/146.0.0.0 Safari/537.36
+
+      # https://docs.openclaw.ai/tools/web
+      search:
+        # use `searxng_search` tool instead
+        enabled: false
+        # see perplexity plugin config for LiteLLM
+        # search API setup (currently not working):
+        # https://github.com/openclaw/openclaw/issues/53586
+        provider: perplexity
+        maxResults: 10
+        timeoutSeconds: 30
+        cacheTtlMinutes: 15
 
   # https://docs.openclaw.ai/tools/plugin
   # list plugins: `openclaw plugins list`

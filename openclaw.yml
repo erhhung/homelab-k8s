@@ -3,6 +3,7 @@
 # https://docs.openclaw.ai/concepts/architecture
 # https://docs.openclaw.ai/gateway/configuration
 # https://docs.openclaw.ai/gateway/security
+# https://docs.openclaw.ai/nodes
 # https://docs.openclaw.ai/platforms/macos
 # https://docs.openclaw.ai/channels/slack
 # https://learnopenclaw.com/core-concepts/soul-md
@@ -134,6 +135,7 @@
           OPENCLAW_GATEWAY_TOKEN: "{{ openclaw_gateway_token }}"
           # https://docs.openclaw.ai/gateway/authentication
           LITELLM_API_KEY: "{{ litellm_api_key }}"
+          OPENAI_API_KEY: "{{   openai_api_key }}"
 
           # https://docs.openclaw.ai/channels/slack
           SLACK_APP_TOKEN: "{{ openclaw_channel_secrets['slack'].app_token }}"
@@ -141,7 +143,7 @@
 
           # https://github.com/steipete/gogcli#keyring-backend-keychain-vs-encrypted-file
           GOG_KEYRING_PASSWORD: "{{ gogcli_keyring_pass }}"
-          GITHUB_ACCESS_TOKEN: "{{ github_access_token }}"
+          GITHUB_ACCESS_TOKEN: "{{  github_access_token }}"
       ansible.builtin.include_tasks: tasks/k8s/secrets/generic.yml
 
     # create Secret containing (decrypted) files in
@@ -286,7 +288,7 @@
 # will promptly overwrite it on startup, and then tear
 # down the process tree launched by the wrapper script
 
-- name: Set up Mac companion app + node
+- name: Set up Mac companion app+node
   tags: mac
   hosts: localhost
   vars:
@@ -342,6 +344,9 @@
         src: "{{ files_dir }}/{{ helper_file }}"
         dest: "{{ home_dir }}/.openclaw/"
         mode: "0755"
+      notify: &restart-mac-app
+        - Terminate app+node if running
+        - Launch Mac companion app+node
 
     - name: Delete "ai.openclaw.mac.plist"
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/file_module.html
@@ -369,16 +374,24 @@
       register: create_plist
       changed_when: create_plist.rc == 0
       failed_when: create_plist.rc not in [0,9]
-      notify: Launch Mac companion app + node
+      notify: *restart-mac-app
   handlers:
     # useful launchd docs:
     # https://launchd.info/
     # https://keith.github.io/xcode-man-pages/launchctl.1.html
     # https://apple.stackexchange.com/questions/477771/why-does-launchd-bootstap-fail-with-bootstrap-failed-5-input-output-error
 
+    - name: Terminate app+node if running
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/command_module.html
+      ansible.builtin.command: launchctl bootout gui/{{ ansible_user_uid }} {{ plist_path }}
+      register: bootout
+      changed_when: bootout.rc == 0
+      # bootout command outputs "Boot-out failed: 5:
+      # Input/output error" if service isn't running
+      failed_when: bootout.rc not in [0,5]
+
     # not sure why community.general.launchd keeps
     # failing with "Unable to find the plist file"
-    - name: Launch Mac companion app + node
-      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/command_module.html
+    - name: Launch Mac companion app+node
       ansible.builtin.command: launchctl bootstrap gui/{{ ansible_user_uid }} {{ plist_path }}
       changed_when: true

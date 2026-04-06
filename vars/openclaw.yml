@@ -123,38 +123,58 @@ openclaw_chart_values:
             args:
               - -c
               - |-
-                mkdir  -p {{ openclaw_data_dir }}/{.openclaw,bin,config}
-                chmod 700 {{ openclaw_data_dir }}/{.openclaw,.}
+                mkdir  -p  {{ openclaw_data_dir }}/{.openclaw,certs,bin,config}
+                chmod 700  {{ openclaw_data_dir }}/{.openclaw,.}
+                CERTS_DIR="{{ openclaw_data_dir }}/certs"
+                  BIN_DIR="{{ openclaw_data_dir }}/bin"
 
                 # ca.crt is already mounted
                 CA_CERT="/usr/local/share/ca-certificates/ca.crt"
                 CA_BUNDLE="/etc/ssl/certs/ca-certificates.crt"
-                # /certs is mounted emptyDir
-                NSSDB_DIR="/certs/nssdb"
-                mkdir -p $NSSDB_DIR
+                NSSDB_DIR="$CERTS_DIR/nssdb"
 
-                packages=(libnss3-tools)
-                # also install missing Linux utils
-                BIN_DIR="{{ openclaw_data_dir }}/bin"
-                [ -f $BIN_DIR/less ] || packages+=(less)
-                apt-get update && apt-get install -y "${packages[@]}"
-                [ -f $BIN_DIR/less ] || cp -a $(which less) $BIN_DIR
-                chown -R node:node {{ openclaw_data_dir }}
+                log() {
+                  if [ "$1" == -n ]; then echo; shift; fi
+                  echo "[$(date +"%Y-%m-%d %H:%M:%S")] $*"
+                }
+                packages=()
+                [ -f $NSSDB_DIR/cert9.db ] || packages+=(libnss3-tools)
+                [ -f   $BIN_DIR/less     ] || packages+=(less)
 
-                echo -e "\nCreating NSS database..."
-                # use certificate's CN as nickname
-                nickname="$(openssl x509 -in $CA_CERT -noout -subject -nameopt RFC2253 | \
-                              sed -n 's/^subject=.*CN=\([^,]*\)\(,.*\)\?$/\1/p')"
-                # https://www.linux.org/docs/man1/certutil.html
-                certutil -d sql:$NSSDB_DIR -N --empty-password
-                certutil -d sql:$NSSDB_DIR -A -t "C,," -n "$nickname" -i $CA_CERT
-                certutil -d sql:$NSSDB_DIR -L
+                if [ "$packages" ]; then
+                  log "Installing packages: ${packages[*]}"
+                  apt-get update && apt-get install -y "${packages[@]}"
+                  [ -f $BIN_DIR/less ] || cp -a $(which less) $BIN_DIR
+                fi
 
-                echo -e "\nUpdating trust store..."
-                # ignore "rehash: warning:" output
-                update-ca-certificates 2> /dev/null || exit
-                cp $CA_BUNDLE /certs/ca-bundle.crt
-                echo; tail -n 11 $CA_BUNDLE
+                if [ -f $CERTS_DIR/ca-bundle.crt ]; then
+                  log -n "CA bundle already exists"
+                else
+                  log -n "Updating trust store..."
+                  # ignore "rehash: warning:" output
+                  update-ca-certificates 2> /dev/null && {
+                    cp $CA_BUNDLE $CERTS_DIR/ca-bundle.crt
+                    echo; tail -n 11 $CA_BUNDLE
+                  }
+                fi
+
+                if [ -f $NSSDB_DIR/cert9.db ]; then
+                  log -n "NSS database already exists"
+                else
+                  log -n "Creating NSS database..."
+                  mkdir -p $NSSDB_DIR
+
+                  # use certificate's CN as nickname
+                  nickname="$(openssl x509 -in $CA_CERT -noout -subject -nameopt RFC2253 | \
+                                sed -n 's/^subject=.*CN=\([^,]*\)\(,.*\)\?$/\1/p')"
+                  # https://www.linux.org/docs/man1/certutil.html
+                  certutil -d sql:$NSSDB_DIR -N --empty-password
+                  certutil -d sql:$NSSDB_DIR -A -t "C,," -n "$nickname" -i $CA_CERT
+                  certutil -d sql:$NSSDB_DIR -L
+                fi
+
+                find {{ openclaw_data_dir }} -maxdepth 2 -exec chown node:node {} \;
+                log -n "Trust store setup completed ✓"
 
           init-config:
             image: *openclaw-image
@@ -215,7 +235,7 @@ openclaw_chart_values:
                                mv -f $LOG_FILE~  $LOG_FILE
                   ls  -lh $LOG_FILE
                 fi
-                log -n "Config initialization completed ✓"
+                log -n "Configuration update completed ✓"
 
           # https://docs.openclaw.ai/tools/plugin
           init-plugins:
@@ -392,31 +412,9 @@ openclaw_chart_values:
                 memory: 2Gi
 
     persistence:
-      config:
-        # https://bjw-s-labs.github.io/helm-charts/docs/common-library/storage/types/configmap
-        type: configMap # persistentVolumeClaim|emptyDir|nfs|hostPath|secret|configMap|custom
-        identifier: config
-        advancedMounts:
-          main:
-            init-config:
-              - path: /conf
-
-      # PVC for /home/node/.openclaw
-      data:
-        # https://bjw-s-labs.github.io/helm-charts/docs/common-library/storage/types/nfs-share
-        type: nfs
-        server: "{{ homelab_nfs.server }}"
-        path: "{{ homelab_nfs.base_path }}/openclaw"
-        advancedMounts:
-          main:
-            # also mount into extra containers
-            ca-bundle:
-              - path: "{{ openclaw_data_dir }}"
-            init-plugins:
-              - path: "{{ openclaw_data_dir }}"
-
       ca-certs:
         enabled: true
+        # https://bjw-s-labs.github.io/helm-charts/docs/common-library/storage/types/secret
         type: secret
         name: "{{ openclaw_secrets['ingress'] }}"
         defaultMode: 420 # "0644"
@@ -431,24 +429,40 @@ openclaw_chart_values:
                 subPath: ca.crt
                 readOnly: true
 
-      ca-bundle:
-        enabled: true
-        type: emptyDir
+      config:
+        # https://bjw-s-labs.github.io/helm-charts/docs/common-library/storage/types/configmap
+        type: configMap
+        identifier: config
         advancedMounts:
           main:
-            ca-bundle:
-              - path: /certs
+            init-config:
+              - path: /conf
+
+      # PVC for /home/node/.openclaw
+      data:
+        # https://bjw-s-labs.github.io/helm-charts/docs/common-library/storage/types/nfs-share
+        type: nfs
+        server: "{{ homelab_nfs.server }}"
+        path: "{{ homelab_nfs.base_path }}/openclaw"
+        advancedMounts:
+          main:
+            ca-bundle: &data-dir
+              - path: "{{ openclaw_data_dir }}"
+            init-config: *data-dir
+            init-plugins: *data-dir
+            init-skills: *data-dir
             main:
+              - path: "{{ openclaw_data_dir }}"
               - path: /etc/ssl/certs/ca-certificates.crt
-                subPath: ca-bundle.crt
+                subPath: certs/ca-bundle.crt
                 readOnly: true
             chromium:
               - path: /etc/ssl/certs/ca-certificates.crt
-                subPath: ca-bundle.crt
+                subPath: certs/ca-bundle.crt
                 readOnly: true
               # container has no $HOME, and WORKDIR is /
               - path: /usr/local/share/pki/nssdb
-                subPath: nssdb
+                subPath: certs/nssdb
 
       skill-configs:
         enabled: true
