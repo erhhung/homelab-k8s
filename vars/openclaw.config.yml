@@ -124,9 +124,10 @@ openclaw_config:
 
       # https://docs.openclaw.ai/gateway/configuration-reference#agents-defaults-model
       model:
-        # prefer more economical
-        primary: litellm/gpt-5.4
+        # prefer ChatGPT subscription
+        primary: openai-codex/gpt-5.4
         fallbacks:
+          - litellm/gpt-5.4
           - litellm/gpt-5.2
           - litellm/claude-sonnet-4-5
           - litellm/claude-sonnet-4-6
@@ -197,7 +198,7 @@ openclaw_config:
         # NOTE: bot token scopes must include groups:read
         # to access private channel metadata
         C0ANU3H557Y: # #assistant (private)
-          allow: true
+          enabled: true
           requireMention: true
 
       allowBots: false # prevents reply loops
@@ -244,6 +245,15 @@ openclaw_config:
       logs: false
       sampleRate: 1
       flushIntervalMs: 30000
+
+  # https://docs.openclaw.ai/gateway/configuration-reference#auth-storage
+  auth:
+    profiles:
+      # https://docs.openclaw.ai/providers/openai#option-b-openai-code-codex-subscription
+      # see credentials file: files/openclaw/state/agents/main/agent/auth-providers.json
+      openai-codex:erhhung:
+        provider: openai-codex
+        mode: oauth
 
   # https://docs.openclaw.ai/gateway/local-models#other-openai-compatible-local-proxies
   models:

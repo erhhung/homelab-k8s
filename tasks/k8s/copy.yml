@@ -12,14 +12,30 @@
 #   content    [optional] content to copy (mutually
 #                         exclusive  with src_path)
 #   dest_path  <required> path in container
-#   file_mode  [optional] default="0644"
+#   file_mode  [optional] default={src_path|0644}
+#   overwrite  [optional] default=true
 ---
 - name: Copy local file/content into pod
   vars:
+    temp_dir: /tmp/k8scp
+    temp_path: "{{ temp_dir }}/{{ dest_path | basename }}"
     # required kubernetes>=24.2 package only in user virtualenv
     ansible_python_interpreter: "{{ venv_python_interpreter }}"
-    temp_path: /tmp/k8scp/{{ dest_path | basename }}
   block:
+    - name: Read source file permissions
+      delegate_to: localhost
+      vars:
+        ansible_python_interpreter: "{{ default_python_interpreter }}"
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/stat_module.html
+      ansible.builtin.stat:
+        path: "{{ src_path }}"
+      register: file_stat
+      when:
+        - src_path  is defined
+        - src_path  is truthy
+        - file_mode is undefined or
+          file_mode is falsy
+
     - name: Create temp file on Ansible host
       vars:
         # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/file_lookup.html
@@ -29,18 +45,20 @@
         b64_data: >-
           {{ (raw_data if raw_data is not search('^\$ANSIBLE_VAULT') else
               lookup('ansible.builtin.unvault', src_path)) | b64encode }}
-        mode_: "{{ file_mode | default('0644') }}"
+        mode_: >-
+          {{ file_mode  if  file_mode is defined  and file_mode is truthy
+             else file_stat.stat.mode  | default('0644') }}
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/shell_module.html
       ansible.builtin.shell: |
-        mkdir -p "{{ temp_path | dirname }}"
-        rm    -f "{{ temp_path }}"
+        mkdir  -p {{ temp_dir  }}
+        rm     -f {{ temp_path }}
         base64 -di -     > "{{ temp_path }}"
         chmod  {{ mode_ }} "{{ temp_path }}"
       args:
         stdin: "{{ b64_data }}"
       changed_when: false
 
-    - name: Copy temp file into pod container
+    - name: Stage temp file in pod container
       # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_cp_module.html
       kubernetes.core.k8s_cp:
         kubeconfig: "{{ kubeconfig }}"
@@ -48,6 +66,43 @@
         pod: "{{ pod_name }}"
         namespace: "{{ pod_ns }}"
         container: "{{ container | default(omit) }}"
-        local_path: "{{ temp_path }}"
-        remote_path: "{{ dest_path }}"
-      changed_when: false # not idempotent
+        local_path: "{{  temp_path }}"
+        remote_path: "{{ temp_path }}"
+      changed_when: false
+
+    - name: Delete temp file on Ansible host
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/file_module.html
+      ansible.builtin.file:
+        path: "{{ temp_dir }}"
+        state: absent
+      changed_when: false
+
+    - name: Move staging file to destination
+      vars:
+        script: |-
+          trap 'rm -rf {{ temp_dir }}' EXIT
+
+          # support idempotency only if `cmp`
+          # command is available in container
+          command -v cmp &> /dev/null && {
+            cmp -s "{{ temp_path }}" "{{ dest_path }}" && exit 9 # no change
+          }
+          {% if overwrite | default(true) %}
+          overwrite=1
+          {% endif %}
+          if [ !  -f "{{ dest_path }}" ] || [ "$overwrite" ]; then
+            mkdir -p "{{ dest_path | dirname }}"  && \
+               mv -f "{{ temp_path }}" "{{ dest_path }}"
+          else
+            exit 9 # no change
+          fi
+      # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_exec_module.html
+      kubernetes.core.k8s_exec:
+        kubeconfig: "{{ kubeconfig }}"
+        pod: "{{ pod_name }}"
+        namespace: "{{ pod_ns }}"
+        container: "{{ container | default(omit) }}"
+        command: sh -c {{ script | quote }}
+      register: move_dest
+      changed_when: move_dest.rc == 0
+      failed_when: move_dest.rc not in [0,9]

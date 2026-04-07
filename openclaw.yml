@@ -199,6 +199,8 @@
     - vars/openclaw.yml
   vars:
     ansible_python_interpreter: "{{ venv_python_interpreter }}"
+    state_src_dir: "{{ playbook_dir }}/files/openclaw/state"
+    state_dest_dir: "{{ openclaw_data_dir }}/.openclaw"
     workspace_src_dir: "{{ playbook_dir }}/files/openclaw/workspace"
     workspace_dest_dir: "{{ openclaw_data_dir }}/workspace"
 
@@ -206,6 +208,7 @@
     group/k8s:
       kubeconfig: "{{ rke_kubeconfig }}"
       namespace: "{{ openclaw_namespace }}"
+    # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_exec_module.html
     kubernetes.core.k8s_exec:
       # pod name determined dynamically in pre_tasks
       pod: "{{ openclaw_pod_name | default(omit) }}"
@@ -225,20 +228,62 @@
       ansible.builtin.set_fact:
         openclaw_pod_name: "{{ openclaw_pod.resources[0].metadata.name }}"
 
-    - name: Read workspace config files
+    - name: Read OpenClaw config files
       delegate_to: localhost
       vars:
         ansible_python_interpreter: "{{ default_python_interpreter }}"
-      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/find_module.html
-      ansible.builtin.find:
-        paths: "{{ workspace_src_dir }}"
-        excludes: .*
-        recurse: true
-      register: workspace_files
+      block:
+        - name: Read OpenClaw state configs
+          # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/find_module.html
+          ansible.builtin.find:
+            paths: "{{ state_src_dir }}"
+            excludes: .*
+            recurse: true
+          register: state_files
+
+        - name: Read workspace config files
+          ansible.builtin.find:
+            paths: "{{ workspace_src_dir }}"
+            excludes: .*
+            recurse: true
+          register: workspace_files
   tasks:
+    - name: Update OpenClaw config files
+      vars:
+        kubeconfig: "{{ rke_kubeconfig }}"
+        pod_name: "{{ openclaw_pod_name }}"
+        pod_ns: "{{ openclaw_namespace }}"
+        container: main
+      block:
+        - name: Update OpenClaw state config
+          # substr: filter_plugins/filters.py
+          vars:
+            src_files: |
+              {{ state_files.files | map(attribute='path') |
+                 map('substr', state_src_dir | length) }}
+            src_path: "{{  state_src_dir  ~ item }}"
+            dest_path: "{{ state_dest_dir ~ item }}"
+            overwrite: false # seed only
+          ansible.builtin.include_tasks: tasks/k8s/copy.yml
+          loop: "{{ src_files }}"
+          loop_control:
+            label: "{{ item | substr(1) }}"
+
+        - name: Update workspace config file
+          vars:
+            src_files: |
+              {{ workspace_files.files | map(attribute='path') |
+                 map('substr', workspace_src_dir | length) }}
+            src_path: "{{  workspace_src_dir  ~ item }}"
+            dest_path: "{{ workspace_dest_dir ~ item }}"
+            overwrite: true # apply IaC
+          ansible.builtin.include_tasks: tasks/k8s/copy.yml
+          loop: "{{ src_files }}"
+          loop_control:
+            label: "{{ item | substr(1) }}"
+
     # https://docs.openclaw.ai/channels/pairing#2-node-device-pairing-ios/android/macos/headless-nodes
     - name: Get devices pending pairing
-      # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_exec_module.html
       kubernetes.core.k8s_exec:
         command: openclaw devices list --json
       register: openclaw_devices
@@ -257,25 +302,6 @@
       loop_control:
         label: "{{ item.clientId }}"
       changed_when: true
-
-    - name: Update workspace config file
-      vars:
-        # substr: filter_plugins/filters.py
-        src_files: |
-          {{ workspace_files.files | map(attribute='path') |
-             map('substr', workspace_src_dir | length) }}
-
-        # === Inputs ===
-        kubeconfig: "{{ rke_kubeconfig }}"
-        pod_name: "{{ openclaw_pod_name }}"
-        pod_ns: "{{ openclaw_namespace }}"
-        container: main
-        src_path: "{{  workspace_src_dir  ~ item }}"
-        dest_path: "{{ workspace_dest_dir ~ item }}"
-      ansible.builtin.include_tasks: tasks/k8s/copy.yml
-      loop: "{{ src_files }}"
-      loop_control:
-        label: "{{ item | substr(1) }}"
 
 # this setup is workaround because the Mac companion
 # app isn't registering with remote gateway as node:
