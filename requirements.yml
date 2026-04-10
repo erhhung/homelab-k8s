@@ -8,6 +8,11 @@ roles:
     scm: git
 
 collections:
+  # https://docs.ansible.com/ansible/latest/collections/ansible/utils
+  - name: ansible.utils
+    version: ">=6.0.0"
+    source: https://galaxy.ansible.com
+
   # https://docs.ansible.com/ansible/latest/collections/ansible/posix
   - name: ansible.posix
     version: ">=2.1.0"

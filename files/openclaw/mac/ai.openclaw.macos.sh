@@ -5,7 +5,7 @@
 # shellcheck disable=SC2207 # Prefer mapfile to split output
 # shellcheck disable=SC2329 # This function is never invoked
 
-set -eo pipefail
+set -o pipefail
 
 # strip punctuations, replace spaces
 # with dashes, convert to lower case
@@ -22,10 +22,23 @@ APP="/Applications/OpenClaw.app/Contents/MacOS/OpenClaw"
 # installs into /usr/local/bin
 CLI="/usr/local/bin/openclaw"
 
+log() {
+  if [ "$1" == -n ]; then echo; shift; fi
+  echo "[$(date +"%Y-%m-%d %H:%M:%S")] $*"
+}
+pid() {
+  pgrep "$1" | sort -nr
+}
+
+log -n "Launcher bash PID: $$"
+PID="${0/%.sh/.pid}"
+echo $$ > "$PID"
+
 kill_pgroup() {
-  local pgid
-  pgid=($(ps -o pgid= -p $1  2> /dev/null)) || return 0
-  [ "$pgid" ] && kill -$pgid 2> /dev/null   || true
+  local pgid=($(ps -o pgid= -p "$1" 2> /dev/null))
+  [ "$pgid" ] || return
+  log "Killing proc group $pgid ($1)"
+  kill -TERM -- -$pgid 2> /dev/null
 }
 
 cleanup() {
@@ -35,34 +48,47 @@ cleanup() {
   kill_pgroup  $app_pid
   kill_pgroup $node_pid
 
-  wait $app_pid $node_pid 2> /dev/null || true
+  wait $app_pid $node_pid 2> /dev/null
+  rm -f "$PID"
 }
 trap cleanup EXIT INT TERM
 
-# launch the Mac companion app, which fails
-# to register with remote gateway as a node:
-# https://github.com/openclaw/openclaw/issues/57243
-# setsid: brew install util-linux (append to
-# PATH: $HOMEBREW_PREFIX/opt/util-linux/bin)
-setsid $APP 2> /dev/null &
-app_pid=$!
-
-# --node-id is supposed to override the device
-# ID, but, in practice, the node is still only
-# addressable by its display name & device ID:
-# https://github.com/openclaw/openclaw/issues/61569
-setsid $CLI node run \
-  --node-id $MAC_NODE_ID  \
-  --host    $GATEWAY_HOST \
-  --port    $GATEWAY_PORT \
-  --tls  &
-node_pid=$!
-
-wait -n $app_pid $node_pid || true
-
-if ! kill -0 $app_pid 2> /dev/null; then
-  echo "OpenClaw app exited; stopping node"
-elif ! kill -0 $node_pid 2> /dev/null; then
-  echo "openclaw-node exited; stopping app"
+app_pid=($(pid OpenClaw))
+if [ ! "$app_pid" ]; then
+  # launch the Mac companion app, which fails
+  # to register with remote gateway as a node:
+  # https://github.com/openclaw/openclaw/issues/57243
+  # setsid: brew install util-linux (append to
+  # PATH: $HOMEBREW_PREFIX/opt/util-linux/bin)
+  setsid $APP 2> /dev/null &
+  app_pid=$!
 fi
+log "OpenClaw app  PID: $app_pid"
+echo  $app_pid >> "$PID"
+
+node_pid=($(pid openclaw-node))
+if [ ! "$node_pid" ]; then
+  # --node-id is supposed to override the device
+  # ID, but, in practice, the node is still only
+  # addressable by its display name & device ID:
+  # https://github.com/openclaw/openclaw/issues/61569
+  setsid $CLI node run \
+    --node-id $MAC_NODE_ID  \
+    --host    $GATEWAY_HOST \
+    --port    $GATEWAY_PORT --tls &
+
+  # get PID of `openclaw` subprocess `openclaw-node`
+  until node_pid=($(pid openclaw-node)) && [ "$node_pid" ]; do
+    sleep .5
+  done
+fi
+log "openclaw-node PID: $node_pid"
+echo $node_pid >> "$PID"
+
+wait -n $app_pid $node_pid
+
+kill -0  $app_pid 2> /dev/null || \
+  log "OpenClaw app  exited; stopping node"
+kill -0 $node_pid 2> /dev/null || \
+  log "openclaw-node exited; stopping app"
 exit 1

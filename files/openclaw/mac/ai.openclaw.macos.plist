@@ -24,6 +24,14 @@
       <string>$NODE_OPTIONS</string>
       <key>NODE_EXTRA_CA_CERTS</key>
       <string>$NODE_EXTRA_CA_CERTS</string>
+      <key>XDG_CONFIG_HOME</key>
+      <string>$XDG_CONFIG_HOME</string>
+      <key>XDG_CACHE_HOME</key>
+      <string>$XDG_CACHE_HOME</string>
+      <key>XDG_STATE_HOME</key>
+      <string>$XDG_STATE_HOME</string>
+      <key>XDG_DATA_HOME</key>
+      <string>$XDG_DATA_HOME</string>
     </dict>
     <key>StandardOutPath</key>
     <string>$HOME/.openclaw/logs/ai.openclaw.macos-stdout.log</string>

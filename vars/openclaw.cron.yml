@@ -1,0 +1,21 @@
+# https://docs.openclaw.ai/automation/cron-jobs
+# https://docs.openclaw.ai/automation/cron-jobs#cli-examples
+openclaw_cron_jobs:
+  # each key (in snake_case) will become --key arg (in kebab-case)
+  # for either `openclaw cron add` or `openclaw cron edit` command
+  - name: GitHub activities
+    # description: optional
+    cron: 0 8 * * *
+    # tz: $TZ default
+    # session=isolated requires message;
+    # session=main requires system_event
+    session: isolated
+    message: >-
+      Check Gmail for notifications from GitHub in the past 24 hours.
+      Create a report showing one-line summaries for each email, and
+      include links to the corresponding issues or PRs if available.
+      All gog CLI commands must be executed via the exec tool with
+      host="gateway".
+    # if announce=true Ansible task will additionally append
+    # `--channel` and `--to` to send the report via Slack DM
+    announce: true

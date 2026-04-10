@@ -47,7 +47,10 @@
         update_project: true
         state: present
         wait: true
-        timeout: 60
+        # give enough time for "Source Control Update" job
+        # to run if it has to run `ansible-galaxy install`
+        timeout: 600
+      timeout: 900
 
     - name: Create inventory for "{{ project.name }}"
       # https://docs.ansible.com/ansible/latest/collections/awx/awx/inventory_module.html

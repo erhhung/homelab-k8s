@@ -7,13 +7,40 @@ openclaw_allow_tools:
   - process
   - browser
   - canvas
-  - nodes
+  # - nodes
   # plugins:
   - lcm_grep
   - lcm_describe
   - lcm_expand
   - lcm_expand_query
   - searxng_search
+
+# allowlist: ~/.openclaw/exec-approvals.json
+# applies to all agents (agents.*.allowlist)
+# see `tools.exec.{security,ask}` settings:
+# https://docs.openclaw.ai/tools/exec
+openclaw_exec_allowlist:
+  common:
+    # glob pattern that doesn't contain /
+    # will be resolved using `command -v`
+    - ls
+    - cat
+    - sed
+    - awk
+    - grep
+    - find
+    - head
+    - tail
+    - sort
+    - uname
+    - jq
+    - yq
+    - rg
+  gateway:
+    - gog
+  # allowlist on the Mac node is
+  # provisioned manually for now
+  node: []
 
 # will be converted into JSON and stored as
 # openclaw.json in the "openclaw" ConfigMap:
@@ -320,11 +347,13 @@ openclaw_config:
     # https://github.com/openclaw/openclaw/issues/59533
     # https://github.com/openclaw/openclaw/issues/20669
     exec:
-      host: node # auto|sandbox|gateway|node
+      host: auto # auto|sandbox|gateway|node
       # custom node ID is supposed to be set by `openclaw node run --node-id`
       # arg in files/openclaw/mac/ai.openclaw.macos.sh, but it's not working:
       # https://github.com/openclaw/openclaw/issues/61569
       node: Erhhung's i9 MBP # erhhungs-i9-mbp
+      security: allowlist # deny|allowlist|full
+      ask: on-miss # "off"|on-miss|always
 
     web:
       # https://docs.openclaw.ai/tools/web-fetch
