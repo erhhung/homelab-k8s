@@ -5,6 +5,7 @@ exclude_paths:
   - group_vars/all/vault.yml
   - vars/*.secrets.yml
   - awx.execute.yml
+  - files/
 
 # https://ansible.readthedocs.io/projects/lint/rules
 skip_list:

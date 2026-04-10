@@ -254,9 +254,10 @@ monitoring_oauth2_proxy_config: |
          'redis_cluster_connection_urls':  [redis_service_url],
          'redis_password':                  valkey_pass
        } %}
-  {#   to_toml: filter_plugins/filters.py #}
+  {#   https://docs.ansible.com/ansible/latest/collections/community/general/to_toml_filter.html #}
+  {#   (requires Python package "tomlkit" on Ansible controller) #}
   {%   set _ = configs.update({
-         app ~'.toml': config | to_toml
+         app ~'.toml': config | community.general.to_toml,
        }) %}
   {% endfor  %}
   {{ configs }}

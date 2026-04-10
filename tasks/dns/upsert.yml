@@ -21,22 +21,14 @@
     - name: Locate existing override
       vars:
         override_: "{{ existing | selectattr('ip', '==', [override.ip]) }}"
+        del_keys:
+          - aliases.id
+          - aliases.parent_id
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/set_fact_module.html
       ansible.builtin.set_fact:
-        existing_override: |
-          {% set hor = {} %}
-          {% if override_ is truthy %}
-          {%   set hor  = override_ | first %}
-          {%   if  hor.aliases %}
-          {%     set _ = hor.update({'aliases': hor.aliases | map(
-                   'ansible.builtin.combine', {
-                     'id':        omit,
-                     'parent_id': omit,
-                   },
-                 )}) %}
-          {%   endif %}
-          {% endif   %}
-          {{ hor     }}
+        # omit_keys: filter_plugins/filters.py
+        existing_override: "{{   override_ | first |
+          omit_keys(del_keys) if override_ is truthy else none }}"
 
     - name: >-
         {{ 'Create' if method == 'POST' else 'Update' }} DNS

@@ -64,8 +64,10 @@ check:
 	@ansible-playbook --syntax-check $(addsuffix .yml,$(PLAYBOOKS))
 
 # run ansible-lint on all/specific playbooks
+# and suppress informational noise in stderr
 lint:
-	@ansible-lint $(addsuffix .yml,$(rest_goals))
+	@ansible-lint $(addsuffix .yml,$(rest_goals)) 2> \
+		>(grep -v ANSIBLE_COLLECTIONS_SCAN_SYS_PATH >&2)
 
 # print list of playbook tags
 tags:

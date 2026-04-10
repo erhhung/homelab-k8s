@@ -302,10 +302,10 @@
       community.general.sudoers: # noqa args
         name: "{{ item.name }}"
         state: present
-        user: "{{ item.user | default(omit) }}"
-        group: "{{ item.group | default(omit) }}"
-        runas: "{{ item.runas | default(omit) }}"
-        setenv: "{{ item.setenv | default(omit) }}"
+        user: "{{     item.user     | default(omit)  }}"
+        group: "{{    item.group    | default(omit)  }}"
+        runas: "{{    item.runas    | default(omit)  }}"
+        setenv: "{{   item.setenv   | default(omit)  }}"
         commands: "{{ item.commands | default('ALL') }}"
       loop: "{{ sudoers_rules }}"
       loop_control:

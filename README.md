@@ -176,6 +176,16 @@ All cluster services will be provisioned with TLS certificates from Erhhung's pr
 - [ ] Identify and upload additional sources of personal documents into Open WebUI knowledge base collections
 - [ ] Enable OIDC authentication for additional services: AWX, ArgoCD, LiteLLM, Open WebUI
 
+## Requirements
+
+```bash
+# install Ansible and dependencies
+pip install -U -r requirements.txt
+
+# install required roles and collections
+ansible-galaxy install -r requirements.yml
+```
+
 ## Ansible Vault
 
 <details><summary>The Ansible Vault password is stored in macOS Keychain under item "<code>Home-K8s</code>" for account "<code>ansible-vault</code>"</summary><br/>

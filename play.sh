@@ -52,7 +52,7 @@ install_roles() {
       $use_roles | index($x)) then 0 else 1 end)' || return 0
 
   echo -e "\nInstalling roles and collections...\n"
-  ansible-galaxy install -r roles/requirements.yml
+  ansible-galaxy install -r requirements.yml
 }
 install_roles
 

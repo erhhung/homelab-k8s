@@ -1,0 +1,34 @@
+# https://docs.ansible.com/ansible/latest/galaxy/user_guide.html#installing-roles-and-collections-from-the-same-requirements-yml-file
+# ansible-galaxy install -r requirements.yml
+---
+roles:
+  # https://github.com/lablabs/ansible-role-rke2
+  - name: lablabs.rke2
+    src: https://github.com/lablabs/ansible-role-rke2.git
+    scm: git
+
+collections:
+  # https://docs.ansible.com/ansible/latest/collections/ansible/posix
+  - name: ansible.posix
+    version: ">=2.1.0"
+    source: https://galaxy.ansible.com
+
+  # https://docs.ansible.com/ansible/latest/collections/community/general
+  - name: community.general
+    version: ">=12.5.0"
+    source: https://galaxy.ansible.com
+
+  # https://docs.ansible.com/ansible/latest/collections/community/docker
+  - name: community.docker
+    version: ">=5.1.0"
+    source: https://galaxy.ansible.com
+
+  # https://docs.ansible.com/ansible/latest/collections/kubernetes/core
+  - name: kubernetes.core
+    version: ">=6.3.0"
+    source: https://galaxy.ansible.com
+
+  # https://docs.ansible.com/ansible/latest/collections/awx/awx
+  - name: awx.awx
+    version: ">=24.6.0"
+    source: https://galaxy.ansible.com

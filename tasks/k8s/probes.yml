@@ -63,14 +63,24 @@
 
     - name: Patch container probe specs
       vars:
-        definition: |
+        del_keys:
+          - metadata.uid
+          - metadata.creationTimestamp
+          - metadata.resourceVersion
+          - metadata.managedFields
+          - metadata.generation
+          - metadata.annotations.kubectl\.kubernetes\.io/last-applied-configuration
+          - metadata.annotations.kubectl\.kubernetes\.io/restartedAt
+          - status
+      ansible.builtin.set_fact:
+        res_specs: |
           {% set containers  = resource.spec.containers if res_kind == 'Pod' else
                  resource.spec.template.spec.containers %}
           {# use index so that we can reference
              outer object within the loop scope  #}
           {% for i in range(containers | length) %}
           {%   set name = containers[i].name %}
-          {%   if name in probes             %}
+          {%   if  name in probes  %}
           {%     for probe, config in probes[name].items() %}
           {%       for k, v in config.items()           %}
           {%         if   v is string and  v == 'OMIT'  %}
@@ -79,30 +89,16 @@
           {%       endfor  %}
           {%       if probe in containers[i] %}
           {#         https://docs.ansible.com/ansible/latest/collections/ansible/builtin/combine_filter.html #}
-          {%         set merged = containers[i][probe] | ansible.builtin.combine(config, recursive=true)     %}
+          {%         set merged = containers[i][probe]  | combine(config, recursive=true) %}
           {%         set _ = containers[i].update({probe: merged}) %}
-          {%       else   %}
+          {%       else  %}
           {%         set _ = containers[i].update({probe: config}) %}
-          {%       endif  %}
-          {%     endfor   %}
-          {%   endif  %}
-          {% endfor   %}
-          {# show the spec without meta fields #}
-          {{ resource | ansible.builtin.combine({
-               'metadata': {
-                 'uid':               omit,
-                 'creationTimestamp': omit,
-                 'resourceVersion':   omit,
-                 'managedFields':     omit,
-                 'generation':        omit,
-                 'annotations': {
-                   'kubectl.kubernetes.io/last-applied-configuration': omit,
-                 },
-               },
-               'status': omit,
-             }, recursive=true) }}
-      ansible.builtin.set_fact:
-        res_specs: "{{ definition }}"
+          {%       endif %}
+          {%     endfor  %}
+          {%   endif %}
+          {% endfor  %}
+          {# omit_keys: filter_plugins/filters.py #}
+          {{ resource | omit_keys(del_keys) }}
 
     # - name: Show patched resource spec
     #   ansible.builtin.debug:

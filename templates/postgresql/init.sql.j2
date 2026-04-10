@@ -5,7 +5,6 @@ CREATE ROLE scraper WITH LOGIN PASSWORD '{{ pgpool_pass }}';
 -- https://www.postgresql.org/docs/current/sql-grant.html
 GRANT ALL PRIVILEGES ON DATABASE postgres TO scraper;
 
-{% for role in postgresql_users |
-     ansible.builtin.difference(['erhhung', 'scraper']) %}
+{% for role in postgresql_users | reject('in', ['erhhung','scraper']) %}
 CREATE ROLE {{ role }} WITH LOGIN CREATEDB PASSWORD '{{ pgpool_pass }}';
 {% endfor %}
