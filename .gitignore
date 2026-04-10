@@ -8,3 +8,4 @@
 **/*.log
 temp.yml
 NOTES
+cloc/

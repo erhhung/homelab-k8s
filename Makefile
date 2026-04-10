@@ -13,7 +13,7 @@ endif
 .SHELLFLAGS := bash -o pipefail -c
 .ONESHELL:   # require GNU Make 4+
 
- PHONY := all play debug check lint tags
+ PHONY := all play debug check lint cloc tags
  PHONY += vmstart vmshutdown vmsnapshot
  PHONY += diskfree unseal
 .PHONY: $(PHONY)
@@ -68,6 +68,11 @@ check:
 lint:
 	@ansible-lint $(addsuffix .yml,$(rest_goals)) 2> \
 		>(grep -v ANSIBLE_COLLECTIONS_SCAN_SYS_PATH >&2)
+
+# count lines of code in the project
+# `make cloc -- --csv | rich --csv -`
+cloc:
+	@./cloc.sh $(rest_goals)
 
 # print list of playbook tags
 tags:
