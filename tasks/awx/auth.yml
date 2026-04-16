@@ -16,11 +16,18 @@
     any_host: "{{  cli_hosts | random }}"
     same_host: "{{ cli_hosts | first  }}"
   block:
+    - name: Gather facts about user_dir
+      delegate_to: &delegate-host >-
+        {{ same_host if idempotent | default(false) else any_host }}
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/setup_module.html
+      ansible.builtin.setup:
+        gather_subset: user_dir
+
     - name: Read .bash_env.d/awx.env file
-      delegate_to: "{{ same_host if idempotent | default(false) else any_host }}"
+      delegate_to: *delegate-host
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/slurp_module.html
       ansible.builtin.slurp:
-        src: "{{ ansible_env.HOME }}/.bash_env.d/awx.env"
+        src: "{{ ansible_user_dir }}/.bash_env.d/awx.env"
       register: awx_envs
 
     - name: Set awx_controller_token fact

@@ -2,5 +2,19 @@
 # where "temp.yml" has already been created under
 # /var/lib/awx/tmp/ by the previous job template
 ---
+- name: Install dependencies not baked into EE
+  hosts: localhost
+  tasks:
+    - name: Install Python packages
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/pip_module.html
+      ansible.builtin.pip:
+        requirements: "{{ playbook_dir }}/requirements.txt"
+        break_system_packages: true
+        extra_args: >-
+          --disable-pip-version-check
+          --root-user-action=ignore
+          --no-cache-dir
+        state: present
+
 - name: Include playbook of selected playbooks
   ansible.builtin.import_playbook: /var/lib/awx/tmp/homelab-k8s/temp.yml

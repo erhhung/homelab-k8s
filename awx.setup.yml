@@ -16,6 +16,7 @@
     - name: Assert PLAYBOOKS defined
       ansible.builtin.assert:
         that:
+          # https://docs.ansible.com/projects/ansible/latest/collections/ansible/builtin/index.html#test-plugins
           # PLAYBOOKS is a list:
           - PLAYBOOKS is defined
           - PLAYBOOKS is sequence

@@ -40,7 +40,7 @@
         scm_branch: "{{ project.branch | default('main') }}"
         scm_clean: true
         scm_update_on_launch: true
-        scm_update_cache_timeout: 600
+        scm_update_cache_timeout: 3600
         scm_credential: "{{ awx_credentials[project.git_cred].name
           if project.git_cred is defined else omit }}"
         default_environment: "{{ minimal_ee }}"

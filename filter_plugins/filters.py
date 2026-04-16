@@ -58,7 +58,7 @@ class FilterModule(object):
                 raise ValueError(f"Invalid case: {case}")
 
     def omit_keys(self, obj: dict, keys: list) -> dict:
-        """
+        r"""
         return a copy of obj without the specified keys
         (remove nested keys by using dot.notation keys)
 

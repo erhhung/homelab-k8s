@@ -385,6 +385,36 @@
   tags: exprs
   hosts: localhost
   tasks:
+    - name: Is truthy expression
+      vars:
+        items:
+          - id: foo
+            name: FOO
+        expressions:
+          - desc: empty string
+            expr: ""
+          - desc: 1-item list
+            expr: ["foo"]
+          - desc: empty list
+            expr: []
+          - desc: 1-key dict
+            expr: { foo: bar }
+          - desc: empty dict
+            expr: {}
+          - desc: number one
+            expr: 1
+          - desc: number zero
+            expr: 0
+          - desc: 1 iterator
+            expr: "{{ items | selectattr('id','==','foo') }}"
+          - desc: 0 iterator
+            expr: "{{ items | selectattr('id','==','bar') }}"
+      ansible.builtin.debug:
+        msg: "{{ item.desc }}: {{ item.expr is truthy }}"
+      loop: "{{ expressions }}"
+      loop_control:
+        label: "{{ item.desc }}"
+
     - name: Select items not in list
       vars:
         items: ["ace", "boo", "foo", "bar", "cat", "baz", "qux"]
@@ -741,36 +771,6 @@
         clean2: "{{  dirty  | omit_keys(del_keys) }}"
       ansible.builtin.debug:
         var: clean2
-
-    - name: Is truthy expression
-      vars:
-        items:
-          - id: foo
-            name: FOO
-        expressions:
-          - desc: empty string
-            expr: ""
-          - desc: 1-item list
-            expr: ["foo"]
-          - desc: empty list
-            expr: []
-          - desc: 1-key dict
-            expr: { foo: bar }
-          - desc: empty dict
-            expr: {}
-          - desc: number one
-            expr: 1
-          - desc: number zero
-            expr: 0
-          - desc: 1 iterator
-            expr: "{{ items | selectattr('id','==','foo') }}"
-          - desc: 0 iterator
-            expr: "{{ items | selectattr('id','==','bar') }}"
-      ansible.builtin.debug:
-        msg: "{{ item.desc }}: {{ item.expr is truthy }}"
-      loop: "{{ expressions }}"
-      loop_control:
-        label: "{{ item.desc }}"
 
     - name: Debug quote filter
       vars:

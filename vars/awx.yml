@@ -195,7 +195,8 @@ awx_operator_chart_values:
       # are set as read-only settings in AWX. as a result, they cannot be changed
       # in the UI after deployment--they can only be changed here in the AWX spec:
       # https://docs.ansible.com/projects/awx-operator/en/latest/user-guide/advanced-configuration/extra-settings.html
-      # run `awx settings list` to show
+      # these settings are rendered at the bottom of the `settings` key in
+      # the `awx-awx-configmap` ConfigMap; run `awx settings list` to show
       extra_settings:
         - setting: TOWER_URL_BASE
           # requires dual quoting!
@@ -204,6 +205,10 @@ awx_operator_chart_values:
         # from default 30 minutes to 8 hours
         - setting: SESSION_COOKIE_AGE
           value: "28800"
+        # run project update jobs with higher
+        # verbosity (`ansible-playbook -vvv`)
+        - setting: PROJECT_UPDATE_VVV
+          value: true
 
   # https://github.com/ansible-community/awx-operator-helm#customsecrets
   customSecrets:
