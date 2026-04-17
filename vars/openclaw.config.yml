@@ -32,6 +32,7 @@ openclaw_exec_allowlist:
     - head
     - tail
     - sort
+    - date
     - uname
     - jq
     - yq
@@ -393,7 +394,10 @@ openclaw_config:
            'slack',
            'browser',
            'diagnostics-otel',
+           'openai',
+           'litellm',
            'perplexity',
+           'memory-core',
          ] }}
 
     # declare plugins ALREADY installed by init container
@@ -428,6 +432,10 @@ openclaw_config:
       slack:
         enabled: true
       browser:
+        enabled: true
+      openai:
+        enabled: true
+      litellm:
         enabled: true
       diagnostics-otel:
         enabled: true

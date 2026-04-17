@@ -209,8 +209,9 @@
   hosts: localhost
   vars:
     host_is_mac: "{{ ansible_system == 'Darwin' }}"
-    helper_file: ai.openclaw.macos.sh
-    plist_file: ai.openclaw.macos.plist
+    service_name: ai.openclaw.macos
+    helper_file: "{{ service_name }}.sh"
+    plist_file: "{{ service_name }}.plist"
     home_dir: "{{ ansible_env['HOME'] }}"
     files_dir: "{{ playbook_dir }}/files/openclaw/mac"
     plist_dir: "{{ home_dir }}/Library/LaunchAgents"
@@ -260,9 +261,7 @@
         src: "{{ files_dir }}/{{ helper_file }}"
         dest: "{{ home_dir }}/.openclaw/"
         mode: "0755"
-      notify: &restart-mac-app
-        - Terminate app+node if running
-        - Launch Mac companion app+node
+      notify: Relaunch Mac companion app+node
 
     - name: Delete "ai.openclaw.mac.plist"
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/file_module.html
@@ -290,26 +289,30 @@
       register: create_plist
       changed_when: create_plist.rc == 0
       failed_when: create_plist.rc not in [0,9]
-      notify: *restart-mac-app
+      notify: Relaunch Mac companion app+node
   handlers:
     # useful launchd docs:
     # https://launchd.info/
     # https://keith.github.io/xcode-man-pages/launchctl.1.html
     # https://apple.stackexchange.com/questions/477771/why-does-launchd-bootstap-fail-with-bootstrap-failed-5-input-output-error
 
-    - name: Terminate app+node if running
-      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/command_module.html
-      ansible.builtin.command: launchctl bootout gui/{{ ansible_user_uid }} {{ plist_path }}
-      register: bootout
-      changed_when: bootout.rc == 0
-      # bootout command outputs "Boot-out failed: 5:
-      # Input/output error" if service isn't running
-      failed_when: bootout.rc not in [0,5]
-
     # not sure why community.general.launchd keeps
     # failing with "Unable to find the plist file"
-    - name: Launch Mac companion app+node
-      ansible.builtin.command: launchctl bootstrap gui/{{ ansible_user_uid }} {{ plist_path }}
+    - name: Relaunch Mac companion app+node
+      vars:
+        domain_target: gui/{{ ansible_user_uid }}
+        service_target: "{{ domain_target }}/{{ service_name }}"
+      ansible.builtin.shell: |
+        # try restarting bootstrapped service first
+        launchctl kickstart -k {{ service_target }}
+        rc=$?
+        if [ $rc -eq 113 ]; then
+          # could not find service "{{ service_name     }}"
+          # in domain for user gui: {{ ansible_user_uid }}
+          launchctl bootstrap {{ domain_target }} {{ plist_path }}
+          rc=$?
+        fi
+        exit $rc
       changed_when: true
 
 - name: Configure OpenClaw installation

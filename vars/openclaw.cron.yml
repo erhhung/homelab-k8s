@@ -14,8 +14,9 @@ openclaw_cron_jobs:
       Check Gmail for notifications from GitHub in the past 24 hours.
       Create a report showing one-line summaries for each email, and
       include links to the corresponding issues or PRs if available.
-      All gog CLI commands must be executed via the exec tool with
-      host="gateway".
+      All gog CLI commands must be executed using the exec tool with
+      host="gateway", and the entire command must begin with `gog`--
+      don't prefix the command with environment variable assignments.
     # if announce=true Ansible task will additionally append
     # `--channel` and `--to` to send the report via Slack DM
     announce: true
