@@ -1,0 +1,46 @@
+# https://www.vcluster.com/
+# https://www.vcluster.com/docs/vcluster/introduction/architecture
+---
+- name: Create virtual clusters
+  hosts: "{{ rke_control_plane_host }}"
+  vars_files:
+    - vars/kubernetes.yml
+    - vars/storage.yml
+    - vars/vclusters.yml
+  pre_tasks:
+    - name: List existing vClusters
+      vars:
+        keep: "{{ vclusters | map(attribute='name') | to_json(separators=[',',':']) }}"
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/shell_module.html
+      ansible.builtin.shell: |
+        # run Bash and source /etc/profile.d
+        # scripts so that kubectl is in PATH
+        exec /bin/bash -l <<'EOT'
+        set -o pipefail
+
+        kubectl get persistentvolumes \
+          -l app=vcluster,role=data -o json | \
+          jq --argjson keep '{{ keep }}' \
+            '[.items[] | .metadata.labels |
+              select(.release | IN($keep[]) | not) |
+              {name:.release, node}] | sort_by(.name)'
+        EOT
+      register: rm_vclusters
+      changed_when: false
+  tasks:
+    - name: Create managed vClusters
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/vcluster/create.yml"
+      loop: "{{ vclusters }}"
+      loop_control:
+        loop_var: vcluster
+        label: "{{ vcluster.name }}|{{ vcluster.node }}"
+
+    - name: Delete unknown vClusters
+      vars:
+        rm_list: "{{ rm_vclusters.stdout | from_json }}"
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/vcluster/delete.yml"
+      loop: "{{ rm_list }}"
+      loop_control:
+        loop_var: vcluster
+        label: "{{ vcluster.name }}|{{ vcluster.node }}"

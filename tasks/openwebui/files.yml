@@ -35,7 +35,7 @@
     - name: Recurse to get more files
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
       ansible.builtin.include_tasks:
-        file: tasks/openwebui/files.yml
+        file: "{{ tasks_dir }}/openwebui/files.yml"
         # use apply.vars to set cur_page instead
         # of defining vars at task level because
         # that causes maximum recursion exceeded

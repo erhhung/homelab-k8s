@@ -1,0 +1,511 @@
+# VS Code thinks "cluster.yml" is RKE cluster configuration,
+# so explicitly set schema from https://www.schemastore.org:
+# yaml-language-server: $schema=https://raw.githubusercontent.com/ansible/ansible-lint/main/src/ansiblelint/schemas/ansible.json
+---
+# https://docs.rke2.io/install/quickstart
+- name: Install RKE2 using role
+  tags: install
+  hosts: rke_cluster
+  become: true
+  vars_files:
+    - vars/basics.yml
+    - vars/kubernetes.yml
+    - vars/lablabs.rke2.yml
+  # https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_reuse_roles.html#using-roles
+  pre_tasks:
+    - name: Include vars/lablabs.rke2ha.yml
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_vars_module.html
+      ansible.builtin.include_vars: "{{ vars_dir }}/lablabs.rke2ha.yml"
+      when: rke_ha_mode
+
+    - name: Ensure odd control plane nodes
+      vars:
+        count: "{{ groups[rke_control_plane_group] | length }}"
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/assert_module.html
+      ansible.builtin.assert:
+        that:
+          - count | int is odd
+        fail_msg: Number of control plane nodes must be odd!
+        success_msg: Deploying {{ count }} control plane nodes.
+  tasks:
+    # https://github.com/lablabs/ansible-role-rke2
+    - name: Include lablabs.rke2 role
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_role_module.html
+      ansible.builtin.include_role:
+        name: lablabs.rke2
+
+      # NOTE: once lots of workloads are running in the cluster, and config change
+      # triggers the task "lablabs.rke2 : Restart RKE2 service on <node>", Ansible
+      # may fail with error "Unable to restart service rke2-server.service" due to
+      # timeout. Simply restart the service (and likely etcd pod) manually on each
+      # node (systemctl restart rke2-server), wait for kube-system pods to settle,
+      # and then re-run this playbook.
+
+- name: Configure kubectl usage
+  tags:
+    - kubectl
+    - kubeconfig
+  hosts: "{{ rke_control_plane_group }}"
+  vars_files: &vars_files
+    - vars/kubernetes.yml
+  tasks:
+    - name: Make RKE kubeconfig readable
+      vars:
+        file_desc: RKE kubeconfig
+        file_path: "{{ rke_kubeconfig }}"
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/fs/readable.yml"
+
+    - name: Fetch kubeconfig file content
+      run_once: true
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/command_module.html
+      ansible.builtin.command: cat {{ rke_kubeconfig }}
+      when: file_check.stat.exists
+      register: cat_kubeconfig
+      changed_when: false
+
+    - name: Merge kubeconfig into local
+      run_once: true
+      vars:
+        kubeconfig: "{{ rke_kubeconfig }}"
+        context: "{{ rke_cluster_name }}"
+        server: https://{{ rke_fqdns | first }}:6443
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/k8s/kubeconfig.yml"
+
+- name: Configure kubectl usage
+  tags:
+    - kubectl
+    - kubeconfig
+  hosts: rke_cluster
+  become: true
+  vars_files: *vars_files
+  vars:
+    kubeconfig_content: "{{ hostvars[rke_control_plane_host]['cat_kubeconfig'].stdout }}"
+  tasks:
+    # kubectl should already be executable,
+    # but not parent dirs /var/lib/rancher
+    - name: Make kubectl binary executable
+      vars:
+        file_desc: RKE kubectl
+        file_path: "{{ rke_bin_dir }}/kubectl"
+        file_mode: "0755"
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/fs/readable.yml"
+
+    - name: Write kubeconfig on worker node
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/copy_module.html
+      ansible.builtin.copy:
+        dest: "{{ rke_kubeconfig }}"
+        content: "{{ kubeconfig_content }}"
+        mode: "0644"
+      when:
+        - inventory_hostname in groups[rke_workers_group]
+        - kubeconfig_content != ''
+
+    - name: Create /etc/profile.d/kubernetes.sh
+      ansible.builtin.copy:
+        dest: /etc/profile.d/kubernetes.sh
+        content: |
+          # kubectl and crictl are in the same directory
+          export PATH="$PATH:{{ rke_bin_dir }}"
+          export KUBECONFIG={{ rke_kubeconfig }}
+          export CRI_CONFIG_FILE={{ rke_crictl_config }}
+          export CONTAINER_RUNTIME_ENDPOINT={{ containerd_socket }}
+        mode: "0644"
+
+    - name: Allow admin user to use crictl
+      vars:
+        file_path: "{{ item.path }}"
+        file_mode: "{{ item.mode }}"
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/fs/readable.yml"
+      loop:
+        - path: "{{ rke_crictl_config }}"
+        - path: "{{ containerd_socket }}"
+          mode: "0666"
+
+    - name: Install calicoctl CLI utility
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/shell_module.html
+      ansible.builtin.shell: |
+        # run Bash and source /etc/profile.d
+        # scripts so that kubectl is in PATH
+        exec /bin/bash -l <<'EOT'
+        set -o pipefail
+
+        # get exact version of Calico deployed by RKE2 as part
+        # of the Canal CNI in order to install matching client
+        VER=$(kubectl get ds rke2-canal -n kube-system -o json | \
+          jq -r '.spec.template.spec.containers[] |
+            select(.name == "calico-node").image' | \
+            sed -E 's/^.+:(v[0-9.]+).*$/\1/')
+
+        # check if matching version already installed
+        BIN=$(command -v calicoctl) &> /dev/null && {
+          ver=$(calicoctl version | awk '/Client Version/ {print $3}')
+          [ "$ver" == "$VER" ] && exit 9 # no change
+          BIN=$(dirname "$BIN")
+        } || BIN=/usr/local/bin
+
+        ARCH=$(uname -m | sed -e 's/aarch64/arm64/' \
+                              -e  's/x86_64/amd64/')
+        REL="https://github.com/projectcalico/calico/releases/download"
+        curl -fsSLo "$BIN/calicoctl" "$REL/$VER/calicoctl-linux-$ARCH"
+        chmod +x    "$BIN/calicoctl"
+        EOT
+      register: install_cli
+      changed_when: install_cli.rc == 0
+      failed_when: install_cli.rc not in [0,9]
+
+- name: Configure RKE2 cluster
+  tags: configure
+  hosts: rke_cluster
+  vars_files:
+    - vars/basics.yml
+    - vars/kubernetes.yml
+    - vars/lablabs.rke2.yml
+    - vars/metallb.yml
+    - vars/rancher.yml
+  vars:
+    rke2_svc: "rke2-{{ 'server' if inventory_hostname
+      in groups[rke_control_plane_group] else 'agent' }}"
+  tasks:
+    # https://github.com/containerd/cri/tree/master/docs/config.md
+    # search "base_runtime_spec" setting with "cri-base.json" (note that
+    # "io.containerd.grpc.v1.cri" is now "io.containerd.cri.v1.runtime")
+    - name: Set containerd RLIMIT_NOFILE
+      become: true
+      vars:
+        containerd_config_dir: "{{ containerd_config | dirname }}"
+      block:
+        - name: Write containerd/config.toml.tmpl
+          # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/template_module.html
+          ansible.builtin.template:
+            src: "{{ templates_dir }}/rke2/containerd/config.toml.tmpl.j2"
+            # https://docs.rke2.io/advanced#configuring-containerd
+            dest: "{{ containerd_config_dir }}/config-v3.toml.tmpl"
+            mode: "0644"
+          register: containerd_toml
+
+        # generate base OCI spec JSON by installing
+        # containerd package; running: ctr oci spec
+        - name: Write containerd/cri-base.json
+          ansible.builtin.template:
+            src: "{{ templates_dir }}/rke2/containerd/cri-base.json.j2"
+            dest: "{{ containerd_config_dir }}/cri-base.json"
+            mode: "0644"
+          register: cri_base_json
+
+    # docker.io/bitnami/* images are no longer maintained
+    # and have been migrated to docker.io/bitnamilegacy/*
+    - name: Configure containerd registries
+      become: true
+      ansible.builtin.template:
+        src: "{{ templates_dir }}/rke2/containerd/registries.yaml.j2"
+        dest: /etc/rancher/rke2/registries.yaml
+        mode: "0644"
+      register: registries_yaml
+
+    - name: Create supplemental resources
+      when: inventory_hostname == rke_control_plane_host
+      become: true
+      vars:
+        # required kubernetes>=24.2 package only in user virtualenv
+        ansible_python_interpreter: "{{ venv_python_interpreter }}"
+      block:
+        # not sure exactly why kube-proxy doesn't already have
+        # permissions to watch Service, EndpointSlice and Node
+        - name: Create kube-proxy ClusterRole
+          ansible.builtin.copy:
+            # https://docs.rke2.io/advanced#auto-deploying-manifests
+            dest: "{{ rke_manifests_dir }}/kube-proxy-clusterrole.yaml"
+            content: |
+              apiVersion: rbac.authorization.k8s.io/v1
+              kind: ClusterRole
+              metadata:
+                name: system:kube-proxy
+              rules:
+                - apiGroups: [""]
+                  resources: ["services", "endpoints", "nodes"]
+                  verbs: ["get", "list", "watch"]
+                - apiGroups: ["discovery.k8s.io"]
+                  resources: ["endpointslices"]
+                  verbs: ["get", "list", "watch"]
+            mode: "0644"
+          register: kube_proxy_cr
+
+        - name: Create Nginx default TLS secret
+          vars:
+            kubeconfig: "{{ rke_kubeconfig }}"
+            cert_desc: Nginx ingress
+            cert_file: ingress
+            secret_name: "{{ nginx_tls_secret }}"
+            secret_ns: kube-system
+            create_ns: false
+          ansible.builtin.include_tasks: "{{ tasks_dir }}/k8s/secrets/tls.pki.yml"
+
+        # also see templates/rke2/canal.yaml.j2
+        - name: Patch Canal FelixConfiguration
+          become: false
+          # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_module.html
+          kubernetes.core.k8s:
+            kubeconfig: "{{ rke_kubeconfig }}"
+            api_version: crd.projectcalico.org/v1
+            kind: FelixConfiguration
+            name: default
+            definition:
+              spec:
+                # suppress noisy warnings in container calico-node logs:
+                # Failed to auto-detect host MTU - no interfaces matched
+                # the MTU interface pattern. To use auto-MTU, set
+                # mtuIfacePattern to match your host's interfaces
+                # https://docs.tigera.io/calico/latest/reference/resources/felixconfig#mtuIfacePattern
+                mtuIfacePattern: "{{ host_pif | ansible.builtin.regex_replace('[0-9]$','[0-9]') }}"
+          notify: Restart rke2-canal DaemonSet
+
+        # https://docs.rke2.io/advanced#auto-deploying-manifests
+        - name: Write HelmChartConfig manifest
+          ansible.builtin.template:
+            src: "{{ templates_dir }}/{{ item.src }}"
+            dest: "{{ rke_manifests_dir }}/{{ item.dst }}"
+            mode: "0664"
+          loop:
+            - src: rke2/canal.yaml.j2
+              dst: rke2-canal-config.yaml
+            - src: rke2/coredns.yaml.j2
+              dst: rke2-coredns-config.yaml
+            - src: rke2/nginx.yaml.j2
+              dst: rke2-ingress-nginx-config.yaml
+            - src: rke2/nginxpt.yaml.j2
+              dst: rke2-ingress-nginx-passthrough-config.yaml
+          loop_control:
+            label: "{{ item.dst }}"
+          register: chart_config
+
+        - name: Duplicate HelmChart manifest
+          vars:
+            patches: "{{ item.yq_patches | default([]) }}"
+          ansible.builtin.shell: |
+            src="{{ item.src }}"
+            dst="{{ item.dst }}"
+
+            cd {{ rke_manifests_dir }}
+            NAME=${dst%.*} yq '.metadata.name = env(NAME)' $src > /tmp/$dst
+
+            {% if patches is truthy  %}
+            {%   for expr in patches %}
+            patch_{{ loop.index }}="$(cat <<'EOT'
+            {{ expr }}
+            EOT
+            )"
+            {%   endfor %}
+            for i in $(seq {{ patches | length }}); do
+              echo "Applying patch $i/{{ patches | length }}..."
+              patch_var="patch_$i"
+              yq -i "${!patch_var}" /tmp/$dst
+            done
+
+            {% endif %}
+            trap 'rm -f /tmp/$dst' EXIT
+            if [ -f $dst ] && diff -q $dst /tmp/$dst &> /dev/null; then
+              exit 9 # no change
+            fi
+            cp -f /tmp/$dst $dst
+          args:
+            executable: /bin/bash
+          loop:
+            - src: rke2-ingress-nginx.yaml
+              dst: rke2-ingress-nginx-passthrough.yaml
+              yq_patches:
+                # RKE patched ingress-nginx chart to include
+                # --watch-ingress-without-class=true if this
+                # setting is "ingress-nginx" (default value)
+                - .spec.set."global.systemDefaultIngressClass" = "{{ rke_ingress_class }}"
+                - .metadata.annotations."rke2.cattle.io/inject-cluster-config" = "false"
+          loop_control:
+            label: "{{ item.src }}"
+          register: copy_chart
+          changed_when: copy_chart.rc == 0
+          failed_when: copy_chart.rc not in [0,9]
+
+    - name: Restart {{ rke2_svc }} service
+      # noqa no-handler
+      when: >-
+        containerd_toml is changed  or
+        cri_base_json   is changed  or
+        registries_yaml is changed  or
+        kube_proxy_cr   is defined and
+        kube_proxy_cr   is changed  or
+        chart_config    is defined and
+        chart_config.results | map(attribute='changed') is any or
+        copy_chart      is defined and
+        copy_chart.results   | map(attribute='changed') is any
+      become: true
+      block:
+        - name: Stop {{ rke2_svc }} service
+          # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/systemd_service_module.html
+          ansible.builtin.systemd_service:
+            name: "{{ rke2_svc }}"
+            state: stopped
+
+        - name: Wait until processes exit
+          # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/pause_module.html
+          ansible.builtin.pause:
+            prompt: Please wait...
+            seconds: 60
+
+        - name: Start {{ rke2_svc }} service
+          ansible.builtin.systemd_service:
+            name: "{{ rke2_svc }}"
+            state: started
+          timeout: 300
+          register: restart_rke
+          until:
+            - restart_rke.state is  defined
+            - restart_rke.state == 'started'
+          retries: 3
+          delay: 10
+
+        - name: Check {{ rke2_svc }} status
+          # noqa command-instead-of-module
+          ansible.builtin.command: systemctl is-active {{ rke2_svc }}
+          changed_when: false
+          register: is_active
+          until: is_active.stdout | trim == 'active'
+          retries: 30
+          delay: 10
+
+    # whenever the rke2-server service is restarted,
+    # kubeconfig is rewritten with 0600 permissions
+    - name: Make RKE kubeconfig readable
+      vars:
+        file_desc: RKE kubeconfig
+        file_path: "{{ rke_kubeconfig }}"
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/fs/readable.yml"
+      when:
+        - restart_rke is defined
+        - restart_rke is changed
+
+    - name: Register cluster with Rancher
+      when: inventory_hostname == rke_control_plane_host
+      vars:
+        ansible_python_interpreter: "{{ venv_python_interpreter }}"
+        kubeconfig: "{{ rke_kubeconfig }}"
+      block:
+        - name: Wait for CoreDNS to be ready
+          vars:
+            res_kind: Deployment
+            res_name: rke2-coredns-rke2-coredns
+            res_ns: kube-system
+          ansible.builtin.include_tasks: "{{ tasks_dir }}/k8s/waitready.yml"
+
+        - name: Apply additional node labels
+          vars:
+            labels_by_node: |
+              {% set nodes = {} %}
+              {% for label in additional_node_labels %}
+              {%   for node in label.nodes %}
+              {%     set _ = nodes.setdefault(node, {}).update(
+                               {label.label: label.value}) %}
+              {%   endfor %}
+              {% endfor %}
+              {{ nodes  }}
+          kubernetes.core.k8s:
+            kubeconfig: "{{ kubeconfig }}"
+            api_version: v1
+            kind: Node
+            name: "{{ item }}"
+            definition:
+              metadata:
+                labels: "{{ labels_by_node[item] }}"
+            state: patched
+          loop: "{{ groups['rke_cluster'] }}"
+          when: item in labels_by_node
+
+        - name: Apply registration manifest
+          vars:
+            # URL won't be available unless rancher.yml playbook is run together
+            manifest_url: "{{ hostvars['rancher']['rke_reg_url'] | default('') }}"
+          kubernetes.core.k8s:
+            kubeconfig: "{{ kubeconfig }}"
+            src: "{{ manifest_url }}"
+            state: present
+            apply: true
+            wait: true
+            wait_timeout: 600 # requires wait=true
+          timeout: 1800
+          when: manifest_url is truthy
+
+        - name: Wait for agent to be ready
+          vars:
+            res_kind: Deployment
+            res_name: cattle-cluster-agent
+            res_ns: "{{ rancher_namespace }}"
+          ansible.builtin.include_tasks: "{{ tasks_dir }}/k8s/waitready.yml"
+  handlers:
+    - name: Restart rke2-canal DaemonSet
+      vars:
+        kubeconfig: "{{ rke_kubeconfig }}"
+        res_kind: DaemonSet
+        res_name: rke2-canal
+        res_ns: kube-system
+        max_wait: 300
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/k8s/restart.yml"
+
+    # restart a static pod by deleting it
+    # - name: Restart kube-proxy static pod
+    #   vars:
+    #     ansible_python_interpreter: "{{ venv_python_interpreter }}"
+    #   kubernetes.core.k8s:
+    #     kubeconfig: "{{ rke_kubeconfig }}"
+    #     api_version: v1
+    #     kind: Pod
+    #     name: kube-proxy-{{ inventory_hostname }}
+    #     namespace: kube-system
+    #     state: absent
+
+# https://ranchermanager.docs.rancher.com/how-to-guides/new-user-guides/authentication-permissions-and-global-configuration/custom-branding#custom-navigation-links
+- name: Add Rancher UI NavLinks
+  tags: links
+  hosts: "{{ rke_control_plane_host }}"
+  vars_files:
+    - vars/kubernetes.yml
+    - vars/rancher.rke.yml
+  vars:
+    ansible_python_interpreter: "{{ venv_python_interpreter }}"
+  tasks:
+    - name: Add Rancher UI NavLink
+      vars:
+        links: |
+          {% set links = [] %}
+          {% for group in rancher_rke_navlinks %}
+          {%   if group.group is defined %}
+          {%     set _ = links.extend(group.links |
+                   map('combine', {'group': group.group}
+                 )) %}
+          {%   else %}
+          {%     set _ = links.extend(group.links) %}
+          {%   endif %}
+          {% endfor  %}
+          {{ links   }}
+        # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/file_lookup.html
+        image_data: "{{ lookup('ansible.builtin.file', item.icon) if item.icon is defined else none }}"
+        image_url: "{{ 'data:image/png;base64,' ~ image_data | b64encode if image_data else none }}"
+      kubernetes.core.k8s:
+        kubeconfig: "{{ rke_kubeconfig }}"
+        definition:
+          apiVersion: ui.cattle.io/v1
+          # NavLink is cluster-scoped
+          kind: NavLink
+          metadata:
+            name: "{{ item.name }}"
+          spec:
+            group: "{{     item.group | default(omit) }}"
+            sideLabel: "{{ item.label | default(omit) }}"
+            # https://jinja.palletsprojects.com/en/stable/templates#jinja-filters.capitalize
+            label: "{{ item.title | default(item.label | default(item.name | capitalize)) }}"
+            iconSrc: "{{ image_url or omit }}"
+            toURL: "{{ item.url }}"
+            target: _blank
+        state: present
+        apply: true
+      loop: "{{ links }}"
+      loop_control:
+        label: "{{ item.name }}"

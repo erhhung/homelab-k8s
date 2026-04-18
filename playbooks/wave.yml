@@ -1,0 +1,27 @@
+# https://github.com/wave-k8s/wave
+# Reloader is an alternative product:
+# https://github.com/stakater/Reloader
+---
+- name: Install Wave on RKE cluster
+  tags: install
+  hosts: "{{ rke_control_plane_host }}"
+  vars_files:
+    - vars/kubernetes.yml
+    - vars/wave.yml
+  vars:
+    # required kubernetes>=24.2 package only in user virtualenv
+    ansible_python_interpreter: "{{ venv_python_interpreter }}"
+    kubeconfig: "{{ rke_kubeconfig }}"
+  tasks:
+    # https://github.com/wave-k8s/wave#deploying-with-helm
+    - name: Install Wave Helm chart
+      vars:
+        repo_name: wave
+        repo_url: https://wave-k8s.github.io/wave
+        chart_ref: wave
+        chart_ver: "{{ wave_chart_version }}"
+        release: "{{ wave_release_name }}"
+        release_ns: "{{ wave_namespace }}"
+        values: "{{ wave_chart_values }}"
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/helm/helmfile.yml"

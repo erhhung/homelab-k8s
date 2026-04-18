@@ -9,7 +9,7 @@
     res_name: "{{ opensearch_master_service }}"
     res_ns: "{{ opensearch_namespace }}"
   # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
-  ansible.builtin.include_tasks: tasks/k8s/waitready.yml
+  ansible.builtin.include_tasks: "{{ tasks_dir }}/k8s/waitready.yml"
 
 # https://docs.opensearch.org/latest/security/configuration/security-admin
 # it is sufficient to run securityadmin.sh on a single pod

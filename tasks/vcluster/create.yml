@@ -80,7 +80,7 @@
         - name: Install vCluster Helm chart
           vars:
             # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/template_lookup.html
-            values_: "{{ lookup('ansible.builtin.template', template_dir ~ '/vcluster.yaml.j2') }}"
+            values_: "{{ lookup('ansible.builtin.template', templates_dir ~ '/vcluster.yaml.j2') }}"
 
             # === Inputs ===
             tmpdir_name: vcluster-{{ vcluster.name }}
@@ -125,7 +125,7 @@
                     echo "$yaml"
                   fi
           # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
-          ansible.builtin.include_tasks: tasks/helm/helmfile.yml
+          ansible.builtin.include_tasks: "{{ tasks_dir }}/helm/helmfile.yml"
 
         - name: Fetch vCluster kubeconfig
           # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_info_module.html
@@ -143,10 +143,10 @@
             kubeconfig: "{{ vc_secret.resources[0].data.config | b64decode }}"
             context: x{{ vcluster.name }}
             server: https://{{ vcluster_fqdn }}
-          ansible.builtin.include_tasks: tasks/k8s/kubeconfig.yml
+          ansible.builtin.include_tasks: "{{ tasks_dir }}/k8s/kubeconfig.yml"
       rescue:
         - name: Delete vCluster resources
-          ansible.builtin.include_tasks: tasks/vcluster/delete.yml
+          ansible.builtin.include_tasks: "{{ tasks_dir }}/vcluster/delete.yml"
 
         - name: Terminate play on failure
           # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/fail_module.html

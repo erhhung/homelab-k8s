@@ -51,7 +51,7 @@
 ---
 # always get most current list of APIs
 - name: Gather facts about the cluster
-  ansible.builtin.include_tasks: tasks/k8s/clusterfacts.yml
+  ansible.builtin.include_tasks: "{{ tasks_dir }}/k8s/clusterfacts.yml"
 
 - name: Install Helm chart using Helmfile
   become: false

@@ -1,0 +1,317 @@
+# https://prometheus-operator.dev/
+# https://github.com/prometheus-operator/kube-prometheus
+# https://runbooks.prometheus-operator.dev/runbooks
+#
+# view prometheus.yaml in ConfigMap:
+# kubectl get secret -n monitoring prometheus-prometheus-stack-prometheus \
+#   -o jsonpath='{.data.prometheus\.yaml\.gz}' | base64 -d | gunzip | yq
+---
+- name: Install Prometheus monitoring stack
+  tags: install
+  hosts: "{{ rke_control_plane_host }}"
+  vars_files:
+    - vars/kubernetes.yml
+    - vars/storage.yml
+    - vars/minio.yml
+    - vars/valkey.yml
+    - vars/thanos.yml
+    - vars/tempo.yml
+    - vars/grafana.yml
+    - vars/opensearch.yml
+    - vars/monitoring.yml
+  vars:
+    # required kubernetes>=24.2 package only in user virtualenv
+    ansible_python_interpreter: "{{ venv_python_interpreter }}"
+    kubeconfig: "{{ rke_kubeconfig }}"
+    secret_ns: "{{ monitoring_namespace }}"
+    create_ns: false
+  pre_tasks:
+    # CA certs to be stored inline with Grafana data
+    # source configs for Prometheus and Alertmanager
+    - name: Get CA certificates from PKI
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/pki/cacerts.yml"
+      when: ca_certificates is undefined
+
+    - name: Hash monitoring user passwords
+      vars:
+        passwords: "{{ monitoring_passwords }}"
+        fact_name: monitoring_passwords_hashed
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/hashpwds.yml"
+
+    # add CORS headers to Grafana responses
+    - name: Set grafana_ingress_snippet fact
+      vars:
+        # exclude WebSocket API endpoint!
+        location_regex: ^/api(?!/live/ws)
+        backend_url: "{{ grafana_service_url }}"
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/set_fact_module.html
+      ansible.builtin.set_fact:
+        # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/template_lookup.html
+        grafana_ingress_snippet: |-
+          {{ lookup('ansible.builtin.template', templates_dir ~ '/cors.nginx.j2') }}
+
+    - name: Load custom scrape configurations
+      vars:
+        # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/fileglob_lookup.html
+        # https://docs.ansible.com/ansible/latest/plugins/lookup.html#forcing-lookups-to-return-lists-query-and-wantlist-true
+        configs: "{{ query('ansible.builtin.fileglob',
+          tasks_dir ~ '/monitoring/configs/*.yml') }}"
+      # each tasks file should set fact referenced by
+      # additional_scrape_configs in the chart values
+      ansible.builtin.include_tasks: "{{ item }}"
+      loop: "{{ configs }}"
+      loop_control:
+        # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/basename_filter.html
+        label: "{{ item | ansible.builtin.basename }}"
+  tasks:
+    # client certs for etcd ServiceMonitor
+    # (turns out not needed as the metrics
+    # endpoint is only available via HTTP)
+    - name: Create RKE etcd client secret
+      vars:
+        secret_name: "{{ monitoring_secrets['etcd'] }}"
+        create_ns: true
+        cert_desc: RKE etcd client
+        cert_file: etcd/client
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/k8s/secrets/tls.rke.yml"
+
+    - name: Create monitoring ingress secret
+      vars:
+        secret_name: "{{ monitoring_secrets[item.name] }}"
+        cert_name: "{{ item.cert }}-ingress"
+        sans_:
+          - "*.{{ monitoring_namespace }}.svc.{{ cluster_domain }}"
+          - "*.{{ monitoring_namespace }}.svc"
+        sans: "{{ item.sans }}"
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/k8s/secrets/tls.step.yml"
+      loop:
+        - name: prometheus
+          cert: monitoring-prometheus
+          sans:
+            - prometheus
+            - "{{ monitoring_fqdns['prometheus'] }}"
+            - "{{ sans_ }}"
+            - 127.0.0.1
+        - name: thanos-tls
+          cert: thanos-sidecar
+          sans:
+            - thanos
+            - "{{ monitoring_fqdns['thanos'] | first }}"
+            - "{{ sans_ }}"
+        - name: alertmanager
+          cert: monitoring-alertmanager
+          sans:
+            - alertmanager
+            - "{{ monitoring_fqdns['alertmanager'] }}"
+            - "{{ sans_ }}"
+            - 127.0.0.1
+        - name: grafana-tls
+          cert: monitoring-grafana
+          sans:
+            - "{{ monitoring_fqdns['grafana'] }}"
+            - "{{ sans_ }}"
+            - localhost
+      loop_control:
+        label: "{{ item.name }}"
+
+    - name: Create monitoring scraper secret
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/monitoring/scraper.yml"
+
+    - name: Create Thanos HTTP config secret
+      vars:
+        secret_name: "{{ monitoring_secrets['thanos-config'] }}"
+        secret_data: "{{ thanos_config_secret_data }}"
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/k8s/secrets/generic.yml"
+
+    # secret containing oauth2-proxy config files
+    - name: Create monitoring oauth-proxy secret
+      vars:
+        secret_name: "{{ monitoring_secrets['oauth-proxy'] }}"
+        secret_data: "{{ monitoring_oauth2_proxy_config }}"
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/k8s/secrets/generic.yml"
+
+    - name: Create monitoring credentials secret
+      vars:
+        thanos: "{{ thanos_metrics_auth }}"
+        passwords: "{{ monitoring_passwords }}"
+        grafana: "{{ prometheus_stack_chart_values.grafana }}"
+
+        # === Inputs ===
+        secret_name: "{{ monitoring_secrets['credentials'] }}"
+        secret_data: |
+          {{ {
+             thanos.username.key:                 'scraper',
+             thanos.password.key:       passwords['scraper'],
+             grafana.admin.userKey:     grafana_admin_user,
+             grafana.admin.passwordKey: grafana_admin_pass,
+          } }}
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/k8s/secrets/generic.yml"
+
+    - name: Create Grafana env variables secret
+      vars:
+        user_pass: grafana:{{ monitoring_passwords['grafana'] }}
+
+        # === Inputs ===
+        secret_name: "{{ monitoring_secrets['grafana-env'] }}"
+        secret_data:
+          TLS_CA_CERT: "{{ ca_certificates | join('\n') }}"
+          DS_BASIC_AUTH: Basic {{ user_pass | b64encode }}
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/k8s/secrets/generic.yml"
+
+    # install Prometheus CRDs separately using chart
+    # included by same kube-prometheus-stack version:
+    # https://github.com/prometheus-community/helm-charts/tree/main/charts/kube-prometheus-stack/charts/crds
+    - name: Install Prometheus Operator CRDs
+      vars:
+        # https://github.com/aslafy-z/helm-git#usage
+        repo_url: git+https://github.com/prometheus-community/helm-charts@charts/kube-prometheus-stack/charts/crds?ref=kube-prometheus-stack-{{ prometheus_stack_chart_version }}
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/shell_module.html
+      ansible.builtin.shell: |
+        # run Bash and source /etc/profile.d
+        # scripts so that kubectl is in PATH
+        exec /bin/bash -l <<'EOT'
+        set -o pipefail
+
+        crds_file="/tmp/prometheus-crds.yaml"
+        trap "rm -f $crds_file" EXIT
+
+        helm template crds --repo="{{ repo_url }}" \
+            --include-crds > $crds_file || exit
+
+        # do server-side diff & apply so Helm doesn`t
+        # store state in annotations and cause error:
+        # Too long: may not be more than 262144 bytes
+        kubectl diff  --server-side -f $crds_file && exit 9 # no change
+        kubectl apply --server-side -f $crds_file
+        EOT
+      register: install_crds
+      changed_when: install_crds.rc == 0
+      failed_when: install_crds.rc not in [0,9]
+
+    - name: Install Prometheus stack Helm chart
+      vars:
+        repo_name: prometheus
+        repo_url: https://prometheus-community.github.io/helm-charts
+        chart_ref: kube-prometheus-stack
+        chart_ver: "{{ prometheus_stack_chart_version }}"
+        release: "{{ monitoring_release_name }}"
+        release_ns: "{{ monitoring_namespace }}"
+        values: "{{ prometheus_stack_chart_values }}"
+
+        patches:
+          merge_patches:
+            - apiVersion: v1
+              kind: ConfigMap
+              metadata:
+                # the resource-based authorization defined by the chart doesn't seem
+                # to work--maybe ServiceAccount doesn't have ClusterRole that allows
+                # "tokenreviews" and "subjectaccessreviews"? So use static rule that
+                # only allows the client cert holder to access the /metrics endpoint:
+                # https://github.com/prometheus-community/helm-charts/tree/main/charts/prometheus-node-exporter/templates/rbac-configmap.yaml
+                # https://github.com/brancz/kube-rbac-proxy/tree/master/examples/static-auth
+                name: "{{ monitoring_release_name }}-prometheus-node-exporter-rbac-config"
+                namespace: "{{ monitoring_namespace }}"
+              data:
+                config-file.yaml: |+
+                  authorization:
+                    static:
+                      - user: # cert CN
+                          name: {{ scraper_user.username }}
+                        verb: get
+                        resourceRequest: false
+                        path: /metrics
+
+          json_patches:
+            # Helm chart doesn't currently allow specifying
+            # basicAuth in .prometheus.thanosServiceMonitor
+            - target:
+                group: monitoring.coreos.com
+                version: v1
+                kind: ServiceMonitor
+                name: "{{ monitoring_release_name }}-thanos-sidecar"
+              patch:
+                - op: add
+                  path: /spec/endpoints/0/basicAuth
+                  value: "{{ thanos_metrics_auth }}"
+
+        extras: # adopt extra resources into Helm release
+          - cert-manager.io/v1 Certificate monitoring-prometheus-ingress
+          - cert-manager.io/v1 Certificate thanos-sidecar-ingress
+          - cert-manager.io/v1 Certificate monitoring-alertmanager-ingress
+          - cert-manager.io/v1 Certificate monitoring-grafana-ingress
+          - cert-manager.io/v1 Certificate {{ monitoring_secrets['scraper'] }}
+          - v1 Secret {{ monitoring_secrets['thanos-config'] }}
+          - v1 Secret {{ monitoring_secrets['oauth-proxy']   }}
+          - v1 Secret {{ monitoring_secrets['credentials']   }}
+          - v1 Secret {{ monitoring_secrets['grafana-env']   }}
+          - v1 Secret {{ monitoring_secrets['etcd'] }}
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/helm/helmfile.yml"
+
+    # oauth2-proxy doesn't currently support auto-reloading
+    # TLS certs, so make Wave watch TLS Secrets and trigger
+    # rolling pod restarts whenever mounted Secrets change
+    - name: Add Wave annotations to StatefulSet
+      vars:
+        res_kind: StatefulSet
+        res_name: "{{ item }}"
+        res_ns: "{{ monitoring_namespace }}"
+        wait_secs: 3
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/k8s/wave.yml"
+      loop:
+        - prometheus-{{ monitoring_release_name }}-prometheus
+        - alertmanager-{{ monitoring_release_name }}-alertmanager
+        # - "{{ monitoring_release_name }}-grafana"
+      loop_control:
+        label: "{{ item | regex_replace('^.+-','') }}"
+
+- name: Configure monitoring applications
+  tags: configure
+  hosts: localhost
+  vars_files: &vars_files
+    - vars/monitoring.yml
+  pre_tasks:
+    - name: Wait until Grafana API is ready
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/uri_module.html
+      ansible.builtin.uri:
+        url: "{{ grafana_url }}/api/health"
+      # https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_loops.html#retrying-a-task-until-a-condition-is-met
+      retries: 20
+      delay: 3
+  tasks:
+    - name: Customize Grafana user settings
+      vars:
+        username: "{{ grafana_admin_user }}"
+        password: "{{ grafana_admin_pass }}"
+        settings: "{{ grafana_admin_settings }}"
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/grafana/settings.yml"
+
+- name: Configure monitoring dashboards
+  tags: dashboards
+  hosts: localhost
+  vars_files: *vars_files
+  pre_tasks:
+    - name: Clear private_dashboards
+      ansible.builtin.set_fact:
+        private_dashboards: []
+
+    # list of {title,json} dicts only
+    - name: Add to private_dashboards
+      vars:
+        dashboards: "{{ query('ansible.builtin.fileglob',
+          templates_dir ~ '/grafana/dashboards/*.json*') }}"
+        filter: ansible.builtin.{{ 'template' if item |
+          ansible.builtin.splitext == '.j2' else 'file' }}
+        json: "{{  lookup(filter, item) }}"
+        dashboard: "{{ json | from_json }}"
+      ansible.builtin.set_fact:
+        private_dashboards: "{{ private_dashboards +
+          [{'title': dashboard.title, 'json': json}] }}"
+      loop: "{{ dashboards }}"
+      loop_control:
+        label: "{{ item | ansible.builtin.basename }}"
+  tasks:
+    - name: Import Grafana dashboards
+      vars:
+        dashboards: "{{ private_dashboards }}"
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/grafana/dashboards.yml"

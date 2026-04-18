@@ -1048,7 +1048,7 @@ gitlab_chart_values:
       executor: kubernetes
 
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/template_lookup.html
-      config: "{{ lookup('ansible.builtin.template', template_dir ~ '/gitlab/runners.toml.j2') }}"
+      config: "{{ lookup('ansible.builtin.template', templates_dir ~ '/gitlab/runners.toml.j2') }}"
 
       cache:
         secretName: "{{ gitlab_secrets['storage'] }}"

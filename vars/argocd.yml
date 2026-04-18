@@ -187,7 +187,8 @@ argocd_chart_values:
         #   sed -En 's|^pub.+/([A-Z0-9]+).+$|\1|p'
         # gpg --export --output erhhung.asc --armor B9C45C9F62942408
         # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/file_lookup.html
-        B9C45C9F62942408: "{{ lookup('ansible.builtin.file', 'files/erhhung/erhhung.asc', rstrip=false) }}"
+        B9C45C9F62942408: "{{ lookup('ansible.builtin.file',
+          files_dir ~ '/erhhung/erhhung.asc', rstrip=false) }}"
 
     # "argocd-repo-creds-*" Secrets:
     # https://argo-cd.readthedocs.io/en/stable/user-guide/private-repositories#credentials
@@ -201,7 +202,7 @@ argocd_chart_values:
       gitlab-external-ssh: &ssh-creds
         url: "{{ gitlab_ssh_url }}"
         # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/unvault_lookup.html
-        sshPrivateKey: "{{ lookup('ansible.builtin.unvault', 'files/erhhung/erhhung.pem') }}"
+        sshPrivateKey: "{{ lookup('ansible.builtin.unvault', files_dir ~ '/erhhung/erhhung.pem') }}"
 
       gitlab-external-http: &http-creds
         url: "{{ gitlab_http_url }}"
@@ -472,11 +473,11 @@ argocd_chart_values:
     templates:
       template.email-sync-status: |
         {{ (lookup('ansible.builtin.template',
-              template_dir ~ '/argocd/notifications.yaml.j2') |
+              templates_dir ~ '/argocd/notifications.yaml.j2') |
             from_yaml)['email-sync-status'] }}
       template.slack-sync-status: |
         {{ (lookup('ansible.builtin.template',
-              template_dir ~ '/argocd/notifications.yaml.j2') |
+              templates_dir ~ '/argocd/notifications.yaml.j2') |
             from_yaml)['slack-sync-status'] }}
 
     # https://argo-cd.readthedocs.io/en/stable/operator-manual/notifications/subscriptions

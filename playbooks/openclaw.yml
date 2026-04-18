@@ -1,0 +1,631 @@
+# https://docs.openclaw.ai/
+# https://github.com/openclaw/openclaw
+# https://docs.openclaw.ai/concepts/architecture
+# https://docs.openclaw.ai/gateway/configuration
+# https://docs.openclaw.ai/gateway/security
+# https://docs.openclaw.ai/nodes
+# https://docs.openclaw.ai/platforms/macos
+# https://docs.openclaw.ai/channels/slack
+# https://learnopenclaw.com/core-concepts/soul-md
+---
+- name: Install OpenClaw on RKE cluster
+  tags: install
+  hosts: "{{ rke_control_plane_host }}"
+  vars_files:
+    - vars/kubernetes.yml
+    - vars/monitoring.yml
+    - vars/observability.yml
+    - vars/storage.yml
+    - vars/ollama.yml
+    - vars/litellm.yml
+    - vars/searxng.yml
+    - vars/openclaw.yml
+    - vars/openclaw.config.yml
+  vars:
+    # required kubernetes>=24.2 package only in user virtualenv
+    ansible_python_interpreter: "{{ venv_python_interpreter }}"
+    kubeconfig: "{{ rke_kubeconfig }}"
+    secret_ns: "{{ openclaw_namespace }}"
+    create_ns: false
+  pre_tasks:
+    - name: Get OpenClaw appVersion
+      vars:
+        repo_url: "{{ openclaw_chart_repo_url }}"
+        chart_ref: openclaw
+        chart_ver: "{{ openclaw_chart_version }}"
+        fact_name: openclaw_app_version
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/helm/appversion.yml"
+      when: openclaw_app_version is undefined
+
+    - name: Get LiteLLM user API key
+      vars:
+        secret_key: "{{ user_erhhung.username }}"
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/litellm/apikey.yml"
+      # sets litellm_api_key fact
+
+    - name: Read skill config file
+      delegate_to: localhost
+      vars:
+        src_dir: "{{ files_dir }}/openclaw/skills"
+        # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/fileglob_lookup.html
+        src_files: |
+          {{ query('ansible.builtin.fileglob', src_dir ~ '/*') |
+               map('ansible.builtin.basename') | reject('search', '^\..+') }}
+        filename: "{{ item | regex_replace('(\\.age)?$', '') }}"
+        # use the default Python interpreter on Ansible controller
+        ansible_python_interpreter: "{{ default_python_interpreter }}"
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/shell_module.html
+      ansible.builtin.shell: |
+        set -eo pipefail
+
+        src_file="{{ src_dir }}/{{ item }}"
+        if [[ "$src_file" != *.age ]]; then
+          jo name="{{ filename }}" data="$(base64 < "$src_file")"
+          exit
+        fi
+        if [[ "$src_file" != *.gz.age ]]; then
+          echo >&2 "age-encrypted file must be gzipped!"
+          exit 1
+        fi
+
+        age_file="$src_file"
+        tmp_file="/tmp/$(basename "$age_file")"
+        src_file="${tmp_file%.gz.age}"
+
+        cp -f "$age_file" /tmp
+        "{{ scripts_dir }}/gzage.sh" "$tmp_file"
+
+        # --no-name ignores timestamp!
+        jo name="{{ filename }}" data="$(gzip -9ncq "$src_file" | base64)"
+        rm -f "$src_file"
+      args:
+        executable: /bin/bash
+      loop: "{{ src_files }}"
+      loop_control:
+        label: "{{ filename }}"
+      register: skill_config_b64
+      changed_when: false
+
+    # retrieve values for `plugins.installs.*.{integrity,shasum}`
+    - name: Retrieve plugin integrity
+      delegate_to: localhost
+      vars:
+        ansible_python_interpreter: "{{ default_python_interpreter }}"
+      ansible.builtin.shell: |
+        set -o pipefail
+
+        npm view "{{ item.package }}@{{ item.version }}" \
+          dist.integrity dist.shasum --json | jq '{
+            plugin:     "{{ item.id }}",
+            integrity: ."dist.integrity",
+            shasum:    ."dist.shasum",
+          }'
+      loop: "{{ openclaw_plugins }}"
+      loop_control:
+        label: "{{ item.id }}"
+      register: integrity_json
+      changed_when: false
+
+    # plugin_integrity['plugin_id'].{integrity,shasum}
+    - name: Set plugin_integrity fact
+      vars:
+        results: "{{ integrity_json.results | map(attribute='stdout') | map('from_json') }}"
+        # https://docs.ansible.com/ansible/latest/collections/community/general/remove_keys_filter.html
+        metadata: "{{ results | community.general.remove_keys(target=['plugin']) }}"
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/set_fact_module.html
+      ansible.builtin.set_fact:
+        # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/zip_filter.html
+        # https://docs.ansible.com/ansible/latest/collections/community/general/dict_filter.html
+        plugin_integrity: "{{  results  | map(attribute='plugin') |
+          ansible.builtin.zip(metadata) | community.general.dict }}"
+  tasks:
+    - name: Create OpenClaw ingress secret
+      vars:
+        secret_name: "{{ openclaw_secrets['ingress'] }}"
+        create_ns: true
+        cert_name: openclaw-ingress
+        sans: "{{ openclaw_fqdns }}"
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/k8s/secrets/tls.step.yml"
+
+    - name: Create OpenClaw envFrom secret
+      vars:
+        secret_name: "{{ openclaw_secrets['env-vars'] }}"
+        secret_data:
+          OPENCLAW_GATEWAY_TOKEN: "{{ openclaw_gateway_token }}"
+          # https://docs.openclaw.ai/gateway/authentication
+          LITELLM_API_KEY: "{{ litellm_api_key }}"
+          OPENAI_API_KEY: "{{   openai_api_key }}"
+
+          # https://docs.openclaw.ai/channels/slack
+          SLACK_APP_TOKEN: "{{ openclaw_channel_secrets['slack'].app_token }}"
+          SLACK_BOT_TOKEN: "{{ openclaw_channel_secrets['slack'].bot_token }}"
+
+          # https://github.com/steipete/gogcli#keyring-backend-keychain-vs-encrypted-file
+          GOG_KEYRING_PASSWORD: "{{ gogcli_keyring_pass }}"
+          GITHUB_ACCESS_TOKEN: "{{  github_access_token }}"
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/k8s/secrets/generic.yml"
+
+    # create Secret containing (decrypted) files in
+    # "files/openclaw/skills" used by `init-skills`
+    # init container
+    - name: Create OpenClaw skills secret
+      vars:
+        secret_name: "{{ openclaw_secrets['skills'] }}"
+        secret_data: |
+          {% set files = {} %}
+          {% for result in skill_config_b64.results %}
+          {%   if result.stdout is truthy %}
+          {%     set file = result.stdout | from_json %}
+          {%     set _    =  files.update({
+                   file.name: file.data | b64decode,
+                 })  %}
+          {%   endif %}
+          {% endfor  %}
+          {{ files   }}
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/k8s/secrets/generic.yml"
+
+    - name: Install OpenClaw Helm chart
+      vars:
+        # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/template_lookup.html
+        rule_manifests: "{{ lookup('ansible.builtin.template',
+          templates_dir ~ '/monitoring/rules/openclaw.yaml.j2') }}"
+        slo_manifests: "{{ lookup('ansible.builtin.template',
+          templates_dir ~ '/monitoring/slos/openclaw.yaml.j2') }}"
+
+        # === Inputs ===
+        repo_name: openclaw
+        repo_url: "{{ openclaw_chart_repo_url }}"
+        chart_ref: openclaw
+        chart_ver: "{{ openclaw_chart_version }}"
+        release: "{{ openclaw_release_name }}"
+        release_ns: "{{ openclaw_namespace }}"
+        values: "{{ openclaw_chart_values }}"
+
+        extras: # adopt extra resources into Helm release
+          - cert-manager.io/v1 Certificate {{ openclaw_secrets['ingress'] }}
+          - v1 Secret {{ openclaw_secrets['env-vars'] }}
+          - v1 Secret {{ openclaw_secrets['skills']   }}
+          # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/from_yaml_all_filter.html
+          - "{{ rule_manifests | from_yaml_all }}"
+          - "{{  slo_manifests | from_yaml_all }}"
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/helm/helmfile.yml"
+
+# this setup is workaround because the Mac companion
+# app isn't registering with remote gateway as node:
+# https://github.com/openclaw/openclaw/issues/57243;
+# so create a separate launchd .plist to launch both
+# the companion app and the `openclaw-node` sidekick
+
+# IMPORTANT!! do not reuse the "ai.openclaw.mac" label
+# and "ai.openclaw.mac.plist" filename because the app
+# will promptly overwrite it on startup, and then tear
+# down the process tree launched by the wrapper script
+
+- name: Set up Mac companion app+node
+  tags:
+    - mac
+    - node
+  hosts: localhost
+  vars:
+    host_is_mac: "{{ ansible_system == 'Darwin' }}"
+    service_name: ai.openclaw.macos
+    helper_file: "{{ service_name }}.sh"
+    plist_file: "{{ service_name }}.plist"
+    home_dir: "{{ ansible_env['HOME'] }}"
+    plist_dir: "{{ home_dir }}/Library/LaunchAgents"
+    plist_path: "{{ plist_dir }}/{{ plist_file }}"
+    file_list:
+      # brew install --cask openclaw
+      - /Applications/OpenClaw.app/Contents/MacOS/OpenClaw
+      # app should have been configured for
+      # remote gateway WebSocket connection
+      - "{{ home_dir }}/.openclaw/openclaw.json"
+      # npm install --global openclaw
+      - /usr/local/bin/openclaw
+    env_defaults:
+      NODE_PATH: /usr/local/lib/node_modules
+      NODE_OPTIONS: "'--max-old-space-size=4096'"
+      NODE_EXTRA_CA_CERTS: $HOME/certs/homelab_root_ca.crt
+  pre_tasks:
+    - name: Skip play if not on Mac
+      ansible.builtin.meta: end_play
+      when: not host_is_mac
+
+    - name: Does required file exist
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/stat_module.html
+      ansible.builtin.stat:
+        path: "{{ item }}"
+      loop: "{{ file_list }}"
+      register: file_stat
+  tasks:
+    - name: Show file found results
+      vars:
+        stats: "{{ file_stat.results | map(attribute='stat') }}"
+      ansible.builtin.debug:
+        msg: |-
+          {% for  file in stats %}
+          {{ '✅' if file.exists else '❌' }} {{ file.path }}
+          {% endfor %}
+
+    - name: Abort if missing files
+      vars:
+        all_found: "{{ file_stat.results | map(attribute='stat.exists') is all }}"
+      ansible.builtin.meta: end_play
+      when: not all_found
+
+    - name: Create "{{ helper_file }}"
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/copy_module.html
+      ansible.builtin.copy:
+        src: "{{ files_dir }}/openclaw/mac/{{ helper_file }}"
+        dest: "{{ home_dir }}/.openclaw/"
+        mode: "0755"
+      notify: Relaunch Mac companion app+node
+
+    - name: Delete "ai.openclaw.mac.plist"
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/file_module.html
+      ansible.builtin.file:
+        path: "{{ plist_dir }}/ai.openclaw.mac.plist"
+        state: absent
+
+    - name: Create "{{ plist_file }}"
+      vars:
+        src_path: "{{ files_dir }}/openclaw/mac/{{ plist_file }}"
+        tmp_path: /tmp/{{ plist_file }}
+      ansible.builtin.shell: |
+        set -o pipefail
+
+        {% for env, default in env_defaults.items() %}
+        export {{ env }}="{{ '${'~ env }}:-{{ default ~'}' }}"
+        {% endfor %}
+
+        trap 'rm -f {{ tmp_path }}' EXIT
+        envsubst  < {{ src_path }} | tee {{   tmp_path }}
+        cmp -s      {{ tmp_path }}       {{ plist_path }} && exit 9 # no change
+        mv  -f      {{ tmp_path }}       {{ plist_path }}
+      args:
+        executable: /bin/bash
+      register: create_plist
+      changed_when: create_plist.rc == 0
+      failed_when: create_plist.rc not in [0,9]
+      notify: Relaunch Mac companion app+node
+  handlers:
+    # useful launchd docs:
+    # https://launchd.info/
+    # https://keith.github.io/xcode-man-pages/launchctl.1.html
+    # https://apple.stackexchange.com/questions/477771/why-does-launchd-bootstap-fail-with-bootstrap-failed-5-input-output-error
+
+    # not sure why community.general.launchd keeps
+    # failing with "Unable to find the plist file"
+    - name: Relaunch Mac companion app+node
+      vars:
+        domain_target: gui/{{ ansible_user_uid }}
+        service_target: "{{ domain_target }}/{{ service_name }}"
+      ansible.builtin.shell: |
+        # try restarting bootstrapped service first
+        launchctl kickstart -k {{ service_target }}
+        rc=$?
+        if [ $rc -eq 113 ]; then
+          # could not find service "{{ service_name     }}"
+          # in domain for user gui: {{ ansible_user_uid }}
+          launchctl bootstrap {{ domain_target }} {{ plist_path }}
+          rc=$?
+        fi
+        exit $rc
+      changed_when: true
+
+- name: Configure OpenClaw installation
+  tags: configure
+  hosts: "{{ rke_control_plane_host }}"
+  vars_files:
+    - vars/kubernetes.yml
+    - vars/openclaw.yml
+    - vars/openclaw.config.yml
+    - vars/openclaw.cron.yml
+  vars:
+    ansible_python_interpreter: "{{ venv_python_interpreter }}"
+    state_src_dir: "{{ files_dir }}/openclaw/state"
+    state_dest_dir: "{{ openclaw_data_dir }}/.openclaw"
+    workspace_src_dir: "{{ files_dir }}/openclaw/workspace"
+    workspace_dest_dir: "{{ openclaw_data_dir }}/workspace"
+    lf: "\n"
+
+  module_defaults:
+    group/k8s:
+      kubeconfig: "{{ rke_kubeconfig }}"
+      namespace: "{{ openclaw_namespace }}"
+    # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_exec_module.html
+    kubernetes.core.k8s_exec:
+      # pod name determined dynamically in pre_tasks
+      pod: "{{ openclaw_pod_name | default(omit) }}"
+      container: main
+  pre_tasks:
+    - name: Get name of OpenClaw pod
+      # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_info_module.html
+      kubernetes.core.k8s_info:
+        api_version: v1
+        kind: Pod
+        label_selectors:
+          - app.kubernetes.io/name       = {{ openclaw_release_name }}
+          - app.kubernetes.io/controller = main
+      register: openclaw_pod
+
+    - name: Set openclaw_pod_name fact
+      ansible.builtin.set_fact:
+        openclaw_pod_name: "{{ openclaw_pod.resources[0].metadata.name }}"
+
+    - name: Read OpenClaw config files
+      delegate_to: localhost
+      vars:
+        ansible_python_interpreter: "{{ default_python_interpreter }}"
+      block:
+        - name: Read OpenClaw state configs
+          # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/find_module.html
+          ansible.builtin.find:
+            paths: "{{ state_src_dir }}"
+            excludes: .*
+            recurse: true
+          register: state_files
+
+        - name: Read workspace config files
+          ansible.builtin.find:
+            paths: "{{ workspace_src_dir }}"
+            excludes: .*
+            recurse: true
+          register: workspace_files
+  tasks:
+    - name: Update OpenClaw config files
+      vars:
+        kubeconfig: "{{ rke_kubeconfig }}"
+        pod_name: "{{ openclaw_pod_name }}"
+        pod_ns: "{{ openclaw_namespace }}"
+        container: main
+      block:
+        - name: Update OpenClaw state config
+          # substr: filter_plugins/filters.py
+          vars:
+            src_files: |
+              {{ state_files.files | map(attribute='path') |
+                 map('substr', state_src_dir | length) }}
+            src_path: "{{  state_src_dir  ~ item }}"
+            dest_path: "{{ state_dest_dir ~ item }}"
+            overwrite: false # seed only
+          ansible.builtin.include_tasks: "{{ tasks_dir }}/k8s/copy.yml"
+          loop: "{{ src_files }}"
+          loop_control:
+            label: "{{ item | substr(1) }}"
+
+        - name: Update workspace config file
+          vars:
+            src_files: |
+              {{ workspace_files.files | map(attribute='path') |
+                 map('substr', workspace_src_dir | length) }}
+            src_path: "{{  workspace_src_dir  ~ item }}"
+            dest_path: "{{ workspace_dest_dir ~ item }}"
+            overwrite: true # apply IaC
+          ansible.builtin.include_tasks: "{{ tasks_dir }}/k8s/copy.yml"
+          loop: "{{ src_files }}"
+          loop_control:
+            label: "{{ item | substr(1) }}"
+
+    # https://docs.openclaw.ai/channels/pairing#2-node-device-pairing-ios/android/macos/headless-nodes
+    - name: Get devices pending pairing
+      kubernetes.core.k8s_exec:
+        command: openclaw devices list --json
+      register: openclaw_devices
+      changed_when: false
+      retries: 5
+      delay: 5
+
+    - name: Approve device pairing request
+      vars:
+        devices: "{{ openclaw_devices.stdout | from_json }}"
+        # https://docs.ansible.com/ansible/latest/collections/community/general/keep_keys_filter.html
+        pending: "{{ devices.pending | community.general.keep_keys(target=['requestId','clientId']) }}"
+      kubernetes.core.k8s_exec:
+        command: openclaw devices approve {{ item.requestId }}
+      loop: "{{ pending }}"
+      loop_control:
+        label: "{{ item.clientId }}"
+      changed_when: true
+
+    - name: Get list of paired nodes
+      kubernetes.core.k8s_exec:
+        command: openclaw nodes list --json
+      register: openclaw_nodes
+      changed_when: false
+
+    - name: Set openclaw_node_id fact
+      vars:
+        paired: "{{ (openclaw_nodes.stdout | from_json).paired }}"
+      ansible.builtin.set_fact:
+        openclaw_node_id: "{{ paired[0].nodeId if paired is truthy else none }}"
+
+    # resolve commands into full paths
+    - name: Resolve gateway allowlist
+      vars:
+        allowlist: |
+          {{ openclaw_exec_allowlist.common  +
+             openclaw_exec_allowlist.gateway }}
+        script: |-
+          while read cmd; do
+            [[ "$cmd" == */* ]] || \
+              cmd=$(command -v "$cmd" || true)
+            [ "$cmd" ] && echo "$cmd"
+          done <<'EOF' | jq -nRc '[inputs]'
+          {{ allowlist | join(lf) }}
+          EOF
+      kubernetes.core.k8s_exec:
+        command: bash -c "{{ script | regex_replace('([\\"])', '\\\1') }}"
+      register: gateway_allowlist
+      changed_when: false
+
+    # openclaw approvals get --gateway --json | \
+    #   jq -r '.file.agents."*".allowlist | map(.pattern) | sort[]'
+    - name: Get existing approvals
+      kubernetes.core.k8s_exec:
+        command: openclaw approvals get --{{ (item.host ~' '~
+          item.args | default('')) | trim }} --json
+      loop: &approval-loop |
+        {% set items = [{'host': 'gateway'}] %}
+        {% if openclaw_node_id is truthy  %}
+        {%   set _ = items.append({
+               'host': 'node',
+               'args':  openclaw_node_id,
+             })  %}
+        {% endif %}
+        {{ items }}
+      loop_control:
+        label: "{{ item.host }}"
+      register: exec_approvals
+      # skip updating allowlist on node
+      # if it's not currently connected
+      failed_when:
+        - exec_approvals.rc != 0
+        - exec_approvals.stderr is not search('NOT_CONNECTED')
+      changed_when: false
+
+    # add/remove allowlist patterns
+    - name: Update exec allowlist
+      vars:
+        approvals: "{{ exec_approvals.results[i].stdout | from_json }}"
+        existing: "{{ approvals.file.agents['*'].allowlist | default([])
+          | map(attribute='pattern') }}"
+        allowlist: |
+          {% if item.host == 'gateway' %}
+          {{   gateway_allowlist.stdout | from_json -}}
+          {% else %}
+          {%   set patterns = [] %}
+          {%   set allowed  = openclaw_exec_allowlist.common
+                            + openclaw_exec_allowlist.node %}
+          {%   for cmd in allowed %}
+          {%     if cmd is search('/') %}
+          {%       set _ = patterns.append(cmd) %}
+          {%     else %}
+          {%       set cmd = 'command -v '~ cmd | quote ~' || true' %}
+          {%       set bin =   lookup('ansible.builtin.pipe', cmd)  %}
+          {%       if bin is truthy %}
+          {%         set _ = patterns.append(bin) %}
+          {%       endif %}
+          {%     endif   %}
+          {%   endfor    %}
+          {{   patterns -}}
+          {% endif %}
+        # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/difference_filter.html
+        # prepend: filter_plugins/filters.py
+        commands: |
+          {% set add    = allowlist | reject('in', existing)  | sort %}
+          {% set remove = existing  | reject('in', allowlist) | sort %}
+          {% set args   = ' --'~ (item.host ~' '~ item.args | default('')) | trim ~' ' %}
+          {% set cmds   =    add | map('quote') | map('prepend',    'add'~ args)  +
+                          remove | map('quote') | map('prepend', 'remove'~ args) %}
+          {{ cmds }}
+        script: |-
+          while read  cmd; do
+            printf -v cmd  "openclaw approvals allowlist %s --json" "$cmd"
+            (eval "set -x; $cmd")
+          done <<'EOF'
+          {{ commands | map('append', lf) | join -}}
+          EOF
+      kubernetes.core.k8s_exec:
+        command: bash -c "{{ script | regex_replace('([\\"])', '\\\1') }}"
+      loop: *approval-loop
+      loop_control:
+        index_var: i
+        label: "{{ item.host }}"
+      when:
+        - exec_approvals.results[i].stdout is defined
+        - exec_approvals.results[i].stdout is truthy
+        - commands                         is truthy
+      changed_when: true
+
+    - name: Get existing cron jobs
+      kubernetes.core.k8s_exec:
+        command: openclaw cron list --json
+      register: openclaw_cron
+      changed_when: false
+
+    - name: Create/update cron job
+      vars:
+        jobs: "{{ (openclaw_cron.stdout | from_json).jobs }}"
+        job: "{{ jobs | selectattr('name', '==', item.name) }}"
+        tz: "{{ item.tz | default(system_time_zone) }}"
+        expected:
+          name: "{{ item.name }}"
+          enabled: true
+          schedule: |
+            {% set sched  = {} %}
+            {% if item.cron is defined %}
+            {%   set _ = sched.update({
+                   'kind': 'cron',
+                   'expr':  item.cron,
+                   'tz':    tz,
+                 }) %}
+            {% elif item.every is defined %}
+            {#   https://docs.ansible.com/ansible/latest/collections/community/general/to_milliseconds_filter.html #}
+            {%   set _ = sched.update({
+                   'kind':    'every',
+                   'everyMs':  item.every | community.general.to_milliseconds | int,
+                 }) %}
+            {% elif item.at is defined %}
+            {#   local_iso_to_utc_iso: filter_plugins/filters.py #}
+            {%   set _  = sched.update({
+                   'kind': 'at',
+                   'at':    item.at | local_iso_to_utc_iso(tz=tz, precision='ms'),
+                 })  %}
+            {% endif %}
+            {{ sched }}
+          sessionTarget: "{{ item.session }}"
+          payload: |
+            {% set payload = {} %}
+            {% if item.session == 'isolated' %}
+            {%   set _ = payload.update({
+                   'kind':    'agentTurn',
+                   'message':  item.message,
+                 }) %}
+            {% elif item.session == 'main' %}
+            {%   set _ = payload.update({
+                   'kind': 'systemEvent',
+                   'text':  item.system_event,
+                 })    %}
+            {% endif   %}
+            {{ payload }}
+        del_keys:
+          - schedule.anchorMs
+        exists: "{{ job is truthy }}"
+        existing: |
+          {# omit_keys: filter_plugins/filters.py #}
+          {{ job | community.general.keep_keys(target=expected.keys())
+                 | first |  omit_keys(del_keys) if exists else none }}
+        cron_args: |
+          {% set args = item %}
+          {% if item.cron is defined %}
+          {%   set _ = args.update({'tz': tz}) %}
+          {% endif %}
+          {% if item.announce | default(false) %}
+          {%   set _ = args.update({
+                 'channel': 'slack',
+                 'to':      'user:'~ user_erhhung.slack.id,
+               })  %}
+          {% endif %}
+          {# to_case, prepend: filter_plugins/filters.py   #}
+          {% set opts = args.keys() | map('to_case', 'kebab')
+                                    | map('prepend', '--') %}
+          {% set values = args.values() | map('quote')  |
+               map('regex_replace', '^(True|False)$', '') %}
+          {% set args = ['edit' if exists else 'add'] +
+               opts | ansible.builtin.zip(values)  |
+                      flatten | select('truthy')  %}
+          {% if exists %}
+          {%   set _ = args.append(jobs[0].id) %}
+          {% endif %}
+          {{ args  }}
+      kubernetes.core.k8s_exec:
+        command: >-
+          bash -xc "openclaw cron {{ cron_args | join(' ')
+                    | regex_replace('([\\"])', '\\\1') }}"
+      loop: "{{ openclaw_cron_jobs }}"
+      loop_control:
+        label: "{{ item.name }}"
+      when: existing != expected
+      changed_when: true

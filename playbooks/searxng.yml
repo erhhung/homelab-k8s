@@ -1,0 +1,81 @@
+# https://docs.searxng.org/
+# https://docs.searxng.org/admin/installation-docker.html
+---
+- name: Install SearXNG on RKE cluster
+  tags: install
+  hosts: "{{ rke_control_plane_host }}"
+  vars_files:
+    - vars/kubernetes.yml
+    - vars/storage.yml
+    - vars/searxng.yml
+  vars:
+    # required kubernetes>=24.2 package only in user virtualenv
+    ansible_python_interpreter: "{{ venv_python_interpreter }}"
+    kubeconfig: "{{ rke_kubeconfig }}"
+    secret_ns: "{{ searxng_namespace }}"
+  tasks:
+    - name: Create SearXNG ingress secret
+      vars:
+        secret_name: "{{ searxng_secrets['ingress'] }}"
+        cert_name: searxng-ingress
+        sans: "{{ searxng_fqdns }}"
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/k8s/secrets/tls.step.yml"
+
+    - name: Install SearXNG Helm chart
+      vars:
+        repo_name: chr0n1x
+        repo_url: https://chr0n1x.github.io/searxng-helm-chart
+        chart_ref: searxng
+        chart_ver: "{{ searxng_chart_version }}"
+        release: "{{ searxng_release_name }}"
+        release_ns: "{{ searxng_namespace }}"
+        values: "{{ searxng_chart_values }}"
+
+        patches:
+          # remove "settings.yml" volume mount added
+          # by the chart because we will mount a copy
+          # with ownership fixed by the init container
+          merge_patches:
+            - apiVersion: apps/v1
+              kind: Deployment
+              metadata:
+                name: "{{ searxng_release_name }}"
+              spec:
+                template:
+                  spec:
+                    containers:
+                      - name: "{{ searxng_release_name }}"
+                        volumeMounts: # mountPath is merge key
+                          - mountPath: /etc/searxng/settings.yml
+                            $patch: delete
+
+        extras: # adopt extra resources into Helm release
+          - cert-manager.io/v1 Certificate {{ searxng_secrets['ingress'] }}
+          - |
+            {% if searxng_enable_istio and
+                  searxng_use_waypoint %}
+            gateway.networking.k8s.io/v1 Gateway {{ searxng_namespace }}-waypoint ?
+            {% endif %}
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/helm/helmfile.yml"
+
+    # add Wave annotations so pod restarts
+    # when "searxng-config" secret changes
+    - name: Add Wave annotations to Deployment
+      vars:
+        res_kind: Deployment
+        res_name: "{{ searxng_release_name }}"
+        res_ns: "{{ searxng_namespace }}"
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/k8s/wave.yml"
+
+    - name: >-
+        {{ 'Enable' if enabled else 'Disable' }}
+        Istio service mesh
+      vars:
+        enabled: "{{ searxng_enable_istio }}"
+        apps_ns: "{{ searxng_namespace }}"
+        resources:
+          - kind: Service
+            name: "{{ searxng_release_name }}"
+            enabled: "{{ searxng_use_waypoint }}"
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/istio/mesh.yml"

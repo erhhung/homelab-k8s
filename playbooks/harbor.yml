@@ -1,0 +1,334 @@
+# https://goharbor.io/
+# https://goharbor.io/docs/latest/install-config/harbor-ha-helm
+---
+- name: Install Harbor on K3s cluster
+  tags: install
+  hosts: "{{ k3s_control_plane_host }}"
+  vars_files:
+    - vars/kubernetes.yml
+    - vars/storage.yml
+    - vars/harbor.yml
+  vars:
+    # required kubernetes>=24.2 package only in user virtualenv
+    ansible_python_interpreter: "{{ venv_python_interpreter }}"
+    kubeconfig: "{{ k3s_kubeconfig }}"
+  tasks:
+    - name: Create Harbor ingress secret
+      vars:
+        secret_name: "{{ harbor_secrets['ingress'] }}"
+        secret_ns: "{{ harbor_namespace }}"
+        cert_name: harbor-ingress
+        sans: "{{ [harbor_fqdn] }}"
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/k8s/secrets/tls.step.yml"
+
+    - name: Install Harbor Helm chart
+      vars:
+        repo_name: harbor
+        repo_url: https://helm.goharbor.io
+        chart_ref: harbor
+        chart_ver: "{{ harbor_chart_version }}"
+        release: "{{ harbor_release_name }}"
+        release_ns: "{{ harbor_namespace }}"
+        values: "{{ harbor_chart_values }}"
+
+        extras: # adopt extra resources into Helm release
+          - cert-manager.io/v1 Certificate {{ harbor_secrets['ingress'] }}
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/helm/helmfile.yml"
+
+# https://github.com/goharbor/harbor-cli#installation
+- name: Install Harbor CLI tool
+  tags: cli
+  hosts: k8s_hosts
+  vars_files:
+    - vars/harbor.yml
+  tasks:
+    - name: Install Harbor CLI tool
+      become: true
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/shell_module.html
+      ansible.builtin.shell: |
+        set -o pipefail
+
+        REL="https://github.com/goharbor/harbor-cli/releases"
+        VER=$(curl -Is "$REL/latest" | sed -En 's/^location:.+\/tag\/v(.+)\r$/\1/p')
+
+        # check if latest version already installed
+        command -v harbor &> /dev/null && {
+          ver=$(v=`harbor version | yq .Version`; echo ${v#v})
+          [ "$ver" == "$VER" ] && exit 9 # no change
+        }
+        ARCH=$(uname -m | sed -e 's/aarch64/arm64/' \
+                              -e  's/x86_64/amd64/')
+        tarball="$REL/download/v${VER}/harbor-cli_${VER}_linux_${ARCH}.tar.gz"
+
+        # this project is known to create a new release but fail to
+        # attach asset files for download, so first ensure that the
+        # tarball actually exists
+        status=$(curl -sLI -o /dev/null -w '%{http_code}' "$tarball")
+        [[ "$status" -eq 404 && "$ver" ]] && exit 9 # skip upgrade
+
+        curl -fsSL "$tarball" | tar -xz --no-same-owner --wildcards "*harbor-cli"
+        mv -f harbor-cli harbor
+      args:
+        executable: /bin/bash
+        chdir: /usr/local/bin
+      register: install_cli
+      changed_when: install_cli.rc == 0
+      failed_when: install_cli.rc not in [0,9]
+
+    # https://github.com/goharbor/harbor-cli/tree/main/doc/cli-config/_index.md
+    # https://github.com/goharbor/harbor-cli/tree/main/doc/cli-encryption/_index.md
+    - name: Configure Harbor CLI login
+      ansible.builtin.shell: |
+        # restart Bash and load .bash_aliases
+        exec /bin/bash -l <<'EOT'
+        . .bash_aliases
+        set -o pipefail
+
+        exists="$(harbor context list -o yaml | \
+          yq -r '.credentials[] | select(.username == "admin")')"
+        [ "$exists" ] && exit 9 # no change
+
+        [ "$HARBOR_ENCRYPTION_KEY" ] || {
+          export HARBOR_ENCRYPTION_KEY=$(openssl rand -base64 32)
+          rm -rf "$HOME/.harbor"
+
+          # BASH_ENV_DIR is set in .bash_aliases
+          cat <<EOF > "$BASH_ENV_DIR/harbor.env"
+        HARBOR_ENCRYPTION_KEY="$HARBOR_ENCRYPTION_KEY"
+        EOF
+        }
+        harbor login {{ harbor_url }} --context-name admin \
+            -u {{ harbor_admin_user }} -p '{{ harbor_admin_pass }}'
+        EOT
+      register: config_cli
+      changed_when: config_cli.rc == 0
+      failed_when: config_cli.rc not in [0,9]
+
+- name: Configure Harbor registry
+  tags: configure
+  hosts: "{{ k3s_control_plane_host }}"
+  vars_files:
+    - vars/kubernetes.yml
+    - vars/harbor.yml
+    - vars/gitlab.yml
+    - vars/buildkite.yml
+  vars:
+    # https://harbor.fourteeners.local/devcenter-api-2.0
+    api_base: "{{ harbor_url }}/api/v2.0"
+    api_auth: "{{ harbor_admin_user }}:{{ harbor_admin_pass }}"
+    uri_auth: &uri-auth
+      url_username: "{{ harbor_admin_user }}"
+      url_password: "{{ harbor_admin_pass }}"
+      force_basic_auth: true
+  pre_tasks:
+    - name: Get Harbor system settings
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/uri_module.html
+      ansible.builtin.uri:
+        url: "{{ api_base }}/configurations"
+        <<: *uri-auth
+        return_content: true
+      register: system_settings
+
+    - name: Get library project config
+      ansible.builtin.uri:
+        url: "{{ api_base }}/projects/{{ harbor_default_project }}"
+        # no auth required
+        return_content: true
+      register: project_config
+  tasks:
+    - name: Configure system settings
+      vars:
+        existing: "{{ system_settings.json }}"
+        settings: |
+          {% set settings = {} %}
+          {% for key, value in harbor_settings.items() %}
+          {%   if key in existing and existing[key].editable == true
+                                  and existing[key].value    != value %}
+          {%     set _ = settings.update({key: value}) %}
+          {%   endif  %}
+          {% endfor   %}
+          {{ settings }}
+      ansible.builtin.uri:
+        method: PUT
+        url: "{{ api_base }}/configurations"
+        <<: *uri-auth
+        body_format: json
+        body: "{{ settings }}"
+      when: settings is truthy
+      changed_when: true
+
+    - name: Configure library project
+      vars:
+        metadata: "{{ project_config.json.metadata }}"
+        auto_sbom: "{{ metadata.auto_sbom_generation | default('false') | bool }}"
+        auto_scan: "{{ metadata.auto_scan            | default('false') | bool }}"
+      ansible.builtin.uri:
+        method: PUT
+        url: "{{ api_base }}/projects/{{ harbor_default_project }}"
+        <<: *uri-auth
+        body_format: json
+        body:
+          metadata:
+            # all values must be strings
+            auto_sbom_generation: "true"
+            auto_scan: "true"
+      when: >-
+        not auto_sbom or
+        not auto_scan
+      changed_when: true
+
+    # could also be done using the CLI
+    - name: Add non-admin Harbor users
+      ansible.builtin.shell: |
+        set -o pipefail
+
+        get_user_id() {
+          local api_url="{{ api_base }}/users/search?username=$1"
+          curl -sku {{ api_auth }} "$api_url" | jq -r .[].user_id
+        }
+        user_id="$(get_user_id {{ item.username }})"
+        [ "$user_id" ] && exit 9 # no change
+
+        params=(
+          username="{{ item.username }}"
+          realname="{{ item.realname }}"
+             email="{{ item.email    }}"
+          password="{{ item.password | quote }}"
+           comment="{{ item.comment  | quote if item.comment is defined else '' }}"
+        )
+        curl -X POST -sku {{ api_auth }} \
+             -H 'Content-Type: application/json' \
+             -d "$(jo "${params[@]}")" \
+             {{ api_base }}/users
+
+        user_id="$(get_user_id {{ item.username }})"
+        [ "$user_id" ] || exit 1
+
+        # add user to default library project
+        role_id={{ harbor_roles[item.role] }}
+        params=(
+          member_user=$(jo user_id=$user_id)
+          role_id=$role_id
+        )
+        curl -X POST -sku {{ api_auth }} \
+             -H 'Content-Type: application/json' \
+             -d "$(jo "${params[@]}")" \
+             {{ api_base }}/projects/{{ harbor_default_project }}/members
+      args:
+        executable: /bin/bash
+      loop: "{{ harbor_users }}"
+      loop_control:
+        label: "{{ item.username }}"
+      register: create_users
+      changed_when: create_users.rc == 0
+      failed_when: >-
+        create_users.rc not in [0,9] or
+        create_users.stdout is search('errors')
+
+- name: Copy images into Harbor
+  tags: copy
+  hosts: "{{ k3s_control_plane_host }}"
+  vars_files:
+    - vars/kubernetes.yml
+    - vars/harbor.yml
+  vars:
+    preamble: |-
+      # restart Bash and load .bash_aliases
+      exec /bin/bash -l <<'EOT'
+      # don`t load .rancher_api
+      ADMIN_PASS=none
+      . .bash_aliases
+      set -eo pipefail
+  pre_tasks:
+    - name: Determine source images
+      # noqa risky-shell-pipe
+      ansible.builtin.shell: |
+        {{ preamble }}
+
+        images=({{ harbor_copy_images | join(' ') }})
+        sources=() registries=()
+
+        for image in "${images[@]}"; do
+          repo="${image##*/}"
+           tag="${repo##*:}"
+          repo="library/${repo%%:*}"
+           tag="${tag:-latest}"
+          echo >&2 "repo=$repo tag=$tag"
+
+          id="$(harbor artifact list $repo -o json 2> /dev/null | \
+            jq --arg tag $tag -r  '.Payload[] |
+                  select($tag == (.tags // [])[].name) | .id')" || true
+          [ "$id" ] || {
+            sources+=($image)
+            registry=${image%%/*}
+            [[ " ${registries[*]} " == *" $registry "* ]] || \
+              registries+=($registry)
+          }
+        done
+
+        jo -p sources="$(jo -a -- <<< ""    "${sources[@]}")" \
+           registries="$(jo -a -- <<< "" "${registries[@]}")"
+        EOT
+      register: copy_info
+      changed_when: false
+
+    - name: Set source image facts
+      vars:
+        info: "{{ copy_info.stdout | from_json }}"
+      ansible.builtin.set_fact:
+        source_images: "{{ info.sources }}"
+        source_registries: "{{ info.registries }}"
+  tasks:
+    - name: Log in to registries
+      ansible.builtin.shell: |
+        {{ preamble }}
+
+        registries=(
+          {{ source_registries | join(' ') }}
+          {{ harbor_container_registry     }}
+        )
+        for registry in "${registries[@]}"; do
+          user={{ user_erhhung.username }}
+          unset pass
+
+          case "$registry" in
+            docker.io) pass={{ docker_access_token }} ;;
+              ghcr.io) pass={{ github_access_token }} ;;
+              harbor*) pass={{ harbor_admin_pass   }} ;;
+          esac
+
+          [ "$pass" ] || {
+            echo "No credentials provided for $registry."
+            echo "Access will be public only."
+            continue
+          }
+          echo "Logging in to $registry..."
+          skopeo login $registry -u $user -p $pass
+          rc=0
+        done
+        set +e; exit ${rc-9}
+        EOT
+      register: reg_logins
+      when: source_registries is truthy
+      changed_when: reg_logins.rc == 0
+      failed_when: reg_logins.rc not in [0,9]
+
+    - name: Copy image into Harbor
+      vars:
+        # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/basename_filter.html
+        image: "{{ item | ansible.builtin.basename }}"
+        dest: "{{ harbor_container_registry }}/library/{{ image }}"
+      ansible.builtin.shell: |
+        {{ preamble }}
+
+        # https://github.com/containers/skopeo#copying-images
+        # https://github.com/containers/skopeo/tree/main/docs/skopeo-copy.1.md
+        skopeo copy --multi-arch system --retry-times 2 \
+          docker://{{ item }} \
+          docker://{{ dest }}
+        EOT
+      loop: "{{ source_images }}"
+      loop_control:
+        label: "{{ image }}"
+      timeout: 900
+      changed_when: true

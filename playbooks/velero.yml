@@ -1,0 +1,132 @@
+# https://velero.io/docs/latest
+# https://velero-ui.docs.otwld.com/
+# https://longhorn.io/docs/latest/advanced-resources/system-backup-restore/restore-to-a-new-cluster-using-velero
+---
+- name: Install Velero backup & restore
+  tags: install
+  hosts: "{{ rke_control_plane_host }}"
+  vars_files: &vars_files
+    - vars/kubernetes.yml
+    - vars/monitoring.yml
+    - vars/minio.yml
+    - vars/velero.yml
+
+    # these are only required for
+    # their *_namespace variables
+    - vars/postgresql.yml
+  vars:
+    # required kubernetes>=24.2 package only in user virtualenv
+    ansible_python_interpreter: "{{ venv_python_interpreter }}"
+    kubeconfig: "{{ rke_kubeconfig }}"
+    secret_ns: "{{ velero_ui_namespace }}"
+    create_ns: false
+  pre_tasks:
+    - name: Get Velero chart appVersion
+      vars:
+        repo_url: "{{ velero_chart_repo_url }}"
+        chart_ref: velero
+        chart_ver: "{{ velero_chart_version }}"
+        fact_name: velero_app_version
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/helm/appversion.yml"
+      when: velero_app_version is undefined
+
+    - name: Get Velero UI chart appVersion
+      vars:
+        repo_url: "{{ velero_ui_chart_repo_url }}"
+        chart_ref: velero-ui
+        chart_ver: "{{ velero_ui_chart_version }}"
+        fact_name: velero_ui_app_version
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/helm/appversion.yml"
+      when: velero_ui_app_version is undefined
+
+    - name: Get CA certificates from PKI
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/pki/cacerts.yml"
+      when: ca_certificates is undefined
+
+    - name: Is the monitoring stack ready?
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/monitoring/stackready.yml"
+      when: monitoring_stack_ready is undefined
+  tasks:
+    - name: Create Velero ingress secret
+      vars:
+        secret_name: "{{ velero_secrets['ingress'] }}"
+        create_ns: true
+        cert_name: velero-ingress
+        sans: "{{ [velero_fqdn] }}"
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/k8s/secrets/tls.step.yml"
+
+    - name: Create Velero creds secret
+      vars:
+        secret_name: "{{ velero_secrets['creds'] }}"
+        secret_data:
+          jwt-passphrase: "{{ velero_passphrase }}"
+          admin-password: "{{ velero_admin_pass }}"
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/k8s/secrets/generic.yml"
+
+    - name: Install Velero Helm chart
+      vars:
+        repo_name: vmware-tanzu
+        repo_url: "{{ velero_chart_repo_url }}"
+        chart_ref: velero
+        chart_ver: "{{ velero_chart_version }}"
+        release: "{{ velero_release_name }}"
+        release_ns: "{{ velero_namespace }}"
+        values: "{{ velero_chart_values }}"
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/helm/helmfile.yml"
+
+    - name: Install Velero UI Helm chart
+      vars:
+        repo_name: otwld
+        repo_url: "{{ velero_ui_chart_repo_url }}"
+        chart_ref: velero-ui
+        chart_ver: "{{ velero_ui_chart_version }}"
+        release: "{{ velero_ui_release_name }}"
+        release_ns: "{{ velero_ui_namespace }}"
+        values: "{{ velero_ui_chart_values }}"
+
+        extras: # adopt extra resources into Helm release
+          - cert-manager.io/v1 Certificate {{ velero_secrets['ingress'] }}
+          - v1 Secret {{ velero_secrets['creds'] }}
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/helm/helmfile.yml"
+
+# https://velero.io/docs/latest/basic-install#install-the-cli
+- name: Install Velero client
+  tags: cli
+  hosts: rke_cluster
+  become: true
+  tasks:
+    - name: Install velero CLI tool
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/shell_module.html
+      ansible.builtin.shell: |
+        set -o pipefail
+
+        REL="https://github.com/velero-io/velero/releases"
+        VER=$(curl -Is "$REL/latest" | sed -En 's/^location:.+\/tag\/v(.+)\r$/\1/p')
+
+        # check if latest version already installed
+        command -v velero &> /dev/null && {
+          ver=$(v=($(velero version --client-only | grep Version)); echo ${v[1]#v})
+          [ "$ver" == "$VER" ] && exit 9 # no change
+        }
+        ARCH=$(uname -m | sed -e 's/aarch64/arm64/' \
+                              -e  's/x86_64/amd64/')
+        curl -fsSL "$REL/download/v${VER}/velero-v${VER}-linux-$ARCH.tar.gz" | \
+          tar -xz -C /usr/local/bin --no-same-owner --strip-components=1 \
+            velero-v${VER}-linux-$ARCH/velero
+      args:
+        executable: /bin/bash
+      register: install_cli
+      changed_when: install_cli.rc == 0
+      failed_when: install_cli.rc not in [0,9]
+
+- name: Configure Velero dashboards
+  tags: dashboards
+  hosts: localhost
+  vars_files: *vars_files
+  tasks:
+    - name: Import Grafana dashboards
+      vars:
+        dashboards: "{{ velero_grafana_dashboards }}"
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/grafana/dashboards.yml"
+      when: grafana_api_server_online | default(true)

@@ -1,0 +1,109 @@
+# https://opentelemetry.io/docs
+# https://opentelemetry.io/docs/collector
+# https://opentelemetry.io/docs/platforms/kubernetes/operator
+# https://www.dash0.com/guides/kubernetes-observability-opentelemetry-operator
+#
+# USEFUL QUERIES:
+# list metrics from specific service:
+# count by (__name__) ({exported_job="service-name"})
+---
+- name: Install OpenTelemetry Operator
+  tags: install
+  hosts: "{{ rke_control_plane_host }}"
+  vars_files:
+    - vars/kubernetes.yml
+    - vars/monitoring.yml
+    - vars/metallb.yml
+    - vars/tempo.yml
+    - vars/observability.yml
+  vars:
+    # required kubernetes>=24.2 package only in user virtualenv
+    ansible_python_interpreter: "{{ venv_python_interpreter }}"
+    kubeconfig: "{{ rke_kubeconfig }}"
+  pre_tasks:
+    - name: Get OTel Operator chart appVersion
+      vars:
+        repo_url: "{{ otel_operator_chart_repo_url }}"
+        chart_ref: opentelemetry-operator
+        chart_ver: "{{ otel_operator_chart_version }}"
+        fact_name: otel_operator_app_version
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/helm/appversion.yml"
+  tasks:
+    - name: Create monitoring scraper secret
+      vars:
+        secret_ns: "{{ otel_operator_namespace }}"
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/monitoring/scraper.yml"
+
+    - name: Install OTel Operator Helm chart
+      vars:
+        repo_name: opentelemetry
+        repo_url: "{{ otel_operator_chart_repo_url }}"
+        chart_ref: opentelemetry-operator
+        chart_ver: "{{ otel_operator_chart_version }}"
+        release: "{{ otel_operator_release_name }}"
+        release_ns: "{{ otel_operator_namespace }}"
+        values: "{{ otel_operator_chart_values }}"
+
+        patches:
+          # chart doesn't currently support extra
+          # volumes and mounts, so add as patches
+          merge_patches:
+            - apiVersion: apps/v1
+              kind: Deployment
+              metadata:
+                name: "{{ otel_operator_release_name }}"
+                namespace: "{{ otel_operator_namespace }}"
+              spec:
+                template:
+                  spec:
+                    containers:
+                      - name: kube-rbac-proxy
+                        volumeMounts: "{{ values.kubeRBACProxy.extraVolumeMounts }}"
+                    volumes: "{{ values.extraVolumes }}"
+
+        extras: # adopt extra resources into Helm release
+          - "{{ values.extraDeploy }}"
+          - cert-manager.io/v1 Certificate {{ monitoring_secrets['scraper'] }}
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/helm/helmfile.yml"
+
+    - name: Create collector service secret
+      vars:
+        secret_name: "{{ observability_secrets['service'] }}"
+        secret_ns: "{{ observability_namespace }}"
+        create_ns: true
+        cert_name: otel-collector-service
+        sans:
+          - "{{ otlp_fqdn }}"
+          - "{{ otel_collector_name }}.{{ observability_namespace }}.svc.{{ cluster_domain }}"
+          - "{{ otel_collector_name }}.{{ observability_namespace }}.svc"
+          - "{{ metallb_vips['otlp'] }}"
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/k8s/secrets/tls.step.yml"
+
+    # collector will be deployed by operator
+    - name: Create OpenTelemetry collector
+      vars:
+        # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/template_lookup.html
+        smon_manifests: "{{ lookup('ansible.builtin.template',
+          templates_dir ~ '/monitoring/smons/opentelemetry.yaml.j2') }}"
+      # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_module.html
+      kubernetes.core.k8s:
+        kubeconfig: "{{ kubeconfig }}"
+        # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/from_yaml_all_filter.html
+        definition: |
+          {{ [otel_collector_cr, otlp_lb_service]
+              + smon_manifests | from_yaml_all }}
+        namespace: "{{ observability_namespace }}"
+        state: present
+        apply: true
+
+- name: Configure observability dashboards
+  tags: dashboards
+  hosts: localhost
+  vars_files:
+    - vars/observability.yml
+  tasks:
+    - name: Import Grafana dashboards
+      vars:
+        dashboards: "{{ observability_grafana_dashboards }}"
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/grafana/dashboards.yml"

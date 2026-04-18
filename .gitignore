@@ -3,9 +3,11 @@
 **/.ansible/collections/
 **/.ansible/roles/
 **/.ansible/facts/
-**/.venv/
 **/.env
 **/*.log
+**/.venv/
+.python-version
+uv.lock
 temp.yml
 NOTES
 cloc/

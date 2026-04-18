@@ -1,0 +1,52 @@
+---
+- name: Start all or specific VMs
+  hosts: xcp_any
+  gather_facts: false
+  vars:
+    # targets can be overridden on command-line:
+    # ansible-playbook vms.start.yml -e targets=rke_cluster
+    targets: k8s_hosts
+  pre_tasks:
+    - name: Resolve target hosts
+      vars:
+        target_hosts: "{{ targets }}"
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/hosts/resolve.yml"
+  tasks:
+    - name: Power on resolved VM hosts
+      # cannot use ansible.builtin.shell because XCP-ng 8.3 only has Python 3.6,
+      # which requires an older version of Ansible that we don't otherwise need
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/raw_module.html
+      ansible.builtin.raw: |
+        # run Bash to load .bashrc in order to
+        # use exported functions and variables
+        exec /bin/bash -l <<'EOT'
+
+        uuid_var="UUID_{{ item | upper }}"
+        name_var="NAME_{{ item | upper }}"
+        uuid="${!uuid_var}"
+        name="${!name_var}"
+
+        case "$(vmstate $uuid)" in
+          running)
+            echo "VM \"{{ item }}\" is already running"
+            exit 9 # no change
+            ;;
+          halted)    startvm  $uuid "$name" ;;
+          suspended) resumevm $uuid "$name" ;;
+        esac
+        EOT
+      loop: "{{ resolved_hosts }}"
+      register: poweron_vms
+      changed_when: poweron_vms.rc == 0
+      failed_when: poweron_vms.rc not in [0,9]
+
+    - name: Wait until hosts are reachable
+      delegate_to: "{{ item }}"
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/wait_for_connection_module.html
+      ansible.builtin.wait_for_connection:
+        sleep: 2
+        timeout: 300
+      loop: "{{ resolved_hosts }}"
+
+  any_errors_fatal: false

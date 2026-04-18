@@ -1,0 +1,24 @@
+# this playbook is only run within an AWX workflow
+# where "temp.yml" has already been created under
+# /var/lib/awx/tmp/ by the previous job template
+---
+- name: Preparing to run
+  hosts: localhost
+  pre_tasks:
+    - name: Set project_dir fact
+      ansible.builtin.set_fact:
+        project_dir: /runner/project
+  tasks:
+    - name: Install Python packages
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/pip_module.html
+      ansible.builtin.pip:
+        requirements: "{{ project_dir }}/requirements.txt"
+        break_system_packages: true
+        extra_args: >-
+          --disable-pip-version-check
+          --root-user-action=ignore
+          --no-cache-dir
+        state: present
+
+- name: Include playbook of selected playbooks
+  ansible.builtin.import_playbook: /var/lib/awx/tmp/homelab-k8s/temp.yml

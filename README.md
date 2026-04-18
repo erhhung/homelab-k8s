@@ -179,8 +179,9 @@ All cluster services will be provisioned with TLS certificates from Erhhung's pr
 ## Requirements
 
 ```bash
-# install Ansible and dependencies
-pip install -U -r requirements.txt
+# install Ansible and dependencies (pyproject.toml
+# should be kept in-sync with requirements.txt)
+pip3 install -U -r requirements.txt # or `uv sync -U`
 
 # install required roles and collections
 ansible-galaxy install -r requirements.yml
@@ -192,7 +193,7 @@ ansible-galaxy install -r requirements.yml
 
 ```bash
 export ANSIBLE_CONFIG="./ansible.cfg"
-VAULTFILE="group_vars/all/vault.yml"
+VAULTFILE="inventory/group_vars/all/vault.yml"
 
 ansible-vault create $VAULTFILE
 ansible-vault edit   $VAULTFILE

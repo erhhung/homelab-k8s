@@ -73,9 +73,9 @@ harbor_chart_values:
     # EOF
     # ansible-vault encrypt ca.key
     # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/file_lookup.html
-    tokenCert: "{{ lookup('ansible.builtin.file', 'files/harbor/ca.crt', rstrip=false) }}"
+    tokenCert: "{{ lookup('ansible.builtin.file', files_dir ~ '/harbor/ca.crt', rstrip=false) }}"
     # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/unvault_lookup.html
-    tokenKey: "{{ lookup('ansible.builtin.unvault', 'files/harbor/ca.key') }}"
+    tokenKey: "{{ lookup('ansible.builtin.unvault', files_dir ~ '/harbor/ca.key') }}"
 
   registry:
     secret: "{{ harbor_secret }}"

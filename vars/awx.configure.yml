@@ -235,6 +235,6 @@ awx_projects:
     # we're importing THIS project, so
     # just get playbooks from main.yml
     playbooks: |
-      {% set main_yml =  playbook_dir ~ '/main.yml' %}
-      {% set   yq_cmd = 'yq "map(.tags) | @json" '~ main_yml %}
+      {% set main_yml =  project_dir  ~ '/main.yml' %}
+      {% set   yq_cmd = 'yq "map(.tags | select(.)) | @json" '~ main_yml %}
       {{ lookup('ansible.builtin.pipe',  yq_cmd) | from_json }}

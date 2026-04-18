@@ -12,7 +12,7 @@
 ---
 - name: Gather facts about controller
   # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
-  ansible.builtin.include_tasks: tasks/localfacts.yml
+  ansible.builtin.include_tasks: "{{ tasks_dir }}/localfacts.yml"
   when: local_python_interpreter is undefined
 
 - name: Build and push Docker image
@@ -76,18 +76,18 @@
           {# https://jinja.palletsprojects.com/en/stable/templates#assignments -#}
           {% set ns = namespace(path=none) -%}
           {% if context_dir is undefined   -%}
-          {%   set ns.path = playbook_dir  -%}
+          {%   set ns.path = project_dir   -%}
           {% elif context_dir[0]  == '/'   -%}
           {%   set ns.path = context_dir   -%}
           {% else -%}
-          {%   set ns.path = playbook_dir ~'/'~ context_dir -%}
+          {%   set ns.path = project_dir ~'/'~ context_dir -%}
           {% endif  -%}
           {{ ns.path }}
       block:
         - name: Build and push Docker image
-          ansible.builtin.include_tasks: tasks/oci/build.docker.yml
+          ansible.builtin.include_tasks: "{{ tasks_dir }}/oci/build.docker.yml"
           when: docker_check.rc == 0
 
         - name: Build and push Docker image
-          ansible.builtin.include_tasks: tasks/oci/build.buildah.yml
+          ansible.builtin.include_tasks: "{{ tasks_dir }}/oci/build.buildah.yml"
           when: buildah_check.rc | default(-1) == 0

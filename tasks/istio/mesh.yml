@@ -13,7 +13,7 @@
 ---
 - name: Service mesh CRDs installed?
   # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
-  ansible.builtin.include_tasks: tasks/istio/crds.yml
+  ansible.builtin.include_tasks: "{{ tasks_dir }}/istio/crds.yml"
   when: service_mesh_crds_installed is undefined
 
 - name: >-
@@ -78,7 +78,7 @@
         res_kind: Deployment
         res_name: "{{ waypoint_name }}"
         res_ns: "{{ apps_ns }}"
-      ansible.builtin.include_tasks: tasks/k8s/waitready.yml
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/k8s/waitready.yml"
       when: waypoint_enabled
 
     # https://istio.io/latest/docs/ambient/usage/waypoint#useawaypoint

@@ -1,18 +1,28 @@
 ---
+- name: Set top-level playbook facts
+  hosts: localhost
+  tasks:
+    - name: Set project_dir fact
+      ansible.builtin.set_fact:
+        # https://docs.ansible.com/ansible/latest/reference_appendices/special_variables.html#term-playbook_dir
+        project_dir: "{{ playbook_dir }}"
+      when: project_dir is undefined
+      # ======= DO NOT REMOVE =======
+
 - name: Include package installs playbook
-  ansible.builtin.import_playbook: packages.yml
+  ansible.builtin.import_playbook: playbooks/packages.yml
   tags: packages
 
 - name: Include system settings playbook
-  ansible.builtin.import_playbook: basics.yml
+  ansible.builtin.import_playbook: playbooks/basics.yml
   tags: basics
 
 - name: Include home directory setup playbook
-  ansible.builtin.import_playbook: files.yml
+  ansible.builtin.import_playbook: playbooks/files.yml
   tags: files
 
 - name: Include Rancher K3s cluster playbook
-  ansible.builtin.import_playbook: rancher.yml
+  ansible.builtin.import_playbook: playbooks/rancher.yml
   tags: rancher
 
 # NOTE: if initial cluster installation fails, restart
@@ -20,181 +30,181 @@
 # manifest URL, or else cluster.yml playbook will just
 # spin waiting for Rancher cluster agents to be ready
 - name: Include Rancher RKE cluster playbook
-  ansible.builtin.import_playbook: cluster.yml
+  ansible.builtin.import_playbook: playbooks/cluster.yml
   tags: cluster
 
 - name: Include MetalLB load balancer playbook
-  ansible.builtin.import_playbook: metallb.yml
+  ansible.builtin.import_playbook: playbooks/metallb.yml
   tags: metallb
 
 - name: Include pfSense DNS records playbook
-  ansible.builtin.import_playbook: dns.yml
+  ansible.builtin.import_playbook: playbooks/dns.yml
   tags: dns
 
 - name: Include pfSense ExternalDNS playbook
-  ansible.builtin.import_playbook: externaldns.yml
+  ansible.builtin.import_playbook: playbooks/externaldns.yml
   tags: externaldns
 
 - name: Include cert-manager and PKI playbook
-  ansible.builtin.import_playbook: certmanager.yml
+  ansible.builtin.import_playbook: playbooks/certmanager.yml
   tags: certmanager
 
 # Intel Device Plugins depends on cert-manager
 - name: Include Node Feature Discovery playbook
-  ansible.builtin.import_playbook: nodefeatures.yml
+  ansible.builtin.import_playbook: playbooks/nodefeatures.yml
   tags: nodefeatures
 
 - name: Include Wave config monitoring playbook
-  ansible.builtin.import_playbook: wave.yml
+  ansible.builtin.import_playbook: playbooks/wave.yml
   tags: wave
 
 - name: Include storage provisioners playbook
-  ansible.builtin.import_playbook: storage.yml
+  ansible.builtin.import_playbook: playbooks/storage.yml
   tags: storage
 
 # MinIO depends on NFS storage provisioner
 - name: Include MinIO object storage playbook
-  ansible.builtin.import_playbook: minio.yml
+  ansible.builtin.import_playbook: playbooks/minio.yml
   tags: minio
 
 # Velero depends on MinIO and Longhorn
 - name: Include Velero backup/restore playbook
-  ansible.builtin.import_playbook: velero.yml
+  ansible.builtin.import_playbook: playbooks/velero.yml
   tags: velero
 
 - name: Include resource manifests playbook
-  ansible.builtin.import_playbook: manifests.yml
+  ansible.builtin.import_playbook: playbooks/manifests.yml
   tags: manifests
 
 # Harbor depends on NFS storage provisioner
 - name: Include Harbor OCI registry playbook
-  ansible.builtin.import_playbook: harbor.yml
+  ansible.builtin.import_playbook: playbooks/harbor.yml
   tags: harbor
 
 - name: Include OpenSearch cluster playbook
-  ansible.builtin.import_playbook: opensearch.yml
+  ansible.builtin.import_playbook: playbooks/opensearch.yml
   tags: opensearch
 
 # Fluent Bit depends on OpenSearch
 - name: Include Fluent Bit logging playbook
-  ansible.builtin.import_playbook: logging.yml
+  ansible.builtin.import_playbook: playbooks/logging.yml
   tags: logging
 
 - name: Include PostgreSQL database playbook
-  ansible.builtin.import_playbook: postgresql.yml
+  ansible.builtin.import_playbook: playbooks/postgresql.yml
   tags: postgresql
 
 # Keycloak depends on PostgreSQL
 - name: Include Keycloak IAM & OIDC playbook
-  ansible.builtin.import_playbook: keycloak.yml
+  ansible.builtin.import_playbook: playbooks/keycloak.yml
   tags: keycloak
 
 - name: Include Valkey cache cluster playbook
-  ansible.builtin.import_playbook: valkey.yml
+  ansible.builtin.import_playbook: playbooks/valkey.yml
   tags: valkey
 
 # Prometheus depends on Keycloak and Valkey
 - name: Include Prometheus monitoring playbook
-  ansible.builtin.import_playbook: monitoring.yml
+  ansible.builtin.import_playbook: playbooks/monitoring.yml
   tags: monitoring
 
 # Thanos depends on Prometheus, MinIO, Valkey
 - name: Include Thanos components playbook
-  ansible.builtin.import_playbook: thanos.yml
+  ansible.builtin.import_playbook: playbooks/thanos.yml
   tags: thanos
 
 # Pyrra depends on cert-manager, Prometheus, Thanos
 - name: Include Pyrra SLO management playbook
-  ansible.builtin.import_playbook: pyrra.yml
+  ansible.builtin.import_playbook: playbooks/pyrra.yml
   tags: pyrra
 
 # OpenTelemetry depends on cert-manager, Prometheus
 - name: Include OTel observability playbook
-  ansible.builtin.import_playbook: observability.yml
+  ansible.builtin.import_playbook: playbooks/observability.yml
   tags: observability
 
 # Tempo depends on MinIO, Prometheus, OpenTelemetry
 - name: Include Tempo tracing backend playbook
-  ansible.builtin.import_playbook: tempo.yml
+  ansible.builtin.import_playbook: playbooks/tempo.yml
   tags: tempo
 
 # Kiali depends on Prometheus and Keycloak
 - name: Include Istio service mesh playbook
-  ansible.builtin.import_playbook: istio.yml
+  ansible.builtin.import_playbook: playbooks/istio.yml
   tags: istio
 
 - name: Include virtual clusters playbook
-  ansible.builtin.import_playbook: vclusters.yml
+  ansible.builtin.import_playbook: playbooks/vclusters.yml
   tags: vclusters
 
 - name: Include HashiCorp Vault playbook
-  ansible.builtin.import_playbook: vault.yml
+  ansible.builtin.import_playbook: playbooks/vault.yml
   tags: vault
 
 # ESO depends on Vault
 - name: Include External Secrets playbook
-  ansible.builtin.import_playbook: externalsecrets.yml
+  ansible.builtin.import_playbook: playbooks/externalsecrets.yml
   tags: externalsecrets
 
 # GitLab depends on PostgreSQL, MinIO, Harbor
 - name: Include GitLab CI/CD stack playbook
-  ansible.builtin.import_playbook: gitlab.yml
+  ansible.builtin.import_playbook: playbooks/gitlab.yml
   tags: gitlab
 
 # Buildkite depends on GitLab
 - name: Include Buildkite Agent playbook
-  ansible.builtin.import_playbook: buildkite.yml
+  ansible.builtin.import_playbook: playbooks/buildkite.yml
   tags: buildkite
 
 # Argo CD depends on Valkey, GitLab, vClusters
 - name: Include Argo CD GitOps tool playbook
-  ansible.builtin.import_playbook: argocd.yml
+  ansible.builtin.import_playbook: playbooks/argocd.yml
   tags: argocd
 
 # AWX depends on PostgreSQL, GitLab, Harbor
 - name: Include Ansible AWX platform playbook
-  ansible.builtin.import_playbook: awx.yml
+  ansible.builtin.import_playbook: playbooks/awx.yml
   tags: awx
 
 - name: Include K8s Metacontroller playbook
-  ansible.builtin.import_playbook: metacontroller.yml
+  ansible.builtin.import_playbook: playbooks/metacontroller.yml
   tags: metacontroller
 
 - name: Include Qdrant vector DB playbook
-  ansible.builtin.import_playbook: qdrant.yml
+  ansible.builtin.import_playbook: playbooks/qdrant.yml
   tags: qdrant
 
 # Ollama depends on Node Feature Discovery
 - name: Include Ollama LLM server playbook
-  ansible.builtin.import_playbook: ollama.yml
+  ansible.builtin.import_playbook: playbooks/ollama.yml
   tags: ollama
 
 - name: Include SearXNG metasearch playbook
-  ansible.builtin.import_playbook: searxng.yml
+  ansible.builtin.import_playbook: playbooks/searxng.yml
   tags: searxng
 
 - name: Include Playwright server playbook
-  ansible.builtin.import_playbook: playwright.yml
+  ansible.builtin.import_playbook: playbooks/playwright.yml
   tags: playwright
 
 # LiteLLM depends on PostgreSQL, Valkey, SearXNG
 - name: Include LiteLLM AI gateway playbook
-  ansible.builtin.import_playbook: litellm.yml
+  ansible.builtin.import_playbook: playbooks/litellm.yml
   tags: litellm
 
 # Open WebUI depends on PostgreSQL, Valkey,
 # MinIO, Ollama, LiteLLM, Qdrant, (GitLab),
 # SearXNG, Playwright
 - name: Include Open WebUI platform playbook
-  ansible.builtin.import_playbook: openwebui.yml
+  ansible.builtin.import_playbook: playbooks/openwebui.yml
   tags: openwebui
 
 # Flowise depends on PostgreSQL and Valkey
 - name: Include Flowise AI platform playbook
-  ansible.builtin.import_playbook: flowise.yml
+  ansible.builtin.import_playbook: playbooks/flowise.yml
   tags: flowise
 
 # OpenClaw depends on Ollama and LiteLLM
 - name: Include OpenClaw AI agents playbook
-  ansible.builtin.import_playbook: openclaw.yml
+  ansible.builtin.import_playbook: playbooks/openclaw.yml
   tags: openclaw

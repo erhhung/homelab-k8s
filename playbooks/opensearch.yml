@@ -1,0 +1,247 @@
+# https://docs.opensearch.org/latest/opensearch
+# https://docs.opensearch.org/latest/dashboards
+#
+# UNINSTALLATION STEPS:
+# helm delete -n opensearch opensearch-dashboards
+# helm delete -n opensearch opensearch
+---
+# https://docs.opensearch.org/latest/install-and-configure/install-opensearch/helm
+- name: Install OpenSearch on RKE cluster
+  tags: install
+  hosts: "{{ rke_control_plane_host }}"
+  vars_files: &vars_files
+    - vars/kubernetes.yml
+    - vars/metallb.yml
+    - vars/storage.yml
+    - vars/monitoring.yml
+    - vars/opensearch.security.yml
+    - vars/opensearch.yml
+    - vars/kibana.yml
+  vars: &vars
+    # required kubernetes>=24.2 package only in user virtualenv
+    ansible_python_interpreter: "{{ venv_python_interpreter }}"
+    kubeconfig: "{{ rke_kubeconfig }}"
+    secret_ns: "{{ opensearch_namespace }}"
+    create_ns: false
+  pre_tasks:
+    - name: Hash OpenSearch user passwords
+      vars:
+        passwords: "{{ opensearch_passwords }}"
+        fact_name: opensearch_passwords_hashed
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/hashpwds.yml"
+
+    - name: Is the monitoring stack ready?
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/monitoring/stackready.yml"
+      when: monitoring_stack_ready is undefined
+
+    - name: Is OpenSearch already running?
+      # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_info_module.html
+      kubernetes.core.k8s_info:
+        kubeconfig: "{{ kubeconfig }}"
+        api_version: apps/v1
+        kind: StatefulSet
+        name: "{{ opensearch_master_service }}"
+        namespace: "{{ opensearch_namespace }}"
+      register: opensearch_info
+  tasks:
+    # cert also used by OpenSearch ingress
+    - name: Create OpenSearch node secret
+      vars:
+        # Java requires key file to
+        # be in PKCS#8 / PEM format
+        secret_name: "{{ opensearch_secrets['node-tls'] }}"
+        create_ns: true
+        cert_name: opensearch-node
+        algorithm: RSA
+        # IMPORTANT! first SAN will be CN, and must match
+        # value of `opensearch_security_plugin.nodes_dn`
+        sans:
+          - opensearch-node
+          - "{{ opensearch_fqdns }}"
+          - "*.{{ opensearch_namespace }}.svc.{{ cluster_domain }}"
+          - "*.{{ opensearch_namespace }}.svc"
+          - "{{ metallb_vips['opensearch'] }}"
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/k8s/secrets/tls.step.yml"
+
+    - name: Create OpenSearch admin secret
+      vars:
+        # Java requires key file to
+        # be in PKCS#8 / PEM format
+        secret_name: "{{ opensearch_secrets['admin-tls'] }}"
+        cert_name: opensearch-admin
+        algorithm: RSA
+        days: 365
+        sans:
+          - erhhung
+          - "{{ user_erhhung.email }}"
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/k8s/secrets/tls.step.yml"
+
+    - name: Create OpenSearch passwords secret
+      vars:
+        secret_name: "{{ opensearch_secrets['passwords'] }}"
+        # scraper user password is stored in separate Secret
+        # https://docs.ansible.com/ansible/latest/collections/ansible/utils/remove_keys_filter.html
+        secret_data: "{{ opensearch_passwords |
+          ansible.utils.remove_keys(target=['scraper']) }}"
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/k8s/secrets/generic.yml"
+
+    - name: Create OpenSearch credentials secret
+      vars:
+        users:
+          # opensearch-creds-scraper is used by
+          # OpenSearch serviceMonitor.basicAuth
+          - scraper
+        secret_name: opensearch-creds-{{ item }}
+        secret_data:
+          # these keys are expected by chart template
+          username: "{{ item }}"
+          password: "{{ opensearch_passwords[item] }}"
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/k8s/secrets/generic.yml"
+      loop: "{{ users }}"
+
+    - name: Create OpenSearch security secret
+      vars:
+        secret_name: "{{ opensearch_secrets['security'] }}"
+        secret_data: "{{ opensearch_security_config }}"
+        if_changed: Apply (updated) security config
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/k8s/secrets/generic.yml"
+
+    - name: Create monitoring scraper secret
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/monitoring/scraper.yml"
+
+    - name: Install OpenSearch Helm chart
+      vars:
+        repo_name: opensearch
+        repo_url: https://opensearch-project.github.io/helm-charts
+        chart_ref: opensearch
+        chart_ver: "{{ opensearch_chart_version }}"
+        release: "{{ opensearch_release_name }}"
+        release_ns: "{{ opensearch_namespace }}"
+        values: "{{ opensearch_chart_values }}"
+
+        patches:
+          merge_patches:
+            - apiVersion: apps/v1
+              kind: StatefulSet
+              metadata:
+                name: "{{ opensearch_master_service }}"
+              spec:
+                revisionHistoryLimit: 2
+                persistentVolumeClaimRetentionPolicy:
+                  whenDeleted: Delete
+                  whenScaled: Retain
+
+            # https://github.com/opensearch-project/helm-charts/issues/673
+            # https://github.com/opensearch-project/helm-charts/pull/674
+            # "prometheus.io/scrape" label is added on headless service
+            - |
+              {% if prometheus_crds_installed %}
+              apiVersion: monitoring.coreos.com/v1
+              kind: ServiceMonitor
+              metadata:
+                name: {{ opensearch_master_service }}-service-monitor
+                namespace: {{ opensearch_namespace }}
+              spec:
+                selector:
+                  matchLabels:
+                    prometheus.io/scrape: "true"
+              {% endif %}
+
+        extras: # adopt extra resources into Helm release
+          - cert-manager.io/v1 Certificate {{ opensearch_secrets['node-tls']  }}
+          - cert-manager.io/v1 Certificate {{ opensearch_secrets['admin-tls'] }}
+          - cert-manager.io/v1 Certificate {{ monitoring_secrets['scraper']   }}
+          - v1 Secret {{ opensearch_secrets['passwords'] }}
+          - v1 Secret {{ opensearch_secrets['security']  }}
+          - v1 Secret opensearch-creds-scraper
+
+        # it can take a long time to pull container images
+        # and provision storage and start each StatefulSet
+        # pod sequentially due to the OrderedReady policy
+        wait_timeout: 1200
+        task_timeout: 1600
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/helm/helmfile.yml"
+
+    - name: Initialize OpenSearch Security?
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/uri_module.html
+      ansible.builtin.uri:
+        url: "{{ opensearch_url }}"
+        # status would be 503 (Service Unavailable) with
+        # response "OpenSearch Security not initialized";
+        # otherwise, 401 (Unauthorized) would be expected
+        status_code: [401, 503]
+        return_content: true
+      register: init_check
+      changed_when: >-
+        init_check.status  == 503 and
+        init_check.content is search('OpenSearch Security not initialized')
+      notify: Apply (updated) security config
+  handlers:
+    - name: Apply (updated) security config
+      # a handler cannot have block of subtasks, so the
+      # tasks have been refactored into a separate file
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/opensearch/security.yml"
+
+# https://docs.opensearch.org/latest/install-and-configure/install-dashboards/helm
+- name: Install OpenSearch Dashboards
+  tags:
+    - kibana
+    - dashboards
+  hosts: "{{ rke_control_plane_host }}"
+  vars_files: *vars_files
+  vars: *vars
+  pre_tasks:
+    - name: Is the monitoring stack ready?
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/monitoring/stackready.yml"
+      when: monitoring_stack_ready is undefined
+  tasks:
+    - name: Create Dashboards ingress secret
+      vars:
+        secret_name: "{{ kibana_secrets['ingress'] }}"
+        cert_name: dashboards-ingress
+        sans: "{{ kibana_fqdns }}"
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/k8s/secrets/tls.step.yml"
+
+    - name: Install Dashboards Helm chart
+      vars:
+        repo_name: opensearch
+        repo_url: https://opensearch-project.github.io/helm-charts
+        chart_ref: opensearch-dashboards
+        chart_ver: "{{ dashboards_chart_version }}"
+        release: "{{ dashboards_release_name }}"
+        release_ns: "{{ kibana_namespace }}"
+        values: "{{ dashboards_chart_values }}"
+        wait: false
+
+        extras: # adopt extra resources into Helm release
+          - cert-manager.io/v1 Certificate {{ kibana_secrets['ingress'] }}
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/helm/helmfile.yml"
+
+    - name: Add Wave annotations to Deployment
+      vars:
+        res_kind: Deployment
+        res_name: "{{ dashboards_release_name }}"
+        res_ns: "{{ kibana_namespace }}"
+        wait_secs: 3
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/k8s/wave.yml"
+
+    - name: Wait until Dashboards is ready
+      ansible.builtin.uri:
+        url: https://{{ kibana_fqdns | first }}/
+      # https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_loops.html#retrying-a-task-until-a-condition-is-met
+      retries: 30
+      delay: 3
+
+    - name: Customize Dashboards settings
+      vars:
+        username: admin
+        password: "{{ opensearch_admin_pass }}"
+        settings: "{{ kibana_admin_settings }}"
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/kibana/settings.yml"
+
+    - name: Import Grafana dashboards
+      vars:
+        dashboards: "{{ opensearch_grafana_dashboards }}"
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/grafana/dashboards.yml"
+      when: grafana_api_server_online | default(true)

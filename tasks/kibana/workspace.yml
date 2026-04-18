@@ -15,7 +15,7 @@
 ---
 - name: Gather facts about controller
   # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
-  ansible.builtin.include_tasks: tasks/localfacts.yml
+  ansible.builtin.include_tasks: "{{ tasks_dir }}/localfacts.yml"
   when: local_python_interpreter is undefined
 
 - name: Create Dashboards workspace

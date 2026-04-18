@@ -21,7 +21,7 @@ endif
 # targets are playbook names with optional dash prefix/suffix (refer to
 # comments in runlist.sh for how args are parsed to create the runlist)
 # https://www.gnu.org/software/make/manual/html_node/Shell-Function.html
-PLAYBOOKS := $(shell yq '.[].tags' main.yml)
+PLAYBOOKS := $(shell yq '.[].tags | select(.)' main.yml)
 
 # https://www.gnu.org/software/make/manual/html_node/Goals.html
 # https://www.gnu.org/software/make/manual/html_node/Text-Functions.html
@@ -52,27 +52,30 @@ endif
 # this target is run implicitly if the
 # first goal is not an explicit target
 play:
-	@./play.sh $(play_args)
+	@scripts/play.sh $(play_args)
 
 # run the debugging playbook (usually invoked by
 # `make debug -- -t <tag>` to run specific play)
 debug:
-	@ansible-playbook $(rest_goals) debug.yml
+	@ansible-playbook $(rest_goals) playbooks/debug.yml
 
 # perform syntax checking on all playbooks
 check:
-	@ansible-playbook --syntax-check $(addsuffix .yml,$(PLAYBOOKS))
+	@ansible-playbook --syntax-check $(addprefix playbooks/, \
+																	 $(addsuffix .yml, $(PLAYBOOKS)))
 
 # run ansible-lint on all/specific playbooks
 # and suppress informational noise in stderr
 lint:
-	@ansible-lint $(addsuffix .yml,$(rest_goals)) 2> \
-		>(grep -v ANSIBLE_COLLECTIONS_SCAN_SYS_PATH >&2)
+	@ansible-lint $(addprefix playbooks/, \
+								$(addsuffix .yml, $(rest_goals))) \
+		2> >(grep -v ANSIBLE_COLLECTIONS_SCAN_SYS_PATH \
+			  | sed -E 's/ Last profile.+$$//' >&2)
 
 # count lines of code in the project
 # `make cloc -- --csv | rich --csv -`
 cloc:
-	@./cloc.sh $(rest_goals)
+	@scripts/cloc.sh $(rest_goals)
 
 # print list of playbook tags
 tags:
@@ -90,7 +93,7 @@ playbook="$${playbook/#vm/vms.}"
 args="$(rest_goals)"
 args=("$${args// /,}")
 [ "$$args" ] && args=(--extra-vars targets=$$args)
-ansible-playbook $${args[@]} "$$playbook"
+ansible-playbook $${args[@]} "playbooks/$$playbook"
 endef
 
 # `make vmsnapshot <create|<revert|delete>
@@ -106,14 +109,14 @@ args=(-s do="$(firstword $(rest_goals))")
 [ "$(desc)"    ] && args+=(-s    desc="$(desc)")
 [ "$(date)"    ] && args+=(-s    date="$(date)")
 args=(--extra-vars "$$(jo -- $${args[@]})")
-ansible-playbook $${args[@]} vms.snapshot.yml
+ansible-playbook $${args[@]} playbooks/vms.snapshot.yml
 endef
 
 # show available disk space on all cluster nodes
 diskfree:
-	@./diskfree.sh || true
+	@scripts/diskfree.sh || true
 
 # unseal Vault pods, optionally restarting them first
 #  `make unseal [-r|--restart] [index1] [index2]...`
 unseal:
-	@./files/vault/unseal.sh $(rest_goals) || true
+	@scripts/unseal.sh $(rest_goals) || true

@@ -98,7 +98,7 @@
         description: Create runlist temp.yml
         inventory: Localhost
         project: "{{ project.name }}"
-        playbook: awx.setup.yml
+        playbook: playbooks/awx.setup.yml
         instance_groups: ["minimal"]
         execution_environment: "{{ minimal_ee }}"
         forks: 1
@@ -111,7 +111,7 @@
         description: Run selected playbooks
         inventory: "{{ project.name }}"
         project: "{{ project.name }}"
-        playbook: awx.execute.yml
+        playbook: playbooks/awx.execute.yml
         ask_tags: true
         ask_skip_tags: true
         # there's no verbosity prompt
@@ -136,7 +136,7 @@
         description: Delete runlist temp.yml
         inventory: Localhost
         project: "{{ project.name }}"
-        playbook: awx.teardown.yml
+        playbook: playbooks/awx.teardown.yml
         skip_tags: failure # CSV
         instance_groups: ["minimal"]
         execution_environment: "{{ minimal_ee }}"
@@ -151,7 +151,7 @@
         inventory: Localhost
         project: "{{ project.name }}"
         # cleans up before failing
-        playbook: awx.teardown.yml
+        playbook: playbooks/awx.teardown.yml
         instance_groups: ["minimal"]
         execution_environment: "{{ minimal_ee }}"
         forks: 1
@@ -173,7 +173,7 @@
         defaults: "{{ choices | first }}"
         # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/template_lookup.html
         survey: "{{ lookup('ansible.builtin.template',
-          template_dir ~ '/awx/surveys/playbooks.yaml.j2') | from_yaml }}"
+          templates_dir ~ '/awx/surveys/playbooks.yaml.j2') | from_yaml }}"
         notifiers: |
           {% set notifiers = [] %}
           {% if email_notifications_enabled %}

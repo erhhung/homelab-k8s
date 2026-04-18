@@ -23,7 +23,7 @@
       vars:
         max_wait: 60 # seconds
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
-      ansible.builtin.include_tasks: tasks/k8s/waitready.yml
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/k8s/waitready.yml"
 
     - name: Check metrics endpoint
       vars:
@@ -56,11 +56,11 @@
         - name: Restart Praefect pod(s)
           vars:
             max_wait: 0 # don't wait
-          ansible.builtin.include_tasks: tasks/k8s/restart.yml
+          ansible.builtin.include_tasks: "{{ tasks_dir }}/k8s/restart.yml"
           when: retry_count | int <= max_retries
 
         - name: Repeat readiness check
-          ansible.builtin.include_tasks: tasks/gitlab/praefectready.yml # recursion
+          ansible.builtin.include_tasks: "{{ tasks_dir }}/gitlab/praefectready.yml" # recursion
           when: retry_count | int <= max_retries
 
         - name: Set retry_count to zero

@@ -24,4 +24,4 @@
       - "{{ postgresql_superuser }}"
       - "{{ postgresql_superuser }}@{{ homelab_domain }}"
   # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
-  ansible.builtin.include_tasks: tasks/k8s/secrets/tls.step.yml
+  ansible.builtin.include_tasks: "{{ tasks_dir }}/k8s/secrets/tls.step.yml"

@@ -1,0 +1,74 @@
+# https://docs.ansible.com/ansible/latest/reference_appendices/special_variables.html
+
+pki_host: "{{ groups['pki_any'] | first }}"
+xcp_host: "{{ groups['xcp_any'] | first }}"
+
+# no longer setting SSH key file here so that AWX can inject it
+# by credentials while play.sh exports ANSIBLE_PRIVATE_KEY_FILE
+# ansible_ssh_private_key_file: >-
+#   {{ lookup('ansible.builtin.env', 'HOME') }}/.ssh/{{
+#      lookup('ansible.builtin.env', 'USER') }}.pem
+ansible_ssh_common_args: >-
+  -o StrictHostKeyChecking=no
+  -o ForwardAgent=yes
+  -o ConnectTimeout=5
+  -o LogLevel=error
+
+# host-specific password for Kubernetes node
+# (assigned during VM creation in Terraform)
+# https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_privilege_escalation.html#become-connection-variables
+ansible_become_password: Irre1evant.{{ inventory_hostname | ansible.builtin.capitalize }}
+# password overrides in inventory/host_vars/*.yml
+
+default_python_interpreter: /usr/bin/python3
+ansible_python_interpreter: "{{ default_python_interpreter }}"
+# user virtualenv gets created by ansible.builtin.pip in packages.yml
+ansible_user_virtualenv: /home/{{ ansible_user }}/.venv
+venv_python_interpreter: "{{ ansible_user_virtualenv }}/bin/python3"
+
+# localhost fact `project_dir` is set by top-level playbook "main.yml"
+project_dir: "{{ hostvars['localhost']['project_dir'] |
+  default(playbook_dir | ansible.builtin.dirname) }}"
+vars_dir: "{{ project_dir }}/vars"
+tasks_dir: "{{ project_dir }}/tasks"
+templates_dir: "{{ project_dir }}/templates"
+files_dir: "{{ project_dir }}/files"
+icons_dir: "{{ project_dir }}/images/icons"
+scripts_dir: "{{ project_dir }}/scripts"
+
+# standard IETF BCP 47 notation
+system_locale: en-US
+# Linux uses '_' instead of '-'
+system_locale_linux: "{{ system_locale | ansible.builtin.replace('-','_') }}.UTF-8"
+system_time_zone: America/Los_Angeles
+
+# https://tailscale.com/kb/1015/100.x-addresses
+tailnet_cidr: 100.64.0.0/10
+homelab_cidr: 192.168.0.0/16
+
+homelab_domain: fourteeners.local
+search_domains:
+  - "{{ homelab_domain }}"
+
+homelab_nfs:
+  server: qnap.{{ homelab_domain }}
+  base_path: /k8s_data
+
+# IP addresses of RKE cluster nodes
+cluster_node_ips: |
+  {% set ips = [] %}
+  {% for host in groups['rke_cluster'] %}
+  {%   set _ = ips.append(hostvars[host].ansible_host) %}
+  {% endfor %}
+  {{ ips }}
+
+# available only after running harbor.yml playbook!
+harbor_container_registry: harbor.{{ homelab_domain }}
+harbor_admin_user: admin
+
+# bcrypt settings used for ansible.builtin.password_hash filter:
+# use fixed 22-char salt and rounds for idempotent configuration
+# (requires Python packages "passlib" and "bcrypt==4.0.1" on the
+# Ansible controller)
+bcrypt_salt: uSxlHqJxwleWvtiyqwx1kO
+bcrypt_rounds: 11

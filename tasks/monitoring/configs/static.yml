@@ -14,7 +14,7 @@
         # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/fileglob_lookup.html
         # https://docs.ansible.com/ansible/latest/plugins/lookup.html#forcing-lookups-to-return-lists-query-and-wantlist-true
         _configs: "{{ query('ansible.builtin.fileglob',
-          template_dir ~ '/monitoring/configs/*.yaml*') }}"
+          templates_dir ~ '/monitoring/configs/*.yaml*') }}"
       ansible.builtin.set_fact:
         # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/template_lookup.html
         static_scrape_configs: "{{ static_scrape_configs +

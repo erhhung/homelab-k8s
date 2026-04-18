@@ -1,0 +1,130 @@
+# https://cert-manager.io/docs
+# https://cert-manager.io/docs/installation/helm
+# https://cert-manager.io/docs/configuration/issuers
+---
+- name: Install Certificate Manager
+  tags: install
+  hosts: &hosts
+    - "{{ k3s_control_plane_host }}"
+    - "{{ rke_control_plane_host }}"
+  vars_files: &vars_files
+    - vars/kubernetes.yml
+    - vars/monitoring.yml
+    - vars/certmanager.yml
+  vars: &vars
+    # required kubernetes>=24.2 package only in user virtualenv
+    ansible_python_interpreter: "{{ venv_python_interpreter }}"
+    # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/ternary_filter.html
+    cluster: "{{ (inventory_hostname in groups['k3s_cluster']) | ternary('k3s','rke') }}"
+    kubeconfig: "{{ vars[cluster ~'_kubeconfig'] }}"
+  pre_tasks:
+    - name: Are Gateway API CRDs installed?
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/istio/crds.yml"
+      when: gateway_api_crds_installed is undefined
+
+    - name: Is the monitoring stack ready?
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/monitoring/stackready.yml"
+      when: monitoring_stack_ready is undefined
+  tasks:
+    - name: Install cert-manager Helm chart
+      vars:
+        repo_name: jetstack
+        repo_url: https://charts.jetstack.io
+        chart_ref: cert-manager
+        chart_ver: "{{ certmanager_chart_version }}"
+        release: "{{ certmanager_release_name }}"
+        release_ns: "{{ certmanager_namespace }}"
+        values: "{{ certmanager_chart_values }}"
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/helm/helmfile.yml"
+
+# https://cert-manager.io/docs/reference/cmctl#manual-installation
+# TIP: to force a renewal: cmctl renew -n <namespace> <certificate>
+- name: Install cert-manager CLI tool
+  tags: cli
+  hosts: k8s_hosts
+  become: true
+  tasks:
+    - name: Install cert-manager CLI tool
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/shell_module.html
+      ansible.builtin.shell: |
+        set -o pipefail
+
+        REL="https://github.com/cert-manager/cmctl/releases"
+        VER=$(curl -Is "$REL/latest" | sed -En 's/^location:.+\/tag\/v(.+)\r$/\1/p')
+
+        # check if latest version already installed
+        command -v cmctl &> /dev/null && {
+          ver=$(v=(`cmctl version --client --short`); echo ${v[-1]#v})
+          [ "$ver" == "$VER" ] && exit 9 # no change
+        }
+        ARCH=$(uname -m | sed -e 's/aarch64/arm64/' \
+                              -e  's/x86_64/amd64/')
+        curl -fsSL "$REL/download/v${VER}/cmctl_linux_${ARCH}.tar.gz" | \
+          tar -xz -C /usr/local/bin --no-same-owner cmctl
+      args:
+        executable: /bin/bash
+      register: install_cli
+      changed_when: install_cli.rc == 0
+      failed_when: install_cli.rc not in [0,9]
+
+# https://smallstep.com/docs/certificate-manager/kubernetes-step-issuer
+# https://github.com/smallstep/step-issuer
+- name: Configure Step CA as ClusterIssuer
+  tags: issuer
+  hosts: *hosts
+  vars_files: *vars_files
+  vars:
+    <<: *vars
+    password_ref: "{{ step_issuer_chart_values.stepClusterIssuer.provisioner.passwordRef }}"
+  pre_tasks:
+    - name: Gather facts about controller
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/localfacts.yml"
+      when: local_python_interpreter is undefined
+
+    - name: Get CA certificates from PKI
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/pki/cacerts.yml"
+      when: ca_certificates is undefined
+
+    - name: Get Step CA provisioner info
+      delegate_to: localhost
+      run_once: true
+      block:
+        - name: Fetch Step CA provisioners
+          vars:
+            ansible_python_interpreter: "{{ local_python_interpreter }}"
+          # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/uri_module.html
+          ansible.builtin.uri:
+            url: "{{ step_ca_url }}/provisioners"
+          register: step_ca_provisioners
+
+        - name: Set step_ca_provisioner fact
+          # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/set_fact_module.html
+          ansible.builtin.set_fact:
+            step_ca_provisioner: |
+              {{ step_ca_provisioners.json.provisioners |
+                 selectattr('type', '==', 'JWK')  | first }}
+  tasks:
+    - name: Create CA provisioner secret
+      vars:
+        secret_name: "{{ password_ref.name }}"
+        secret_ns: "{{ step_issuer_namespace }}"
+        create_ns: false
+        secret_data: "{{ {
+          password_ref.key: step_ca_provisioner_pass
+          } }}"
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/k8s/secrets/generic.yml"
+
+    - name: Install Step Issuer Helm chart
+      vars:
+        repo_name: smallstep
+        repo_url: https://smallstep.github.io/helm-charts
+        chart_ref: step-issuer
+        chart_ver: "{{ step_issuer_chart_version }}"
+        release: "{{ step_issuer_release_name }}"
+        release_ns: "{{ step_issuer_namespace }}"
+        values: "{{ step_issuer_chart_values }}"
+
+        extras: # adopt extra resources into Helm release
+          - v1 Secret {{ password_ref.name }}
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/helm/helmfile.yml"

@@ -1,0 +1,755 @@
+# https://docs.flowiseai.com/
+# https://docs.flowiseai.com/configuration
+---
+- name: Install Flowise on RKE cluster
+  tags: install
+  hosts: "{{ rke_control_plane_host }}"
+  vars_files:
+    - vars/kubernetes.yml
+    - vars/postgresql.yml
+    - vars/valkey.yml
+    - vars/storage.yml
+    - vars/flowise.yml
+  vars:
+    # required kubernetes>=24.2 package only in user virtualenv
+    ansible_python_interpreter: "{{ venv_python_interpreter }}"
+    kubeconfig: "{{ rke_kubeconfig }}"
+    secret_ns: "{{ flowise_namespace }}"
+    create_ns: false
+  pre_tasks:
+    - name: Get image tag from Harbor
+      when: flowise_image.registry == harbor_container_registry
+      # use our image with support for DATABASE_TLS
+      # and client certificate environment variables
+      block:
+        - name: Clear repo_tag_found fact
+          # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/set_fact_module.html
+          ansible.builtin.set_fact:
+            repo_tag_found: ""
+
+        - name: Get image tag from Harbor
+          vars:
+            repository: "{{ item }}"
+            # if flowise image tag found, find
+            # flowise-worker using the same tag
+            verify_tag: >-
+              {{ repo_tag_found if repo_tag_found is truthy else flowise_image.tag | default(omit) }}
+          # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
+          ansible.builtin.include_tasks: "{{ tasks_dir }}/harbor/gettag.yml"
+          loop:
+            - "{{ flowise_image.repository }}"
+            - "{{ flowise_image.repository }}-worker"
+          loop_control:
+            # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/basename_filter.html
+            label: "{{ item | ansible.builtin.basename }}"
+          # sets repo_tag_found fact
+
+        - name: Show which image to deploy
+          vars:
+            image: "{{ flowise_image.registry }}/{{ flowise_image.repository }}"
+          # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/assert_module.html
+          ansible.builtin.assert:
+            that: repo_tag_found is truthy
+            success_msg: >-
+              Using image: {{ image }}:{{ repo_tag_found }}
+            fail_msg: >-
+              Image not found: {{ image -}}
+              {% if flowise_image.tag is defined -%}
+                :{{ flowise_image.tag }}
+              {% endif %}
+
+        - name: Set flowise_image_tag fact
+          ansible.builtin.set_fact:
+            flowise_image_tag: "{{ repo_tag_found }}"
+
+    - name: Get the PostgreSQL image used
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/postgresql/image.yml"
+      when: postgresql_image is undefined
+  tasks:
+    - name: Create Flowise ingress secret
+      vars:
+        secret_name: "{{ flowise_secrets['ingress'] }}"
+        create_ns: true
+        cert_name: flowise-ingress
+        sans: "{{ [flowise_fqdn] }}"
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/k8s/secrets/tls.step.yml"
+
+    # database-restricted PostgreSQL user
+    - name: Create Flowise database secret
+      vars:
+        secret_name: "{{ flowise_secrets['database'] }}"
+        cert_name: flowise-database
+        days: 365
+        sans:
+          - "{{ flowise_db_user }}"
+          - "{{ flowise_db_user }}@{{ homelab_domain }}"
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/k8s/secrets/tls.step.yml"
+
+    # only to install PostgreSQL extensions
+    - name: Create database superuser secret
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/postgresql/superuser.yml"
+
+    - name: Create Flowise encryption secret
+      vars:
+        secret_name: "{{ flowise_secrets['encryption'] }}"
+        secret_data:
+          encryption-key: "{{ flowise_encryption_key }}"
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/k8s/secrets/generic.yml"
+
+    - name: Create Flowise credentials secret
+      vars:
+        secret_name: "{{ flowise_secrets['credentials'] }}"
+        secret_data:
+          postgresql-password: "{{ pgpool_pass }}"
+          # valkey-password: "{{ valkey_pass }}"
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/k8s/secrets/generic.yml"
+
+    - name: Install Flowise Helm chart
+      vars:
+        repo_name: cowboysysop
+        repo_url: "{{ flowise_chart_repo_url }}"
+        chart_ref: flowise
+        chart_ver: "{{ flowise_chart_version if
+          flowise_chart_repo_url is match('^http') else omit }}"
+        release: "{{ flowise_release_name }}"
+        release_ns: "{{ flowise_namespace }}"
+        values: "{{ flowise_chart_values }}"
+
+        extras: # adopt extra resources into Helm release
+          - cert-manager.io/v1 Certificate {{    flowise_secrets['ingress']   }}
+          - cert-manager.io/v1 Certificate {{    flowise_secrets['database']  }}
+          - cert-manager.io/v1 Certificate {{ postgresql_secrets['superuser'] }}
+          - v1 Secret {{ flowise_secrets['encryption']  }}
+          - v1 Secret {{ flowise_secrets['credentials'] }}
+
+        # pulling custom images from
+        # Harbor could take a while
+        wait_timeout: 600
+        task_timeout: 900
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/helm/helmfile.yml"
+
+- name: Configure Flowise installation
+  tags:
+    - configure
+    - documents
+  hosts: localhost
+  vars_files:
+    - vars/flowise.yml
+    - vars/kubernetes.yml
+    - vars/postgresql.yml
+    - vars/qdrant.yml
+    - vars/ollama.yml
+  vars:
+    api_base: https://{{ flowise_fqdn }}/api/v1
+    doc_store_name: Accounts
+  pre_tasks:
+    - name: Wait until Flowise is ready
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/uri_module.html
+      ansible.builtin.uri:
+        url: "{{ api_base }}/ping"
+        return_content: true
+      # https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_loops.html#retrying-a-task-until-a-condition-is-met
+      register: site_check
+      until: site_check.content == 'pong'
+      retries: 20
+      delay: 3
+  tasks:
+    - name: Authenticate as admin user
+      ansible.builtin.uri:
+        method: POST
+        url: "{{ api_base }}/auth/login"
+        body_format: json
+        body: &auth-body
+          email: "{{ flowise_admin_user.email }}"
+          password: "{{ flowise_admin_user.password }}"
+        # if user doesn't exist, response will
+        # be 404 and .message="User Not Found"
+        status_code: [200, 404]
+      register: admin_auth
+
+    - name: Create Flowise admin user
+      when: admin_auth.status == 404
+      block:
+        - name: Create Flowise admin user
+          ansible.builtin.uri:
+            method: POST
+            url: "{{ api_base }}/account/register"
+            body_format: json
+            body:
+              user:
+                type: pro
+                name: "{{       flowise_admin_user.name     }}"
+                email: "{{      flowise_admin_user.email    }}"
+                credential: "{{ flowise_admin_user.password }}"
+            # unlike other "create" APIs, this
+            # one actually returns correct 201
+            status_code: 201
+          changed_when: true
+
+        # register API doesn't return session
+        # cookies, so need to reauthenticate
+        - name: Reauthenticate admin user
+          ansible.builtin.uri:
+            method: POST
+            url: "{{ api_base }}/auth/login"
+            body_format: json
+            body: *auth-body
+          register: admin_reauth
+
+    - name: Set admin auth_headers fact
+      vars:
+        user: "{{ admin_reauth.json if admin_reauth.json is defined else admin_auth.json }}"
+        # uri result: .cookies is dictionary
+        # and .cookies_string is ;-delimited
+        # name=value pairs
+        cookies: >-
+          {{ admin_auth.cookies_string if admin_auth.cookies_string is defined else
+           admin_reauth.cookies_string }}
+      ansible.builtin.set_fact:
+        auth_headers:
+          Cookie: "{{ cookies }}"
+          X-Request-From: internal
+        admin_user: "{{ {
+          'id':    user.id,
+          'name':  user.name,
+          'email': user.email,
+          } }}"
+        admin_role: "{{ {
+          'id':    user.roleId,
+          'name':  user.assignedWorkspaces[0].role,
+          } }}"
+        organization: "{{ {
+          'id':    user.activeOrganizationId,
+          'name': 'Default Organization',
+          } }}"
+        workspace: "{{ {
+          'id':    user.activeWorkspaceId,
+          'name':  user.activeWorkspace,
+          } }}"
+        # use different (all caps) name for fact to prevent
+        # errors due to facts having higher precedence than
+        # vars with the same name at the play level
+        API_BASE: "{{ api_base }}"
+
+    - name: Get tools we already added
+      ansible.builtin.uri:
+        url: "{{ api_base }}/tools"
+        headers: "{{ auth_headers }}"
+        return_content: true
+      register: get_tools
+
+    - name: Get marketplace templates
+      ansible.builtin.uri:
+        url: "{{ api_base }}/marketplaces/templates"
+        headers: "{{ auth_headers }}"
+        return_content: true
+      register: get_templates
+
+    - name: Add tool from marketplace
+      vars:
+        all_tools: "{{ get_templates.json | selectattr('type', '==', 'Tool') }}"
+        available: "{{ all_tools     | map(attribute='name') }}"
+        existing: "{{ get_tools.json | map(attribute='name') }}"
+        add_tools: |
+          {% set tools = [] %}
+          {% for tool in flowise_marketplace_tools %}
+          {%   if tool.name not in existing and
+                  tool.name     in available %}
+          {%     set _ = tools.append(tool)  %}
+          {%   endif %}
+          {% endfor %}
+          {{ tools  }}
+        tool: "{{ all_tools | selectattr('name', '==', item.name) | first }}"
+        # make custom substitutions
+        # in provided function code
+        func: |-
+          {# use namespace() to create a scoped object #}
+          {# https://jinja.palletsprojects.com/en/stable/templates#assignments #}
+          {% set ns = namespace(func=tool.func) %}
+          {% for sub in item.func | default([]) %}
+          {%   set ns.func = ns.func | regex_replace(sub.replace, sub.with) %}
+          {% endfor  %}
+          {{ ns.func }}
+      ansible.builtin.uri:
+        method: POST
+        url: "{{ api_base }}/tools"
+        headers: "{{ auth_headers }}"
+        body_format: json
+        body:
+          name: "{{ tool.name }}"
+          description: "{{ tool.description }}"
+          iconSrc: "{{ tool.iconSrc }}"
+          color: "{{ tool.color }}"
+          # cast to string as value may be "[]"
+          schema: "{{ tool.schema | string }}"
+          func: "{{ func }}"
+      loop: "{{ add_tools }}"
+      loop_control:
+        label: "{{ item.name }}"
+      register: add_tool
+      changed_when: true
+
+    - name: Set marketplace_tools fact
+      ansible.builtin.set_fact:
+        marketplace_tools: |
+          {% set tools = get_tools.json   %}
+          {% for tool in add_tool.results %}
+          {%   set _ = tools.append(tool.json) %}
+          {% endfor %}
+          {{ tools  }}
+
+    - name: Get creds we already added
+      ansible.builtin.uri:
+        url: "{{ api_base }}/credentials"
+        headers: "{{ auth_headers }}"
+        return_content: true
+      register: get_creds
+
+    - name: Add third-party credential
+      vars:
+        existing: "{{ get_creds.json | map(attribute='name') }}"
+        add_creds: |
+          {% set creds = [] %}
+          {% for cred in flowise_external_credentials %}
+          {%   if cred.name not in existing %}
+          {%     set _ = creds.append(cred) %}
+          {%   endif %}
+          {% endfor %}
+          {{ creds  }}
+      ansible.builtin.uri:
+        method: POST
+        url: "{{ api_base }}/credentials"
+        headers: "{{ auth_headers }}"
+        body_format: json
+        body:
+          name: "{{ item.name }}"
+          credentialName: "{{ item.type }}"
+          plainDataObj: "{{ item.data }}"
+        return_content: true
+      loop: "{{ add_creds }}"
+      loop_control:
+        label: "{{ item.name }}"
+      register: add_cred
+      changed_when: true
+
+    - name: Set external_credentials fact
+      ansible.builtin.set_fact:
+        external_credentials: |
+          {% set creds = get_creds.json   %}
+          {% for cred in add_cred.results %}
+          {%   set _ = creds.append(cred.json) %}
+          {% endfor %}
+          {{ creds  }}
+
+    - name: Get Flowise document stores
+      ansible.builtin.uri:
+        url: "{{ api_base }}/document-store/store"
+        headers: "{{ auth_headers }}"
+        return_content: true
+      register: get_stores
+
+    - name: Create Accounts document store
+      vars:
+        store: "{{ get_stores.json | selectattr('name', '==', doc_store_name) }}"
+      ansible.builtin.uri:
+        method: POST
+        url: "{{ api_base }}/document-store/store"
+        headers: "{{ auth_headers }}"
+        body_format: json
+        body:
+          name: "{{ doc_store_name }}"
+          description: Confidential information and notable events about various accounts
+        return_content: true
+      when: store is falsy
+      register: create_store
+      changed_when: true
+
+    # pass var to the next play since
+    # scope of registered variable in
+    # Ansible is limited to this play
+    - name: Set accounts_doc_store fact
+      vars:
+        store: "{{ get_stores.json | selectattr('name', '==', doc_store_name) }}"
+      ansible.builtin.set_fact:
+        accounts_doc_store: |
+          {{ store | first if store is truthy else create_store.json }}
+
+    - name: Get Flowise database secret
+      delegate_to: "{{ rke_control_plane_host }}"
+      vars:
+        # required kubernetes>=24.2 package only in user virtualenv
+        ansible_python_interpreter: "{{ venv_python_interpreter }}"
+      # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_info_module.html
+      kubernetes.core.k8s_info:
+        kubeconfig: "{{ rke_kubeconfig }}"
+        api_version: v1
+        kind: Secret
+        name: "{{ flowise_secrets['database'] }}"
+        namespace: "{{ flowise_namespace }}"
+      register: db_secret
+
+    - name: Set vector_store_config fact
+      vars:
+        qdrant_cred_id: "{{   external_credentials |
+          selectattr('credentialName', '==', 'qdrantApi')   | map(attribute='id') | first }}"
+        postgres_cred_id: "{{ external_credentials |
+          selectattr('credentialName', '==', 'PostgresApi') | map(attribute='id') | first }}"
+        secret_data: "{{ db_secret.resources[0].data }}"
+
+        postgres_ssl_config:
+          # these properties are options from the
+          # DataSource class of `typeorm` package:
+          # https://typeorm.io/docs/drivers/postgres
+          ssl:
+            rejectUnauthorized: false
+            # base64-encoded PEM data
+            cert: "{{ secret_data['tls.crt'] }}"
+            key: "{{ secret_data['tls.key'] }}"
+            ca: "{{ secret_data['ca.crt'] }}"
+
+        ollama_config:
+          baseUrl: "{{ ollama_service_url }}"
+          # must be exact and include tag,
+          # and already pulled into Ollama
+          modelName: nomic-embed-text:v1.5
+          # numGpu: ""
+          # numThread: ""
+          useMMap: true
+
+        qdrant_config:
+          qdrantServerUrl: "{{ qdrant_service_url }}"
+          credential: "{{ qdrant_cred_id }}"
+          qdrantCollection: flowise_documents
+          # qdrantCollectionConfiguration: ""
+          # dimensions must be supported
+          # by the selected Ollama model
+          qdrantVectorDimension: 768
+          qdrantSimilarity: Cosine
+          # qdrantFilter: ""
+          # topK: ""
+          contentPayloadKey: content
+          metadataPayloadKey: metadata
+          fileUpload: true
+          batchSize: 10
+
+        postgres_config:
+          host: "{{ pgpool_service_host }}"
+          port: "{{ pgpool_service_port }}"
+          database: "{{ flowise_db_name }}"
+          credential: "{{ postgres_cred_id }}"
+          # this must be false, or else Flowise
+          # will set {ssl:true} and clobber our
+          # additionalConfig object {ssl:{...}}
+          ssl: false
+          additionalConfig: "{{ postgres_ssl_config | to_json }}"
+          namespace: accounts
+          tableName: upsert_records
+          sourceIdKey: source
+          cleanup: none
+
+      ansible.builtin.set_fact:
+        vector_store_config:
+          storeId: "{{ accounts_doc_store.id }}"
+          embeddingName: ollamaEmbedding
+          embeddingConfig: "{{ ollama_config }}"
+          vectorStoreName: qdrant
+          vectorStoreConfig: "{{ qdrant_config }}"
+          recordManagerName: postgresRecordManager
+          recordManagerConfig: "{{ postgres_config }}"
+
+    - name: Save new vector store config
+      vars:
+        old: "{{ accounts_doc_store }}"
+        new: "{{ vector_store_config }}"
+      ansible.builtin.uri:
+        method: POST
+        url: "{{ api_base }}/document-store/vectorstore/save"
+        headers: "{{ auth_headers }}"
+        body_format: json
+        body: "{{ new }}"
+      when: >-
+        old.embeddingConfig     is falsy or
+        old.embeddingConfig.config       !=
+        new.embeddingConfig              or
+        old.vectorStoreConfig   is falsy or
+        old.vectorStoreConfig.config     !=
+        new.vectorStoreConfig            or
+        old.recordManagerConfig is falsy or
+        old.recordManagerConfig.config   !=
+        new.recordManagerConfig
+      changed_when: true
+
+# NOTE: this play will only run if it is the only play specified to
+# run and the "documents" tag is also specified on the command line
+
+- name: Update Accounts document store
+  # must run after previous play to get
+  # auth headers & document store facts
+  tags: documents
+  hosts: localhost
+  vars:
+    api_base: "{{ API_BASE }}"
+    # PLAYBOOKS is extra var passed by play.sh or by AWX workflow survey;
+    # strip numbering and padding added for showing as ordered list in UI
+    # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/regex_replace_filter.html
+    playbooks: |
+      {{ PLAYBOOKS | map('ansible.builtin.regex_replace', '\\s*(\\d+\\. )?','') if
+         PLAYBOOKS is defined  and
+         PLAYBOOKS is sequence and
+         PLAYBOOKS is not string else [] }}
+    # this var can be set on the command line
+    # to limit the number of files to process
+    limit: 0
+  pre_tasks:
+    - name: Load documents or skip upload?
+      ansible.builtin.set_fact:
+        do_load: "{{ playbooks == ['flowise'] and 'documents' in ansible_run_tags }}"
+  tasks:
+    - name: Find ~/accounts/*.txt files
+      when: do_load
+      # ansible_user_dir will
+      # be set on 'localhost'
+      delegate_to: cosmos
+      block:
+        - name: Gather facts about user_dir
+          # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/setup_module.html
+          ansible.builtin.setup:
+            gather_subset: user_dir
+
+        - name: Ensure DNS resolution works
+          ansible.builtin.include_tasks: "{{ tasks_dir }}/dns/check.yml"
+
+        - name: Find ~/accounts/*.txt files
+          # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/find_module.html
+          ansible.builtin.find:
+            paths: ~/accounts/
+            follow: true
+            recurse: true
+            patterns: "*.txt"
+          register: find_files
+
+        - name: Load new document content
+          vars:
+            # ansible_user_dir for 'cosmos'
+            # set by ansible.builtin.setup
+            accts_dir: "{{ ansible_user_dir }}/accounts/"
+            acct_files: |
+              {% set files = [] %}
+              {% set ns = namespace(
+                  sorted=find_files.files | sort(attribute='mtime', reverse=true)) %}
+              {% if limit|int > 0 and limit|int < ns.sorted | length %}
+              {%   set ns.sorted = ns.sorted[:limit|int] %}
+              {% endif %}
+              {% set total  = ns.sorted | length %}
+              {% set n      = accts_dir | length %}
+              {% for i  in range(total)    %}
+              {%   set file = ns.sorted[i] %}
+              {%   set _    = files.append({
+                    'label': (i + 1) ~'/'~ total ~'|'~ file.path[n:],
+                    'path':  file.path,
+                   })   %}
+              {% endfor %}
+              {{ files  }}
+          # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/slurp_module.html
+          ansible.builtin.slurp:
+            src: "{{ item.path }}"
+          loop: "{{ acct_files }}"
+          loop_control:
+            label: "{{ item.label }}"
+          # file_data.results[].content
+          # will be base64-encoded!
+          register: file_data
+
+    - name: Create new document loader
+      when: do_load
+      block:
+        - name: Delete old document loader
+          vars:
+            # accounts_doc_store.loaders is both string and sequence
+            # ('[]') if from create_store.json, but is only sequence
+            # if from get_stores.json
+            loader: |
+              {{ accounts_doc_store.loaders | selectattr('loaderId', '==', 'textFile')
+              if accounts_doc_store.loaders is not string else [] }}
+          ansible.builtin.uri:
+            method: DELETE
+            url: "{{ api_base }}/document-store/loader/{{
+              accounts_doc_store.id }}/{{ loader | map(attribute='id') | first }}"
+            headers: "{{ auth_headers }}"
+          when: loader is truthy
+          changed_when: true
+
+        - name: Set new loader_spec fact
+          vars:
+            text_files: |
+              {% set files = [] %}
+              {% for file in file_data.results %}
+              {%   set _ = files.append('data:text/plain;base64,'~ file.content
+                                      ~',filename:'~ file.source | basename) %}
+              {% endfor %}
+              {{ files  }}
+          ansible.builtin.set_fact:
+            loader_spec:
+              storeId: "{{ accounts_doc_store.id }}"
+              loaderId: textFile
+              loaderName: "*.txt Files"
+              loaderConfig:
+                txtFile: "{{ text_files | to_json }}"
+              splitterId: recursiveCharacterTextSplitter
+              splitterName: Recursive Character Text Splitter
+              splitterConfig:
+                chunkSize: 500
+                chunkOverlap: 100
+
+        - name: Save new document loader
+          ansible.builtin.uri:
+            method: POST
+            url: "{{ api_base }}/document-store/loader/save"
+            headers: "{{ auth_headers }}"
+            body_format: json
+            body: "{{ loader_spec }}"
+            return_content: true
+          register: save_loader
+          changed_when: true
+
+        - name: Process document chunks
+          ansible.builtin.uri:
+            method: POST
+            url: "{{ api_base }}/document-store/loader/process/{{ save_loader.json.id }}"
+            headers: "{{ auth_headers }}"
+            body_format: json
+            body: "{{ loader_spec }}"
+          changed_when: true
+
+        - name: Wait until status is SYNC
+          ansible.builtin.uri:
+            url: "{{ api_base }}/document-store/store/{{ loader_spec.storeId }}"
+            headers: "{{ auth_headers }}"
+            return_content: true
+          register: check_status
+          until:
+            - check_status.json        is defined
+            - check_status.json.status == 'SYNC'
+          # processing can take few minutes
+          retries: 20
+          delay: 15
+
+        - name: Show document store stats
+          vars:
+            store: "{{ check_status.json }}"
+            loader: "{{ store.loaders | selectattr('loaderId', '==', 'textFile') | first }}"
+            # NOTE: loaders[].files property is
+            # only available if .status is SYNC
+            files: "{{ loader.files }}"
+          # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/debug_module.html
+          ansible.builtin.debug:
+            msg: |-
+              Document  store     ID: {{ store.id          }}
+              Document  store   name: {{ store.name        }}
+              Document  store status: {{ store.status      }}
+              Total documents stored: {{ files | length    }}
+              Total document  chunks: {{ store.totalChunks }}
+              Total characters  read: {{ store.totalChars  }}
+
+        # depending on how many NEW or UPDATED chunks,
+        # this request could take a very long time due
+        # to slow calls to Ollama to create embeddings
+        - name: Upsert chunks into Qdrant
+          ansible.builtin.uri:
+            method: POST
+            url: "{{ api_base }}/document-store/vectorstore/insert"
+            headers: "{{ auth_headers }}"
+            body_format: json
+            # body is same as save
+            # API in previous play
+            body: "{{ vector_store_config }}"
+            return_content: true
+            timeout: 3600
+          timeout: 3600
+          register: upsert_chunks
+          changed_when: >-
+            upsert_chunks.json.numSkipped <
+            upsert_chunks.json.totalKeys
+          retries: 3
+          delay: 30
+
+        - name: Show Qdrant upsert results
+          vars:
+            result: "{{ upsert_chunks.json }}"
+          ansible.builtin.debug:
+            msg: |-
+              Chunks   added: {{ result.numAdded   }}
+              Chunks updated: {{ result.numUpdated }}
+              Chunks skipped: {{ result.numSkipped }}
+              Chunks deleted: {{ result.numDeleted }}
+              Total   chunks: {{ result.totalKeys  }}
+
+- name: Create chatflows/agentflows
+  tags: configure
+  hosts: localhost
+  vars_files:
+    - vars/flowise.yml
+    - vars/kubernetes.yml
+    - vars/ollama.yml
+  vars:
+    api_base: "{{ API_BASE }}"
+  tasks:
+    - name: Get all Flowise chatflows
+      ansible.builtin.uri:
+        url: "{{ api_base }}/chatflows"
+        headers: "{{ auth_headers }}"
+        return_content: true
+      register: get_chatflows
+
+    - name: Create chatflow placeholder
+      vars:
+        chatflow: "{{ get_chatflows.json | selectattr('name', '==', item.name) }}"
+      ansible.builtin.uri:
+        method: POST
+        url: "{{ api_base }}/chatflows"
+        headers: "{{ auth_headers }}"
+        body_format: json
+        body:
+          name: "{{ item.name }}"
+          type: CHATFLOW
+          isPublic: false
+          deployed: false
+          flowData: '{"nodes":[],"edges":[],"viewport":{"x":0,"y":0,"zoom":1}}'
+        return_content: true
+      loop: "{{ flowise_custom_chatflows }}"
+      loop_control:
+        label: "{{ item.name }}"
+      register: create_chatflow
+      when: chatflow is falsy
+      changed_when: true
+
+    - name: Import nodes into chatflow
+      vars:
+        chatflow_: "{{ get_chatflows.json | selectattr('name', '==', item.name) }}"
+        chatflow: "{{ chatflow_ | first if chatflow_ is truthy
+          else create_chatflow.results[i].json }}"
+        j2_path: /flowise/chatflows/{{ item.id }}.yaml.j2
+        # NOTE: using non-standard variable markers
+        # [% and %] to avoid conflicts with Flowise:
+        # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/template_lookup.html
+        flow_data: >-
+          {{ lookup('ansible.builtin.template',
+               templates_dir ~ j2_path,
+               variable_start_string='[%',
+               variable_end_string='%]',
+               template_vars=item.vars) |
+             from_yaml | to_json }}
+      ansible.builtin.uri:
+        method: PUT
+        url: "{{ api_base }}/chatflows/{{ chatflow.id }}"
+        headers: "{{ auth_headers }}"
+        body_format: json
+        body:
+          name: "{{ chatflow.name }}"
+          flowData: "{{ flow_data }}"
+      loop: "{{ flowise_custom_chatflows }}"
+      loop_control:
+        label: "{{ item.name }}"
+        index_var: i
+      when: chatflow.flowData != flow_data
+      changed_when: true

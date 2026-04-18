@@ -122,7 +122,7 @@
           - ["-H", "PRIVATE-TOKEN: {{ gitlab_token }}"]
           - ["-F", "default_branch={{  def_branch  }}"]
           - >-
-            {{ ['-F', 'avatar=@' ~ icon_dir ~'/'~ project_avatar]
+            {{ ['-F', 'avatar=@' ~ icons_dir ~'/'~ project_avatar]
                if project_avatar is defined and
                   project_avatar is truthy else [] }}
           # https://docs.gitlab.com/api/projects#upload-a-project-avatar

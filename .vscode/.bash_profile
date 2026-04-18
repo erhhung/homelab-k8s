@@ -22,7 +22,7 @@ git_root() {
 }
 
 export ANSIBLE_CONFIG="./ansible.cfg"
-export VAULTFILE="group_vars/all/vault.yml"
+VAULTFILE="inventory/group_vars/all/vault.yml"
 
 alias al='ansible-lint'
 alias ap='ansible-playbook'
@@ -42,16 +42,16 @@ vd() { __av decrypt "$1"; }
 gzage() {
   local root
   root=$(git_root) || return $?
-  "$root/gzage.sh" "$@"
+  "$root/scripts/gzage.sh" "$@"
 }
 
 debug() {
   local args root
   root=$(git_root) || return $?
 
-  args=("$root/debug.yml")
+  args=("$root/playbooks/debug.yml")
   [ "$1" ] && args+=(-t "$@")
-  "$root/play.sh" "${args[@]}"
+  "$root/scripts/play.sh" "${args[@]}"
 }
 
 # run play.sh from any project subdirectory
@@ -59,13 +59,13 @@ debug() {
 play() {
   local root
   root=$(git_root) || return $?
-  "$root/play.sh" "$@"
+  "$root/scripts/play.sh" "$@"
 }
 
 plays() {
   local root
   root=$(git_root) || return $?
-  yq '.[].tags' "$root/main.yml"
+  yq '.[].tags | select(.)' "$root/main.yml"
 }
 
 # use latest version of GNU Make
@@ -76,7 +76,7 @@ command -v gmake &> /dev/null && {
 # enable completions if yq is installed
 command -v yq &> /dev/null && {
   _complete_play()  { _complete_tags main;  }
-  _complete_debug() { _complete_tags debug; }
+  _complete_debug() { _complete_tags playbooks/debug; }
   _complete_tags()  {
 
     local root book="$1" args cur tag tags=()
@@ -91,7 +91,7 @@ command -v yq &> /dev/null && {
       cur="${COMP_WORDS[COMP_CWORD]}"
 
     # only show tags not already in args
-    for tag in $(yq '.[].tags' "$book"); do
+    for tag in $(yq '.[].tags | select(.)' "$book"); do
       [[ "$args" != *" $tag "* ]] && tags+=("$tag")
     done
     COMPREPLY=($(compgen -W "${tags[*]}" -- "$cur"))
