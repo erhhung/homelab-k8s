@@ -124,7 +124,7 @@
   tasks:
     - name: Install app using GitHub release
       vars:
-        base_dir: "{{ templates_dir }}/packages/install"
+        base_dir: "{{ scripts_dir }}/install"
         # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/fileglob_lookup.html
         # https://docs.ansible.com/ansible/latest/plugins/lookup.html#forcing-lookups-to-return-lists-query-and-wantlist-true
         scripts: |
