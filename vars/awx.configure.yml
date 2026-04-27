@@ -238,3 +238,6 @@ awx_projects:
       {% set main_yml =  project_dir  ~ '/main.yml' %}
       {% set   yq_cmd = 'yq "map(.tags | select(.)) | @json" '~ main_yml %}
       {{ lookup('ansible.builtin.pipe',  yq_cmd) | from_json }}
+    # give enough time for "Source Control Update" job
+    # to run if it has to run `ansible-galaxy install`
+    timeout: 900

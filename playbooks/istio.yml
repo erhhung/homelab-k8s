@@ -181,8 +181,9 @@
       vars:
         secret_name: "{{ kiali_secrets['creds'] }}"
         secret_data:
-          # oidc-secret key name is expected
-          oidc-secret: "{{ kiali_oidc_client_secret }}"
+          # `oidc-secret` key name is expected
+          # keycloak_client_secrets.*: {vault.yml}
+          oidc-secret: "{{ keycloak_client_secrets['kiali'] }}"
           grafana-pass: "{{ grafana_admin_pass }}"
       ansible.builtin.include_tasks: "{{ tasks_dir }}/k8s/secrets/generic.yml"
 

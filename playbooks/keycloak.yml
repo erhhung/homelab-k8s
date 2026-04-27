@@ -17,8 +17,12 @@
     secret_ns: "{{ keycloak_namespace }}"
     create_ns: false
   pre_tasks:
-    - name: Is the monitoring stack ready?
+    - name: Gather facts about controller
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/localfacts.yml"
+      when: local_bash_interpreter is undefined
+
+    - name: Is the monitoring stack ready?
       ansible.builtin.include_tasks: "{{ tasks_dir }}/monitoring/stackready.yml"
       when: monitoring_stack_ready is undefined
 
@@ -56,7 +60,7 @@
         gzip -9ncq "$sql_file" | base64
         rm   -f    "$sql_file"
       args:
-        executable: /bin/bash
+        executable: "{{ local_bash_interpreter }}"
       register: keycloak_sql_gz_b64
       changed_when: false
 

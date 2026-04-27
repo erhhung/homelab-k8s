@@ -90,7 +90,7 @@ playwright_chart_values:
               echo -e "\nCreating NSS database..."
               # use certificate's CN as nickname
               nickname="$(openssl x509 -in $CA_CERT -noout -subject -nameopt RFC2253 | \
-                            sed -n 's/^subject=.*CN=\([^,]*\)\(,.*\)\?$/\1/p')"
+                            sed -En 's/^subject=.*CN=([^,]*)(,.*)?$/\1/p')"
               # https://www.linux.org/docs/man1/certutil.html
               certutil -d sql:$NSSDB_DIR -N --empty-password
               certutil -d sql:$NSSDB_DIR -A -t "C,," -n "$nickname" -i $CA_CERT

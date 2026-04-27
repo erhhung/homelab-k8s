@@ -13,6 +13,8 @@
 #     exec_env  [optional] default=default
 #     inv_file  <required> inventory file
 #     playbooks <required> playbook names
+#     timeout   [optional] max time allowed for source
+#                          control update; default=300
 ---
 - name: Create AWX project "{{ project.name }}"
   vars:
@@ -30,6 +32,8 @@
       become_enabled: false
   block:
     - name: Create AWX project "{{ project.name }}"
+      vars:
+        max_secs: "{{ project.timeout | default(300) }}"
       # https://docs.ansible.com/ansible/latest/collections/awx/awx/project_module.html
       awx.awx.project: # noqa args
         name: "{{ project.name }}"
@@ -44,13 +48,13 @@
         scm_credential: "{{ awx_credentials[project.git_cred].name
           if project.git_cred is defined else omit }}"
         default_environment: "{{ minimal_ee }}"
+        # "Source Control Update" job can take a long time
+        # to run if it has to run `ansible-galaxy install`
         update_project: true
         state: present
         wait: true
-        # give enough time for "Source Control Update" job
-        # to run if it has to run `ansible-galaxy install`
-        timeout: 600
-      timeout: 900
+        timeout: "{{ max_secs }}"
+      timeout: "{{ max_secs | int + 30 }}"
 
     - name: Create inventory for "{{ project.name }}"
       # https://docs.ansible.com/ansible/latest/collections/awx/awx/inventory_module.html

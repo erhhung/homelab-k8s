@@ -110,7 +110,11 @@
   vars_files:
     - vars/kubernetes.yml
     - vars/harbor.yml
+
+    # these are only needed for their
+    # *_harbor_user|_harbor_pass vars
     - vars/gitlab.yml
+    - vars/jenkins.yml
     - vars/buildkite.yml
   vars:
     # https://harbor.fourteeners.local/devcenter-api-2.0

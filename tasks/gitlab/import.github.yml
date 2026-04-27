@@ -107,6 +107,8 @@
               ;;
           esac
         done
+      args:
+        executable: "{{ local_bash_interpreter }}"
       when: needs_import
       changed_when: false
       timeout: 600

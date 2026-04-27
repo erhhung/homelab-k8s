@@ -132,7 +132,7 @@ openwebui_volumes:
       secretName: "{{ openwebui_secrets['database'] }}"
       defaultMode: 416 # "0640"
   # init container stores updated CA bundle
-  - name: trust-store
+  - name: ca-bundle
     emptyDir: {}
   # copy of /app/backend/open_webui/static
   - name: web-static
@@ -156,14 +156,12 @@ openwebui_mounts:
     readOnly: true
   # replace system trust store with updated
   # CA bundle created by the init container
-  - name: trust-store
+  - name: ca-bundle
     mountPath: /etc/ssl/certs/ca-certificates.crt
-    subPath: ca-certificates.crt
-    readOnly: true
+    subPath: ca-bundle.crt
   # static files with 1000:1000 permissions
   - name: web-static
     mountPath: /app/backend/open_webui/static
-    readOnly: false
   - |
     {% set mounts = [] %}
     {% for name, spec in openwebui_pvc_specs.items() %}
@@ -538,24 +536,22 @@ openwebui_chart_values:
       args:
         - -c
         - |-
-          set -xe
-          # copy our CA certs to standard extra certs dir
-          cp /tls/ca.crt /usr/local/share/ca-certificates
-          update-ca-certificates 2> /dev/null
-
+          update-ca-certificates || exit
           # copy updated CA bundle containing extra certs
           # from /usr/local/share/ca-certificates and all
           # already in trust store under /etc/ssl/certs.
           # the new ca-certificates.crt will be mounted
           # into main container to replace existing one.
-          cp /etc/ssl/certs/ca-certificates.crt /ssl
+          CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt
+          cp $CA_BUNDLE /certs/ca-bundle.crt
+          echo; tail -n 11 $CA_BUNDLE
       volumeMounts:
         - name: database-tls
-          mountPath: /tls/ca.crt
+          mountPath: /usr/local/share/ca-certificates/ca.crt
           subPath: ca.crt
           readOnly: true
-        - name: trust-store
-          mountPath: /ssl
+        - name: ca-bundle
+          mountPath: /certs
 
     # duplicate /app/backend/open_webui/static files in
     # emptyDir and change file permissions to 1000:1000

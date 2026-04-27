@@ -28,13 +28,17 @@
     secret_ns: "{{ openclaw_namespace }}"
     create_ns: false
   pre_tasks:
+    - name: Gather facts about controller
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/localfacts.yml"
+      when: local_bash_interpreter is undefined
+
     - name: Get OpenClaw appVersion
       vars:
         repo_url: "{{ openclaw_chart_repo_url }}"
         chart_ref: openclaw
         chart_ver: "{{ openclaw_chart_version }}"
         fact_name: openclaw_app_version
-      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
       ansible.builtin.include_tasks: "{{ tasks_dir }}/helm/appversion.yml"
       when: openclaw_app_version is undefined
 
@@ -79,8 +83,8 @@
         # --no-name ignores timestamp!
         jo name="{{ filename }}" data="$(gzip -9ncq "$src_file" | base64)"
         rm -f "$src_file"
-      args:
-        executable: /bin/bash
+      args: &local-shell-args
+        executable: "{{ local_bash_interpreter }}"
       loop: "{{ src_files }}"
       loop_control:
         label: "{{ filename }}"
@@ -101,6 +105,7 @@
             integrity: ."dist.integrity",
             shasum:    ."dist.shasum",
           }'
+      args: *local-shell-args
       loop: "{{ openclaw_plugins }}"
       loop_control:
         label: "{{ item.id }}"
@@ -238,6 +243,10 @@
         path: "{{ item }}"
       loop: "{{ file_list }}"
       register: file_stat
+
+    - name: Gather facts about controller
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/localfacts.yml"
+      when: local_bash_interpreter is undefined
   tasks:
     - name: Show file found results
       vars:
@@ -283,8 +292,7 @@
         envsubst  < {{ src_path }} | tee {{   tmp_path }}
         cmp -s      {{ tmp_path }}       {{ plist_path }} && exit 9 # no change
         mv  -f      {{ tmp_path }}       {{ plist_path }}
-      args:
-        executable: /bin/bash
+      args: *local-shell-args
       register: create_plist
       changed_when: create_plist.rc == 0
       failed_when: create_plist.rc not in [0,9]
@@ -312,6 +320,7 @@
           rc=$?
         fi
         exit $rc
+      args: *local-shell-args
       changed_when: true
 
 - name: Configure OpenClaw installation

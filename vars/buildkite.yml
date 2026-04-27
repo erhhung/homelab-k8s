@@ -76,9 +76,14 @@ buildkite_chart_values:
             - -c
             - |-
               update-ca-certificates || exit
+              # copy updated CA bundle containing extra certs
+              # from /usr/local/share/ca-certificates and all
+              # already in trust store under /etc/ssl/certs.
+              # the new ca-certificates.crt will be mounted
+              # into main container to replace existing one.
               CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt
               cp $CA_BUNDLE /certs/ca-bundle.crt
-              tail -n 23 $CA_BUNDLE
+              echo; tail -n 23 $CA_BUNDLE
           volumeMounts:
             - name: ca-certs
               mountPath: /usr/local/share/ca-certificates

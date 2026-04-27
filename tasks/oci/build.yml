@@ -17,7 +17,6 @@
 
 - name: Build and push Docker image
   delegate_to: localhost
-  become: false
   vars:
     ansible_python_interpreter: "{{ local_python_interpreter }}"
   block:
@@ -31,7 +30,7 @@
         # exits non-zero if fails to connect to the
         # Docker API at unix:///var/run/docker.sock
         docker info
-      args: &args
+      args: &local-shell-args
         executable: "{{ local_bash_interpreter }}"
       register: docker_check
       changed_when: false
@@ -46,7 +45,7 @@
         # exits non-zero if insufficient privileges (in
         # container without necessary security context)
         buildah info
-      args: *args
+      args: *local-shell-args
       register: buildah_check
       when: docker_check.rc != 0
       changed_when: false

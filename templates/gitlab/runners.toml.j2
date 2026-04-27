@@ -84,6 +84,8 @@
     [[runners.kubernetes.volumes.secret]]
       # will be merged with system CA bundle
       name = "{{ gitlab_secrets['certs'] }}"
+      # path expected by Bash function
+      # `init_certs` from "ciutils.sh"
       mount_path = "/tls/certs"
       read_only = true
 

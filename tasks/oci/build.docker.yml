@@ -31,8 +31,8 @@
         registry_url: https://{{ harbor_container_registry }}
         username: "{{ harbor_admin_user }}"
         password: "{{ harbor_admin_pass }}"
-      retries: 3
-      delay: 5
+      retries: 6
+      delay: 10
 
     - name: Count current repository artifacts
       delegate_to: &delegate >-

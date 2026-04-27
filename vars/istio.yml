@@ -25,7 +25,6 @@ kiali_secrets:
   creds: kiali-credentials
 
 kiali_oidc_client_id: kiali
-# kiali_oidc_client_secret: {vault.yml}
 # sso.fourteeners.local is same host as keycloak.fourteeners.local
 kiali_oidc_issuer_uri: https://sso.{{ homelab_domain }}/realms/homelab
 

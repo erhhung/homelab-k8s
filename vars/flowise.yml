@@ -186,7 +186,6 @@ flowise_chart_values:
     - name: trust-store
       mountPath: /etc/ssl/certs/ca-certificates.crt
       subPath: ca-certificates.crt
-      readOnly: true
     - name: dotenv
       # app root dir in container is /usr/src
       mountPath: /usr/src/packages/server/.env

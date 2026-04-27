@@ -29,7 +29,16 @@ alias ap='ansible-playbook'
 alias av='ansible-vault'
 
 __av() (
-  cmd="$1" file=$(realpath "$2")
+  cmd="$1" file="$2"
+  [ "$file" ] || {
+    echo >&2 "File path required."
+    exit 1
+  }
+  [ -f "$file" ] || {
+    echo >&2 "File not found: $file"
+    exit 1
+  }
+  file=$(realpath "$file")
   cd "$(git_root)" || exit
   export EDITOR=$(which emacs)
   ansible-vault "$cmd" "$file"
