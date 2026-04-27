@@ -62,6 +62,7 @@ All cluster services will be provisioned with TLS certificates from Erhhung's pr
 |         https://gitlab.fourteeners.local | GitLab UI
 |  ssh://git@gitlab.fourteeners.local:2222 | GitLab SSH Git access
 | https://*.pages.gitlab.fourteeners.local | GitLab Pages websites
+|        https://jenkins.fourteeners.local | Jenkins UI
 |         https://argocd.fourteeners.local | Argo CD console
 |            https://awx.fourteeners.local | Ansible AWX UI
 |         https://qdrant.fourteeners.local | Qdrant dashboard
@@ -132,9 +133,11 @@ All cluster services will be provisioned with TLS certificates from Erhhung's pr
     * Install Kiali using the [`kiali-operator`](https://kiali.io/docs/installation/installation-guide/install-with-helm#install-with-operator) Helm chart and `Kiali` CR
 - [X] [HashiCorp Vault](https://github.com/hashicorp/vault) and [External Secrets Operator](https://external-secrets.io/) — secure secrets management and synchronization
     * Install on main RKE cluster using the [`vault`](https://github.com/hashicorp/vault-helm) and [`external-secrets`](https://external-secrets.io/latest/introduction/getting-started#installing-with-helm) Helm charts
-- [X] [GitLab CI/CD Platform](https://gitlab.com/rluna-gitlab/gitlab-ce) — Git server with CI/CD pipelines for local deployments
+- [X] [GitLab CI/CD Platform](https://gitlab.com/rluna-gitlab/gitlab-ce) — Git repository server with CI/CD pipelines for local deployments
     * Install on main RKE cluster using the [`gitlab`](https://gitlab.com/gitlab-org/charts/gitlab) Helm chart
     * [X] Install [GitLab CI Pipelines Exporter](https://github.com/mvisonneau/gitlab-ci-pipelines-exporter) using the [`gitlab-ci-pipelines-exporter`](https://github.com/mvisonneau/helm-charts/tree/main/charts/gitlab-ci-pipelines-exporter) Helm chart
+- [X] [Jenkins CI/CD Platform](https://www.jenkins.io/) — automation server with CI/CD pipelines for local deployments
+    * Install on main RKE cluster using the [`jenkins`](https://github.com/jenkinsci/helm-charts/tree/main/charts/jenkins) Helm chart
 - [X] [Buildkite Self-Hosted Agent](https://buildkite.com/docs/agent/v3) — run CI/CD pipelines on `buildkite.com` locally
     * Install on main RKE cluster using the [`agent-stack-k8s`](https://buildkite.com/docs/agent/v3/agent-stack-k8s) Helm chart
 - [X] [Argo CD Declarative GitOps](https://argo-cd.readthedocs.io/) — manage deployment of personal projects
@@ -174,7 +177,7 @@ All cluster services will be provisioned with TLS certificates from Erhhung's pr
 - [ ] Harden security posture by applying `seccompProfile.type: RuntimeDefault` to as many pods as possible
 - [X] Automate creation of static DNS records in pfSense _(dynamically assigned IPs are managed by ExternalDNS)_
 - [ ] Identify and upload additional sources of personal documents into Open WebUI knowledge base collections
-- [ ] Enable OIDC authentication for additional services: AWX, ArgoCD, LiteLLM, Open WebUI
+- [ ] Enable OIDC authentication for additional services: GitLab, Jenkins, AWX, ArgoCD, LiteLLM, Open WebUI
 
 ## Requirements
 
@@ -208,30 +211,29 @@ ansible-vault view   $VAULTFILE
 |:---------------------------------:|:-------------------:
 | `sudo_pass.*`                     | `rancher_admin_pass`
 | `icloud_smtp.*`                   | `minio_root_pass`
-| `docker_access_token`             | `minio_admin_pass`
-| `github_access_token`             | `velero_admin_pass`
-| `age_secret_key`                  | `harbor_admin_pass`
-| `sops_encryption_key`             | `opensearch_admin_pass`
-| `yubikey_unlock_pin`              | `keycloak_admin_pass`
-| `pfsense_api_key`                 | `thanos_admin_pass`
-| `metallb_secret`                  | `grafana_admin_pass`
-| `step_ca_provisioner_pass`        | `vault_admin_pass`
-| `minio_client_pass`               | `gitlab_root_pass`
-| `velero_repo_pass`                | `gitlab_user_pass`
+| `slack_webhook_urls.*`            | `minio_admin_pass`
+| `docker_access_token`             | `velero_admin_pass`
+| `github_access_token`             | `harbor_admin_pass`
+| `age_secret_key`                  | `opensearch_admin_pass`
+| `sops_encryption_key`             | `keycloak_admin_pass`
+| `yubikey_unlock_pin`              | `thanos_admin_pass`
+| `pfsense_api_key`                 | `grafana_admin_pass`
+| `metallb_secret`                  | `vault_admin_pass`
+| `step_ca_provisioner_pass`        | `gitlab_root_pass`
+| `minio_client_pass`               | `gitlab_user_pass`
+| `velero_repo_pass`                | `jenkins_admin_pass`
 | `velero_passphrase`               | `argocd_admin_pass`
 | `harbor_secret`                   | `awx_admin_pass`
 | `dashboards_os_pass`              | `litellm_admin_pass`
 | `fluent_os_pass`                  | `openwebui_admin_pass`
-| `valkey_pass`                     | `flowise_admin_pass`
-| `postgresql_pass`                 |
-| `keycloak_db_pass`                |
+| `postgresql_pass`                 | `flowise_admin_pass`
+| `keycloak_client_secrets.*`       |
+| `valkey_pass`                     |
 | `monitoring_pass`                 |
-| `monitoring_oidc_client_secret.*` |
-| `slack_webhook_urls.*`            |
 | `oauth2_proxy_cookie_secret`      |
-| `kiali_oidc_client_secret`        |
 | `gitlab_secrets_data.*`           |
 | `gitlab_omniauth.*`               |
+| `jenkins_slack_token`             |
 | `buildkite_agent_token`           |
 | `argocd_signing_key`              |
 | `awx_secret_key`                  |
@@ -280,7 +282,7 @@ however, all privileged operations using `sudo` will require the password stored
     1.2. **Drivers** — NFS and Intel client GPU drivers  
     1.3. **Python** — Ansible packages in **virtual env**  
     1.4. **Helm** — plugins like `helm-diff`, `helm-git`  
-    1.5. **Debugging** — Tools like `tcpdump`, `tshark`
+    1.5. **Debugging** — Tools like `tcpdump`, `tshark`  
 
     ```bash
     make packages
@@ -293,7 +295,7 @@ however, all privileged operations using `sudo` will require the password stored
     2.2. **Kernel** — `sysctl` params and `pam_limits`  
     2.3. **Network** — DNS servers and search domains  
     2.4. **Login** — customize login MOTD messages  
-    2.5. **Certs** — add CA certificates to trust store
+    2.5. **Certs** — add CA certificates to trust store  
 
     ```bash
     make basics
@@ -303,7 +305,7 @@ however, all privileged operations using `sudo` will require the password stored
 3. <details><summary>Set up admin user's home directory</summary><br/>
 
     3.1. **Dot files**: `.bash_aliases`, etc.  
-    3.2. **Config files**: `htop`, `fastfetch`
+    3.2. **Config files**: `htop`, `fastfetch`  
 
     ```bash
     make files
@@ -323,7 +325,7 @@ however, all privileged operations using `sudo` will require the password stored
     RKE2 in HA mode with 3 control plane nodes and 3 worker nodes, all permitting workloads.  
     _Cluster will be accessible using a **virtual IP** address provisioned by `kube-vip` in HA mode._
 
-    5.1. Deploy another NGINX ingress controller for SSL passthrough
+    5.1. Deploy another NGINX ingress controller for SSL passthrough  
 
     ```bash
     make cluster
@@ -333,7 +335,7 @@ however, all privileged operations using `sudo` will require the password stored
 6. <details><summary>Install <strong>MetalLB</strong> network load-balancer in BGP mode</summary><br/>
 
     6.1. Create `BGPPeer`, `IPAddressPool`, and `BGPAdvertisement` CRs  
-         to complement **FRR BGP** configuration on **pfSense**, the local router
+         to complement **FRR BGP** configuration on **pfSense**, the local router  
 
     ```bash
     make metallb
@@ -349,7 +351,7 @@ however, all privileged operations using `sudo` will require the password stored
 
 8. <details><summary>Install <strong>ExternalDNS</strong> to manage DNS records in <strong>pfSense</strong></summary><br/>
 
-    8.1. Deploy webhook provider **Unbound** used by pfSense
+    8.1. Deploy webhook provider **Unbound** used by pfSense  
 
     ```bash
     make externaldns
@@ -358,7 +360,7 @@ however, all privileged operations using `sudo` will require the password stored
 
 9. <details><summary>Install <strong><code>cert-manager</code></strong> to automate certificate issuing</summary><br/>
 
-    9.1. Connect to **Step CA** `pki.fourteeners.local` as a `StepClusterIssuer`
+    9.1. Connect to **Step CA** `pki.fourteeners.local` as a `StepClusterIssuer`  
 
     ```bash
     make certmanager
@@ -367,7 +369,7 @@ however, all privileged operations using `sudo` will require the password stored
 
 10. <details><summary>Install <strong>Node Feature Discovery</strong> to identify GPU nodes</summary><br/>
 
-    10.1. Install Intel Device Plugins and `GpuDevicePlugin`
+    10.1. Install Intel Device Plugins and `GpuDevicePlugin`  
 
     ```bash
     make nodefeatures
@@ -391,7 +393,7 @@ however, all privileged operations using `sudo` will require the password stored
     12.4. Install MinIO tenant using NFS PVs  
     12.5. Create MinIO buckets, users, groups  
     12.6. Install Velero using MinIO as target  
-    12.7. Install Velero Dashboard
+    12.7. Install Velero Dashboard  
 
     ```bash
     make storage minio velero
@@ -400,8 +402,8 @@ however, all privileged operations using `sudo` will require the password stored
 
 13. <details><summary>Create resources from manifest files</summary><br/>
 
-    **IMPORTANT**: Resource manifests must specify the namespaces they wished to be installed  
-    into because the playbook simply applies each one without targeting a specific namespace
+    **IMPORTANT**: Resource manifests must specify the namespaces they wish to be installed  
+    into because the playbook simply applies each one without targeting specific namespaces.
 
     ```bash
     make manifests
@@ -410,7 +412,7 @@ however, all privileged operations using `sudo` will require the password stored
 
 14. <details><summary>Install <strong>Harbor</strong> OCI & Helm registry</summary><br/>
 
-    14.1. Automatically populate Harbor with select images from external registries
+    14.1. Automatically populate Harbor with select images from external registries  
 
     ```bash
     make harbor
@@ -420,7 +422,7 @@ however, all privileged operations using `sudo` will require the password stored
 15. <details><summary>Install <strong>OpenSearch</strong> cluster in <em><strong>HA</strong></em> mode</summary><br/>
 
     15.1. Configure the OpenSearch security plugin (users and roles) for downstream applications  
-    15.2. Install **OpenSearch Dashboards** UI
+    15.2. Install **OpenSearch Dashboards** UI  
 
     ```bash
     make opensearch
@@ -437,7 +439,7 @@ however, all privileged operations using `sudo` will require the password stored
 17. <details><summary>Install <strong>PostgreSQL</strong> database in <em><strong>HA</strong></em> mode</summary><br/>
 
     17.1. Run initialization SQL script to create roles and databases for downstream applications  
-    17.2. Create users in both PostgreSQL and **Pgpool**
+    17.2. Create users in both PostgreSQL and **Pgpool**  
 
     ```bash
     make postgresql
@@ -446,7 +448,7 @@ however, all privileged operations using `sudo` will require the password stored
 
 18. <details><summary>Install <strong>Keycloak</strong> IAM & OIDC provider</summary><br/>
 
-    18.1. Bootstrap **PostgreSQL** database with realm `homelab`, user `erhhung`, and OIDC clients
+    18.1. Bootstrap **PostgreSQL** database with realm `homelab`, user `erhhung`, and OIDC clients  
 
     ```bash
     make keycloak
@@ -455,7 +457,7 @@ however, all privileged operations using `sudo` will require the password stored
 
 19. <details><summary>Install <strong>Valkey</strong> key-value store in <em><strong>HA</strong></em> mode</summary><br/>
 
-    19.1. Deploy 6 nodes in total: 3 primaries and 3 replicas
+    19.1. Deploy 6 nodes in total: 3 primaries and 3 replicas  
 
     ```bash
     make valkey
@@ -471,7 +473,7 @@ however, all privileged operations using `sudo` will require the password stored
     20.3. Deploy and integrate additional Thanos components with Prometheus & Alertmanager  
     20.4. Import example SLOs to monitor K8s `apiserver`/`kubelet`/`coredns` and Prometheus  
     20.5. Add **OpenSearch** data source to Grafana to display application logs  
-    20.6. Add **Tempo** data source to Grafana with traces-to-logs and -metrics
+    20.6. Add **Tempo** data source to Grafana with traces-to-logs and -metrics  
 
     ```bash
     make monitoring thanos pyrra
@@ -481,7 +483,7 @@ however, all privileged operations using `sudo` will require the password stored
 21. <details><summary>Install <strong>OpenTelemetry</strong> collector and <strong>Tempo</strong> backend</summary><br/>
 
     21.1. Enable **OTLP** receiver and exporter as well as Prometheus exporter  
-    21.2. Connect Tempo to **MinIO** to store traces in the `telemetry` bucket
+    21.2. Connect Tempo to **MinIO** to store traces in the `telemetry` bucket  
 
     ```bash
     make observability tempo
@@ -508,69 +510,81 @@ however, all privileged operations using `sudo` will require the password stored
     24.1. Initialize Vault cluster and unseal cluster pods  
     24.2. Create policies, `Userpass` accounts, k8s roles  
     24.3. Create `KV` mounts and populate secrets data  
-    24.4. Create ESO's `ClusterSecretStore` for Vault
+    24.4. Create ESO's `ClusterSecretStore` for Vault  
 
     ```bash
     make vault externalsecrets
     ```
 </details>
 
-25. <details><summary>Install <strong>GitLab EE</strong> CI/CD platform to build local images</summary><br/>
+25. <details><summary>Install <strong>GitLab EE</strong> CI/CD platform to deploy local projects</summary><br/>
 
     25.1. Import Erhhung's SSH and GPG public keys, and create the `Homelab` group  
     25.2. Configure **Harbor** and **Slack** integrations, and access GitHub using OmniAuth  
     25.3. Configure and deploy **Kubernetes runner** for building images using `buildah`  
     25.4. Use [`al2023-devops`](https://github.com/erhhung/al2023-devops) as the build container and load common pre-build script  
     25.5. Import projects from GitHub and run pipelines to build images for later installs  
-    25.6. Deploy **CI Pipelines Exporter** to export metrics and visualize them in Grafana
+    25.6. Deploy **CI Pipelines Exporter** to export metrics and visualize them in Grafana  
 
     ```bash
     make gitlab
     ```
 </details>
 
-26. <details><summary>Install <strong>Buildkite</strong> agent connected to <code>buildkite.com</code></summary><br/>
+26. <details><summary>Install <strong>Jenkins</strong> CI/CD platform to deploy local projects</summary><br/>
+
+    26.1. Configure and deploy **Kubernetes cloud** for building images using `buildah`  
+    26.2. Install and configure popular plugins for pipeline and job output visualization  
+    26.3. Implicitly load shared library with Bash functions from Harbor in all pipelines  
+
+    ```bash
+    make jenkins
+    ```
+</details>
+
+27. <details><summary>Install <strong>Buildkite</strong> agent connected to <code>buildkite.com</code></summary><br/>
 
     ```bash
     make buildkite
     ```
+</details>
 
-27. <details><summary>Install <strong>Argo CD</strong> GitOps delivery in <em><strong>HA</strong></em> mode</summary><br/>
+28. <details><summary>Install <strong>Argo CD</strong> GitOps delivery in <em><strong>HA</strong></em> mode</summary><br/>
 
-    27.1. Configure Argo CD to use **Valkey** for caching  
-    27.2. Configure **GitLab** as an allowed SCM provider
+    28.1. Configure Argo CD to use **Valkey** for caching  
+    28.2. Configure **GitLab** as an allowed SCM provider  
 
     ```bash
     make argocd
     ```
 </details>
 
-28. <details><summary>Install <strong>Ansible AWX</strong> automation platform</summary><br/>
+29. <details><summary>Install <strong>Ansible AWX</strong> automation platform</summary><br/>
 
-    28.1. Create organization and custom execution environments based on [`al2023-devops`](https://github.com/erhhung/al2023-devops)  
-    28.2. Create credentials for all homelab hosts and access tokens for GitHub and GitLab  
-    28.3. Import this project and [`homelab-xcp`](https://github.com/erhhung/homelab-xcp), and inventories from their `hosts.ini` files
+    29.1. Create organization and custom execution environments based on [`al2023-devops`](https://github.com/erhhung/al2023-devops)  
+    29.2. Create credentials for all homelab hosts and access tokens for GitHub and GitLab  
+    29.3. Import this project and [`homelab-xcp`](https://github.com/erhhung/homelab-xcp), and inventories from their `hosts.ini` files  
 
     ```bash
     make awx
     ```
 </details>
 
-29. <details><summary>Install <strong>Metacontroller</strong> to create Operators</summary><br/>
+30. <details><summary>Install <strong>Metacontroller</strong> to create Operators</summary><br/>
 
     ```bash
     make metacontroller
     ```
 </details>
 
-30. <details><summary>Install <strong>Qdrant</strong> vector database in <em><strong>HA</strong></em> mode</summary><br/>
+31. <details><summary>Install <strong>Qdrant</strong> vector database in <em><strong>HA</strong></em> mode</summary><br/>
 
     ```bash
     make qdrant
     ```
 </details>
 
-31. <details><summary>Install <strong>SearXNG</strong> metasearch engine<br/>
+32. <details><summary>Install <strong>SearXNG</strong> metasearch engine<br/>
     &nbsp; &nbsp; Install <strong>Playwright</strong> WebSocket server</summary><br/>
 
     ```bash
@@ -578,45 +592,45 @@ however, all privileged operations using `sudo` will require the password stored
     ```
 </details>
 
-32. <details><summary>Install <strong>LiteLLM</strong> AI gateway with vendor models</summary><br/>
+33. <details><summary>Install <strong>LiteLLM</strong> AI gateway with vendor models</summary><br/>
 
     ```bash
     make litellm
     ```
 </details>
 
-33. <details><summary>Install <strong>Ollama</strong> LLM server with modest models<br/>
+34. <details><summary>Install <strong>Ollama</strong> LLM server with modest models<br/>
     &nbsp; &nbsp; Install <strong>Open WebUI</strong> AI platform with <strong>Pipelines</strong><br/>
     &nbsp; &nbsp; Install <strong>MCP OpenAPI</strong> proxy with MCP servers</summary><br/>
 
-    33.1. Add LiteLLM connection in Open WebUI to proxy OpenAI, Anthropic, and Groq models  
-    33.2. Create `Accounts` knowledge base and `Accounts` custom model that embeds that KB  
-    33.3. **NOTE**: Populate `Accounts` KB by running `make openwebui -t knowledge` separately  
-    33.4. Deploy MCP tool servers, including `time`, `memory`, `browser`, `weather`, and `lights`  
-    33.5. Define **SLOs** for HTTP success rates + latency for server, LiteLLM, Ollama, and MCPO
+    34.1. Add LiteLLM connection in Open WebUI to proxy OpenAI, Anthropic, and Groq models  
+    34.2. Create `Accounts` knowledge base and `Accounts` custom model that embeds that KB  
+    34.3. **NOTE**: Populate `Accounts` KB by running `make openwebui -t knowledge` separately  
+    34.4. Deploy MCP tool servers, including `time`, `memory`, `browser`, `weather`, and `lights`  
+    34.5. Define **SLOs** for HTTP success rates + latency for server, LiteLLM, Ollama, and MCPO  
 
     ```bash
     make ollama openwebui
     ```
 </details>
 
-34. <details><summary>Install <strong>OpenClaw</strong> AI agent gateway with skills</summary><br/>
+35. <details><summary>Install <strong>OpenClaw</strong> AI agent gateway with skills</summary><br/>
 
-    34.1. Proxy access to primary and fallback models, as well as web search, through LiteLLM  
-    34.2. Install skills, such as `gog` and `github`, from ClawHub to enhance agent capabilities  
-    34.3. Define user and agent identities through `USER.md`, `IDENTITY.md` and `SOUL.md`  
-    34.4. Configure **Slack** messaging _(requires manual creation of `OpenClaw` Slack app)_  
-    34.5. Automatically pair pending devices (clients)
+    35.1. Proxy access to primary and fallback models, as well as web search, through LiteLLM  
+    35.2. Install skills, such as `gog` and `github`, from ClawHub to enhance agent capabilities  
+    35.3. Define user and agent identities through `USER.md`, `IDENTITY.md` and `SOUL.md`  
+    35.4. Configure **Slack** messaging _(requires manual creation of `OpenClaw` Slack app)_  
+    35.5. Automatically pair pending devices (clients)  
 
     ```bash
     make openclaw
     ```
 </details>
 
-35. <details><summary>Install <strong>Flowise</strong> AI platform and integrations</summary><br/>
+36. <details><summary>Install <strong>Flowise</strong> AI platform and integrations</summary><br/>
 
     Current deployment uses local images in Harbor registry that were built by GitLab CI.  
-    35.1. **NOTE**: Populate documents by running `make flowise -t documents` separately
+    36.1. **NOTE**: Populate documents by running `make flowise -t documents` separately  
 
     ```bash
     make flowise

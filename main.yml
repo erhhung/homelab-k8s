@@ -147,12 +147,17 @@
   tags: externalsecrets
 
 # GitLab depends on PostgreSQL, MinIO, Harbor
-- name: Include GitLab CI/CD stack playbook
+- name: Include GitLab CI/CD platform playbook
   ansible.builtin.import_playbook: playbooks/gitlab.yml
   tags: gitlab
 
+# Jenkins depends on Harbor
+- name: Include Jenkins CI/CD platform playbook
+  ansible.builtin.import_playbook: playbooks/jenkins.yml
+  tags: jenkins
+
 # Buildkite depends on GitLab
-- name: Include Buildkite Agent playbook
+- name: Include Buildkite CI/CD Agent playbook
   ansible.builtin.import_playbook: playbooks/buildkite.yml
   tags: buildkite
 

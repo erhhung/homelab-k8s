@@ -1,0 +1,39 @@
+Like the built-in **`sh`** step, but always uses **Bash** to
+execute the given command or script  by prepending a shebang
+header. `bash` also makes available common utility functions
+used in CI/CD pipelines.
+
+**Usage**
+
+```groovy
+pipeline {
+  agent { label 'builder' }
+
+  stages {
+    stage('Init') {
+      steps {
+        bash '''
+        section_start init 'Initializations'
+        init_certs
+        section_end init
+        '''
+      }
+    }
+  }
+}
+```
+
+**Script**
+
+```groovy
+sh """\
+#!/usr/bin/env bash
+set -eo pipefail
+
+# "ciutils.sh"
+${utils}
+
+# script to run
+${script}
+"""
+```

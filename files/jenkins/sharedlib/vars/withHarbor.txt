@@ -1,0 +1,25 @@
+Creates a scoped block (closure) with environment variables
+`CI_REGISTRY_USER` and `CI_REGISTRY_PASSWORD` (`CI_REGISTRY`,
+the Harbor registry host, is already defined globally), so
+that the script can call `buildah_login` and `buildah_push`.
+
+**Usage**
+
+```groovy
+pipeline {
+  agent { label 'builder' }
+
+  stages {
+    stage('Build') {
+      steps {
+        withHarbor {
+          bash '''
+          buildah_login
+          buildah_push ...
+          '''
+        }
+      }
+    }
+  }
+}
+```

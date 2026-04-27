@@ -1,0 +1,38 @@
+Can be called in an `Init` stage to log useful system
+information and environment variables for debugging.
+
+**Usage**
+
+```groovy
+pipeline {
+  agent { label 'builder' }
+
+  stages {
+    stage('Init') {
+      steps {
+        bash '''
+        init_certs
+        '''
+        jobInfo()
+      }
+    }
+    stage('Build') {
+      steps {
+        bash '''
+        buildah_build ...
+        '''
+      }
+    }
+  }
+}
+```
+
+**Script**
+
+```groovy
+bash '''
+identities
+sys_info
+env_vars
+'''
+```

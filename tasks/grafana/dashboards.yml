@@ -76,7 +76,7 @@
             script1: |-
               json="$(jq 'del(.id) | .title = "{{ item.title }}"' <<< "$json")"
 
-              query='(.tags |= ((.tags // []) | map(ascii_downcase)))'
+              query='(.tags |= ((. // []) | map(ascii_downcase)))'
               {% if add_tags is truthy %}
               query+=' | (.tags += {{ add_tags | to_json }})'
               {% endif %}
@@ -136,8 +136,8 @@
 
             echo "Importing {{ item.title }}..."
             {{ script2 }}
-          args:
-            executable: /bin/bash
+          args: &local-shell-args
+            executable: "{{ local_bash_interpreter }}"
           loop: "{{ dashboards | selectattr('json', 'defined') }}"
           loop_control:
             label: "{{ item.title }}"
@@ -168,25 +168,26 @@
               jq -r  "[.items[] $filter | .revision] | max")
             desc="revision $rev of {{ item.title }} ({{ item.gnet_id }})"
 
-            echo "Downloading $desc..."
-            echo "URL: $revs_url/$rev/download"
-            json="$(curl -fsSL "${retry_opts[@]}" "$revs_url/$rev/download")"
-            {{ script1 }}
-
             TMP_DIR=/tmp/grafana
             mkdir -p "$TMP_DIR"
-
             file="$TMP_DIR/{{ item.gnet_id }}-$rev"
+
+            echo "Downloading $desc..."
+            echo "URL: $revs_url/$rev/download"
+
+            json="$(curl -fsSL "${retry_opts[@]}" "$revs_url/$rev/download")"
             echo "$revs_url/$rev/download" > "$file-dashboard.url"
-            echo "$json"                   > "$file-dashboard.json"
-            echo "$inputs"                 > "$file-inputs.json"
+            echo "$json" > "$file-dashboard.json"
+
+            {{ script1 }}
+            echo "$json" > "$file-dashboard.json"
+            echo "$inputs"  > "$file-inputs.json"
 
             echo "Importing $desc..."
             {{ script2 }}
 
-            rm -f $file-*
-          args:
-            executable: /bin/bash
+            # rm -f $file-*
+          args: *local-shell-args
           loop: "{{ dashboards | selectattr('json', 'undefined') }}"
           loop_control:
             label: "{{ item.title }}"

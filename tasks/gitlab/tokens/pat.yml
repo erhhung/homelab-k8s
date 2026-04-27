@@ -2,14 +2,14 @@
 # or create personal access token
 #
 # pass the following vars:
-#   token      [optional] existing PAT
-#   pat_name   [required] unless existing PAT given
-#   pat_desc   [optional] description for new PAT
-#   pat_owner  [optional] default=root
-#   scopes     [optional] default=[api,self_rotate]
-#   days       [optional] default=360
-#   fact_name  [optional] fact to store active PAT
-#                         default=gitlab_token
+#   token     [optional] existing PAT
+#   pat_name  [required] unless existing PAT given
+#   pat_desc  [optional] description for new PAT
+#   pat_owner [optional] default=root
+#   scopes    [optional] default=[api,self_rotate]
+#   days      [optional] default=360
+#   fact_name [optional] fact to store active PAT
+#                        default=gitlab_token
 # sets the following facts:
 #   {fact_name}  active PAT to use
 ---
@@ -25,6 +25,7 @@
   when: local_python_interpreter is undefined
 
 - name: Include vars/gitlab.yml
+  # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_vars_module.html
   ansible.builtin.include_vars: "{{ vars_dir }}/gitlab.yml"
   when: gitlab_http_url is undefined
 
@@ -36,14 +37,13 @@
     # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/to_datetime_filter.html
     today: "{{ ansible_date_time.date | ansible.builtin.to_datetime('%Y-%m-%d') }}"
     pat_fact: "{{ fact_name | default('gitlab_token') }}"
-    api_base: "{{ gitlab_http_url }}/api/v4"
   block:
     - name: Get existing PAT if given
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/uri_module.html
       ansible.builtin.uri:
         # https://docs.gitlab.com/api/personal_access_tokens
-        url: "{{ api_base }}/personal_access_tokens/self"
-        headers: &self-auth-headers
+        url: "{{ gitlab_api_url }}/personal_access_tokens/self"
+        headers: &self-auth
           PRIVATE-TOKEN: "{{ token }}"
         # status=401 if PAT doesn't
         # exist or has been revoked
@@ -71,37 +71,25 @@
             (existing_pat.json.expires_at | ansible.builtin.to_datetime('%Y-%m-%d')
              - today).days <= min_days }}
 
-    - name: Get PAT with admin rights
-      delegate_to: "{{ rke_control_plane_host }}"
-      vars:
-        # required kubernetes>=24.2 package only in user virtualenv
-        ansible_python_interpreter: "{{ venv_python_interpreter }}"
-      # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_info_module.html
-      kubernetes.core.k8s_info:
-        kubeconfig: "{{ rke_kubeconfig }}"
-        api_version: v1
-        kind: Secret
-        name: "{{ gitlab_secrets['tokens'] }}"
-        namespace: "{{ gitlab_namespace }}"
-      register: pats_info
+    - name: Get PATs from GitLab secret
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/gitlab/tokens/pats.yml"
       when: needs_create
+      # sets fact: gitlab_pats
 
     - name: Ensure admin PAT available
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/assert_module.html
       ansible.builtin.assert:
         that:
-          - pats_info.resources is truthy
-          - "'admin' in pats_info.resources[0].data"
+          - gitlab_pats['admin'] is defined
+          - gitlab_pats['admin'] is truthy
         fail_msg: Admin PAT not available
       when: needs_create
 
     - name: Get user ID of PAT owner
-      vars: &admin-auth-vars
-        admin_pat: "{{ pats_info.resources[0].data['admin'] | b64decode }}"
       ansible.builtin.uri:
-        url: "{{ api_base }}/users?username={{ pat_owner | default('root') }}"
-        headers: &admin-auth-headers
-          PRIVATE-TOKEN: "{{ admin_pat }}"
+        url: "{{ gitlab_api_url }}/users?username={{ pat_owner | default('root') }}"
+        headers: &admin-auth
+          PRIVATE-TOKEN: "{{ gitlab_pats['admin'] }}"
         return_content: true
       register: users_info
       when: needs_create
@@ -116,14 +104,13 @@
 
     - name: Create "{{ pat_name }}" PAT
       vars:
-        <<: *admin-auth-vars
         owner_id: "{{ users_info.json[0].id }}"
         expires: "{{ '%Y-%m-%d' | strftime(today.timestamp() + days | default(360) * 86400) }}"
       ansible.builtin.uri:
         # https://docs.gitlab.com/api/user_tokens#create-a-personal-access-token-for-a-user
-        url: "{{ api_base }}/users/{{ owner_id }}/personal_access_tokens"
+        url: "{{ gitlab_api_url }}/users/{{ owner_id }}/personal_access_tokens"
         method: POST
-        headers: *admin-auth-headers
+        headers: *admin-auth
         body_format: json
         body:
           name: "{{ pat_name }}"
@@ -146,9 +133,9 @@
         expires: "{{ '%Y-%m-%d' | strftime(today.timestamp() + exp_secs) }}"
       ansible.builtin.uri:
         # https://docs.gitlab.com/api/personal_access_tokens#self-rotate
-        url: "{{ api_base }}/personal_access_tokens/self/rotate"
+        url: "{{ gitlab_api_url }}/personal_access_tokens/self/rotate"
         method: POST
-        headers: *self-auth-headers
+        headers: *self-auth
         body_format: json
         body:
           expires_at: "{{ expires }}"

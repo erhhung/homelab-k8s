@@ -1,0 +1,57 @@
+# get list of GitLab personal access tokens
+# and, optionally, add/update/delete tokens
+#
+# pass the following vars:
+#   pat_changes [optional] dict of changes (to delete a
+#                          token, use empty/none value)
+# sets the following facts:
+#   gitlab_pats  dict with (updated) PATs
+---
+- name: Include vars/gitlab.yml
+  # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_vars_module.html
+  ansible.builtin.include_vars: "{{ vars_dir }}/gitlab.yml"
+  when: gitlab_secrets is undefined
+
+- name: Include vars/kubernetes.yml
+  ansible.builtin.include_vars: "{{ vars_dir }}/kubernetes.yml"
+  when: rke_kubeconfig is undefined
+
+- name: GET/add/update/delete PATs
+  delegate_to: "{{ rke_control_plane_host }}"
+  vars:
+    ansible_python_interpreter: "{{ venv_python_interpreter }}"
+    changes: "{{ pat_changes | default({}) }}"
+  block:
+    - name: Get PATs in GitLab secret
+      # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_info_module.html
+      kubernetes.core.k8s_info:
+        kubeconfig: "{{ rke_kubeconfig }}"
+        api_version: v1
+        kind: Secret
+        name: "{{ gitlab_secrets['tokens'] }}"
+        namespace: "{{ gitlab_namespace }}"
+      register: pats_info
+
+    - name: Set gitlab_pats fact
+      vars:
+        # b64_decode_k8s_secret, omit_keys: filter_plugins/filters.py
+        old_pats: "{{ pats_info.resources[0] | b64_decode_k8s_secret }}"
+        # https://docs.ansible.com/projects/ansible/latest/collections/ansible/builtin/dict2items_filter.html
+        del_keys: "{{  changes | ansible.builtin.dict2items |
+          selectattr('value', 'falsy') | map(attribute='key') }}"
+        new_pats: "{{ old_pats | ansible.builtin.combine(changes) |
+          omit_keys(del_keys) }}"
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/set_fact_module.html
+      ansible.builtin.set_fact:
+        gitlab_pats: "{{ new_pats }}"
+
+    - name: Update GitLab PATs secret
+      vars:
+        kubeconfig: "{{ rke_kubeconfig }}"
+        secret_ns: "{{ gitlab_namespace }}"
+        create_ns: false
+        secret_name: "{{ gitlab_secrets['tokens'] }}"
+        secret_data: "{{ gitlab_pats }}"
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/k8s/secrets/generic.yml"
+      when: changes is truthy

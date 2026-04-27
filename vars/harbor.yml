@@ -18,7 +18,7 @@ harbor_secrets:
 
 # https://goharbor.io/docs/latest/install-config/harbor-ha-helm
 # https://github.com/goharbor/harbor-helm/tree/main
-harbor_chart_version: "1.18.1"
+harbor_chart_version: "1.18.3"
 harbor_release_name: harbor
 
 # https://github.com/goharbor/harbor-helm/tree/main/values.yaml
@@ -92,6 +92,25 @@ harbor_chart_values:
         {{ harbor_admin_user }}:{{ harbor_admin_pass |
            ansible.builtin.password_hash('bcrypt', salt=bcrypt_salt, rounds=bcrypt_rounds) }}
 
+  # cache `project/project_metadata/repository/artifact/manifest`
+  # in Redis to improve the performance of concurrent image pulls
+  cache:
+    enabled: true
+    expireHours: 12
+
+  # Trivy vulnerability scanner
+  trivy:
+    enabled: true
+    vulnType: os,library # os|library
+    # CSV list of severities to check
+    severity: LOW,MEDIUM,HIGH,CRITICAL
+    # GitHub PAT for downloading Trivy
+    # DB without anonymous rate limits
+    gitHubToken: "{{ github_access_token }}"
+    # give ample time to scan large images
+    # on a very resource-constrained node
+    timeout: 30m
+
   jobservice:
     secret: "{{ harbor_secret }}"
   database:
@@ -119,6 +138,12 @@ harbor_users:
     email: gitlab@{{ homelab_domain  }}
     username: "{{ gitlab_harbor_user }}"
     password: "{{ gitlab_harbor_pass }}"
+    role: maintainer # project: library
+
+  - realname: Jenkins CI/CD
+    email: jenkins@{{ homelab_domain  }}
+    username: "{{ jenkins_harbor_user }}"
+    password: "{{ jenkins_harbor_pass }}"
     role: maintainer # project: library
 
   - realname: Buildkite CI/CD

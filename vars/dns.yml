@@ -99,6 +99,8 @@ pfsense_dns_records:
         desc: Kiali Dashboard
       - host: vault
         desc: HashiCorp Vault
+      - host: jenkins
+        desc: Jenkins CI/CD
       - host: gitlab
         desc: GitLab CI/CD
       - host: pages

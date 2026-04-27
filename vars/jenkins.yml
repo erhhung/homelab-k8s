@@ -1,0 +1,337 @@
+# homelab_admin.*:    {vault.yml}
+# jenkins_admin_pass: {vault.yml}
+
+jenkins_namespace: jenkins
+jenkins_host_name: jenkins # alias of "ingress"
+
+# remember to add jenkins.fourteeners.local to pfSense DNS
+# as an alias of  ingress.fourteeners.local: 192.168.4.222
+# https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_filters.html#products
+jenkins_fqdn: "{{ [jenkins_host_name] | product(search_domains) | map('join','.') | first }}"
+
+jenkins_service_host: "{{ jenkins_release_name }}.{{
+  jenkins_namespace }}.svc.{{ cluster_domain }}"
+jenkins_service_port: 8080
+jenkins_service_url: http://{{ jenkins_service_host }}:{{ jenkins_service_port }}
+
+jenkins_secrets:
+  ingress: jenkins-ingress-tls
+  env-vars: jenkins-env-variables
+
+jenkins_harbor_user: jenkins
+jenkins_harbor_pass: "{{ harbor_admin_pass }}"
+
+# https://github.com/jenkinsci/helm-charts/tree/main/charts/jenkins
+# https://github.com/jenkinsci/helm-charts/pkgs/container/helm-charts%2Fjenkins
+jenkins_chart_version: "5.9.18"
+jenkins_release_name: jenkins
+
+# comment out `jenkins_app_version`
+# below to use chart's `appVersion`
+# https://hub.docker.com/r/jenkins/jenkins/tags?name=-jdk25
+jenkins_app_version: "2.561"
+
+# https://github.com/jenkinsci/helm-charts/tree/main/charts/jenkins/values.yaml
+jenkins_chart_values:
+  clusterZone: "{{ cluster_domain }}"
+
+  persistence:
+    enabled: true
+    storageClass: "{{ storage_classes['default'] }}"
+    accessMode: ReadWriteOnce
+    size: 2Gi
+
+  controller:
+    image:
+      tag: "{{ jenkins_app_version ~'-jdk25' if jenkins_app_version is defined else '' }}"
+      tagLabel: jdk25
+      pullPolicy: IfNotPresent
+    replicas: 1 # StatefulSet
+
+    # don't run jobs on controller node
+    numExecutors: 0
+
+    admin:
+      username: admin
+      password: "{{ jenkins_admin_pass }}"
+    # sender of Jenkins notification e-mails to project owners
+    jenkinsAdminEmail: Jenkins <{{ icloud_smtp.from_email }}>
+
+    podSecurityContextOverride:
+      # allow init container ca-bundle to
+      # run as root to update trust store
+      runAsNonRoot: false
+      runAsUser: 1000
+      fsGroup: 1000
+      fsGroupChangePolicy: OnRootMismatch
+
+    customInitContainers:
+      # create Java keystore & CA bundle
+      # containing our private CA certs
+      - name: ca-bundle
+        image: '{% raw %}{{ .Values.controller.image.registry }}/{{ .Values.controller.image.repository }}:{{- include "controller.image.tag" . }}{% endraw %}'
+        imagePullPolicy: IfNotPresent
+        securityContext:
+          runAsUser: 0
+        command: ["bash"]
+        args:
+          - -c
+          - |-
+            set -e
+            CERTS_DIR=/var/jenkins_home/certs
+            mkdir -p $CERTS_DIR
+
+            echo "Adding certs to Java keystore..."
+            for crt in /run/secrets/additional/*.crt; do
+              id=$(basename $crt .crt); id=${id//_/-}
+              echo "Importing: $id"
+
+              # -cacerts: update $JAVA_HOME/lib/security/cacerts
+              keytool -importcert -cacerts -storepass changeit \
+                -trustcacerts -noprompt -alias $id -file $crt
+            done
+            echo
+            # $JAVA_HOME is defined by the image
+            cp -v $JAVA_HOME/lib/security/cacerts \
+                  $CERTS_DIR/jssecacerts
+
+            cp -v /run/secrets/additional/*.crt \
+                  /usr/local/share/ca-certificates
+            update-ca-certificates 2> /dev/null
+
+            # copy updated CA bundle containing extra certs
+            # from /usr/local/share/ca-certificates and all
+            # already in trust store under /etc/ssl/certs.
+            # the new ca-certificates.crt will be mounted
+            # into main container to replace existing one.
+            CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt
+            cp $CA_BUNDLE $CERTS_DIR/ca-bundle.crt
+            echo; tail -n 23 $CA_BUNDLE
+        volumeMounts:
+          - name: jenkins-secrets
+            mountPath: /run/secrets/additional
+            readOnly: true
+          - name: jenkins-home
+            mountPath: /var/jenkins_home
+
+    resources:
+      requests:
+        cpu: 50m
+        memory: 256Mi
+      limits:
+        cpu: 1000m
+        memory: 2Gi
+
+    # appended to JAVA_OPTS env var
+    javaOpts: >-
+      -Dcom.cloudbees.workflow.rest.external.FlowNodeLogExt.maxReturnChars=32768
+    # appended to JENKINS_OPTS env var
+    jenkinsOpts: ""
+
+    # env vars for `jenkins` container
+    containerEnv: []
+
+    installPlugins: "{{ jenkins_plugins }}"
+    # download the minimum required version
+    # or latest version of all dependencies
+    installLatestPlugins: true
+    overwritePlugins: true
+
+    initScripts: "{{ jenkins_init_scripts }}"
+    # Secret containing env vars referenced by JCasC
+    existingSecret: "{{ jenkins_secrets['env-vars'] }}"
+
+    JCasC:
+      defaultConfig: true
+      overwriteConfiguration: true
+      configScripts: "{{ jenkins_jcasc_configs }}"
+
+      # https://github.com/jenkinsci/configuration-as-code-plugin/tree/master/demos/embedded-userdatabase
+      securityRealm: |
+        local:
+          allowsSignup: false
+          enableCaptcha: false
+          users:
+            {{ jenkins_users | to_nice_yaml(indent=2, sort_keys=false)
+                             | indent(4) }}
+
+    # chart emits config for `jenkins.markupFormatter`
+    # due to `JCasC.defaultConfig: true`, so customize
+    # by chart values instead of `JCasC.configScripts`
+    markupFormatter:
+      # https://plugins.jenkins.io/markdown-formatter
+      markdownFormatter:
+        disableSyntaxHighlighting: false
+    enableRawHtmlMarkupFormatter: false
+
+    ingress:
+      enabled: true
+      tls:
+        - secretName: "{{ jenkins_secrets['ingress'] }}"
+          hosts: "{{ [jenkins_fqdn] }}"
+      ingressClassName: "{{ rke_ingress_class }}"
+      annotations:
+        nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+        nginx.ingress.kubernetes.io/backend-protocol: HTTP
+        # https://kubernetes.github.io/ingress-nginx/user-guide/nginx-configuration/annotations#custom-timeouts
+        nginx.ingress.kubernetes.io/proxy-read-timeout: "1800"
+        nginx.ingress.kubernetes.io/proxy-send-timeout: "1800"
+      hostName: "{{ jenkins_fqdn }}"
+      path: /
+      pathType: Prefix
+
+    # expose Prometheus metrics endpoint on /prometheus/
+    # requires prometheus and disk-usage-simple plugins
+    prometheus:
+      enabled: true
+      serviceMonitorAdditionalLabels: "{{ monitoring_selector_labels }}"
+      scrapeInterval: 60s
+      # docs says end with a slash
+      scrapeEndpoint: /prometheus/
+
+  agent:
+    enabled: true
+    jenkinsUrl: "{{ jenkins_service_url }}"
+
+    # define our own agent pod template under
+    # `podTemplates` to enable buildah support
+    disableDefaultAgent: true
+
+    # https://jenkins.fourteeners.local/configuration-as-code/reference#PodTemplate-
+    podTemplates:
+      builder: |
+        - name: builder
+          label: builder
+          serviceAccount: {{ jenkins_release_name }}-agent
+          agentInjection: true
+
+          yaml: |
+            apiVersion: v1
+            kind: Pod
+            spec:
+              affinity:
+                nodeAffinity:
+                  # preferredDuringSchedulingIgnoredDuringExecution:
+                  #   - weight: 100
+                  #     preference:
+                  #       matchExpressions:
+                  #         - key: node-role.kubernetes.io/runner
+                  #           operator: Exists
+                  requiredDuringSchedulingIgnoredDuringExecution:
+                    nodeSelectorTerms:
+                      - matchExpressions:
+                          # label defined in vars/kubernetes.yml
+                          - key: node-role.kubernetes.io/runner
+                            operator: Exists
+
+              containers:
+                - name: jnlp
+                  securityContext:
+                    appArmorProfile:
+                      type: Localhost
+                      localhostProfile: buildah
+
+                  volumeMounts:
+                    - name: certs
+                      # path expected by Bash function
+                      # `init_certs` in shared library
+                      mountPath: /tls/certs/ca.crt
+                      subPath: ca.crt
+                      readOnly: true
+
+              volumes:
+                - name: certs
+                  secret:
+                    secretName: {{ jenkins_secrets['ingress'] }}
+
+          # https://jenkins.fourteeners.local/configuration-as-code/reference#ContainerTemplate-containerTemplate
+          containers:
+            - name: jnlp
+              # https://github.com/erhhung/al2023-devops
+              image: {{ harbor_container_registry }}/library/al2023-devops:latest
+              alwaysPullImage: true
+
+              ttyEnabled: true
+              privileged: true
+              runAsUser: 0
+              runAsGroup: 0
+
+              # use same resource requests
+              # as GitLab runner container
+              resourceRequestCpu: 500m
+              resourceRequestMemory: 2Gi
+              resourceRequestEphemeralStorage: 40Gi
+
+              # https://jenkins.fourteeners.local/pipeline-syntax/globals
+              # https://plugins.jenkins.io/git#plugin-content-environment-variables
+              envVars:
+                - envVar:
+                    key: CI_REGISTRY
+                    value: {{ harbor_container_registry }}
+
+    # whether to include the agent's Pod
+    # manifest in the job console output
+    showRawYaml: false
+    # seconds to wait for agent pod to be in
+    # running state (if pulling large image)
+    waitForPodSec: 300
+    # keep pod alive for reuse by
+    # next job until idle timeout
+    idleMinutes: 5
+
+  serviceAccountAgent:
+    create: true
+
+  extraObjects:
+    # create ServiceAccount with cluster-admin role
+    # so agent pods can deploy into other namespaces
+    - |
+      apiVersion: rbac.authorization.k8s.io/v1
+      kind: ClusterRoleBinding
+      metadata:
+        name: {{ jenkins_release_name }}-builder
+        labels:
+          {% raw %}{{- include "jenkins.labels" $ | nindent 4 }}{% endraw +%}
+      roleRef:
+        apiGroup: rbac.authorization.k8s.io
+        kind: ClusterRole
+        name: cluster-admin
+      subjects:
+        - kind: ServiceAccount
+          # named by `serviceAccountAgent.name`
+          name: {{ jenkins_release_name }}-agent
+          namespace: {{ jenkins_namespace }}
+
+# https://grafana.com/grafana/dashboards/?search=Jenkins&dataSource=prometheus
+jenkins_grafana_dashboards:
+  # https://grafana.com/grafana/dashboards/22842-jenkins-improved-performance-and-health-overview
+  - title: Jenkins / Health
+    gnet_id: 22842
+    tags: ["jenkins"]
+    jq_patches:
+      - >-
+        walk(if type=="string" then
+          gsub("\\s*\\{\\s*job='jenkins-\\$namespace'\\s*";
+                         "{job='jenkins'") else . end)
+
+  # https://grafana.com/grafana/dashboards/21628-jenkins-overview
+  - title: Jenkins / Jobs
+    gnet_id: 21628
+    inputs:
+      - name: VAR_JENKINS_URL
+        type: constant
+        label: jenkins_url
+        value: https://{{ jenkins_fqdn }}/job/
+    tags:
+      - jenkins
+      - jobs
+    jq_patches:
+      - >-
+        walk(if type=="string" then (
+          gsub("(/?\\(\\.\\*\\)){2}"; "(.*)") |
+          gsub("\\$1/job/\\$2"; "$1/lastBuild/stages/?selected-node=0")
+        ) else . end)
+      - ((.panels[] | select(.title == "Builds health" or .title == "Last build result") |
+          .fieldConfig.defaults.links[0].url) |= "${jenkins_url}${__field.labels.job_url}")
+      - ((.panels[] | select(.title == "Jenkins nodes offline") | .gridPos) |= (.x = 12 | .w = 6))
+      - ((.panels[] | select(.title == "Jenkins nodes online")  | .gridPos) |= (.x = 18 | .w = 6))

@@ -1,0 +1,85 @@
+# push contents of a local directory to Harbor
+# registry in harbor.fourteeners.local/library
+# using ORAS (OCI Registry as Storage) (`oras`
+# CLI must be installed on cluster hosts)
+#
+# pass the following vars:
+#   dir_path      <required> local directory to push
+#   image_ref     <required> name:tag under /library
+#   artifact_type <required> e.g.: application/vnd.*
+#   annotations   [optional] `--annotation K=V` dict (prepends
+#                            "org.opencontainers.image" to key
+#                            if it begins with '.')
+#   harbor_user   [optional] default=harbor_admin_user
+#   harbor_pass   [optional] default=harbor_admin_pass
+#   if_changed    [optional] notify handler
+---
+- name: Push directory to Harbor using ORAS
+  vars:
+    tmp_path: /tmp/oras
+  block:
+    - name: Copy directory to remote host
+      # https://docs.ansible.com/ansible/latest/collections/ansible/posix/synchronize_module.html
+      ansible.posix.synchronize:
+        src: "{{ dir_path }}"
+        dest: "{{ tmp_path }}"
+        archive: true
+        delete: true
+      changed_when: false
+
+    # https://oras.land/docs/category/oras-commands
+    - name: Push to Harbor using ORAS CLI
+      vars:
+        harbor_ref: "{{ harbor_container_registry }}/library/{{ image_ref }}"
+        oras_args: >-
+          --format json
+          --artifact-type "{{ artifact_type }}"
+          {%- if annotations is defined       -%}
+          {%-  for k,v in annotations.items() +%}
+          --annotation {{ k.startswith('.') | ternary('org.opencontainers.image'~k, k) }}="{{ v }}"
+          {%-  endfor -%}
+          {%- endif   -%}
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/shell_module.html
+      ansible.builtin.shell: |
+        set -eo pipefail
+
+        # oras stores credentials in the same
+        # file as Docker: .docker/config.json
+        echo   -n   "{{ harbor_pass | default(harbor_admin_pass) }}" | \
+          oras login {{ harbor_container_registry }} --password-stdin  \
+          --username {{ harbor_user | default(harbor_admin_user) }}  >&2
+
+          dir_name="{{ dir_path | basename }}"
+         oras_args=({{ oras_args  }})
+        harbor_ref="{{ harbor_ref }}"
+         image_ref="{{  image_ref }}"
+        image_name="${image_ref%:*}"
+
+        if manifest="$(oras manifest fetch "$harbor_ref" --format json)"; then
+          # perform idempotency check by comparing existing digest with digest
+          # of locally created OCI layout using existing manifest created date
+          echo -e >&2 "EXISTING MANIFEST:\n${manifest}"
+
+          read existing created < <(
+            jq -r '"\(.digest) \(.content.annotations."org.opencontainers.image.created")"' <<< "$manifest"
+          )
+          mkdir -p  .oras
+          tmp_path=".oras/$image_name"
+          rm   -rf "$tmp_path"
+
+          manifest="$(oras push \
+            --oci-layout "$tmp_path:expected" $dir_name "${oras_args[@]}" \
+            --annotation   org.opencontainers.image.created="$created")"
+          echo -e >&2 "EXPECTED MANIFEST:\n${manifest}"
+
+          expected="$(jq -r '.digest' <<< "$manifest")"
+          [ "$existing" == "$expected" ] && exit 9 # no change
+        fi
+        set -x; oras push $harbor_ref $dir_name "${oras_args[@]}"
+      args:
+        executable: /bin/bash
+        chdir: "{{ tmp_path }}"
+      register: oras_push
+      changed_when: oras_push.rc == 0
+      failed_when: oras_push.rc not in [0,9]
+      notify: "{{ if_changed | default(omit) }}"

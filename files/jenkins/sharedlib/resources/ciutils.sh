@@ -1,5 +1,5 @@
 # this script is automatically sourced
-# by the runner when a build pod starts
+# by the global `bash` step function
 
 # shellcheck disable=SC2148 # Tips depend on target shell
 # shellcheck disable=SC2155 # Declare and assign separately
@@ -17,15 +17,22 @@ git_root() {
 
 # <section> <title>
 section_start() {
-  # https://docs.gitlab.com/ci/jobs/job_logs#custom-collapsible-sections
-  local section=$1 title="${*:2}" erase_eol='\e[0K' blue='\e[1;34m' clear='\e[0m'
-  echo -e "${erase_eol}section_start:$(date +%s):${section}[collapsed=true]\r${erase_eol}$blue===== $title =====$clear"
+  # https://plugins.jenkins.io/collapsing-console-sections
+  local section title yellow clear blue cyan text line
+  section=$1 title="${*:2}"
+  yellow='\e[1;33m' clear='\e[0m' blue='\e[1;34m' cyan='\e[0;36m'
+  text=">>>${yellow}${section}${clear}>>> ${blue}${title}${clear}"
+  printf -v line '%*s' $((${#text} - 26)) ''
+  printf "%b\n${cyan}%s${clear}\n" "$text" "${line// /-}"
 }
 
 # <section>
 section_end() {
-  local section=$1 erase_eol='\e[0K'
-  echo -e "${erase_eol}section_end:$(date +%s):$section\r$erase_eol"
+  local section yellow clear cyan text line
+  section=$1 yellow='\e[1;33m' clear='\e[0m' cyan='\e[0;36m'
+  text="<<<${yellow}${section}${clear}<<<"
+  printf -v line '%*s' $((${#text} - 13)) ''
+  printf "${cyan}%s${clear}\n%b\n" "${line// /-}" "$text"
 }
 
 # trim leading and trailing newlines from stdin
@@ -129,23 +136,12 @@ identities() {
       echo "$label: $name"
     fi
   }
-  __identity "Commit author" CI_COMMIT_AUTHOR
-  __identity "Job initiator" GITLAB_USER_NAME GITLAB_USER_EMAIL
+  # https://plugins.jenkins.io/git#plugin-content-environment-variables
+  __identity "Commit author" GIT_AUTHOR_NAME GIT_AUTHOR_EMAIL
+  # https://plugins.jenkins.io/build-user-vars-plugin
+  __identity "Job initiator" BUILD_USER BUILD_USER_EMAIL
   id
   section_end identities
-}
-
-# wrapper to dump log file if install fails
-npm_install() {
-  rm -rf ~/.npm/_logs
-  npm config set loglevel warn
-
-  if ! npm install --no-fund "$@"; then
-    local red='\e[0;31m' clear='\e[0m'
-    echo -e "\n$red===== Debug Log =====$clear"
-    cat ~/.npm/_logs/*.log
-    return 1
-  fi
 }
 
 buildah_login() {
@@ -212,34 +208,3 @@ wait_k8s_job() (
   failure_pid=$!
   wait -n $completion_pid $failure_pid
 )
-
-# sleep for post-mortem
-# debugging if job fails
-_ci_debug() {
-  local rc=$? red='\e[0;31m' clear='\e[0m'
-  ((rc)) || return 0
-
-  echo -e "\n$red===== Job Failed =====$clear"
-  echo "Sleeping for $CI_DEBUG seconds to allow debugging..."
-  sleep $CI_DEBUG
-  return $rc
-}
-[ "$CI_DEBUG" ] && trap _ci_debug EXIT
-
-set +H # disable history expansion
-
-# export functions for
-# use in other scripts
-export -f git_root
-export -f section_start
-export -f section_end
-export -f trim_newlines
-export -f fake_tty
-export -f colorize
-export -f tee_noclr
-export -f npm_install
-export -f buildah_login
-export -f buildah_build
-export -f buildah_push
-export -f set_k8s_image
-export -f wait_k8s_job
