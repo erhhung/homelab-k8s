@@ -129,7 +129,11 @@ jenkins_chart_values:
     jenkinsOpts: ""
 
     # env vars for `jenkins` container
-    containerEnv: []
+    containerEnv:
+      # set to same value as in `jenkins_jcasc_configs.prometheus` (defined
+      # here only to suppress startup warning before JCasC config is loaded)
+      - name: COLLECTING_METRICS_PERIOD_IN_SECONDS
+        value: "120"
 
     installPlugins: "{{ jenkins_plugins }}"
     # download the minimum required version
@@ -154,6 +158,12 @@ jenkins_chart_values:
           users:
             {{ jenkins_users | to_nice_yaml(indent=2, sort_keys=false)
                              | indent(4) }}
+
+    sidecars:
+      configAutoReload:
+        # watch JCasC for changes and reapply config by calling endpoint:
+        # https://jenkins.fourteeners.local/reload-configuration-as-code
+        enabled: true
 
     # chart emits config for `jenkins.markupFormatter`
     # due to `JCasC.defaultConfig: true`, so customize
@@ -197,6 +207,10 @@ jenkins_chart_values:
     # `podTemplates` to enable buildah support
     disableDefaultAgent: true
 
+    # max number of concurrent agent
+    # pods allowed for whole cluster
+    containerCap: 10
+
     # https://jenkins.fourteeners.local/configuration-as-code/reference#PodTemplate-
     podTemplates:
       builder: |
@@ -204,6 +218,47 @@ jenkins_chart_values:
           label: builder
           serviceAccount: {{ jenkins_release_name }}-agent
           agentInjection: true
+
+          # serialize all jobs that run on this agent since
+          # our homelab cluster can't accommodate more than
+          # one, especially given node affinity constraints
+          instanceCap: 1
+
+          # whether to include the agent's Pod
+          # manifest in the job console output
+          showRawYaml: false
+
+          # keep pod alive for reuse by
+          # next job until idle timeout
+          idleMinutes: 5
+
+          # https://jenkins.fourteeners.local/configuration-as-code/reference#ContainerTemplate-containerTemplate
+          containers:
+            - name: jnlp
+              # https://github.com/erhhung/al2023-devops
+              image: {{ harbor_container_registry }}/library/al2023-devops:latest
+              alwaysPullImage: true
+
+              ttyEnabled: true
+              privileged: true
+              runAsUser: 0
+              runAsGroup: 0
+
+              # use same resource requests
+              # as GitLab runner container
+              resourceRequestCpu: 500m
+              resourceRequestMemory: 2Gi
+              resourceRequestEphemeralStorage: 40Gi
+
+              # https://jenkins.fourteeners.local/pipeline-syntax/globals
+              # https://plugins.jenkins.io/git#plugin-content-environment-variables
+              envVars:
+                - envVar:
+                    key: CI_REGISTRY
+                    value: {{ harbor_url }}
+                - envVar:
+                    key: CI_REGISTRY_PATH
+                    value: {{ harbor_container_registry }}/{{ harbor_default_project }}
 
           yaml: |
             apiVersion: v1
@@ -244,40 +299,9 @@ jenkins_chart_values:
                   secret:
                     secretName: {{ jenkins_secrets['ingress'] }}
 
-          # https://jenkins.fourteeners.local/configuration-as-code/reference#ContainerTemplate-containerTemplate
-          containers:
-            - name: jnlp
-              # https://github.com/erhhung/al2023-devops
-              image: {{ harbor_container_registry }}/library/al2023-devops:latest
-              alwaysPullImage: true
-
-              ttyEnabled: true
-              privileged: true
-              runAsUser: 0
-              runAsGroup: 0
-
-              # use same resource requests
-              # as GitLab runner container
-              resourceRequestCpu: 500m
-              resourceRequestMemory: 2Gi
-              resourceRequestEphemeralStorage: 40Gi
-
-              # https://jenkins.fourteeners.local/pipeline-syntax/globals
-              # https://plugins.jenkins.io/git#plugin-content-environment-variables
-              envVars:
-                - envVar:
-                    key: CI_REGISTRY
-                    value: {{ harbor_container_registry }}
-
-    # whether to include the agent's Pod
-    # manifest in the job console output
-    showRawYaml: false
     # seconds to wait for agent pod to be in
     # running state (if pulling large image)
     waitForPodSec: 300
-    # keep pod alive for reuse by
-    # next job until idle timeout
-    idleMinutes: 5
 
   serviceAccountAgent:
     create: true

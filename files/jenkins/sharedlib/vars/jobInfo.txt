@@ -1,4 +1,4 @@
-Can be called in an `Init` stage to log useful system
+Can be invoked in `Setup` stage to log useful system
 information and environment variables for debugging.
 
 **Usage**
@@ -8,12 +8,12 @@ pipeline {
   agent { label 'builder' }
 
   stages {
-    stage('Init') {
+    stage('Setup') {
       steps {
+        jobInfo()
         bash '''
         init_certs
         '''
-        jobInfo()
       }
     }
     stage('Build') {

@@ -202,7 +202,7 @@
             additional-ca-bundle.pem: "{{ ca_certificates | join('\n') }}"
             openid-server-ca.crt: "" # suppress warning as .pem is enough
         validate:
-          fail_on_error: false
+          fail_on_error: true
         state: present
 
     # Kiali will be deployed by operator

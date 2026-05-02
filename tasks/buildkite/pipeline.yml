@@ -1,0 +1,72 @@
+# VS Code thinks "pipeline.yml" is Erda pipeline definition,
+# so explicitly set schema from https://www.schemastore.org:
+# yaml-language-server: $schema=https://raw.githubusercontent.com/ansible/ansible-lint/main/src/ansiblelint/schemas/ansible.json
+
+# create or update Buildkite pipeline
+#
+# pass the following vars:
+#   pipeline_name  <required> pipeline name
+#   pipeline_slug  [optional] default={name}
+#   repository_url <required> Git repo URL
+#   default_branch [optional] default=main
+---
+- name: Create/update Buildkite pipeline
+  vars:
+    # https://buildkite.com/docs/apis/rest-api/pipelines
+    api_url: "{{ buildkite_api_url }}/pipelines"
+    headers:
+      Authorization: Bearer {{ buildkite_access_token }}
+    # to_case: filter_plugins/filters.py
+    slug: "{{ (pipeline_slug if
+      pipeline_slug is defined and
+      pipeline_slug is truthy else pipeline_name) | to_case('kebab') }}"
+    branch: "{{ default_branch if
+      default_branch is defined and
+      default_branch is truthy else 'main' }}"
+    payload:
+      name: "{{ pipeline_name }}"
+      slug: "{{ slug }}"
+      repository: "{{ repository_url }}"
+      default_branch: "{{ branch }}"
+      cluster_id: "{{ buildkite_cluster_id }}"
+      configuration: |-
+        steps:
+          - label: ":pipeline: Pipeline upload"
+            agents:
+              queue: kubernetes
+            command: buildkite-agent pipeline upload
+  block:
+    - name: Check whether pipeline exists
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/uri_module.html
+      ansible.builtin.uri:
+        url: "{{ api_url }}/{{ slug }}"
+        headers: "{{ headers }}"
+        status_code: [200, 404]
+        return_content: true
+      register: pipeline_info
+
+    - name: Pipeline needs create/update?
+      vars:
+        status: "{{ pipeline_info.status }}"
+        # https://docs.ansible.com/ansible/latest/collections/community/general/keep_keys_filter.html
+        existing: |
+          {{ [pipeline_info.json] | community.general.keep_keys(payload.keys())
+                                  | first if status == 200 else {} }}
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/set_fact_module.html
+      ansible.builtin.set_fact:
+        needs_create: "{{ status == 404 }}"
+        needs_update: "{{ status == 200 and existing != payload }}"
+
+    - name: '{{ ''Create'' if needs_create else ''Update'' }} pipeline "{{ pipeline_name }}"'
+      vars:
+        method: "{{ 'POST' if needs_create else 'PATCH' }}"
+        url: "{{ api_url if needs_create else api_url ~'/'~ slug }}"
+      ansible.builtin.uri:
+        method: "{{ method }}"
+        url: "{{ url }}"
+        headers: "{{ headers }}"
+        body_format: json
+        body: "{{ payload }}"
+        status_code: "{{ 201 if needs_create else 200 }}"
+      when: needs_create or needs_update
+      changed_when: true

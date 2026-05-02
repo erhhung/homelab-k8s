@@ -664,10 +664,9 @@
           {{ items  }}
         # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/regex_replace_filter.html
         parsed: "{{ formatted | map('ansible.builtin.regex_replace', '\\d+\\.', '') | map('trim') }}"
-        lf: "\n"
       ansible.builtin.debug:
         msg: |-
-          {{ formatted | join(lf) }}
+          {{ formatted | join(LF) }}
           ---
           {{ parsed | join(', ') }}
 

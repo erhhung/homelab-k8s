@@ -63,7 +63,8 @@ All cluster services will be provisioned with TLS certificates from Erhhung's pr
 |  ssh://git@gitlab.fourteeners.local:2222 | GitLab SSH Git access
 | https://*.pages.gitlab.fourteeners.local | GitLab Pages websites
 |        https://jenkins.fourteeners.local | Jenkins UI
-|         https://argocd.fourteeners.local | Argo CD console
+|            https://buildkite.com/erhhung | Buildkite dashboard
+|         https://argocd.fourteeners.local | Argo CD UI
 |            https://awx.fourteeners.local | Ansible AWX UI
 |         https://qdrant.fourteeners.local | Qdrant dashboard
 |         https://search.fourteeners.local | SearXNG search UI
@@ -234,6 +235,7 @@ ansible-vault view   $VAULTFILE
 | `gitlab_secrets_data.*`           |
 | `gitlab_omniauth.*`               |
 | `jenkins_slack_token`             |
+| `buildkite_access_token`          |
 | `buildkite_agent_token`           |
 | `argocd_signing_key`              |
 | `awx_secret_key`                  |
@@ -533,9 +535,10 @@ however, all privileged operations using `sudo` will require the password stored
 
 26. <details><summary>Install <strong>Jenkins</strong> CI/CD platform to deploy local projects</summary><br/>
 
-    26.1. Configure and deploy **Kubernetes cloud** for building images using `buildah`  
+    26.1. Configure and provision **Jenkins agent** for building images using `buildah`  
     26.2. Install and configure popular plugins for pipeline and job output visualization  
     26.3. Implicitly load shared library with Bash functions from Harbor in all pipelines  
+    26.4. Create pipelines from GitHub repositories  
 
     ```bash
     make jenkins
@@ -543,6 +546,10 @@ however, all privileged operations using `sudo` will require the password stored
 </details>
 
 27. <details><summary>Install <strong>Buildkite</strong> agent connected to <code>buildkite.com</code></summary><br/>
+
+    27.1. Configure agent pod spec with [`al2023-devops`](https://github.com/erhhung/al2023-devops) to build images using `buildah`  
+    27.2. Mount Git, SSH, and Harbor credentials in `checkout` and `command` containers  
+    27.3. Create YAML pipelines from GitHub repositories  
 
     ```bash
     make buildkite

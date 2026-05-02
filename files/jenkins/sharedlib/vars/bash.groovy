@@ -1,5 +1,3 @@
-// groovylint-disable CompileStatic, UnusedVariable
-
 import groovy.transform.Field
 
 @Field

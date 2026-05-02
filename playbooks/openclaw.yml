@@ -337,7 +337,6 @@
     state_dest_dir: "{{ openclaw_data_dir }}/.openclaw"
     workspace_src_dir: "{{ files_dir }}/openclaw/workspace"
     workspace_dest_dir: "{{ openclaw_data_dir }}/workspace"
-    lf: "\n"
 
   module_defaults:
     group/k8s:
@@ -462,7 +461,7 @@
               cmd=$(command -v "$cmd" || true)
             [ "$cmd" ] && echo "$cmd"
           done <<'EOF' | jq -nRc '[inputs]'
-          {{ allowlist | join(lf) }}
+          {{ allowlist | join(LF) }}
           EOF
       kubernetes.core.k8s_exec:
         command: bash -c "{{ script | regex_replace('([\\"])', '\\\1') }}"

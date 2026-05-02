@@ -4,8 +4,10 @@
 #   ssh_host  <required> name or IP
 #   ssh_port  [optional] default=22
 #   key_types [optional] default=[ecdsa,ed25519,rsa]
+#   fact_name [optional] fact to store host entries
+#                        default=known_hosts
 # sets the following facts:
-#   known_hosts  list of known_hosts lines
+#   {fact_name}  list of known_hosts entries
 #                ordered by given key types
 ---
 - name: Gather facts about controller
@@ -16,11 +18,13 @@
 - name: Get SSH known_hosts entries
   delegate_to: localhost
   become: false
+  vars:
+    ansible_python_interpreter: "{{ local_python_interpreter }}"
+    hosts_fact: "{{ fact_name | default('known_hosts') }}"
   block:
     - name: Get ssh-keyscan output
       vars:
-        ansible_python_interpreter: "{{ local_python_interpreter }}"
-        ssh_port: "{{ ssh_port | default(22) }}"
+        ssh_port_: "{{ ssh_port | default(22) }}"
         # man ssh-keyscan
         default_types:
           - ecdsa
@@ -32,14 +36,14 @@
         set -eo pipefail
 
         for type in {{ types | join(' ') }}; do
-          ssh-keyscan -t $type -p {{ ssh_port }} {{ ssh_host }} 2> /dev/null | egrep -v '^#'
+          ssh-keyscan -t $type -p {{ ssh_port_ }} {{ ssh_host }} 2> /dev/null | egrep -v '^#'
         done
       args:
         executable: "{{ local_bash_interpreter }}"
       register: ssh_keyscan
       changed_when: false
 
-    - name: Set known_hosts fact
+    - name: Set {{ hosts_fact }} fact
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/set_fact_module.html
       ansible.builtin.set_fact:
-        known_hosts: "{{ ssh_keyscan.stdout_lines }}"
+        "{{ hosts_fact }}": "{{ ssh_keyscan.stdout_lines }}"

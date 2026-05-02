@@ -1,0 +1,23 @@
+Perform default Git repository checkout when using
+`options { skipDefaultCheckout() }` in the pipeline.
+This helper emits section markers around the output
+of `checkout scm`.
+
+**Usage**
+
+```groovy
+pipeline {
+  agent { label 'builder' }
+
+  options {
+    skipDefaultCheckout()
+  }
+  stages {
+    stage('Setup') {
+      steps {
+        defaultCheckout()
+      }
+    }
+  }
+}
+```

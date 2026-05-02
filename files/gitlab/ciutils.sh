@@ -155,28 +155,34 @@ buildah_login() {
       --password-stdin
 }
 
-# <tag> <args>...
+# <repo> <args>...
+# (assumes local image is <repo>:latest)
 buildah_build() {
-  local section tag=$1; shift
+  local section repo="${1%:*}"
   local args=(--format docker)
-  section="build_${tag%:*}"
-  section=${section//-/_}
+  section="build_${repo//-/_}"
+  shift
 
-  section_start $section "Building $tag"
+  section_start $section "Build $repo"
   # use --manifest for  multi-platform build
   # use -t/--tag   for single-platform build
-  [[ "$*" == *--manifest* ]] || args+=(-t $tag)
+  [[ "$*" == *--manifest* ]] || args+=(-t $repo)
   buildah build "${args[@]}" "$@"
-  section_end   $section
+  section_end $section
 }
 
 # <repo> <tag>
 # (assumes local image is <repo>:latest)
 buildah_push() {
-  local dest="$CI_REGISTRY_PATH/$1:$2"
-  buildah tag "$1" $dest
-  buildah push     $dest
-  buildah rmi      $dest
+  local section repo="${1%:*}" tag=$2
+  local dest="$CI_REGISTRY_PATH/$repo:$tag"
+  section="push_${repo//-/_}"
+
+  section_start $section "Push $repo"
+  buildah tag "$repo:latest" $dest
+  buildah push $dest
+  buildah rmi  $dest
+  section_end $section
 }
 
 # <kind> <namespace>  <resource-name> \
@@ -237,6 +243,7 @@ export -f trim_newlines
 export -f fake_tty
 export -f colorize
 export -f tee_noclr
+export -f init_certs
 export -f npm_install
 export -f buildah_login
 export -f buildah_build

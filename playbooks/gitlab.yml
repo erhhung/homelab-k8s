@@ -267,12 +267,13 @@
           - cert-manager.io/v1 Certificate {{ gitlab_secrets['database']      }}
           - cert-manager.io/v1 Certificate {{ postgresql_secrets['superuser'] }}
           - cert-manager.io/v1 Certificate {{ monitoring_secrets['scraper']   }}
-          - v1 Secret {{ gitlab_secrets['certs']     }}
-          - v1 Secret {{ gitlab_secrets['storage']   }}
-          - v1 Secret {{ gitlab_secrets['omniauth']  }}
-          - v1 Secret {{ gitlab_secrets['passwords'] }}
-          - v1 Secret {{ gitlab_secrets['tokens']    }} ? # optional (created later)
-          - v1 Secret {{ gitlab_secrets['runner']    }} ? # optional (created later)
+          - v1 Secret    {{ gitlab_secrets['certs']      }}
+          - v1 Secret    {{ gitlab_secrets['storage']    }}
+          - v1 Secret    {{ gitlab_secrets['omniauth']   }}
+          - v1 Secret    {{ gitlab_secrets['passwords']  }}
+          - v1 Secret    {{ gitlab_secrets['tokens']     }} ? # optional (created later)
+          - v1 Secret    {{ gitlab_secrets['runner']     }} ? # optional (created later)
+          - v1 ConfigMap {{ gitlab_configmaps['scripts'] }} ? # optional (created later)
           - |
             {% for name, data in gitlab_secrets_data.items() %}
             {%   if name is search('^gitlab-') %}
@@ -536,7 +537,7 @@
             ci-utils.sh: "{{ lookup('ansible.builtin.file',
               files_dir ~ '/gitlab/ciutils.sh', rstrip=false) }}"
         validate:
-          fail_on_error: false
+          fail_on_error: true
         state: present
 
     # GitLab Runner pod doesn't appear to auto-reload

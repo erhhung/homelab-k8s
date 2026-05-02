@@ -127,7 +127,7 @@
             namespace: "{{ keycloak_namespace }}"
           data: "{{ data }}"
         validate:
-          fail_on_error: false
+          fail_on_error: true
         state: present
         apply: true
 

@@ -20,7 +20,8 @@
     "*.nginx.j2": "nginx",
     "*.sh.j2": "shellscript",
     "*.js.j2": "javascript",
-    "*.py.j2": "python"
+    "*.py.j2": "python",
+    "*.groovy.j2": "groovy"
   },
   "makefile.configureOnOpen": false
 }

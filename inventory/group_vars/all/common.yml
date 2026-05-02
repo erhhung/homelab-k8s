@@ -72,3 +72,6 @@ harbor_admin_user: admin
 # Ansible controller)
 bcrypt_salt: uSxlHqJxwleWvtiyqwx1kO
 bcrypt_rounds: 11
+
+# useful in YAML multiline strings
+LF: "\n"

@@ -302,8 +302,11 @@ group_homelab() {
     printf ','
     run curl -s "$group_url" "${HTML_ARGS[@]}"
   }
+  # group callouts used below no longer
+  # supported from v18.9.x, chart 9.9.x
+  return 0
 
-  group_id="$(sed -En 's/Group ID: ([0-9]+)/\1/p' "$RESPONSE_HTML")"
+  group_id="$(sed -En 's/^.+"namespace_id":([0-9]+),.+$/\1/p' "$RESPONSE_HTML")"
   echo >&2 "group_id: ${group_id:-N/A}"
   [ "$group_id" ] || return
 

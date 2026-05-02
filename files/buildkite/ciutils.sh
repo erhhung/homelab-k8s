@@ -1,4 +1,5 @@
-# this script is automatically sourced by `bash` function
+# this script is automatically sourced
+# by container-N when build pod starts
 
 # shellcheck disable=SC2148 # Tips depend on target shell
 # shellcheck disable=SC2155 # Declare and assign separately
@@ -7,6 +8,9 @@
 # shellcheck disable=SC2206 # Quote to avoid word splitting
 # shellcheck disable=SC2015 # A && B || C isn't if-then-else
 # shellcheck disable=SC2012 # find is better at non-alphanum
+# shellcheck disable=SC2178 # Var was array but now string
+# shellcheck disable=SC2179 # Use array+=("item") to append
+# shellcheck disable=SC2128 # Expanding array without index
 
 # show root path of current (super) project
 git_root() {
@@ -14,24 +18,17 @@ git_root() {
   [ "$root" ] && echo "$root" || git rev-parse --show-toplevel
 }
 
-# <section> <title>
+# <title>
 section_start() {
-  # https://plugins.jenkins.io/collapsing-console-sections
-  local section title yellow clear blue cyan text line
-  section=$1 title="${*:2}"
-  yellow='\e[1;33m' clear='\e[0m' blue='\e[1;34m' cyan='\e[0;36m'
-  text=">>>${yellow}${section}${clear}>>> ${blue}${title}${clear}"
-  printf -v line '%*s' $((${#text} - 26)) ''
-  printf "%b\n${cyan}%s${clear}\n" "$text" "${line// /-}"
+  # https://buildkite.com/docs/pipelines/configure/managing-log-output
+  local title="$*" blue='\e[1;34m' clear='\e[0m'
+  echo -e "--- $blue===== $title =====$clear"
 }
 
-# <section>
+# [title]
 section_end() {
-  local section yellow clear cyan text line
-  section=$1 yellow='\e[1;33m' clear='\e[0m' cyan='\e[0;36m'
-  text="<<<${yellow}${section}${clear}<<<"
-  printf -v line '%*s' $((${#text} - 13)) ''
-  printf "${cyan}%s${clear}\n%b\n" "${line// /-}" "$text"
+  local title="$*" gray='\e[1;30m' clear='\e[0m'
+  echo -e "+++ ${gray}${title:-\032}${clear}"
 }
 
 # trim leading and trailing newlines from stdin
@@ -109,22 +106,20 @@ init_certs() {
 }
 
 sys_info() {
-  section_start sys_info 'System Information'
+  section_start 'System Information'
   printf "%s\n------\n%s\n------\n%s\n" \
     "$(lscpu)" "$(free -thw)" "$(df -lh .)"
-  section_end sys_info
 }
 
 env_vars() {
-  section_start env_vars 'Environment Variables'
+  section_start 'Environment Variables'
   # use sed to filter out exported functions
   env | sort | sed -En '/^[[:alnum:]_]+=/p' \
-      | colorize  bash
-  section_end env_vars
+      | colorize bash
 }
 
 identities() {
-  section_start identities 'Git/OS Identities'
+  section_start 'Git/OS Identities'
   __identity() {
     local label=$1 name_var=$2 email_var=${3:-_NA_}
     local name="${!name_var}"  email="${!email_var}"
@@ -135,12 +130,11 @@ identities() {
       echo "$label: $name"
     fi
   }
-  # https://plugins.jenkins.io/git#plugin-content-environment-variables
-  __identity "Commit author" GIT_AUTHOR_NAME GIT_AUTHOR_EMAIL
-  # https://plugins.jenkins.io/build-user-vars-plugin
-  __identity "Job initiator" BUILD_USER BUILD_USER_EMAIL
+  # https://buildkite.com/docs/pipelines/configure/environment-variables
+  __identity "Commit author" BUILDKITE_BUILD_AUTHOR  BUILDKITE_BUILD_AUTHOR_EMAIL
+  __identity "Job initiator" BUILDKITE_BUILD_CREATOR BUILDKITE_BUILD_CREATOR_EMAIL
+  __identity "Job unblocker" BUILDKITE_UNBLOCKER     BUILDKITE_UNBLOCKER_EMAIL
   id
-  section_end identities
 }
 
 buildah_login() {
@@ -156,12 +150,11 @@ buildah_build() {
   local repo="${1%:*}"; shift
   local args=(--format docker)
 
-  section_start build "Build $repo"
+  section_start "Build $repo"
   # use --manifest for  multi-platform build
   # use -t/--tag   for single-platform build
   [[ "$*" == *--manifest* ]] || args+=(-t $repo)
   buildah build "${args[@]}" "$@"
-  section_end build
 }
 
 # <repo> <tag>
@@ -170,11 +163,10 @@ buildah_push() {
   local repo="${1%:*}" tag=$2
   local dest="$CI_REGISTRY_PATH/$repo:$tag"
 
-  section_start push "Push $repo"
+  section_start "Push $repo"
   buildah tag "$repo:latest" $dest
   buildah push $dest
   buildah rmi  $dest
-  section_end push
 }
 
 # <kind> <namespace>  <resource-name> \
@@ -211,18 +203,35 @@ wait_k8s_job() (
   wait -n $completion_pid $failure_pid
 )
 
-# sleep for post-mortem
-# debugging if job fails
-_ci_debug() {
-  local rc=$? red='\e[0;31m' clear='\e[0m'
-  ((rc)) || return 0
-
-  echo -e "\n$red===== Job Failed =====$clear"
-  echo "Sleeping for $CI_DEBUG seconds to allow debugging..."
-  sleep $CI_DEBUG
-  return $rc
+# <image-url> [alt-text] [width] [height]
+inline_image() {
+  # https://buildkite.github.io/terminal-to-html/inline-images
+  local args="url=$1" alt="$2" w="$3" h="$4"
+  [ "$alt" ] && args+=";alt=$alt"
+  [ "$w"   ] && args+=";width=$w"
+  [ "$h"   ] && args+=";height=$h"
+  echo -e "\033]1338;$args\a"
 }
-[ "$CI_DEBUG" ] && trap _ci_debug EXIT
+
+_ci_exit() {
+  local rc=$?; set +eux
+  if ((rc)) && [ "$CI_DEBUG" ]; then
+    # sleep for post-mortem debugging
+    local red='\e[0;31m' clear='\e[0m'
+
+    echo -e "+++ $red===== Job Failed =====$clear"
+    echo "Sleeping for $CI_DEBUG seconds to allow debugging..."
+    sleep $CI_DEBUG
+  else
+    section_end 'End of pipeline step'
+  fi
+}
+trap _ci_exit EXIT
+
+# https://buildkite.com/docs/pipelines/configure/environment-variables#BUILDKITE_COMMIT_RESOLVED
+if [ "$BUILDKITE_COMMIT_RESOLVED" == true ]; then
+  export GIT_COMMIT_SHORT_SHA="${BUILDKITE_COMMIT::8}"
+fi
 
 set +H # disable history expansion
 
@@ -241,3 +250,4 @@ export -f buildah_build
 export -f buildah_push
 export -f set_k8s_image
 export -f wait_k8s_job
+export -f inline_image
