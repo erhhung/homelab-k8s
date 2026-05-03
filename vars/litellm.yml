@@ -100,20 +100,39 @@ litellm_chart_values:
       # https://docs.litellm.ai/docs/proxy/alerting
       alerting:
         - slack
-        - email
+        # - email
+
       # https://docs.litellm.ai/docs/proxy/alerting#all-possible-alert-types
       alert_types:
         - db_exceptions
         - llm_exceptions
         # - llm_too_slow
         - llm_requests_hanging
+        # - cooldown_deployment
+        - outage_alerts
         - budget_alerts
         - spend_reports
         # - daily_reports
         # - new_model_added
-        # - cooldown_deployment
+
+      # sends alert if requests hang
+      # for Xm and responses take Xm
       alerting_threshold: 300 # 5m
       spend_report_frequency: 7d
+
+      # https://docs.litellm.ai/docs/proxy/alerting#digest-mode-reducing-alert-noise
+      alert_type_config:
+        db_exceptions: &alert-digest
+          digest: true
+          digest_interval: 3600 # 1h
+        llm_exceptions: *alert-digest
+        llm_requests_hanging: *alert-digest
+
+      # https://docs.litellm.ai/docs/proxy/alerting#alerting_args-specification
+      alerting_args:
+        outage_alert_ttl: 300 # 5m
+        minor_outage_alert_threshold: 25
+        major_outage_alert_threshold: 50
 
     litellm_settings:
       # https://docs.litellm.ai/docs/proxy/caching
