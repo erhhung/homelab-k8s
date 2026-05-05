@@ -43,8 +43,8 @@ __av() (
   export EDITOR=$(which emacs)
   ansible-vault "$cmd" "$file"
 )
-ev() { __av edit    "${1:-$VAULTFILE}"; }
-vv() { __av view    "${1:-$VAULTFILE}"; }
+ev() { __av edit    "${1:-$(git_root)/$VAULTFILE}"; }
+vv() { __av view    "${1:-$(git_root)/$VAULTFILE}"; }
 ve() { __av encrypt "$1"; }
 vd() { __av decrypt "$1"; }
 
