@@ -10,6 +10,7 @@
     - vars/valkey.yml
     - vars/ollama.yml
     - vars/monitoring.yml
+    - vars/storage.yml
     - vars/searxng.yml
     - vars/litellm.yml
   vars: &vars
@@ -71,6 +72,14 @@
           SLACK_WEBHOOK_URL: "{{ slack_webhook_urls['litellm'] }}"
       ansible.builtin.include_tasks: "{{ tasks_dir }}/k8s/secrets/generic.yml"
 
+    - name: Create ChatGPT OAuth secret
+      vars:
+        secret_name: "{{ litellm_secrets['chatgpt'] }}"
+        secret_data:
+          # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/unvault_lookup.html
+          auth.json: "{{ lookup('ansible.builtin.unvault', files_dir ~ '/litellm/chatgpt/auth.json') }}"
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/k8s/secrets/generic.yml"
+
     - name: Install LiteLLM Helm chart
       vars:
         tmpdir_name: litellm
@@ -98,6 +107,7 @@
           - cert-manager.io/v1 Certificate {{ litellm_secrets['ingress']  }}
           - cert-manager.io/v1 Certificate {{ litellm_secrets['database'] }}
           - v1 Secret {{ litellm_secrets['env-vars'] }}
+          - v1 Secret {{ litellm_secrets['chatgpt']  }}
           - v1 Secret {{ litellm_secrets['api-keys'] }} ? # optional (created later)
           - |
             {% if litellm_enable_istio and

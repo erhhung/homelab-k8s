@@ -24,6 +24,7 @@ litellm_secrets:
   ingress: litellm-ingress-tls
   database: litellm-database-tls
   env-vars: litellm-env-variables
+  chatgpt: litellm-chatgpt-auth
   api-keys: litellm-api-keys
 
 litellm_db_name: litellm
@@ -72,6 +73,11 @@ litellm_chart_values:
     SMTP_PORT: "{{ icloud_smtp.port }}"
     SMTP_TLS: true
     SMTP_SENDER_EMAIL: LiteLLM <{{ icloud_smtp.from_email }}>
+
+    # https://docs.litellm.ai/docs/providers/chatgpt#configuration
+    # /data is PVC-mounted volume
+    CHATGPT_TOKEN_DIR: /data/chatgpt
+    CHATGPT_AUTH_FILE: auth.json
 
   environmentSecrets:
     # UI_PASSWORD, LITELLM_MASTER_KEY, ...
@@ -244,12 +250,21 @@ litellm_chart_values:
       memory: 512Mi
 
   volumes:
+    - name: litellm-data
+      persistentVolumeClaim:
+        claimName: "{{ litellm_release_name }}-data"
     - name: database-tls
       secret:
         secretName: "{{ litellm_secrets['database'] }}"
         defaultMode: 416 # "0640"
+    - name: chatgpt-auth
+      secret:
+        secretName: "{{ litellm_secrets['chatgpt'] }}"
+        defaultMode: 256 # "0400"
 
   volumeMounts:
+    - name: litellm-data
+      mountPath: /data
     # client TLS cert to connect to PostgreSQL
     - name: database-tls
       mountPath: /tls/database
@@ -274,6 +289,68 @@ litellm_chart_values:
     enabled: true
     labels: "{{ monitoring_selector_labels }}"
     interval: 30s
+
+  extraResources:
+    - apiVersion: v1
+      kind: PersistentVolumeClaim
+      metadata:
+        name: "{{ litellm_release_name }}-data"
+        labels:
+          # add labels manually because the Helm
+          # template doesn't run YAML thru `tpl`
+          app.kubernetes.io/name: litellm
+          app.kubernetes.io/instance: "{{ litellm_release_name }}"
+          app.kubernetes.io/managed-by: Helm
+      spec:
+        storageClassName: "{{ storage_classes['default'] }}"
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            # min XFS volume size is 300Mi
+            storage: 384Mi
+
+  extraInitContainers:
+    # copy possibly expired ChatGPT auth tokens
+    # from Secret to PVC-backed volume; LiteLLM
+    # may refresh the access token if necessary
+    - name: init-auth
+      image: backplane/jq
+      imagePullPolicy: IfNotPresent
+      command: ["sh"]
+      args:
+        - -c
+        - |-
+          set -eo pipefail
+
+          get_exp() {
+            [ -f "$1" ] || { echo 0; return; }
+            jq -r '.expires_at // 0' "$1"
+          }
+          exp_out() {
+            date -ud "@$1" '+%Y-%m-%dT%H:%M:%SZ'
+          }
+            src="/src/chatgpt/auth.json"
+          dest="/data/chatgpt/auth.json"
+
+           src_exp=$(get_exp $src)
+          dest_exp=$(get_exp $dest)
+
+          if [ "$src_exp" -gt "$dest_exp" ]; then
+            mkdir -p /data/chatgpt
+            cp    -f  $src $dest
+            chmod      600 $dest
+          else
+            echo "Existing ChatGPT token expiration is newer:"
+            echo "$(exp_out $dest_exp) >= $(exp_out $src_exp)"
+          fi
+
+      volumeMounts:
+        - name: chatgpt-auth
+          mountPath: /src/chatgpt/auth.json
+          subPath: auth.json
+          readOnly: true
+        - name: litellm-data
+          mountPath: /data
 
 # create litellm database if it doesn't
 # exist before running Prisma migration
@@ -349,8 +426,18 @@ litellm_models:
   # https://platform.openai.com/docs/models/gpt-5.4 ($2.50 • $15)
   - model_name: gpt-5.4
     litellm_params:
-      <<: *openai
-      model: openai/gpt-5.4-2026-03-05
+      # <<: *openai
+      # model: openai/gpt-5.4-2026-03-05
+      # use ChatGPT subscription (no API usage costs):
+      # https://docs.litellm.ai/docs/providers/chatgpt
+      model: chatgpt/gpt-5.4-2026-03-05
+
+  # https://platform.openai.com/docs/models/gpt-5.5 ($5 • $30)
+  - model_name: gpt-5.5
+    litellm_params:
+      # <<: *openai
+      # model: openai/gpt-5.5-2026-04-23
+      model: chatgpt/gpt-5.5-2026-04-23
 
   # https://www.anthropic.com/claude/sonnet ($3 • $15)
   - model_name: claude-sonnet-4-5

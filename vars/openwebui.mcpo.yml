@@ -38,7 +38,7 @@ mcpo_chart_values:
 
   image:
     # https://github.com/open-webui/mcpo/pkgs/container/mcpo/versions?filters%5Bversion_type%5D=tagged
-    tag: git-91e8f94
+    tag: git-788ff92
 
   env:
     # /.npm is on read-only filesystem:
