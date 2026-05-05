@@ -16,7 +16,7 @@
     api_url: "{{ buildkite_api_url }}/pipelines"
     headers:
       Authorization: Bearer {{ buildkite_access_token }}
-    # to_case: filter_plugins/filters.py
+    # to_case: plugins/filter/filters.py
     slug: "{{ (pipeline_slug if
       pipeline_slug is defined and
       pipeline_slug is truthy else pipeline_name) | to_case('kebab') }}"

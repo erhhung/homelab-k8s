@@ -390,7 +390,7 @@
         container: main
       block:
         - name: Update OpenClaw state config
-          # substr: filter_plugins/filters.py
+          # substr: plugins/filter/filters.py
           vars:
             src_files: |
               {{ state_files.files | map(attribute='path') |
@@ -520,7 +520,7 @@
           {{   patterns -}}
           {% endif %}
         # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/difference_filter.html
-        # prepend: filter_plugins/filters.py
+        # prepend: plugins/filter/filters.py
         commands: |
           {% set add    = allowlist | reject('in', existing)  | sort %}
           {% set remove = existing  | reject('in', allowlist) | sort %}
@@ -576,7 +576,7 @@
                    'everyMs':  item.every | community.general.to_milliseconds | int,
                  }) %}
             {% elif item.at is defined %}
-            {#   local_iso_to_utc_iso: filter_plugins/filters.py #}
+            {#   local_iso_to_utc_iso: plugins/filter/filters.py #}
             {%   set _  = sched.update({
                    'kind': 'at',
                    'at':    item.at | local_iso_to_utc_iso(tz=tz, precision='ms'),
@@ -602,7 +602,7 @@
           - schedule.anchorMs
         exists: "{{ job is truthy }}"
         existing: |
-          {# omit_keys: filter_plugins/filters.py #}
+          {# omit_keys: plugins/filter/filters.py #}
           {{ job | community.general.keep_keys(target=expected.keys())
                  | first |  omit_keys(del_keys) if exists else none }}
         cron_args: |
@@ -616,7 +616,7 @@
                  'to':      'user:'~ user_erhhung.slack.id,
                })  %}
           {% endif %}
-          {# to_case, prepend: filter_plugins/filters.py   #}
+          {# to_case, prepend: plugins/filter/filters.py   #}
           {% set opts = args.keys() | map('to_case', 'kebab')
                                     | map('prepend', '--') %}
           {% set values = args.values() | map('quote')  |

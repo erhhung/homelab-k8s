@@ -37,15 +37,15 @@ class LookupModule(LookupBase):
 
         ret = []
         for bucket in terms:
-            log.debug(f"S3 bucket name: {bucket}")
+            log.v(f"S3 bucket name: {bucket}")
             if self.get_option("readonly"):
-                log.debug("Generating read-only policy")
+                log.v("Generating read-only policy")
                 actions = [
                     "s3:Get*",
                     "s3:List*",
                 ]
             else:
-                log.debug("Generating read-write policy")
+                log.v("Generating read-write policy")
                 actions = [
                     "s3:*",
                 ]

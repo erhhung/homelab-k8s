@@ -97,7 +97,7 @@
           {%     endfor  %}
           {%   endif %}
           {% endfor  %}
-          {# omit_keys: filter_plugins/filters.py #}
+          {# omit_keys: plugins/filter/filters.py #}
           {{ resource | omit_keys(del_keys) }}
 
     # - name: Show patched resource spec

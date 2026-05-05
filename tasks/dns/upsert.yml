@@ -26,7 +26,7 @@
           - aliases.parent_id
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/set_fact_module.html
       ansible.builtin.set_fact:
-        # omit_keys: filter_plugins/filters.py
+        # omit_keys: plugins/filter/filters.py
         existing_override: "{{   override_ | first |
           omit_keys(del_keys) if override_ is truthy else none }}"
 

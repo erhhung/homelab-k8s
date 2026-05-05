@@ -64,7 +64,7 @@ openclaw_config:
     # https://docs.openclaw.ai/web/control-ui
     controlUi:
       enabled: true
-      # prepend: filter_plugins/filters.py
+      # prepend: plugins/filter/filters.py
       allowedOrigins: "{{ openclaw_fqdns | map('prepend', 'https://') }}"
 
     # NOTE: CIDR notation isn't supported:
@@ -420,7 +420,7 @@ openclaw_config:
       {{ installs }}
 
     load:
-      # prepend: filter_plugins/filters.py
+      # prepend: plugins/filter/filters.py
       paths: "{{ openclaw_plugins | map(attribute='id') |
         map('prepend', '${OPENCLAW_PLUGIN_DIR}/') }}"
 

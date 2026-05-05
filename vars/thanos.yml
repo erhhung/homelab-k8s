@@ -26,7 +26,7 @@ thanos_fqdns: |
   {% set fqdns = {} %}
   {% for service, hosts in thanos_host_names.items() %}
   {#   create partially qualified domains #}
-  {#   append: filter_plugins/filters.py  #}
+  {#   append: plugins/filter/filters.py  #}
   {%   set pqdns = hosts | map('append', '.thanos')  %}
   {%   set _ = fqdns.update({
          service: pqdns | product(search_domains) | map('join','.')

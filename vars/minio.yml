@@ -21,7 +21,7 @@ minio_buckets:
 # only (there is no support for bucket policy)
 # NOTE: rendered JSON doc cannot exceed 20 KiB
 # https://min.io/docs/minio/linux/administration/identity-access-management/policy-based-access-control.html#policy-document-structure
-# lookup_plugins/one_bucket_iam_policy.py creates a broad
+# plugins/lookup/one_bucket_iam_policy.py creates a broad
 # policy. ideally, allowed actions should be more limited:
 # https://github.com/vmware-tanzu/velero-plugin-for-aws#option-1-set-permissions-with-an-iam-user
 minio_policies: |
