@@ -127,7 +127,7 @@
           - query
           - rule
           - store
-        # append: filter_plugins/filters.py
+        # append: plugins/filter/filters.py
         thanos_pqdns: "{{ thanos_hosts | map('append', subdomain) }}"
         thanos_fqdns: "{{ thanos_pqdns | product(search_domains) | map('join', '.') }}"
       ansible.builtin.debug:
@@ -719,15 +719,15 @@
           - backups
           - temp
           - cache
-        # prepend: filter_plugins/filters.py
+        # prepend: plugins/filter/filters.py
         # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/zip_filter.html
         buckets: "{{ dict(types | ansible.builtin.zip(types | map('prepend', 'gitlab-'))) }}"
       ansible.builtin.debug:
         var: buckets
 
-    - name: Debug remove_keys filter
+    - name: Debug omit_keys filter
       vars:
-        dirty:
+        dirty1:
           apiVersion: v1
           kind: Pod
           metadata:
@@ -753,7 +753,7 @@
                 image: myimage:latest
           status:
             phase: Running
-        del_keys:
+        keys1:
           - metadata.uid
           - metadata.creationTimestamp
           - metadata.resourceVersion
@@ -762,12 +762,29 @@
           - metadata.annotations.kubectl\.kubernetes\.io/last-applied-configuration
           # - metadata.annotations.kubectl\.kubernetes\.io/restartedAt
           - status
+        dirty2:
+          foo:
+            bar:
+              - id: 1
+                name: bar1
+                baz:
+                  - id: 1
+                    name: baz1
+                    qux: _baz1
+              - id: 2
+                name: two
+                baz:
+                  - id: 2
+                    name: baz2
+                    qux: _baz2
+        keys2:
+          - foo.bar.baz.qux
         # doesn't work as remove_keys
         # doesn't support nested keys:
         # https://docs.ansible.com/ansible/latest/collections/community/general/remove_keys_filter.html
-        clean1: "{{ [dirty] | community.general.remove_keys(target=del_keys) | first }}"
-        # omit_keys: filter_plugins/filters.py
-        clean2: "{{  dirty  | omit_keys(del_keys) }}"
+        clean1: "{{ [dirty1] | community.general.remove_keys(target=keys1) | first }}"
+        # omit_keys: plugins/filter/filters.py
+        clean2: "{{  dirty2  | omit_keys(keys2) }}"
       ansible.builtin.debug:
         var: clean2
 
@@ -814,7 +831,7 @@
         # and paste into the browser's address bar
         var: data_uri
 
-    # lookup_plugins/one_bucket_iam_policy.py
+    # plugins/lookup/one_bucket_iam_policy.py
     - name: Custom one_bucket_iam_policy lookup
       vars:
         rw_policy: "{{ lookup('one_bucket_iam_policy', 'backups') }}"

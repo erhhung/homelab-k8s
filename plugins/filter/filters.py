@@ -1,3 +1,8 @@
+from ansible.utils.display import Display
+
+log = Display()
+
+
 class FilterModule(object):
     def filters(self):
         return {
@@ -63,29 +68,49 @@ class FilterModule(object):
         (remove nested keys by using dot.notation keys)
 
         e.g. "metadata.annotations.kubectl\.kubernetes\.io/last-applied-configuration"
+
+        if omitting a nested key like "a.b.c.d", interior
+        keys like "b" and "c" may refer to lists of dicts
         """
         import copy
         import re
 
+        def _descend(nodes, part):
+            children = []
+
+            for node in nodes:
+                if isinstance(node, dict) and part in node:
+                    child = node[part]
+                    if isinstance(child, list):
+                        children.extend(child)
+                    elif child is not None:
+                        children.append(child)
+
+            return children
+
         result = copy.deepcopy(obj)
 
         for path in keys:
-            node = result
-            try:
-                # split on non-backslash-escaped '.'
-                parts = re.split(r"(?<!\\)\.", path)
-                # unescape '.' in each key path part
-                parts = [p.replace("\\.", ".") for p in parts]
+            nodes = [result]
 
-                # find parent dictionary
-                for part in parts[:-1]:
-                    node = node[part]
-                omit_key = parts[-1]
+            # split on non-backslash-escaped '.'
+            parts = re.split(r"(?<!\\)\.", path)
+            # unescape '.' in each key path part
+            parts = [p.replace("\\.", ".") for p in parts]
 
-                if isinstance(node, dict) and omit_key in node:
-                    del node[omit_key]
-            except (KeyError, TypeError):
-                continue
+            parents = parts[:-1]
+            omit_key = parts[-1]
+
+            for part in parents:
+                nodes = _descend(nodes, part)
+                if not nodes:
+                    break
+
+            for node in nodes:
+                items = node if isinstance(node, list) else [node]
+                for item in items:
+                    if isinstance(item, dict) and omit_key in item:
+                        del item[omit_key]
 
         return result
 
