@@ -144,3 +144,30 @@
       failed_when: install_app.rc not in [0,9]
       retries: 3
       delay: 5
+
+    - name: Perform Helm login into registry
+      become: false
+      vars:
+        registries:
+          docker.io:
+            username: erhhung
+            password: "{{ docker_access_token }}"
+          ghcr.io:
+            username: erhhung
+            password: "{{ github_access_token }}"
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/command_module.html
+      ansible.builtin.command:
+        argv:
+          - helm
+          - registry
+          - login
+          - "{{ item.key }}"
+          - --username
+          - "{{ item.value.username }}"
+          - --password-stdin
+        stdin: "{{ item.value.password }}"
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/dict2items_filter.html
+      loop: "{{ registries | ansible.builtin.dict2items }}"
+      loop_control:
+        label: "{{ item.key }}"
+      changed_when: false

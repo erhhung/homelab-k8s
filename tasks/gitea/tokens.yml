@@ -1,0 +1,58 @@
+# get list of Gitea access tokens and,
+# optionally, add/update/delete tokens
+#
+# pass the following vars:
+#   token_changes [optional] dict of changes (to delete a
+#                            token, use empty/none value)
+# sets the following facts:
+#   gitea_tokens  dict with (updated) access tokens
+---
+- name: Include vars/gitea.yml
+  # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_vars_module.html
+  ansible.builtin.include_vars: "{{ vars_dir }}/gitea.yml"
+  when: gitea_secrets is undefined
+
+- name: Include vars/kubernetes.yml
+  ansible.builtin.include_vars: "{{ vars_dir }}/kubernetes.yml"
+  when: rke_kubeconfig is undefined
+
+- name: GET/add/update/delete tokens
+  delegate_to: "{{ rke_control_plane_host }}"
+  vars:
+    ansible_python_interpreter: "{{ venv_python_interpreter }}"
+    changes: "{{ token_changes | default({}) }}"
+  block:
+    - name: Get tokens in Gitea secret
+      # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_info_module.html
+      kubernetes.core.k8s_info:
+        kubeconfig: "{{ rke_kubeconfig }}"
+        api_version: v1
+        kind: Secret
+        name: "{{ gitea_secrets['tokens'] }}"
+        namespace: "{{ gitea_namespace }}"
+      register: tokens_info
+
+    - name: Set gitea_tokens fact
+      vars:
+        # b64_decode_k8s_secret, omit_keys: plugins/filter/filters.py
+        old_tokens: "{{ tokens_info.resources[0] | default(none) |
+          b64_decode_k8s_secret }}"
+        # https://docs.ansible.com/projects/ansible/latest/collections/ansible/builtin/dict2items_filter.html
+        del_keys: "{{  changes | ansible.builtin.dict2items |
+          selectattr('value', 'falsy') | map(attribute='key') }}"
+        new_tokens: "{{ old_tokens | ansible.builtin.combine(changes) |
+          omit_keys(del_keys) }}"
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/set_fact_module.html
+      ansible.builtin.set_fact:
+        gitea_tokens: "{{ new_tokens }}"
+
+    - name: Update Gitea tokens secret
+      vars:
+        kubeconfig: "{{ rke_kubeconfig }}"
+        secret_ns: "{{ gitea_namespace }}"
+        create_ns: false
+        secret_name: "{{ gitea_secrets['tokens'] }}"
+        secret_data: "{{ gitea_tokens }}"
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/k8s/secrets/generic.yml"
+      when: changes is truthy

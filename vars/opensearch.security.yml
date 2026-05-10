@@ -35,15 +35,21 @@ opensearch_security_config:
       reserved: true
       backend_roles: []
 
+    scraper:
+      description: Prometheus metrics scraper
+      hash: {{ opensearch_passwords_hashed['scraper'] }}
+      reserved: true
+      backend_roles: []
+
     grafana:
       description: Grafana data source user
       hash: {{ opensearch_passwords_hashed['grafana'] }}
       reserved: true
       backend_roles: []
 
-    scraper:
-      description: Prometheus metrics scraper
-      hash: {{ opensearch_passwords_hashed['scraper'] }}
+    gitea:
+      description: Gitea issue/repo indexer
+      hash: {{ opensearch_passwords_hashed['gitea'] }}
       reserved: true
       backend_roles: []
 
@@ -56,10 +62,10 @@ opensearch_security_config:
     kibana_system:
       # https://docs.opensearch.org/latest/security/access-control/default-action-groups#cluster-level
       cluster_permissions:
+        - cluster_monitor
         # https://docs.opensearch.org/latest/security/access-control/permissions#cluster-wide-index-permissions
         - indices:data/write/bulk*
         - indices:data/read/scroll*
-        - cluster_monitor
       # https://docs.opensearch.org/latest/security/access-control/default-action-groups#index-level
       index_permissions:
         - index_patterns:
@@ -104,16 +110,28 @@ opensearch_security_config:
     metric_scraper:
       # https://github.com/Aiven-Open/prometheus-exporter-plugin-for-opensearch/issues/60
       cluster_permissions:
-        - cluster:monitor/prometheus/metrics
-        - cluster:monitor/health
-        - cluster:monitor/state
-        - cluster:monitor/nodes/info
-        - cluster:monitor/nodes/stats
+        - cluster_monitor
       index_permissions:
         - index_patterns:
             - "*"
           allowed_actions:
             - indices:monitor/stats
+
+    gitea_indexer:
+      cluster_permissions:
+        - cluster_monitor
+        - cluster_composite_ops
+      index_permissions:
+        - index_patterns:
+            - gitea_issues*
+            - gitea_codes*
+          allowed_actions:
+            - create_index
+            - crud
+            - indices:admin/exists*
+            - indices:admin/get*
+            - indices:admin/mappings/get*
+            - indices:admin/refresh
 
   # https://docs.opensearch.org/latest/security/configuration/yaml#roles_mappingyml
   # https://docs.opensearch.org/latest/security/access-control/users-roles#predefined-roles
@@ -151,6 +169,9 @@ opensearch_security_config:
     metric_scraper:
       users:
         - scraper
+    gitea_indexer:
+      users:
+        - gitea
 
 # plugins.security in opensearch.yml
 # https://docs.opensearch.org/latest/install-and-configure/configuring-opensearch/security-settings

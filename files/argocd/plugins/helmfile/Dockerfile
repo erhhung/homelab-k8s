@@ -53,7 +53,7 @@ install_bin yq "https://github.com/mikefarah/yq/releases/latest/download/yq_linu
 
 # install sops: https://github.com/getsops/sops
 REL="https://github.com/getsops/sops/releases"
-VER=$(curl -Is "$REL/latest" | sed -En 's/^location:.+\/tag\/v(.+)\r$/\1/p')
+VER=$(curl -ILs "$REL/latest" | sed -En 's/^location:.+\/tag\/v(.+)\r$/\1/p')
 (
   export SOPS_DISABLE_VERSION_CHECK=1
   install_bin sops "$REL/download/v${VER}/sops-v${VER}.linux.$ARCH"
@@ -61,7 +61,7 @@ VER=$(curl -Is "$REL/latest" | sed -En 's/^location:.+\/tag\/v(.+)\r$/\1/p')
 
 # install age: https://github.com/FiloSottile/age#installation
 REL="https://github.com/FiloSottile/age/releases"
-VER=$(curl -Is "$REL/latest" | sed -En 's/^location:.+\/tag\/v(.+)\r$/\1/p')
+VER=$(curl -ILs "$REL/latest" | sed -En 's/^location:.+\/tag\/v(.+)\r$/\1/p')
 curl -fsSL "$REL/download/v${VER}/age-v${VER}-linux-$ARCH.tar.gz" | \
   tar -xz -C /usr/local/bin --no-same-owner --strip 1 --wildcards 'age/age*'
 age --version
@@ -100,7 +100,7 @@ helmfile --version
 
 # install Kustomize: https://kubectl.docs.kubernetes.io/installation/kustomize/binaries
 REL="https://github.com/kubernetes-sigs/kustomize/releases"
-VER=$(curl -Is "$REL/latest" | sed -En 's/^location:.+\/tag\/kustomize\/v(.+)\r$/\1/p')
+VER=$(curl -ILs "$REL/latest" | sed -En 's/^location:.+\/tag\/kustomize\/v(.+)\r$/\1/p')
 curl -fsSL "$REL/download/kustomize/v${VER}/kustomize_v${VER}_linux_${ARCH}.tar.gz" | \
   tar -xz -C /usr/local/bin --no-same-owner kustomize
 kustomize version
@@ -128,7 +128,7 @@ RUN <<'EOT'
 install_plugin() {
   local repo=$1 ver=$2 tgz=$3
   [ "$ver" ] || ver=$(
-    curl -Is "$repo/releases/latest" | sed -En 's/^location:.+\/tag\/v(.+)\r$/\1/p'
+    curl -ILs "$repo/releases/latest" | sed -En 's/^location:.+\/tag\/v(.+)\r$/\1/p'
   )
   local args=(--verify=false)
   if [ "$tgz" ]; then

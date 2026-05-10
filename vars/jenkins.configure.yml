@@ -13,7 +13,7 @@ jenkins_users:
       - timezone: &timezone
           timeZoneName: "{{ system_time_zone }}"
 
-  - name: "{{ user_erhhung.fullname }}"
+  - name: "{{ user_erhhung.full_name }}"
     id: "{{   user_erhhung.username }}"
     password: ${chart-admin-password}
     properties:
@@ -137,7 +137,7 @@ jenkins_jcasc_configs:
   git: |
     unclassified:
       scmGit:
-        globalConfigName: {{  user_erhhung.fullname }}
+        globalConfigName: {{  user_erhhung.full_name }}
         globalConfigEmail: {{ user_erhhung.email }}
         useExistingAccountWithSameEmail: true
         showEntireCommitSummaryInChanges: true
@@ -149,6 +149,7 @@ jenkins_jcasc_configs:
           manuallyProvidedKeyVerificationStrategy:
             approvedHostKeys: |-
               {{ github_known_hosts | join(LF) | indent(10) }}
+              {{  gitea_known_hosts | join(LF) | indent(10) }}
               {{ gitlab_known_hosts | join(LF) | indent(10) }}
 
   # https://plugins.jenkins.io/build-user-vars-plugin
@@ -219,6 +220,12 @@ jenkins_jcasc_configs:
                   id: github-token
                   description: GitHub personal access token
                   secret: ${GITHUB_TOKEN}
+
+              - string:
+                  scope: GLOBAL
+                  id: gitea-token
+                  description: Gitea personal access token
+                  secret: ${GITEA_TOKEN}
 
               - string:
                   scope: GLOBAL

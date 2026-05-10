@@ -8,8 +8,8 @@ grafana_admin_user: erhhung
 
 scraper_user:
   username: scraper
-  firstname: Prometheus
-  lastname: Scraper
+  first_name: Prometheus
+  last_name: Scraper
   email: scraper@{{ homelab_domain }}
   password: "{{ monitoring_passwords['scraper'] }}"
 
@@ -1398,7 +1398,7 @@ grafana_admin_settings:
   # /user
   profile:
     login: "{{ grafana_admin_user }}"
-    name: "{{ user_erhhung.fullname }}"
+    name: "{{  user_erhhung.full_name }}"
     email: "{{ user_erhhung.email }}"
   # /user/preferences
   preferences:

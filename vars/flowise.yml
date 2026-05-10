@@ -1,4 +1,6 @@
 # flowise_admin_pass:     {vault.yml}
+# flowise_pg_pass:        {vault.yml}
+# flowise_vk_pass:        {vault.yml}
 # flowise_encryption_key: {vault.yml}
 #      anthropic_api_key: {vault.yml}
 #         openai_api_key: {vault.yml}
@@ -6,7 +8,7 @@
 #           serp_api_key: {vault.yml}
 
 flowise_admin_user:
-  name: "{{ user_erhhung.fullname }}"
+  name: "{{  user_erhhung.full_name }}"
   email: "{{ user_erhhung.email }}"
   password: "{{ flowise_admin_pass }}"
 
@@ -26,7 +28,7 @@ flowise_secrets:
 
 flowise_db_name: flowise
 flowise_db_user: flowise
-# use {{ pgpool_pass }}
+# {{ flowise_pg_pass }}
 
 # use our image with support for DATABASE_TLS
 # and client certificate environment variables:
@@ -57,12 +59,15 @@ flowise_release_name: flowise
 
 # https://github.com/cowboysysop/charts/tree/master/charts/flowise/values.yaml
 flowise_chart_values:
+  revisionHistoryLimit: 2
   # not sure why defaults say don't change
   # replicaCount and updateStrategy values
   replicaCount: 1
+
+  # use Recreate deployment strategy to avoid
+  # multi-attach error on ReadWriteOnce PVCs
   updateStrategy:
     type: Recreate
-  revisionHistoryLimit: 2
 
   image:
     pullPolicy: "{{ flowise_image.pullPolicy | default(omit) }}"
@@ -385,10 +390,12 @@ flowise_chart_values:
                     value: /tls/tls.key
                   - name: PGSSLROOTCERT
                     value: /tls/ca.crt
+
                 volumeMounts:
                   - name: superuser-tls
                     mountPath: /tls
                     readOnly: true
+
             volumes:
               - name: superuser-tls
                 secret:
@@ -413,8 +420,8 @@ flowise_external_credentials:
   - name: PostgreSQL API
     type: PostgresApi
     data:
-      user: "{{ flowise_db_user }}"
-      password: "{{ pgpool_pass }}"
+      user: "{{     flowise_db_user }}"
+      password: "{{ flowise_pg_pass }}"
   - name: Qdrant Read/Write
     type: qdrantApi
     data:

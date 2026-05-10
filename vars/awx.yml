@@ -1,5 +1,6 @@
-# awx_admin_pass: {vault.yml}
 # awx_secret_key: {vault.yml}
+# awx_admin_pass: {vault.yml}
+# awx_pg_pass:    {vault.yml}
 
 awx_admin_user: "{{ homelab_admin.username }}"
 awx_admin_email: "{{ user_erhhung.email }}"
@@ -32,7 +33,7 @@ awx_configmaps:
 
 awx_db_name: awx
 awx_db_user: awx
-# use {{ pgpool_pass }}
+# {{ awx_pg_pass }}
 
 # https://github.com/ansible-community/awx-operator-helm
 awx_operator_chart_version: "3.2.0"
@@ -54,9 +55,9 @@ awx_operator_chart_values:
       # way to inject client cert into awx-migration Job pod:
       # https://github.com/ansible/awx-operator/issues/1896
       sslmode: prefer
-      dbName: "{{ awx_db_name }}"
+      dbName: "{{   awx_db_name }}"
       username: "{{ awx_db_user }}"
-      password: "{{ pgpool_pass }}"
+      password: "{{ awx_pg_pass }}"
 
       # IMPORTANT: add "awx:primary" to PgPool's `database_redirect_preference_list`
       # so that AWX upsert queries don't fail due to read-after-write inconsistency:
@@ -64,7 +65,7 @@ awx_operator_chart_values:
 
     spec:
       # https://docs.ansible.com/projects/awx-operator/en/latest/user-guide/admin-user-account-configuration.html
-      admin_user: "{{ awx_admin_user }}"
+      admin_user: "{{  awx_admin_user  }}"
       admin_email: "{{ awx_admin_email }}"
       # first and last names set by task
 
@@ -96,7 +97,6 @@ awx_operator_chart_values:
           mountPath: /tls
           readOnly: true
       task_extra_volume_mounts: *extra-mounts
-
       # initContainer here refers to the
       # existing init-receptor container
       init_container_extra_volume_mounts: |
@@ -130,7 +130,6 @@ awx_operator_chart_values:
         - name: PGSSLROOTCERT
           value: /tls/ca.crt
       task_extra_env: *extra-envs
-
       # https://docs.ansible.com/projects/awx-operator/en/latest/user-guide/advanced-configuration/security-context.html
       # contrary to example in docs, this only sets
       # securityContext at pod level:  capabilities
@@ -295,6 +294,7 @@ awx_operator_chart_values:
                   value: /tls/tls.key
                 - name: PGSSLROOTCERT
                   value: /tls/ca.crt
+
               volumeMounts:
                 - name: database-tls
                   mountPath: /tls

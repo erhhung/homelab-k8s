@@ -1,0 +1,261 @@
+# create or update Gitea user account
+#
+# pass the following vars:
+#   full_name <required> full name
+#   username  <required> username
+#   password  <required> password
+#   email     <required> e-mail address
+#   is_admin  [optional] default=false
+#   location  [optional] user location
+#   avatar    [optional] avatar image URL
+#   tokens:   [optional] API access tokens
+#     name    <required> token name
+#     scopes  <required> token scopes
+#   ssh_keys: [optional] SSH public keys
+#     title      <required> key title
+#     public_key <required> public key
+#   gpg_keys: [optional] GPG public keys
+#     key_id     <required> GPG key ID
+#     public_key <required> armored key
+#
+# API tokens, if created,  will be stored in
+# Secret named {{ gitea_secrets['tokens'] }}
+---
+- name: Create/update user account
+  vars:
+    uri_auth: &uri-auth
+      url_username: "{{ gitea_users['admin'].username }}"
+      url_password: "{{ gitea_users['admin'].password }}"
+      force_basic_auth: true
+  block:
+    # https://gitea.fourteeners.local/api/swagger#/user/userGet
+    - name: Check whether user exists
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/uri_module.html
+      ansible.builtin.uri:
+        <<: *uri-auth
+        url: "{{ gitea_api_url }}/users/{{ username }}"
+        status_code: [200, 404]
+        return_content: true
+      register: user_info
+
+    - name: User needs create/update?
+      vars:
+        status: "{{ user_info.status }}"
+        desired:
+          email: "{{ email }}"
+          full_name: "{{ full_name }}"
+          is_admin: "{{ is_admin | default(false) }}"
+          location: "{{ location | default('') }}"
+        # https://docs.ansible.com/ansible/latest/collections/community/general/keep_keys_filter.html
+        existing: |
+          {{ [user_info.json] | community.general.keep_keys(desired.keys())
+                              | first if status == 200 else {} }}
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/set_fact_module.html
+      ansible.builtin.set_fact:
+        needs_create: "{{ status == 404 }}"
+        needs_update: "{{ status == 404 or existing != desired }}"
+
+    # https://gitea.fourteeners.local/api/swagger#/admin/adminCreateUser
+    - name: Create Gitea user account
+      ansible.builtin.uri:
+        <<: *uri-auth
+        method: POST
+        url: "{{ gitea_api_url }}/admin/users"
+        body_format: json
+        body:
+          username: "{{ username }}"
+          password: "{{ password }}"
+          must_change_password: false
+          full_name: "{{ full_name }}"
+          email: "{{ email }}"
+          send_notify: false
+          visibility: public
+          restricted: false
+        status_code: 201
+      when: needs_create
+      changed_when: true
+
+    # https://gitea.fourteeners.local/api/swagger#/admin/adminEditUser
+    - name: Update Gitea user account
+      vars:
+        # only allow the one superuser account to create organizations
+        create_org: "{{ username == gitea_users['admin'].username }}"
+      ansible.builtin.uri:
+        <<: *uri-auth
+        method: PATCH
+        url: "{{ gitea_api_url }}/admin/users/{{ username }}"
+        body_format: json
+        body:
+          email: "{{ email }}"
+          full_name: "{{ full_name }}"
+          login_name: "{{ username }}"
+          source_id: 0 # N/A but required
+          location: "{{ location | default('')      }}"
+          admin: "{{    is_admin | default(false)   }}"
+          allow_create_organization: "{{ create_org }}"
+      when: needs_update
+      changed_when: true
+
+    - name: Add user to organization
+      when: needs_create
+      block:
+        # https://gitea.fourteeners.local/api/swagger#/organization/orgListTeams
+        - name: Get organization's teams
+          vars:
+            org: "{{ gitea_organization.org_name }}"
+          ansible.builtin.uri:
+            <<: *uri-auth
+            url: "{{ gitea_api_url }}/orgs/{{ org }}/teams"
+            return_content: true
+          register: org_teams
+
+        # https://gitea.fourteeners.local/api/swagger#/organization/orgAddTeamMember
+        - name: Add user as an org owner
+          vars:
+            team: "{{ org_teams.json | selectattr('permission', '==', 'owner') }}"
+            team_id: "{{  team[0].id | default(0) }}"
+          ansible.builtin.uri:
+            <<: *uri-auth
+            method: PUT
+            url: "{{ gitea_api_url }}/teams/{{ team_id }}/members/{{ username }}"
+            status_code: 204 # No Content
+          register: add_member
+          failed_when: team_id == 0 or
+            add_member.status  != 204
+          changed_when: true
+
+    # not possible to detect changes,
+    # so only upload on user creation:
+    # https://gitea.fourteeners.local/api/swagger#/user/userUpdateAvatar
+    - name: Upload custom avatar image
+      vars:
+        # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/url_lookup.html
+        image_b64: "{{ lookup('ansible.builtin.url', avatar, split_lines=false) | b64encode }}"
+      ansible.builtin.uri:
+        <<: *uri-auth
+        method: POST
+        # use `SudoParam` to update another user's avatar:
+        # https://docs.gitea.com/development/api-usage#sudo
+        # https://github.com/go-gitea/gitea/tree/main/routers/api/v1/api.go
+        url: "{{ gitea_api_url }}/user/avatar?sudo={{ username }}"
+        body_format: json
+        body:
+          image: "{{ image_b64 }}"
+        status_code: 204 # No Content
+      when:
+        # `login_name` is initially empty for the admin user
+        - needs_create or user_info.json.login_name is falsy
+        - avatar is defined
+        - avatar is truthy
+      changed_when: true
+
+    - name: Create API access tokens
+      when: tokens | default([]) is truthy
+      vars:
+        api_url: "{{ gitea_api_url }}/users/{{ username }}/tokens"
+      block:
+        # https://gitea.fourteeners.local/api/swagger#/user/userGetTokens
+        - name: Get user's existing tokens
+          ansible.builtin.uri:
+            <<: *uri-auth
+            url: "{{ api_url }}"
+            return_content: true
+          register: user_tokens
+
+        # https://docs.gitea.com/development/api-usage#generating-and-listing-api-tokens
+        # https://gitea.fourteeners.local/api/swagger#/user/userCreateToken
+        - name: Create new access token
+          vars:
+            token_name: "{{ token.name if token.name == username else username ~'-'~ token.name }}"
+          ansible.builtin.uri:
+            <<: *uri-auth
+            method: POST
+            url: "{{ api_url }}"
+            body_format: json
+            body:
+              name: "{{   token_name   }}"
+              scopes: "{{ token.scopes }}"
+            status_code: 201
+          register: create_token
+          loop: "{{ tokens }}"
+          loop_control:
+            loop_var: token
+            label: "{{ token_name }}"
+          # create token only if it doesn't already exist
+          when: user_tokens.json | selectattr('name', '==', token_name) is falsy
+          changed_when: true
+
+        - name: Store tokens in Secret
+          vars:
+            token_changes: |
+              {% set tokens  = {} %}
+              {% set results = create_token.results | selectattr('json', 'defined') %}
+              {% for token in  results | map(attribute='json')     %}
+              {%   set _ = tokens.update({token.name: token.sha1}) %}
+              {% endfor %}
+              {{ tokens }}
+          # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
+          ansible.builtin.include_tasks: "{{ tasks_dir }}/gitea/tokens.yml"
+          when: token_changes is truthy
+
+    - name: Import SSH public keys
+      when: ssh_keys | default([]) is truthy
+      block:
+        # https://gitea.fourteeners.local/api/swagger#/user/userListKeys
+        - name: Get existing SSH keys
+          ansible.builtin.uri:
+            <<: *uri-auth
+            url: "{{ gitea_api_url }}/users/{{ username }}/keys"
+            return_content: true
+          register: user_keys
+
+        # https://gitea.fourteeners.local/api/swagger#/user/userCurrentPostKey
+        - name: Import SSH public key
+          ansible.builtin.uri:
+            <<: *uri-auth
+            method: POST
+            # use `SudoParam` to update another user's keys
+            url: "{{ gitea_api_url }}/user/keys?sudo={{ username }}"
+            body_format: json
+            body:
+              title: "{{ key.title }}"
+              key: "{{   key.public_key }}"
+              read_only: false
+            status_code: 201
+          loop: "{{ ssh_keys }}"
+          loop_control:
+            loop_var: key
+            label: "{{ key.title }}"
+          # add key only if it doesn't already exist
+          when: user_keys.json | selectattr('title', '==', key.title) is falsy
+          changed_when: true
+
+    - name: Import GPG public keys
+      when: gpg_keys | default([]) is truthy
+      block:
+        # https://gitea.fourteeners.local/api/swagger#/user/userListGPGKeys
+        - name: Get existing GPG keys
+          ansible.builtin.uri:
+            <<: *uri-auth
+            url: "{{ gitea_api_url }}/users/{{ username }}/gpg_keys"
+            return_content: true
+          register: user_keys
+
+        # https://gitea.fourteeners.local/api/swagger#/user/userCurrentPostGPGKey
+        - name: Import GPG public key
+          ansible.builtin.uri:
+            <<: *uri-auth
+            method: POST
+            # use `SudoParam` to update another user's keys
+            url: "{{ gitea_api_url }}/user/gpg_keys?sudo={{ username }}"
+            body_format: json
+            body:
+              armored_public_key: "{{ key.public_key }}"
+            status_code: 201
+          loop: "{{ gpg_keys }}"
+          loop_control:
+            loop_var: key
+            label: "{{ key.key_id }}"
+          # add key only if it doesn't already exist
+          when: user_keys.json | selectattr('key_id', '==', key.key_id) is falsy
+          changed_when: true

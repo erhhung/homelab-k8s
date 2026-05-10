@@ -57,8 +57,8 @@
           # NOTE: keys in lower case are secretKeyRef set by
           # the chart to their identical upper case env vars
           database_username: "{{ litellm_db_user }}"
-          database_password: "{{ pgpool_pass }}"
-          REDIS_PASSWORD: "{{ valkey_pass }}"
+          database_password: "{{ litellm_pg_pass }}"
+          REDIS_PASSWORD: "{{    litellm_vk_pass }}"
 
           # https://docs.litellm.ai/docs/providers
           OPENAI_API_KEY: "{{ openai_api_key }}"

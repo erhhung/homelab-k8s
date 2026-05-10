@@ -1,6 +1,16 @@
 # rendered to /etc/rancher/k3s/registries.yaml:
 # https://docs.k3s.io/installation/private-registry
 
+configs:
+  docker.io:
+    auth:
+      username: {{ docker_username }}
+      password: {{ docker_access_token }}
+  ghcr.io:
+    auth:
+      username: {{ github_username }}
+      password: {{ github_access_token }}
+
 mirrors:
   docker.io:
     endpoint:

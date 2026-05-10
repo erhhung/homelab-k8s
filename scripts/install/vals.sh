@@ -8,7 +8,7 @@
 set -eo pipefail
 
 REL="https://github.com/helmfile/vals/releases"
-VER=$(curl -Is "$REL/latest" | sed -En 's/^location:.+\/tag\/v(.+)\r$/\1/p')
+VER=$(curl -ILs "$REL/latest" | sed -En 's/^location:.+\/tag\/v(.+)\r$/\1/p')
 
 # check if latest version already installed
 command -v vals &> /dev/null && {

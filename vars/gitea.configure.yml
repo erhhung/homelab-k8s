@@ -1,0 +1,59 @@
+# gitea_admin_pass: {vault.yml}
+
+# POST /orgs
+gitea_organization:
+  name: Homelab
+  org_name: homelab
+  desc: Erhhung's homelab projects
+  email: "{{ homelab_admin.email }}"
+  # `avatar` must be a local file path
+  avatar: "{{ icons_dir }}/homelab.png"
+  location: Home
+
+# POST /admin/users
+gitea_users:
+  admin:
+    name: Gitea Admin
+    email: "{{ homelab_admin.email }}"
+    # `avatar_url` is read-only field, so image will
+    # be downloaded and re-uploaded via /user/avatar
+    avatar: "{{   homelab_admin.gravatar }}?s=512"
+    username: "{{ homelab_admin.username }}"
+    password: "{{ gitea_admin_pass }}"
+    is_admin: true
+    location: Home
+    # https://docs.gitea.com/development/api-usage#generating-and-listing-api-tokens
+    tokens:
+      # unique name per user (if different than
+      # username, key in Kubernetes Secret will
+      # be `{username}-{name}`)
+      - name: admin
+        scopes: ["all"]
+
+  erhhung:
+    name: "{{     user_erhhung.full_name }}"
+    email: "{{    user_erhhung.email }}"
+    avatar: "{{   user_erhhung.gravatar }}?s=512"
+    username: "{{ user_erhhung.username }}"
+    password: "{{ gitea_admin_pass }}"
+    is_admin: false
+    location: Home
+    tokens:
+      - name: repos
+        # activitypub|admin|issue|misc|notification|organization|package|repository|user
+        scopes:
+          - write:repository
+          - write:package
+    ssh_keys:
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/file_lookup.html
+      - title: "{{ user_erhhung.email }} auth"
+        public_key: "{{ lookup('ansible.builtin.file',
+          files_dir ~ '/erhhung/id_ed25519_auth.pub') }}"
+      - title: "{{ user_erhhung.email }} sign"
+        public_key: "{{ lookup('ansible.builtin.file',
+          files_dir ~ '/erhhung/id_ed25519_sign.pub') }}"
+    gpg_keys:
+      # gpg --with-colons --show-keys erhhung.asc | awk -F: '/^pub:/ {print $5}'
+      - key_id: B9C45C9F62942408
+        public_key: "{{ lookup('ansible.builtin.file',
+          files_dir ~ '/erhhung/erhhung.asc', rstrip=false) }}"

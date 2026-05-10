@@ -1,6 +1,16 @@
 # rendered to /etc/rancher/rke2/registries.yaml:
 # https://docs.rke2.io/install/private_registry
 
+configs:
+  docker.io:
+    auth:
+      username: {{ docker_username }}
+      password: {{ docker_access_token }}
+  ghcr.io:
+    auth:
+      username: {{ github_username }}
+      password: {{ github_access_token }}
+
 mirrors:
   docker.io:
     endpoint:

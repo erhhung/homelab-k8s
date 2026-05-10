@@ -146,7 +146,12 @@
   ansible.builtin.import_playbook: playbooks/externalsecrets.yml
   tags: externalsecrets
 
-# GitLab depends on PostgreSQL, MinIO, Harbor
+# Gitea depends on MinIO, PostgreSQL, Valkey, OpenSearch
+- name: Include Gitea DevOps platform playbook
+  ansible.builtin.import_playbook: playbooks/gitea.yml
+  tags: gitea
+
+# GitLab depends on MinIO, PostgreSQL, Harbor
 - name: Include GitLab CI/CD platform playbook
   ansible.builtin.import_playbook: playbooks/gitlab.yml
   tags: gitlab

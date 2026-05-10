@@ -13,6 +13,7 @@
     - vars/monitoring.yml
     - vars/storage.yml
     - vars/harbor.yml
+    - vars/gitea.yml
     - vars/gitlab.yml
     - vars/jenkins.configure.yml
     - vars/jenkins.yml
@@ -28,29 +29,46 @@
       ansible.builtin.include_tasks: "{{ tasks_dir }}/pki/cacerts.yml"
       when: ca_certificates is undefined
 
-    - name: Get GitHub SSH known hosts
+    - name: Get SSH known host identities
       vars:
-        ssh_host: github.com
-        fact_name: github_known_hosts
-      ansible.builtin.include_tasks: "{{ tasks_dir }}/hosts/knownhosts.yml"
+        ssh_hosts:
+          - host: github.com
+            port: 22
+            fact: github_known_hosts
+          - host: "{{ gitea_fqdns[0] }}"
+            port: "{{ gitea_ssh_port }}"
+            fact: gitea_known_hosts
+          - host: "{{ gitlab_fqdns['gitlab'] }}"
+            port: "{{ gitlab_shell_port }}"
+            fact: gitlab_known_hosts
 
-    - name: Get GitLab SSH known hosts
-      vars:
-        ssh_host: "{{ gitlab_fqdns['gitlab'] }}"
-        ssh_port: "{{ gitlab_shell_port }}"
+        # === Inputs ===
+        ssh_host: "{{  item.host }}"
+        ssh_port: "{{  item.port }}"
+        fact_name: "{{ item.fact }}"
       ansible.builtin.include_tasks: "{{ tasks_dir }}/hosts/knownhosts.yml"
-      # sets known_hosts fact
+      loop: "{{ ssh_hosts }}"
+      loop_control:
+        label: "{{ item.host }}:{{ item.port }}"
 
-    - name: Set gitlab_known_hosts fact
+    - name: Update SSH known_hosts facts
       vars:
-        # since we're using non-standard SSH port, first field is [host]:port
-        # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/regex_replace_filter.html
-        svc_hosts: "{{ known_hosts | map('regex_replace', '^[^:]+', '['~ gitlab_shell_host ~']') }}"
+        # since we're using non-standard SSH ports,
+        # first field of each line is `[host]:port`
+        svc_hosts:
+          # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/regex_replace_filter.html
+          gitea: "{{   gitea_known_hosts | map('regex_replace', '^[^:]+', '['~    gitea_ssh_host ~']') }}"
+          gitlab: "{{ gitlab_known_hosts | map('regex_replace', '^[^:]+', '['~ gitlab_shell_host ~']') }}"
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/set_fact_module.html
       ansible.builtin.set_fact:
-        # contains entries for external and in-cluster FQDNs
-        gitlab_known_hosts: "{{ known_hosts + svc_hosts }}"
+        # contains known_hosts entries for external and in-cluster FQDNs
+        gitea_known_hosts: "{{   gitea_known_hosts + svc_hosts.gitea  }}"
+        gitlab_known_hosts: "{{ gitlab_known_hosts + svc_hosts.gitlab }}"
         jenkins_jobs: []
+
+    - name: Get tokens from Gitea secret
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/gitea/tokens.yml"
+      # sets fact: gitea_tokens
 
     - name: Get PATs from GitLab secret
       ansible.builtin.include_tasks: "{{ tasks_dir }}/gitlab/tokens/pats.yml"
@@ -89,7 +107,7 @@
       vars:
         ca_prefix: "{{ homelab_domain.split('.')[0] }}_"
         # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/unvault_lookup.html
-        ssh_key: "{{ lookup('ansible.builtin.unvault', files_dir ~ '/erhhung/erhhung.pem') }}"
+        ssh_key: "{{ lookup('ansible.builtin.unvault', files_dir ~ '/erhhung/id_ed25519_auth') }}"
 
         # === Inputs ===
         secret_name: "{{ jenkins_secrets['env-vars'] }}"
@@ -100,6 +118,7 @@
           'HARBOR_PASSWORD':  jenkins_harbor_pass,
           'ERHHUNG_SSH_KEY':  ssh_key,
           'GITHUB_TOKEN':     github_access_token,
+          'GITEA_TOKEN':      gitea_tokens['erhhung-repos'],
           'GITLAB_TOKEN':     gitlab_pats['repos'],
           'SLACK_TOKEN':      jenkins_slack_token,
           } }}"

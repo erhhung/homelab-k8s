@@ -1,6 +1,6 @@
 # postgresql_pass: {vault.yml}
-#  pgpool_sr_pass: {vault.yml}
-#     pgpool_pass: {vault.yml}
+# pgpool_sr_pass:  {vault.yml}
+# pgpool_pass:     {vault.yml}
 
 # in order to log in using client TLS cert, generate
 # a cert at pki.fourteeners.local using CN=<db_user>
@@ -12,6 +12,7 @@ postgresql_users:
   - "{{ scraper_user.username }}"
   - "{{  keycloak_db_user }}"
   - "{{       awx_db_user }}"
+  - "{{     gitea_db_user }}"
   - "{{    gitlab_db_user }}"
   - "{{   litellm_db_user }}"
   - "{{ openwebui_db_user }}"
@@ -227,8 +228,9 @@ postgresql_chart_values:
       usernames: "{{ postgresql_users | join(';') }}"
       passwords: |-
         {% set pwds = [] -%}
-        {% for _ in postgresql_users -%}
-        {%   set _ = pwds.append(pgpool_pass) -%}
+        {% set vars = hostvars[inventory_hostname] -%}
+        {% for user in postgresql_users -%}
+        {%    set _ =  pwds.append(vars[user ~'_pg_pass'] | default(pgpool_pass)) -%}
         {% endfor -%}
         {{ pwds | join(';') }}
 

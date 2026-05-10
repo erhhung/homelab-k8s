@@ -37,7 +37,7 @@ RUN <<'EOT'
 
   mkdir ollama-ipex-llm
   REL="https://github.com/ipex-llm/ipex-llm/releases"
-  VER=$(curl -Is "$REL/latest" | sed -En 's/^location:.+\/tag\/v(.+)\r$/\1/p')
+  VER=$(curl -ILs "$REL/latest" | sed -En 's/^location:.+\/tag\/v(.+)\r$/\1/p')
   curl -fsSL "$REL/download/v${VER}/ollama-ipex-llm-$VER-ubuntu.tgz" | \
     tar -xz -C ollama-ipex-llm --no-same-owner --strip-components=1
 )

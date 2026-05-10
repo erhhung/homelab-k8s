@@ -824,12 +824,13 @@
     - name: Debug url lookup (.png)
       vars:
         image_url: "{{ user_erhhung.gravatar }}"
-        image_data: "{{ lookup('ansible.builtin.url', image_url, split_lines=false) }}"
-        data_uri: data:image/png;base64,{{ image_data | b64encode }}
+        # reading binary data using `url` lookup isn't reliable
+        image_raw: "{{ lookup('ansible.builtin.url', image_url, split_lines=false) }}"
+        image_uri: data:image/png;base64,{{ image_raw | b64encode }}
       ansible.builtin.debug:
         # so show the image, copy full `data:` URI
         # and paste into the browser's address bar
-        var: data_uri
+        var: image_uri
 
     # plugins/lookup/one_bucket_iam_policy.py
     - name: Custom one_bucket_iam_policy lookup

@@ -193,7 +193,7 @@ user_erhhung() {
   [ "$status" == 404 ] && {
     args=(
       -d "user[username]=$user"
-      -d 'user[name]={{  user_erhhung.fullname }}'
+      -d 'user[name]={{  user_erhhung.full_name }}'
       -d 'user[email]={{ user_erhhung.email }}'
       -d 'user[can_create_group]=1'
       # regular|admin (IMPORTANT: admin user cannot be

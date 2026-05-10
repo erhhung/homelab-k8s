@@ -485,9 +485,11 @@
           {%   endif %}
           {% endfor  %}
           {{ links   }}
-        # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/file_lookup.html
-        image_data: "{{ lookup('ansible.builtin.file', item.icon) if item.icon is defined else none }}"
-        image_url: "{{ 'data:image/png;base64,' ~ image_data | b64encode if image_data else none }}"
+        # https://docs.ansible.com/ansible/latest/collections/community/general/binary_file_lookup.html
+        image_b64: "{{ lookup('community.general.binary_file', item.icon)
+          if item.icon is defined else none }}"
+        image_uri: "{{ 'data:image/png;base64,' ~ image_b64
+          if image_b64 is truthy  else none }}"
       kubernetes.core.k8s:
         kubeconfig: "{{ rke_kubeconfig }}"
         definition:
@@ -501,7 +503,7 @@
             sideLabel: "{{ item.label | default(omit) }}"
             # https://jinja.palletsprojects.com/en/stable/templates#jinja-filters.capitalize
             label: "{{ item.title | default(item.label | default(item.name | capitalize)) }}"
-            iconSrc: "{{ image_url or omit }}"
+            iconSrc: "{{ image_uri or omit }}"
             toURL: "{{ item.url }}"
             target: _blank
         state: present

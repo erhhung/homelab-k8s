@@ -49,7 +49,7 @@
         set -o pipefail
 
         REL="https://github.com/goharbor/harbor-cli/releases"
-        VER=$(curl -Is "$REL/latest" | sed -En 's/^location:.+\/tag\/v(.+)\r$/\1/p')
+        VER=$(curl -ILs "$REL/latest" | sed -En 's/^location:.+\/tag\/v(.+)\r$/\1/p')
 
         # check if latest version already installed
         command -v harbor &> /dev/null && {
@@ -194,9 +194,9 @@
         [ "$user_id" ] && exit 9 # no change
 
         params=(
-          username="{{ item.username }}"
-          realname="{{ item.realname }}"
-             email="{{ item.email    }}"
+          realname="{{ item.real_name }}"
+             email="{{ item.email     }}"
+          username="{{ item.username  }}"
           password="{{ item.password | quote }}"
            comment="{{ item.comment  | quote if item.comment is defined else '' }}"
         )

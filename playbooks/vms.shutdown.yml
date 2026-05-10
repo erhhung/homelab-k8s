@@ -16,7 +16,7 @@
         target_hosts: "{{ targets }}"
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
       ansible.builtin.include_tasks: "{{ tasks_dir }}/hosts/resolve.yml"
-      # sets resolved_hosts fact
+      # sets fact: resolved_hosts
   tasks:
     - name: Shut down worker nodes
       vars:

@@ -1,6 +1,9 @@
-#   minio_root_pass: {vault.yml}
-#  minio_admin_pass: {vault.yml}
-# minio_client_pass: {vault.yml}
+# minio_root_pass:     {vault.yml}
+# minio_admin_pass:    {vault.yml}
+# minio_client_pass:   {vault.yml}
+#     gitea_minio_key: {vault.yml}
+#    gitlab_minio_key: {vault.yml}
+# openwebui_minio_key: {vault.yml}
 
 minio_region: homelab
 
@@ -11,7 +14,9 @@ minio_buckets:
     # options: ["--with-versioning"]
   # metrics from Thanos, traces from Tempo
   - name: telemetry
-  # GitLab LFS/artifacts/uploads/packages
+  # Gitea avatars/LFS/attachments/packages/artifacts/logs (bucket with prefixes)
+  - name: gitea
+  # GitLab LFS/uploads/packages/artifacts/backups/cache (all individual buckets)
   # https://docs.ansible.com/ansible/latest/collections/community/general/dict_kv_filter.html
   - "{{ gitlab_buckets.values() | map('community.general.dict_kv', 'name')}}"
   # Open WebUI uploads
@@ -28,6 +33,7 @@ minio_policies: |
   {{ {
       'backups-rw': lookup('one_bucket_iam_policy', 'backups'),
     'telemetry-rw': lookup('one_bucket_iam_policy', 'telemetry'),
+        'gitea-rw': lookup('one_bucket_iam_policy', 'gitea'),
        'gitlab-rw': lookup('one_bucket_iam_policy', 'gitlab-*'),
     'openwebui-rw': lookup('one_bucket_iam_policy', 'openwebui'),
   } }}
@@ -56,11 +62,14 @@ minio_users: # non-root
   tempo:
     secret_key: "{{ minio_client_pass }}"
     # policies managed by "telemetry" group
+  gitea:
+    secret_key: "{{ gitea_minio_key }}"
+    policies: ["gitea-rw"]
   gitlab:
-    secret_key: "{{ minio_client_pass }}"
+    secret_key: "{{ gitlab_minio_key }}"
     policies: ["gitlab-rw"]
   openwebui:
-    secret_key: "{{ minio_client_pass }}"
+    secret_key: "{{ openwebui_minio_key }}"
     policies: ["openwebui-rw"]
 
 minio_groups:

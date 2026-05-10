@@ -45,7 +45,7 @@
       vars:
         secret_key: "{{ user_erhhung.username }}"
       ansible.builtin.include_tasks: "{{ tasks_dir }}/litellm/apikey.yml"
-      # sets litellm_api_key fact
+      # sets fact: litellm_api_key
   tasks:
     - name: Create Open WebUI ingress secret
       vars:
@@ -84,7 +84,7 @@
           # https://docs.openwebui.com/reference/env-configuration#qdrant
           QDRANT_API_KEY: "{{ qdrant_api_key.read_write }}"
           # https://docs.openwebui.com/reference/env-configuration#s3_secret_access_key
-          S3_SECRET_ACCESS_KEY: "{{ minio_client_pass }}"
+          S3_SECRET_ACCESS_KEY: "{{ openwebui_minio_key }}"
 
           # Pipelines key must be first:
           # https://docs.openwebui.com/reference/env-configuration#openai_api_keys
@@ -148,7 +148,7 @@
             repository: "{{ crawl4ai_image.repository }}"
             verify_tag: "{{ crawl4ai_image.tag | default(omit) }}"
           ansible.builtin.include_tasks: "{{ tasks_dir }}/harbor/gettag.yml"
-          # sets repo_tag_found fact
+          # sets fact: repo_tag_found
 
         - name: Show which image to deploy
           vars:
@@ -290,7 +290,7 @@
       vars:
         secret_key: "{{ user_erhhung.username }}"
       ansible.builtin.include_tasks: "{{ tasks_dir }}/litellm/apikey.yml"
-      # sets litellm_api_key fact
+      # sets fact: litellm_api_key
 
     - name: Wait until Open WebUI is ready
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/uri_module.html
@@ -323,15 +323,15 @@
           vars:
             image_url: "{{ openwebui_admin_user.profile_image_url }}"
             # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/url_lookup.html
-            image_data: "{{ lookup('ansible.builtin.url', image_url, split_lines=false) }}"
-            data_uri: data:image/png;base64,{{ image_data | b64encode }}
+            image_raw: "{{ lookup('ansible.builtin.url', image_url, split_lines=false) }}"
+            image_uri: data:image/png;base64,{{ image_raw | b64encode }}
           ansible.builtin.uri:
             method: POST
             url: "{{ api_base }}/v1/auths/signup"
             body_format: json
             body: |
               {{ openwebui_admin_user | combine({
-                   'profile_image_url': data_uri,
+                   'profile_image_url': image_uri,
                  }) }}
             return_content: true
           register: admin_signup
@@ -441,7 +441,7 @@
       loop: "{{ mcp_tool_servers }}"
       loop_control:
         label: "{{ item.info.id }}"
-      # sets mcp_servers fact
+      # sets fact: mcp_servers
 
     - name: Disable prompt suggestions
       vars:
@@ -516,7 +516,7 @@
             knowledge_id: "{{ knowledge[0].id }}"
           ansible.builtin.include_tasks: "{{ tasks_dir }}/openwebui/files.yml"
           when: "'knowledge' in ansible_run_tags"
-          # sets knowledge_files fact
+          # sets fact: knowledge_files
 
     - name: Create Accounts knowledge base
       vars:
@@ -560,9 +560,9 @@
         model: "{{ list_models.json['items'] |
           selectattr('name', '==', 'Accounts') }}"
         base_model: "{{ ollama_models | select('search', '^gemma3') | first }}"
-        # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/file_lookup.html
-        image_data: "{{ lookup('ansible.builtin.file', icons_dir ~ '/assistant.png') }}"
-        image_url: data:image/png;base64,{{ image_data | b64encode }}
+        # https://docs.ansible.com/ansible/latest/collections/community/general/binary_file_lookup.html
+        image_b64: "{{ lookup('community.general.binary_file', icons_dir ~ '/assistant.png') }}"
+        image_uri: data:image/png;base64,{{ image_b64 }}
         knowledge: |
           {% set know = accounts_knowledge %}
           {% set _ = know.update({
@@ -582,7 +582,7 @@
             description: Gemma3 base model RAG-enhanced with Accounts knowledge base
             tags:
               - name: private
-            profile_image_url: "{{ image_url }}"
+            profile_image_url: "{{ image_uri }}"
             defaultFeatureIds: []
             capabilities:
               file_upload: true
@@ -641,8 +641,8 @@
         model: "{{ list_models.json['items'] |
           selectattr('name', '==', 'Browsing') }}"
         base_model: "{{ ollama_models | select('search', '^gemma3') | first }}"
-        image_data: "{{ lookup('ansible.builtin.file', icons_dir ~ '/chromium.png') }}"
-        image_url: data:image/png;base64,{{ image_data | b64encode }}
+        image_b64: "{{ lookup('community.general.binary_file', icons_dir ~ '/chromium.png') }}"
+        image_uri: data:image/png;base64,{{ image_b64 }}
       ansible.builtin.uri:
         method: POST
         url: "{{ api_base }}/v1/models/create"
@@ -653,7 +653,7 @@
           name: Browsing
           meta:
             description: Gemma3 base model with commonly used tools, including web search
-            profile_image_url: "{{ image_url }}"
+            profile_image_url: "{{ image_uri }}"
             defaultFeatureIds:
               - web_search
             capabilities:

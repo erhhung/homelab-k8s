@@ -1,8 +1,11 @@
-# litellm_admin_pass: {vault.yml}
 # litellm_master_key: {vault.yml}
-#  anthropic_api_key: {vault.yml}
-#     openai_api_key: {vault.yml}
-#       groq_api_key: {vault.yml}
+# litellm_admin_pass: {vault.yml}
+# litellm_pg_pass:    {vault.yml}
+# litellm_vk_pass:    {vault.yml}
+# icloud_smtp.*:      {vault.yml}
+# anthropic_api_key:  {vault.yml}
+#    openai_api_key:  {vault.yml}
+#      groq_api_key:  {vault.yml}
 
 litellm_namespace: litellm
 litellm_enable_istio: true
@@ -29,7 +32,7 @@ litellm_secrets:
 
 litellm_db_name: litellm
 litellm_db_user: litellm
-# use {{ pgpool_pass }}
+# {{ litellm_pg_pass }}
 
 # LiteLLM uses Prisma for ORM, which requires the client cert
 # in PKCS#12 format, and uses different URL params than libpq:
@@ -396,6 +399,7 @@ litellm_job_init_container:
       value: /tls/tls.key
     - name: PGSSLROOTCERT
       value: /tls/ca.crt
+
   volumeMounts:
     - name: database-tls
       mountPath: /tls
@@ -506,12 +510,12 @@ litellm_teams:
 # POST /user/new
 litellm_users:
   - user_id: default_user_id # expected value
-    user_alias: "{{ homelab_admin.fullname }}"
+    user_alias: "{{ homelab_admin.full_name }}"
     user_email: "{{ homelab_admin.email }}"
     user_role: proxy_admin
 
-  - user_id: "{{ user_erhhung.username }}"
-    user_alias: "{{ user_erhhung.fullname }}"
+  - user_id: "{{    user_erhhung.username }}"
+    user_alias: "{{ user_erhhung.full_name }}"
     user_email: "{{ user_erhhung.email }}"
     # https://github.com/BerriAI/litellm/tree/main/litellm/proxy/_types.py#L93
     user_role: internal_user

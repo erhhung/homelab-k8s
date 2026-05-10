@@ -283,7 +283,11 @@
   pre_tasks:
     - name: Get AWX controller token
       ansible.builtin.include_tasks: "{{ tasks_dir }}/awx/auth.yml"
-      # sets awx_controller_token fact
+      # sets fact: awx_controller_token
+
+    - name: Get tokens from Gitea secret
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/gitea/tokens.yml"
+      # sets fact: gitea_tokens
 
     - name: Get AWX secret if exists
       # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_info_module.html
@@ -325,21 +329,21 @@
         users:
           # admin user already created by awx-operator,
           # but first & last names need to be set here
-          - username: "{{  awx_admin_user }}"
-            firstname: "{{ user_erhhung.firstname }}"
-            lastname: "{{  user_erhhung.lastname  }}"
+          - username: "{{   awx_admin_user }}"
+            first_name: "{{ user_erhhung.first_name }}"
+            last_name: "{{  user_erhhung.last_name  }}"
           # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/combine_filter.html
           - "{{ scraper_user | ansible.builtin.combine({'auditor': true}) }}"
 
       # https://docs.ansible.com/ansible/latest/collections/awx/awx/user_module.html
       awx.awx.user: # noqa args
         username: "{{   item.username }}"
-        first_name: "{{ item.firstname | default(omit) }}"
-        last_name: "{{  item.lastname  | default(omit) }}"
-        email: "{{      item.email     | default(omit) }}"
-        password: "{{   item.password  | default(omit) }}"
-        superuser: "{{  item.superuser | default(omit) }}"
-        auditor: "{{    item.auditor   | default(omit) }}"
+        first_name: "{{ item.first_name | default(omit) }}"
+        last_name: "{{  item.last_name  | default(omit) }}"
+        email: "{{      item.email      | default(omit) }}"
+        password: "{{   item.password   | default(omit) }}"
+        superuser: "{{  item.superuser  | default(omit) }}"
+        auditor: "{{    item.auditor    | default(omit) }}"
         update_secrets: false # set password just once
         state: present
       loop: "{{ users }}"

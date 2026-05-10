@@ -1,12 +1,15 @@
-# openwebui_admin_pass:        {vault.yml}
 # openwebui_secret_key:        {vault.yml}
+# openwebui_admin_pass:        {vault.yml}
+# openwebui_pg_pass:           {vault.yml}
+# openwebui_vk_pass:           {vault.yml}
+# openwebui_minio_key:         {vault.yml}
 # openwebui_pipelines_api_key: {vault.yml}
 #              openai_api_key: {vault.yml}
 
 # API request body for
 # /api/v1/auths/signup
 openwebui_admin_user:
-  name: "{{ user_erhhung.fullname }}"
+  name: "{{  user_erhhung.full_name }}"
   email: "{{ user_erhhung.email }}"
   password: "{{ openwebui_admin_pass }}"
   # only data URI is allowed, so task
@@ -33,7 +36,7 @@ openwebui_replicas: 1
 
 openwebui_db_name: openwebui
 openwebui_db_user: openwebui
-# use {{ pgpool_pass }}
+# {{ openwebui_pg_pass }}
 
 # https://docs.sqlalchemy.org/en/20/core/engines.html#database-urls
 # https://docs.sqlalchemy.org/en/20/dialects/postgresql.html#ssl-connections
@@ -52,7 +55,7 @@ openwebui_postgresql_url: >-
                     map('join','=') -%}
   {% set query = params | join('&') -%}
   {{ pgpool_service_url | regex_replace('//',
-     '//'~ openwebui_db_user ~':'~ pgpool_pass ~'@')
+     '//'~ openwebui_db_user ~':'~ openwebui_pg_pass ~'@')
      }}/{{ openwebui_db_name }}?{{ query }}
 
 # IMPORTANT: add "openwebui:primary" to PgPool's `database_redirect_preference_list`
@@ -76,7 +79,7 @@ openwebui_redis_url: >-
                     map('join','=') -%}
   {% set query = params | join('&') -%}
   {{ redis_service_url  | regex_replace('//',
-     '//:'~ valkey_pass ~'@') }}/0?{{ query }}
+     '//:'~ openwebui_vk_pass ~'@') }}/0?{{ query }}
 
 # PVC specs for "openwebui_pvcs"
 openwebui_pvc_specs:
@@ -526,6 +529,7 @@ openwebui_chart_values:
           value: /tls/tls.key
         - name: PGSSLROOTCERT
           value: /tls/ca.crt
+
       volumeMounts:
         - name: database-tls
           mountPath: /tls
@@ -551,6 +555,7 @@ openwebui_chart_values:
           CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt
           cp $CA_BUNDLE /certs/ca-bundle.crt
           echo; tail -n 11 $CA_BUNDLE
+
       volumeMounts:
         - name: database-tls
           mountPath: /usr/local/share/ca-certificates/ca.crt
@@ -575,6 +580,7 @@ openwebui_chart_values:
           cp -a /app/backend/open_webui/static/. /static
           chown -R 1000:1000 /data /static
           ls -l /static
+
       volumeMounts:
         - name: data
           mountPath: /data

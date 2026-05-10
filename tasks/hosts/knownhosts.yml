@@ -3,7 +3,7 @@
 # pass the following vars:
 #   ssh_host  <required> name or IP
 #   ssh_port  [optional] default=22
-#   key_types [optional] default=[ecdsa,ed25519,rsa]
+#   key_types [optional] default=[ed25519,ecdsa,rsa]
 #   fact_name [optional] fact to store host entries
 #                        default=known_hosts
 # sets the following facts:
@@ -27,8 +27,8 @@
         ssh_port_: "{{ ssh_port | default(22) }}"
         # man ssh-keyscan
         default_types:
-          - ecdsa
           - ed25519
+          - ecdsa
           - rsa
         types: "{{ [key_types | default(default_types)] | flatten }}"
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/shell_module.html

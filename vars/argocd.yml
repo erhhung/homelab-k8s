@@ -1,6 +1,6 @@
 # argocd_admin_pass:    {vault.yml}
+# argocd_vk_pass:       {vault.yml}
 # github_access_token:  {vault.yml}
-# icloud_smtp.*:        {vault.yml}
 # slack_webhook_urls.*: {vault.yml}
 
 # send notifications or just drop
@@ -44,10 +44,14 @@ argocd_allowed_scms:
   - https://github.com
   - https://gitlab.com
   - https://bitbucket.org
-  - "{{ gitlab_http_url    }}" # external URL
-  - "{{ gitlab_ssh_url     }}" # external URL
-  - "{{ gitlab_service_url }}" # cluster  URL
-  - "{{ gitlab_shell_url   }}" # cluster  URL
+  - "{{ gitea_http_url     }}" # external
+  - "{{ gitea_ssh_url      }}" # external
+  - "{{ gitea_service_url  }}" # cluster
+  - "{{ gitea_shell_url    }}" # cluster
+  - "{{ gitlab_http_url    }}" # external
+  - "{{ gitlab_ssh_url     }}" # external
+  - "{{ gitlab_service_url }}" # cluster
+  - "{{ gitlab_shell_url   }}" # cluster
 
 # use our image with support for Redis cluster:
 # https://github.com/erhhung/argo-cd/tree/redis-cluster
@@ -176,8 +180,11 @@ argocd_chart_values:
     # "argocd-ssh-known-hosts-cm" ConfigMap
     # https://argo-cd.readthedocs.io/en/stable/operator-manual/declarative-setup#ssh-known-host-public-keys
     ssh:
-      # known hosts of in-cluster GitLab
-      extraHosts: "{{ gitlab_known_hosts }}"
+      # default includes github.com,
+      # gitlab.com and bitbucket.org
+      extraHosts: |
+        {{  gitea_known_hosts | join(LF) }}
+        {{ gitlab_known_hosts | join(LF) }}
 
     # "argocd-gpg-keys-cm" ConfigMap
     gpg:
@@ -199,21 +206,39 @@ argocd_chart_values:
         username: erhhung
         password: "{{ github_access_token }}"
 
-      gitlab-external-ssh: &ssh-creds
-        url: "{{ gitlab_ssh_url }}"
+      gitea-external-ssh: &ssh-creds
+        url: "{{ gitea_ssh_url }}"
         # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/unvault_lookup.html
-        sshPrivateKey: "{{ lookup('ansible.builtin.unvault', files_dir ~ '/erhhung/erhhung.pem') }}"
+        sshPrivateKey: "{{ lookup('ansible.builtin.unvault', files_dir ~ '/erhhung/id_ed25519_auth') }}"
 
-      gitlab-external-http: &http-creds
+      gitea-external-http: &gitea-creds
+        url: "{{ gitea_http_url }}"
+        username: erhhung
+        password: "{{ gitea_tokens['erhhung-repos'] }}"
+
+      gitea-internal-ssh:
+        <<: *ssh-creds
+        url: "{{ gitea_shell_url }}"
+
+      gitea-internal-http:
+        <<: *gitea-creds
+        url: "{{ gitea_service_url }}"
+
+      gitlab-external-ssh:
+        <<: *ssh-creds
+        url: "{{ gitlab_ssh_url }}"
+
+      gitlab-external-http: &gitlab-creds
         url: "{{ gitlab_http_url }}"
-        username: "{{ user_erhhung.username }}"
-        password: "{{ argocd_gitlab_pat }}"
+        username: erhhung
+        password: "{{ gitlab_pats['repos'] }}"
 
       gitlab-internal-ssh:
         <<: *ssh-creds
         url: "{{ gitlab_shell_url }}"
+
       gitlab-internal-http:
-        <<: *http-creds
+        <<: *gitlab-creds
         url: "{{ gitlab_service_url }}"
 
     # "argocd-cmd-params-cm" ConfigMap:

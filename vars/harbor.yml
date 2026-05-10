@@ -126,27 +126,27 @@ harbor_chart_values:
 
 # user_erhhung: {vault.yml}
 harbor_users:
-  - realname: "{{ user_erhhung.fullname }}"
-    username: "{{ user_erhhung.username }}"
-    email: "{{ user_erhhung.email }}"
+  - real_name: "{{ user_erhhung.full_name }}"
+    email: "{{     user_erhhung.email     }}"
+    username: "{{  user_erhhung.username  }}"
     # 8+ chars w/ upper + lower + digit
     password: "{{ harbor_admin_pass }}"
     role: maintainer # project: library
     # comment: optional
 
-  - realname: GitLab CI/CD
+  - real_name: GitLab CI/CD
     email: gitlab@{{ homelab_domain  }}
     username: "{{ gitlab_harbor_user }}"
     password: "{{ gitlab_harbor_pass }}"
     role: maintainer # project: library
 
-  - realname: Jenkins CI/CD
+  - real_name: Jenkins CI/CD
     email: jenkins@{{ homelab_domain  }}
     username: "{{ jenkins_harbor_user }}"
     password: "{{ jenkins_harbor_pass }}"
     role: maintainer # project: library
 
-  - realname: Buildkite CI/CD
+  - real_name: Buildkite CI/CD
     email: buildkite@{{ homelab_domain  }}
     username: "{{ buildkite_harbor_user }}"
     password: "{{ buildkite_harbor_pass }}"

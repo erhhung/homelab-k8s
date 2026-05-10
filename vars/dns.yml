@@ -99,13 +99,17 @@ pfsense_dns_records:
         desc: Kiali Dashboard
       - host: vault
         desc: HashiCorp Vault
-      - host: jenkins
-        desc: Jenkins CI/CD
+      - host: gitea
+        desc: Gitea UI
+      - host: git
+        desc: Gitea Git
       - host: gitlab
-        desc: GitLab CI/CD
+        desc: GitLab UI
       - host: pages
         domain: "{{ gitlab_subdomain }}"
         desc: GitLab Pages
+      - host: jenkins
+        desc: Jenkins CI/CD
       - host: argocd
         desc: Argo CD GitOps
       - host: ollama

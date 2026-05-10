@@ -1,5 +1,6 @@
 # keycloak_admin_pass: {vault.yml}
-#         icloud_smtp: {vault.yml}
+# keycloak_pg_pass:    {vault.yml}
+# icloud_smtp.*:       {vault.yml}
 
 keycloak_namespace: keycloak
 keycloak_host_names: # aliases of "ingress"
@@ -25,7 +26,7 @@ keycloak_configmaps:
 
 keycloak_db_name: keycloak
 keycloak_db_user: keycloak
-# use {{ pgpool_pass }}
+# {{ keycloak_pg_pass }}
 
 # Java requires key file to be in PKCS#8 / DER format:
 # openssl pkcs8 -topk8 -inform PEM -outform DER -in tls.key -nocrypt -out key.der
@@ -123,7 +124,7 @@ keycloakx_chart_values:
     database: "{{ keycloak_db_name }}"
     username: "{{ keycloak_db_user }}"
     # "keycloakx-database" Secret
-    password: "{{ pgpool_pass }}"
+    password: "{{ keycloak_pg_pass }}"
 
   dbchecker:
     enabled: true
@@ -217,6 +218,7 @@ keycloakx_chart_values:
           value: /tls/tls.key
         - name: PGSSLROOTCERT
           value: /tls/ca.crt
+
       volumeMounts:
         - name: database-tls
           mountPath: /tls

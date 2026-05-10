@@ -46,7 +46,7 @@
       vars:
         secret_key: "{{ user_erhhung.username }}"
       ansible.builtin.include_tasks: "{{ tasks_dir }}/litellm/apikey.yml"
-      # sets litellm_api_key fact
+      # sets fact: litellm_api_key
 
     - name: Read skill config file
       delegate_to: localhost

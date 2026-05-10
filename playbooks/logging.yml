@@ -117,14 +117,14 @@
         features: use-case-observability
       ansible.builtin.include_tasks: "{{ tasks_dir }}/kibana/workspace.yml"
       when: dashboards_workspace_enabled
-      # sets osd_workspace_id fact
+      # sets fact: osd_workspace_id
 
     - name: Create index pattern for logs
       vars:
         pattern: "{{ log_search.index_pattern }}"
         time_field: "{{ log_search.time_field }}"
       ansible.builtin.include_tasks: "{{ tasks_dir }}/kibana/indexpat.yml"
-      # sets index_pattern_id fact
+      # sets fact: index_pattern_id
 
     - name: Create saved search for logs
       vars:
@@ -133,7 +133,7 @@
         fields: "{{ log_search.selected_fields }}"
         patterns: "{{ log_search.index_pattern }}"
       ansible.builtin.include_tasks: "{{ tasks_dir }}/kibana/search.yml"
-      # sets saved_search_id (and saved_explore_id) facts
+      # sets facts: saved_search_id, saved_explore_id
 
     - name: Set Dashboards landing page
       vars:

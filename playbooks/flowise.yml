@@ -42,7 +42,7 @@
           loop_control:
             # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/basename_filter.html
             label: "{{ item | ansible.builtin.basename }}"
-          # sets repo_tag_found fact
+          # sets fact: repo_tag_found
 
         - name: Show which image to deploy
           vars:
@@ -100,8 +100,8 @@
       vars:
         secret_name: "{{ flowise_secrets['credentials'] }}"
         secret_data:
-          postgresql-password: "{{ pgpool_pass }}"
-          # valkey-password: "{{ valkey_pass }}"
+          postgresql-password: "{{ flowise_pg_pass }}"
+          # valkey-password: "{{ flowise_vk_pass }}"
       ansible.builtin.include_tasks: "{{ tasks_dir }}/k8s/secrets/generic.yml"
 
     - name: Install Flowise Helm chart

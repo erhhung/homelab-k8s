@@ -25,6 +25,9 @@ alias mv='mv -i'
 alias l='less -r'
 alias e='emacs'
 
+# for `helmfile template` debugging
+alias tmpcwd='export TMPDIR="$(pwd)"'
+
 # helper for _touch and touchall
 __touch_date() {
   local d=$(date '+%Y%m%d%H%M.00')

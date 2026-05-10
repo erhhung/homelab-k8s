@@ -532,8 +532,8 @@ openclaw_skills:
   # https://clawhub.ai/steipete/gog
   - slug: gog
     setup: |-
-      REL="https://github.com/steipete/gogcli/releases"
-      VER=$(curl -Is "$REL/latest" | sed -En 's/^location:.+\/tag\/v(.+)\r$/\1/p')
+      REL="https://github.com/openclaw/gogcli/releases"
+      VER=$(curl -ILs "$REL/latest" | sed -En 's/^location:.+\/tag\/v(.+)\r$/\1/p')
 
       # $BIN_DIR, $CONFIG_DIR, and $ARCH
       # are already defined by container

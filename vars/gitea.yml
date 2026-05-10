@@ -1,0 +1,627 @@
+# gitea_secret_key: {vault.yml}
+# gitea_minio_key:  {vault.yml}
+# gitea_pg_pass:    {vault.yml}
+# gitea_os_pass:    {vault.yml}
+# gitea_vk_pass:    {vault.yml}
+
+gitea_namespace: gitea
+
+gitea_host_names: # aliases of "ingress"
+  - gitea
+  - git
+
+# remember to add gitea.fourteeners.local & git.fourteeners.local to
+# pfSense DNS as aliases of ingress.fourteeners.local: 192.168.4.222
+# https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_filters.html#products
+gitea_fqdns: "{{ gitea_host_names | product(search_domains) | map('join','.') }}"
+
+gitea_service_host: "{{ gitea_release_name }}-http.{{
+  gitea_namespace }}.svc.{{ cluster_domain }}"
+gitea_service_port: 3000
+gitea_service_url: https://{{ gitea_service_host }}:{{ gitea_service_port }}
+
+gitea_ssh_host: "{{ gitea_release_name }}-ssh.{{
+  gitea_namespace }}.svc.{{ cluster_domain }}"
+# make sure port matches the one defined by
+# nginx_tcp_services in vars/kubernetes.yml
+gitea_ssh_port: 2222
+gitea_shell_url: ssh://git@{{ gitea_ssh_host }}:{{ gitea_ssh_port }}
+
+gitea_http_url: https://{{  gitea_fqdns[0] }}
+gitea_ssh_url: ssh://git@{{ gitea_fqdns[0] }}:{{ gitea_ssh_port }}
+# https://docs.gitea.com/development/api-usage
+# https://gitea.fourteeners.local/api/swagger
+gitea_api_url: "{{ gitea_http_url }}/api/v1"
+
+gitea_secrets:
+  ingress: gitea-ingress-tls
+  database: gitea-database-tls
+  # username/password/email
+  admin: gitea-admin-creds
+  # postgresql/opensearch/valkey
+  config: gitea-config-secrets
+  signing: gitea-signing-key
+  tokens: gitea-access-tokens
+
+gitea_db_user: gitea
+gitea_db_name: gitea
+# {{ gitea_pg_pass }}
+gitea_os_user: gitea
+# {{ gitea_os_pass }}
+
+# see `vars/opensearch.security.yml`
+# for `gitea_indexer` role settings
+gitea_os_conn_str: >-
+  {{ opensearch_service_url | regex_replace('//',
+      '//'~ gitea_os_user ~':'~ gitea_os_pass ~'@') }}
+
+# supported Redis URL schemes (mTLS params not currently supported):
+# https://github.com/go-gitea/gitea/tree/main/modules/nosql/manager_redis.go#L98
+gitea_vk_conn_str: rediss+cluster://:{{ gitea_vk_pass }}@{{ valkey_node_eps | join(',') }}
+
+# use modified Helm chart in our forked repo on
+# branch fix-env-ini-encoding to support - and .
+# chars in config setting keys:
+# https://gitea.com/gitea/helm-gitea/issues/1076
+# * requires installation of helm-git plugin:
+# https://github.com/aslafy-z/helm-git#usage
+gitea_chart_repo_url: git+https://gitea.com/erhhung/helm-gitea?ref=fix-env-ini-encoding
+# gitea_chart_repo_url: https://dl.gitea.com/charts
+
+# comment out `gitea_app_version` below
+# to let playbook get chart `appVersion`
+# https://github.com/go-gitea/gitea/pkgs/container/gitea/versions?filters%5Bversion_type%5D=tagged
+gitea_app_version: "1.25.5"
+
+# https://gitea.com/gitea/helm-gitea
+gitea_chart_version: "12.5.3"
+gitea_release_name: gitea
+
+# `gitea_app_version` is fact set by task;
+# chart `image.rootless` is true by default
+gitea_image: docker.gitea.com/gitea:{{ gitea_app_version }}-rootless
+
+# https://gitea.com/gitea/helm-gitea/src/branch/main/values.yaml
+gitea_chart_values:
+  clusterDomain: "{{ cluster_domain }}"
+  replicaCount: 1
+
+  # use Recreate deployment strategy to avoid
+  # multi-attach error on ReadWriteOnce PVCs
+  strategy:
+    type: Recreate
+
+  image:
+    tag: "{{ gitea_app_version }}"
+
+  # don't install as we already have
+  # a PostgreSQL HA cluster deployed
+  postgresql-ha:
+    enabled: false
+  postgresql:
+    enabled: false
+
+  # don't install as we already have a
+  # multi-node Valkey cluster deployed
+  valkey-cluster:
+    enabled: false
+  valkey:
+    enabled: false
+
+  gitea:
+    # https://gitea.com/gitea/helm-gitea#admin-user
+    admin:
+      # expected keys are `username` and `password`
+      existingSecret: "{{ gitea_secrets['admin'] }}"
+      # chart says username can't be `admin`, but it's no longer reserved:
+      # https://github.com/go-gitea/gitea/tree/main/models/user/user.go#L584
+      username: "{{ gitea_users['admin'].username }}"
+      email: "{{    gitea_users['admin'].email    }}"
+      passwordMode: keepUpdated # initialOnlyNoReset|initialOnlyRequireReset|keepUpdated
+
+    # https://gitea.com/gitea/helm-gitea#configuration
+    config:
+      # https://docs.gitea.com/administration/config-cheat-sheet#overall-default
+      APP_NAME: "Gitea: Git with a cup of tea"
+      RUN_MODE: dev # dev|prod
+
+      # https://docs.gitea.com/administration/config-cheat-sheet#database-database
+      database:
+        DB_TYPE: postgres # mysql|postgres|mssql|sqlite3
+        HOST: "{{ pgpool_service_host }}"
+        NAME: "{{ gitea_db_name }}"
+        USER: "{{ gitea_db_user }}"
+        # PASSWD set via `GITEA__database__PASSWD`
+        SSL_MODE: verify-full # disable|require|verify-ca|verify-full
+        # no mTLS settings available, so .crt/.key files are copied
+        # into /data/git/.postgresql by `initPreScript` and pointed
+        # to by `PGSSLCERT/PGSSLKEY/PGSSLROOTCERT` env vars
+        SCHEMA: public
+
+      # https://docs.gitea.com/administration/config-cheat-sheet#indexer-indexer
+      # https://gitea.com/gitea/helm-gitea/src/branch/main/docs/ha-setup.md#indexers-issues-and-coderepo
+      indexer:
+        ISSUE_INDEXER_TYPE: elasticsearch # bleve|db|elasticsearch|meilisearch
+        ISSUE_INDEXER_NAME: gitea_issues
+        # ISSUE_INDEXER_CONN_STR set via `GITEA__indexer__ISSUE_INDEXER_CONN_STR`
+        REPO_INDEXER_ENABLED: "true"
+        REPO_INDEXER_REPO_TYPES: sources # sources,forks,mirrors,templates
+        REPO_INDEXER_TYPE: elasticsearch # bleve|elasticsearch
+        REPO_INDEXER_NAME: gitea_codes
+        # REPO_INDEXER_CONN_STR set via `GITEA__indexer__REPO_INDEXER_CONN_STR`
+
+      # https://docs.gitea.com/administration/config-cheat-sheet#cache-cache
+      cache:
+        ADAPTER: redis # memory|redis|twoqueue|memcache
+        # HOST is `rediss+cluster://` connection string
+        # with prefix and is set via `GITEA__cache__HOST`
+        ITEM_TTL: 24h
+
+      # https://docs.gitea.com/administration/config-cheat-sheet#session-session
+      session:
+        PROVIDER: redis # memory|file|redis|db|mysql|couchbase|memcache|postgres
+        # PROVIDER_CONFIG is connection string with prefix
+        # and is set via `GITEA__session__PROVIDER_CONFIG`
+        COOKIE_NAME: gitea_sid
+        COOKIE_SECURE: "true"
+        SAME_SITE: lax # strict|lax|none
+        SESSION_LIFE_TIME: 86400 # 1 day
+
+      # https://docs.gitea.com/administration/config-cheat-sheet#queue-queue-and-queue
+      queue:
+        TYPE: redis # level|channel|redis|dummy
+        # `CONN_STR` set via `GITEA__queue__CONN_STR`
+        # no prefix param available in connection
+        # string, so namespace keys using suffixes
+        QUEUE_NAME: :{gitea}:queue
+        SET_NAME: :unique
+
+      # https://docs.gitea.com/administration/config-cheat-sheet#storage-storage
+      # https://gitea.com/gitea/helm-gitea/src/branch/main/docs/ha-setup.md#object-and-asset-storage
+      storage:
+        STORAGE_TYPE: minio # local|minio|azureblob
+        MINIO_ENDPOINT: "{{ minio_service_host }}"
+        MINIO_LOCATION: "{{ minio_region }}"
+        MINIO_USE_SSL: true
+        MINIO_ACCESS_KEY_ID: gitea
+        # MINIO_SECRET_ACCESS_KEY set via `GITEA__storage__MINIO_SECRET_ACCESS_KEY`
+        MINIO_BUCKET_LOOKUP_TYPE: path # auto|dns|path
+        MINIO_BUCKET: gitea
+        SERVE_DIRECT: false # redirect to signed URLs?
+
+      # https://docs.gitea.com/administration/config-cheat-sheet#overrided-configurations-storage_override
+      storage.actions_log:
+        # default: actions_logs/
+        MINIO_BASE_PATH: logs/
+      storage.actions_artifacts:
+        # default: actions_artifacts/
+        MINIO_BASE_PATH: artifacts/
+
+      # https://docs.gitea.com/administration/config-cheat-sheet#mailer-mailer
+      mailer:
+        ENABLED: "true"
+        PROTOCOL: smtp+starttls # smtp|smtps|smtp+starttls|smtp+unix|sendmail|dummy
+        SMTP_ADDR: "{{ icloud_smtp.host }}"
+        SMTP_PORT: "{{ icloud_smtp.port }}"
+        USER: "{{ icloud_smtp.username }}"
+        # PASSWD set via `GITEA__mailer__PASSWD`
+        FROM: Gitea <{{ icloud_smtp.from_email }}>
+
+      # https://docs.gitea.com/administration/config-cheat-sheet#override-email-headers-maileroverride_header
+      mailer.override_header:
+        Content-Type: text/html; charset=utf-8
+        Reply-To: "{{ icloud_smtp.noreply_email }}"
+
+      # https://docs.gitea.com/administration/config-cheat-sheet#server-server
+      server:
+        # https://docs.gitea.com/administration/https-setup
+        HTTP_PORT: "{{ gitea_service_port }}"
+        PROTOCOL: https
+        CERT_FILE: /tls/server/tls.crt
+        KEY_FILE: /tls/server/tls.key
+
+        START_SSH_SERVER: "true"
+        SSH_PORT: "{{ gitea_ssh_port }}"
+        SSH_LISTEN_PORT: "{{ gitea_ssh_port }}"
+        # these host keys are generated by `initPreScript`
+        SSH_SERVER_HOST_KEYS: ssh/gitea.ed25519,ssh/gitea.ecdsa,ssh/gitea.rsa
+
+        # https://docs.gitea.com/administration/git-lfs-setup
+        LFS_START_SERVER: "true"
+
+      # https://docs.gitea.com/administration/config-cheat-sheet#log-log
+      log:
+        logger.router.MODE: console-warn
+        logger.access.MODE: console-warn
+      # https://docs.gitea.com/administration/logging-config#disable-router-logs-and-record-some-access-logs-to-file
+      log.console-warn:
+        MODE: console
+        LEVEL: Warn # Trace|Debug|Info|Warn|Error|Fatal
+
+      # https://docs.gitea.com/administration/config-cheat-sheet#security-security
+      security:
+        SECRET_KEY: "{{ gitea_secret_key }}"
+        COOKIE_REMEMBER_NAME: gitea_auth
+        CSRF_COOKIE_HTTP_ONLY: "true"
+        MIN_PASSWORD_LENGTH: 8
+        PASSWORD_COMPLEXITY: lower,upper,digit # lower,upper,digit,spec|off
+
+      # https://docs.gitea.com/administration/config-cheat-sheet#cors-cors
+      cors:
+        ENABLED: "true"
+
+      # https://docs.gitea.com/administration/config-cheat-sheet#ui-ui
+      ui:
+        # GitHub themes are installed by `initPreScript`:
+        # https://github.com/lutinglt/gitea-github-theme
+        THEMES: gitea-auto,gitea-light,gitea-dark,github-auto,github-light,github-dark
+        DEFAULT_THEME: github-dark
+      # https://docs.gitea.com/administration/config-cheat-sheet#time-time
+      time:
+        DEFAULT_UI_LOCATION: "{{ system_time_zone }}"
+      # https://docs.gitea.com/administration/config-cheat-sheet#admin-admin
+      admin:
+        USER_DISABLED_FEATURES: deletion
+      # https://docs.gitea.com/administration/config-cheat-sheet#api-api
+      # https://docs.gitea.com/administration/config-cheat-sheet#other-other
+      other:
+        SHOW_FOOTER_VERSION: "true"
+        SHOW_FOOTER_POWERED_BY: "true"
+        SHOW_FOOTER_TEMPLATE_LOAD_TIME: "false"
+      api:
+        # https://gitea.fourteeners.local/api/swagger
+        ENABLE_SWAGGER: "true"
+
+      # https://docs.gitea.com/administration/config-cheat-sheet#repository-repository
+      repository:
+        USE_COMPAT_SSH_URI: "true"
+        DEFAULT_PRIVATE: public # last|private|public
+        DEFAULT_BRANCH: main
+        DEFAULT_REPO_UNITS: repo.code,repo.actions,repo.issues,repo.pulls,repo.projects,repo.packages,repo.releases,repo.wiki
+        DEFAULT_FORK_REPO_UNITS: repo.code,repo.pulls
+
+      # https://docs.gitea.com/administration/signing
+      repository.signing:
+        # key is GPG key fingerprint
+        SIGNING_KEY: 4A049ED6F2EBDE45C4CD5A0D2FA8829EBBD76EA2
+        # keep name/email synced with
+        # files/gitea/gnupg/keygen.sh
+        SIGNING_NAME: Gitea Server
+        SIGNING_EMAIL: gitea@{{ homelab_domain }}
+        INITIAL_COMMIT: always
+        CRUD_ACTIONS: pubkey, twofa, parentsigned
+        MERGES: pubkey, twofa, basesigned, commitssigned
+        WIKI: never
+
+      # https://docs.gitea.com/administration/config-cheat-sheet#git-git
+      git:
+        HOME_PATH: /data/git
+      git.config:
+        core.abbrev: 8
+        # match signer identity
+        user.name: Gitea Server
+        user.email: gitea@{{ homelab_domain }}
+
+    metrics:
+      enabled: true
+      serviceMonitor:
+        enabled: true
+        additionalLabels: "{{ monitoring_selector_labels }}"
+        interval: 30s
+        scheme: https
+        tlsConfig: "{{ metric_scraper_tls_config }}"
+
+    # https://gitea.com/gitea/helm-gitea/src/branch/main#additional-appini-settings
+    additionalConfigSources: []
+
+    # https://gitea.com/gitea/helm-gitea/src/branch/main#user-defined-environment-variables-in-appini
+    additionalConfigFromEnvs:
+      - name: GITEA__database__PASSWD
+        valueFrom:
+          secretKeyRef:
+            name: "{{ gitea_secrets['config'] }}"
+            key: postgresql-password
+      - name: GITEA__indexer__ISSUE_INDEXER_CONN_STR
+        valueFrom: &os-value-from
+          secretKeyRef:
+            name: "{{ gitea_secrets['config'] }}"
+            key: opensearch-conn-str
+      - name: GITEA__indexer__REPO_INDEXER_CONN_STR
+        valueFrom: *os-value-from
+      - name: GITEA__cache__HOST
+        valueFrom:
+          secretKeyRef:
+            name: "{{ gitea_secrets['config'] }}"
+            key: cache-conn-str
+      - name: GITEA__session__PROVIDER_CONFIG
+        valueFrom:
+          secretKeyRef:
+            name: "{{ gitea_secrets['config'] }}"
+            key: session-conn-str
+      - name: GITEA__queue__CONN_STR
+        valueFrom:
+          secretKeyRef:
+            name: "{{ gitea_secrets['config'] }}"
+            key: valkey-conn-str
+      - name: GITEA__storage__MINIO_SECRET_ACCESS_KEY
+        valueFrom:
+          secretKeyRef:
+            name: "{{ gitea_secrets['config'] }}"
+            key: minio-secret-key
+      - name: GITEA__mailer__PASSWD
+        valueFrom:
+          secretKeyRef:
+            name: "{{ gitea_secrets['config'] }}"
+            key: smtp-password
+
+    readinessProbe: &probe # nullify default
+      tcpSocket: null
+      httpGet:
+        # /api/healthz is too expensive as
+        # it pings both database and cache
+        path: /api/v1/version
+        port: http
+        scheme: HTTPS
+      failureThreshold: 10
+      timeoutSeconds: 3
+    livenessProbe:
+      <<: *probe
+      initialDelaySeconds: 180
+
+  # https://docs.gitea.com/administration/signing
+  # https://gitea.com/gitea/helm-gitea#configure-commit-signing
+  signing:
+    enabled: true
+    # /data is PVC-mounted volume
+    gpgHome: /data/git/.gnupg
+    # private key expected to be in key `privateKey`
+    existingSecret: "{{ gitea_secrets['signing'] }}"
+
+  persistence:
+    enabled: true
+    storageClass: "{{ storage_classes['default'] }}"
+    accessModes: ["ReadWriteOnce"]
+    size: 5Gi
+    # nullify chart default value `helm.sh/resource-policy: keep`
+    # https://helm.sh/docs/howto/charts_tips_and_tricks#tell-helm-not-to-uninstall-a-resource
+    annotations: null
+
+  resources:
+    requests:
+      cpu: 25m
+      memory: 256Mi
+
+  serviceAccount:
+    create: true
+    automountServiceAccountToken: true
+
+  containerSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+    runAsGroup: 1000
+    capabilities:
+      drop: ["ALL"]
+    privileged: false
+    allowPrivilegeEscalation: false
+
+  extraVolumes:
+    - name: server-tls
+      secret:
+        secretName: "{{ gitea_secrets['ingress'] }}"
+        defaultMode: 416 # "0640"
+    - name: database-tls
+      secret:
+        secretName: "{{ gitea_secrets['database'] }}"
+        defaultMode: 416 # "0640"
+    # init container stores updated CA bundle
+    - name: ca-bundle
+      emptyDir: {}
+
+  extraInitVolumeMounts:
+    - name: database-tls
+      mountPath: /tls/database
+      readOnly: true
+    # replace system trust store with updated
+    # CA bundle created by the init container
+    - name: ca-bundle
+      mountPath: /etc/ssl/certs/ca-certificates.crt
+      subPath: ca-bundle.crt
+
+  extraContainerVolumeMounts:
+    - name: server-tls
+      mountPath: /tls/server
+      readOnly: true
+    - name: ca-bundle
+      mountPath: /etc/ssl/certs/ca-certificates.crt
+      subPath: ca-bundle.crt
+
+  deployment:
+    env:
+      # https://pkg.go.dev/github.com/lib/pq#Config
+      - name: PGSSLCERT
+        value: /data/git/.postgresql/postgresql.crt
+      - name: PGSSLKEY
+        value: /data/git/.postgresql/postgresql.key
+      - name: PGSSLROOTCERT
+        value: /data/git/.postgresql/root.crt
+
+  # this Bash snippet is inserted at the top of
+  # the `init_directory_structure.sh` script in
+  # the `gitea-init` Secret and executed by the
+  # `init-directories` init container
+  initPreScript: |
+    {{ LF -}}
+    # ===== PostgreSQL mTLS =====
+
+    TLS_SRC=/tls/database
+    PG_HOME=/data/git/.postgresql
+    mkdir -p $PG_HOME
+
+    cp $TLS_SRC/tls.crt $PG_HOME/postgresql.crt
+    cp $TLS_SRC/tls.key $PG_HOME/postgresql.key
+    cp $TLS_SRC/ca.crt  $PG_HOME/root.crt
+    chown -R   git:git  $PG_HOME
+    chmod 400 $PG_HOME/*.key
+
+    # postgresql.{crt,key} and root.crt
+    # are expected filenames that libpq
+    # looks for under $HOME/.postgresql,
+    # but $HOME is /var/lib/gitea/git
+    echo; (set -x; ls -al $PG_HOME)
+
+    # ===== SSH Host Keys =====
+
+    SSH_HOME=/data/ssh
+    mkdir -p  $SSH_HOME
+    chmod 700 $SSH_HOME
+
+    # explicitly generate host keys for all
+    # supported key types (by default Gitea
+    # only generates an RSA keypair)
+    KEYGEN_ARGS=(
+      'ed25519'
+      'ecdsa -b 256'
+      'rsa   -b 4096'
+    )
+    for args in "${KEYGEN_ARGS[@]}"; do
+      key_file="$SSH_HOME/gitea.${args%% *}"
+      [ -f "$key_file" ] || {
+        ssh-keygen -t $args -f $key_file -N ""
+      }
+    done
+
+    chown -R git:git $SSH_HOME
+    chmod 600 $SSH_HOME/gitea.*
+    chmod 644 $SSH_HOME/gitea.*.pub
+    echo; (set -x; ls -al $SSH_HOME)
+
+    # ===== GitHub Themes =====
+
+    REL="https://github.com/lutinglt/gitea-github-theme/releases/download/v{{ gitea_app_version }}"
+
+     CSS_HOME=/data/gitea/public/assets/css
+    TMPL_HOME=/data/gitea/templates
+    mkdir -p  $CSS_HOME $TMPL_HOME
+    chmod 755 $CSS_HOME $TMPL_HOME
+
+    compgen -G "$CSS_HOME/theme-github-*" > /dev/null || {
+      curl -fsSL "$REL/theme-github-base.tar.gz" | \
+        tar -xz -C $CSS_HOME --no-same-owner --strip-components=1 dist/
+    }
+    compgen -G "$TMPL_HOME/base/*.tmpl" > /dev/null  || {
+      curl -fsSL "$REL/theme-github-templates.tar.gz" | \
+        tar -xz -C $TMPL_HOME --no-same-owner --strip-components=1 templates/
+    }
+
+    chown -R git:git $CSS_HOME $TMPL_HOME
+    echo; (set -x; ls -al $CSS_HOME)
+    echo; (set -x; find  $TMPL_HOME)
+
+    echo
+    # =======================
+    {{ LF -}}
+
+  preExtraInitContainers:
+    # create PostgreSQL database
+    # gitea if it does not exist
+    - name: create-database
+      image: "{{ postgresql_image }}"
+      imagePullPolicy: IfNotPresent
+      command: ["bash"]
+      args:
+        - -c
+        - |-
+          # uses connection params added
+          # by PG* environment variables
+          db_found=$(psql -d postgres -tAc "
+            SELECT COUNT(*) FROM pg_catalog.pg_database WHERE datname = '$PGDATABASE'
+          ") || exit $?
+          echo "db_found=$db_found"
+
+          [ "$db_found" -eq 1 ] || {
+            echo -e "\nCreating '$PGDATABASE' database..."
+            psql -d postgres <<EOT
+
+          -- https://www.postgresql.org/docs/current/sql-createdatabase.html
+          CREATE DATABASE $PGDATABASE WITH OWNER $PGUSER;
+          REVOKE ALL ON DATABASE $PGDATABASE FROM PUBLIC;
+          GRANT  ALL ON DATABASE $PGDATABASE  TO $PGUSER;
+          EOT
+          }
+          echo -e "\nDatabase initialization completed ✓"
+      env:
+        # https://www.postgresql.org/docs/current/libpq-envars.html
+        - name: PGHOST
+          value: "{{ pgpool_service_host }}"
+        - name: PGUSER
+          value: "{{ gitea_db_user }}"
+        - name: PGDATABASE
+          value: "{{ gitea_db_name }}"
+        - name: PGSSLMODE
+          value: verify-full
+        - name: PGSSLCERT
+          value: /tls/tls.crt
+        - name: PGSSLKEY
+          value: /tls/tls.key
+        - name: PGSSLROOTCERT
+          value: /tls/ca.crt
+
+      volumeMounts:
+        - name: database-tls
+          mountPath: /tls
+          readOnly: true
+
+    # add our private CA cert
+    # into system trust store
+    - name: update-ca-bundle
+      image: "{{ gitea_image }}"
+      imagePullPolicy: IfNotPresent
+      securityContext:
+        runAsUser: 0
+      command: ["sh"]
+      args:
+        - -c
+        - |-
+          update-ca-certificates || exit
+          # copy updated CA bundle containing extra certs
+          # from /usr/local/share/ca-certificates and all
+          # already in trust store under /etc/ssl/certs.
+          # the new ca-certificates.crt will be mounted
+          # into all containers to replace existing one.
+          CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt
+          cp $CA_BUNDLE /certs/ca-bundle.crt
+          tail -n 12 $CA_BUNDLE
+
+      volumeMounts:
+        - name: database-tls
+          mountPath: /usr/local/share/ca-certificates/ca.crt
+          subPath: ca.crt
+          readOnly: true
+        - name: ca-bundle
+          mountPath: /certs
+
+  service:
+    http:
+      port: "{{ gitea_service_port }}"
+    ssh:
+      port: "{{ gitea_ssh_port }}"
+
+  ingress:
+    enabled: true
+    tls:
+      - secretName: "{{ gitea_secrets['ingress'] }}"
+        hosts: "{{ gitea_fqdns }}"
+    className: "{{ rke_ingress_class }}"
+    annotations:
+      nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+      # nginx.ingress.kubernetes.io/ssl-passthrough: "true"
+      nginx.ingress.kubernetes.io/backend-protocol: HTTPS
+      # https://kubernetes.github.io/ingress-nginx/user-guide/nginx-configuration/annotations#custom-timeouts
+      nginx.ingress.kubernetes.io/proxy-read-timeout: "1800"
+      nginx.ingress.kubernetes.io/proxy-send-timeout: "1800"
+      # allow uploading large files and prevent 413 (Entity
+      # Too Large) errors; set to "0" to disable size limit:
+      # https://kubernetes.github.io/ingress-nginx/user-guide/nginx-configuration/annotations#custom-max-body-size
+      nginx.ingress.kubernetes.io/proxy-body-size: 10m
+    # https://docs.ansible.com/ansible/latest/collections/community/general/dict_kv_filter.html
+    hosts: "{{ gitea_fqdns | map('community.general.dict_kv', 'host') }}"

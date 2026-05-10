@@ -43,7 +43,7 @@
       vars:
         target_hosts: "{{ targets }}"
       ansible.builtin.include_tasks: "{{ tasks_dir }}/hosts/resolve.yml"
-      # sets resolved_hosts fact
+      # sets fact: resolved_hosts
 
     - name: Get snapshots JSON
       # cannot use ansible.builtin.shell because XCP-ng 8.3 only has Python 3.6,

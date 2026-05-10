@@ -1,0 +1,153 @@
+# https://docs.gitea.com/usage/actions/act-runner
+---
+- name: Install Gitea DevOps platform
+  tags: install
+  hosts: "{{ rke_control_plane_host }}"
+  vars_files:
+    - vars/kubernetes.yml
+    - vars/monitoring.yml
+    - vars/postgresql.yml
+    - vars/opensearch.yml
+    - vars/valkey.yml
+    - vars/storage.yml
+    - vars/minio.yml
+    - vars/gitea.configure.yml
+    - vars/gitea.yml
+  vars:
+    # required kubernetes>=24.2 package only in user virtualenv
+    ansible_python_interpreter: "{{ venv_python_interpreter }}"
+    kubeconfig: "{{ rke_kubeconfig }}"
+    secret_ns: "{{ gitea_namespace }}"
+    create_ns: false
+    chart_ver: "{{ gitea_chart_version if
+      gitea_chart_repo_url is match('^http') else none }}"
+  pre_tasks:
+    # used in init container image tag
+    - name: Get Gitea chart appVersion
+      vars:
+        repo_url: "{{ gitea_chart_repo_url }}"
+        chart_ref: gitea
+        fact_name: gitea_app_version
+        # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/helm/appversion.yml"
+      when: gitea_app_version is undefined
+
+    - name: Get the PostgreSQL image used
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/postgresql/image.yml"
+      when: postgresql_image is undefined
+  tasks:
+    - name: Create Gitea ingress secret
+      vars:
+        secret_name: "{{ gitea_secrets['ingress'] }}"
+        create_ns: true
+        cert_name: gitea-ingress
+        sans:
+          - "{{ gitea_fqdns }}"
+          - "*.{{ gitea_namespace }}.svc.{{ cluster_domain }}"
+          - "*.{{ gitea_namespace }}.svc"
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/k8s/secrets/tls.step.yml"
+
+    - name: Create Gitea database secret
+      vars:
+        secret_name: "{{ gitea_secrets['database'] }}"
+        cert_name: gitea-database
+        days: 365
+        sans:
+          - "{{ gitea_db_user }}"
+          - "{{ gitea_db_user }}@{{ homelab_domain }}"
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/k8s/secrets/tls.step.yml"
+
+    - name: Create Gitea admin secret
+      vars:
+        admin_user: "{{ gitea_users['admin'] }}"
+
+        # === Inputs ===
+        secret_name: "{{ gitea_secrets['admin'] }}"
+        secret_data:
+          email: "{{    admin_user.email    }}"
+          username: "{{ admin_user.username }}"
+          password: "{{ admin_user.password }}"
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/k8s/secrets/generic.yml"
+
+    - name: Create Gitea config secret
+      vars:
+        secret_name: "{{ gitea_secrets['config'] }}"
+        secret_data:
+          postgresql-password: "{{ gitea_pg_pass }}"
+          opensearch-conn-str: "{{ gitea_os_conn_str }}"
+          valkey-conn-str: "{{     gitea_vk_conn_str }}" # for queues, which don't support `?prefix` param
+          cache-conn-str: "{{      gitea_vk_conn_str }}?prefix={gitea}:cache:&hset_name={gitea}:cache:keys"
+          session-conn-str: "{{    gitea_vk_conn_str }}?prefix={gitea}:session:"
+          minio-secret-key: "{{ gitea_minio_key }}"
+          smtp-password: "{{ icloud_smtp.passwords['gitea'] }}"
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/k8s/secrets/generic.yml"
+
+    - name: Create Gitea signing secret
+      vars:
+        secret_name: "{{ gitea_secrets['signing'] }}"
+        secret_data:
+          # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/unvault_lookup.html
+          privateKey: "{{ lookup('ansible.builtin.unvault', files_dir ~ '/gitea/gnupg/signing.asc') }}"
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/k8s/secrets/generic.yml"
+
+    - name: Install Gitea Helm chart
+      vars:
+        repo_name: gitea
+        repo_url: "{{ gitea_chart_repo_url }}"
+        chart_ref: gitea
+        release: "{{ gitea_release_name }}"
+        release_ns: "{{ gitea_namespace }}"
+        values: "{{ gitea_chart_values }}"
+
+        extras: # adopt extra resources into Helm release
+          - cert-manager.io/v1 Certificate {{ gitea_secrets['ingress']  }}
+          - cert-manager.io/v1 Certificate {{ gitea_secrets['database'] }}
+          - v1 Secret {{ gitea_secrets['admin']   }}
+          - v1 Secret {{ gitea_secrets['config']  }}
+          - v1 Secret {{ gitea_secrets['signing'] }}
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/helm/helmfile.yml"
+
+- name: Configure Gitea installation
+  tags: configure
+  hosts: localhost
+  vars_files:
+    - vars/gitea.yml
+    - vars/gitea.configure.yml
+  pre_tasks:
+    - name: Wait until Gitea is ready
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/uri_module.html
+      ansible.builtin.uri:
+        url: "{{ gitea_http_url }}/api/healthz"
+      # https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_loops.html#retrying-a-task-until-a-condition-is-met
+      retries: 20
+      delay: 3
+  tasks:
+    - name: Create/update organization
+      vars:
+        org: "{{ gitea_organization }}"
+        org_name: "{{  org.org_name }}"
+        full_name: "{{ org.name  }}"
+        email: "{{     org.email }}"
+        desc: "{{      org.desc     | default('') }}"
+        avatar: "{{    org.avatar   | default('') }}"
+        location: "{{  org.location | default('') }}"
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/gitea/org.yml"
+
+    - name: Create/update user account
+      vars:
+        user: "{{      item.value }}"
+        email: "{{     user.email }}"
+        full_name: "{{ user.name  }}"
+        username: "{{  user.username }}"
+        password: "{{  user.password }}"
+        is_admin: "{{  user.is_admin | default(false) }}"
+        location: "{{  user.location | default('') }}"
+        avatar: "{{    user.avatar   | default('') }}"
+        tokens: "{{    user.tokens   | default([]) }}"
+        ssh_keys: "{{  user.ssh_keys | default([]) }}"
+        gpg_keys: "{{  user.gpg_keys | default([]) }}"
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/gitea/user.yml"
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/dict2items_filter.html
+      loop: "{{ gitea_users | ansible.builtin.dict2items }}"
+      loop_control:
+        label: "{{ item.key }}"

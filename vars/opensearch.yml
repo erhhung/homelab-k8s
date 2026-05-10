@@ -1,15 +1,18 @@
 # opensearch_admin_pass: {vault.yml}
 #        kibana_os_pass: {vault.yml}
+#        fluent_os_pass: {vault.yml}
+#         gitea_os_pass: {vault.yml}
 
 # passwords will be hashed and stored
 # in opensearch_passwords_hashed fact
 opensearch_passwords:
-  admin: "{{ opensearch_admin_pass }}"
+  admin: "{{   opensearch_admin_pass }}"
   erhhung: "{{ opensearch_admin_pass }}"
   kibana: "{{ kibana_os_pass }}"
   fluent: "{{ fluent_os_pass }}"
   scraper: "{{ monitoring_passwords['scraper'] }}"
   grafana: "{{ monitoring_passwords['grafana'] }}"
+  gitea: "{{ gitea_os_pass }}"
 
 opensearch_namespace: opensearch
 opensearch_host_names: # aliases of "ingress"

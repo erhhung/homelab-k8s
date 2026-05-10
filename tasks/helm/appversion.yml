@@ -29,10 +29,13 @@
           - chart
         chart_args: |
           {% set args = [chart_ref] %}
-          {% if repo_url is defined and not chart_ref.startswith('oci://') %}
+          {% if repo_url is defined and
+                repo_url is truthy  and not
+                chart_ref.startswith('oci://') %}
           {%   set _ = args.append('--repo=' ~ repo_url) %}
           {% endif %}
-          {% if chart_ver is defined %}
+          {% if chart_ver is defined and
+                chart_ver is truthy  %}
           {%   set _ = args.append('--version=' ~ chart_ver) %}
           {% endif %}
           {{ args  }}
@@ -48,3 +51,7 @@
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/set_fact_module.html
       ansible.builtin.set_fact:
         "{{ ver_fact }}": "{{ chart_info.appVersion | regex_replace('^v','') }}"
+
+    - name: Show {{ ver_fact }} fact
+      ansible.builtin.debug:
+        var: "{{ ver_fact }}"

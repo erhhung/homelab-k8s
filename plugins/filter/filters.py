@@ -142,11 +142,12 @@ class FilterModule(object):
 
         return dt.astimezone(UTC).isoformat(timespec=tspec).replace("+00:00", "Z")
 
-    def b64_decode_k8s_secret(self, secret) -> dict:
+    def b64_decode_k8s_secret(self, secret: dict) -> dict:
         "base64-decode each dict value in secret.data into string"
         import base64
 
         d = {}
-        for k, v in secret["data"].items():
-            d[k] = base64.b64decode(v).decode("utf-8")
+        if secret is not None and "data" in secret:
+            for k, v in secret["data"].items():
+                d[k] = base64.b64decode(v).decode("utf-8")
         return d

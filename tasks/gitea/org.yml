@@ -1,0 +1,94 @@
+# create or update Gitea organization
+#
+# pass the following vars:
+#   full_name <required> full name
+#   org_name  <required> org identifier
+#   desc      [optional] org description
+#   email     <required> contact e-mail
+#   avatar    [optional] path to image
+#   location  [optional] site location
+---
+- name: Create/update organization
+  vars:
+    uri_auth: &uri-auth
+      url_username: "{{ gitea_users['admin'].username }}"
+      url_password: "{{ gitea_users['admin'].password }}"
+      force_basic_auth: true
+  block:
+    # https://gitea.fourteeners.local/api/swagger#/organization/orgGet
+    - name: Check whether org exists
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/uri_module.html
+      ansible.builtin.uri:
+        <<: *uri-auth
+        url: "{{ gitea_api_url }}/orgs/{{ org_name }}"
+        status_code: [200, 404]
+        return_content: true
+      register: org_info
+
+    - name: Org needs create/update?
+      vars:
+        status: "{{ org_info.status }}"
+        desired: &payload
+          email: "{{ email }}"
+          full_name: "{{ full_name }}"
+          description: "{{ desc  | default('') }}"
+          location: "{{ location | default('') }}"
+        # https://docs.ansible.com/ansible/latest/collections/community/general/keep_keys_filter.html
+        existing: |
+          {{ [org_info.json] | community.general.keep_keys(desired.keys())
+                             | first if status == 200 else {} }}
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/set_fact_module.html
+      ansible.builtin.set_fact:
+        needs_create: "{{ status == 404 }}"
+        needs_update: "{{ status == 200 and existing != desired }}"
+
+    # https://gitea.fourteeners.local/api/swagger#/organization/orgCreate
+    - name: Create Gitea organization
+      ansible.builtin.uri:
+        <<: *uri-auth
+        method: POST
+        url: "{{ gitea_api_url }}/orgs"
+        body_format: json
+        body:
+          email: "{{ email }}"
+          username: "{{ org_name }}"
+          full_name: "{{ full_name }}"
+          description: "{{ desc  | default('') }}"
+          location: "{{ location | default('') }}"
+          repo_admin_change_team_access: true
+          visibility: public
+        status_code: 201
+      when: needs_create
+      changed_when: true
+
+    # https://gitea.fourteeners.local/api/swagger#/organization/orgEdit
+    - name: Update Gitea organization
+      ansible.builtin.uri:
+        <<: *uri-auth
+        method: PATCH
+        url: "{{ gitea_api_url }}/orgs/{{ org_name }}"
+        body_format: json
+        body: *payload
+      when: needs_update
+      changed_when: true
+
+    # not possible to detect changes,
+    # so only upload on org creation:
+    # https://gitea.fourteeners.local/api/swagger#/organization/orgUpdateAvatar
+    - name: Upload custom avatar image
+      vars:
+        # https://docs.ansible.com/ansible/latest/collections/community/general/binary_file_lookup.html
+        image_b64: "{{ lookup('community.general.binary_file', avatar) }}"
+      ansible.builtin.uri:
+        <<: *uri-auth
+        method: POST
+        url: "{{ gitea_api_url }}/orgs/{{ org_name }}/avatar"
+        body_format: json
+        body:
+          image: "{{ image_b64 }}"
+        status_code: 204 # No Content
+      changed_when: true
+      when:
+        - needs_create
+        - avatar is defined
+        - avatar is truthy

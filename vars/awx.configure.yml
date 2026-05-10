@@ -4,7 +4,7 @@
 
 awx_organization:
   name: Fourteeners
-  desc: Erhhung's Homelab
+  desc: Erhhung's homelab domain
 
 # https://docs.ansible.com/projects/awx-operator/en/latest/user-guide/advanced-configuration/deploying-a-specific-version-of-awx.html
 # https://docs.ansible.com/projects/awx/en/24.6.1/userguide/execution_environments.html
@@ -69,21 +69,35 @@ awx_credentials:
     type: Source Control
     name: Erhhung GitHub Credentials
     inputs:
-      username: "{{ user_erhhung.username }}"
-      password: "{{ github_access_token   }}"
+      username: erhhung
+      password: "{{ github_access_token }}"
+
+  gitea-scm:
+    type: Source Control
+    name: Erhhung Gitea Credentials
+    inputs:
+      username: erhhung
+      password: "{{ gitea_tokens['erhhung-repos'] }}"
 
   gitlab-scm:
     type: Source Control
     name: Erhhung GitLab Credentials
     inputs:
-      username: "{{ user_erhhung.username }}"
-      password: "{{ awx_gitlab_pat        }}"
+      username: erhhung
+      password: "{{ awx_gitlab_pat }}"
 
   github-pat:
     type: GitHub Personal Access Token
     name: Erhhung GitHub Access Token
     inputs:
       token: "{{ github_access_token }}"
+
+  gitea-pat:
+    # no Gitea-specific credential type
+    type: GitLab Personal Access Token
+    name: Erhhung Gitea Access Token
+    inputs:
+      token: "{{ gitea_tokens['erhhung-repos'] }}"
 
   gitlab-pat:
     type: GitLab Personal Access Token
@@ -117,7 +131,7 @@ awx_notifiers:
       password: "{{ icloud_smtp.passwords['awx'] }}"
       sender: Ansible AWX <{{ icloud_smtp.from_email }}>
       recipients:
-        - "{{ user_erhhung.fullname }} <{{ user_erhhung.email }}>"
+        - "{{ user_erhhung.full_name }} <{{ user_erhhung.email }}>"
       headers:
         Content-Type: text/html; charset=utf-8
     # sending HTML email isn't currently supported!

@@ -59,6 +59,7 @@ All cluster services will be provisioned with TLS certificates from Erhhung's pr
 |      ~~https://tracing.fourteeners.local~~ | ~~Jaeger UI _(Tempo Query)_~~
 |          https://kiali.fourteeners.local | Kiali console _(Keycloak SSO)_
 |          https://vault.fourteeners.local | Vault UI
+|          https://gitea.fourteeners.local | Gitea UI
 |         https://gitlab.fourteeners.local | GitLab UI
 |  ssh://git@gitlab.fourteeners.local:2222 | GitLab SSH Git access
 | https://*.pages.gitlab.fourteeners.local | GitLab Pages websites
@@ -134,6 +135,8 @@ All cluster services will be provisioned with TLS certificates from Erhhung's pr
     * Install Kiali using the [`kiali-operator`](https://kiali.io/docs/installation/installation-guide/install-with-helm#install-with-operator) Helm chart and `Kiali` CR
 - [X] [HashiCorp Vault](https://github.com/hashicorp/vault) and [External Secrets Operator](https://external-secrets.io/) — secure secrets management and synchronization
     * Install on main RKE cluster using the [`vault`](https://github.com/hashicorp/vault-helm) and [`external-secrets`](https://external-secrets.io/latest/introduction/getting-started#installing-with-helm) Helm charts
+- [X] [Gitea DevOps Platform](https://about.gitea.com/) — Git and package repositories with CI/CD pipelines for local deployments
+    * Install on main RKE cluster using the [`gitea`](https://gitea.com/erhhung/helm-gitea/src/branch/fix-env-ini-encoding) Helm chart
 - [X] [GitLab CI/CD Platform](https://gitlab.com/rluna-gitlab/gitlab-ce) — Git repository server with CI/CD pipelines for local deployments
     * Install on main RKE cluster using the [`gitlab`](https://gitlab.com/gitlab-org/charts/gitlab) Helm chart
     * [X] Install [GitLab CI Pipelines Exporter](https://github.com/mvisonneau/gitlab-ci-pipelines-exporter) using the [`gitlab-ci-pipelines-exporter`](https://github.com/mvisonneau/helm-charts/tree/main/charts/gitlab-ci-pipelines-exporter) Helm chart
@@ -142,7 +145,7 @@ All cluster services will be provisioned with TLS certificates from Erhhung's pr
 - [X] [Buildkite Self-Hosted Agent](https://buildkite.com/docs/agent/v3) — run CI/CD pipelines on `buildkite.com` locally
     * Install on main RKE cluster using the [`agent-stack-k8s`](https://buildkite.com/docs/agent/v3/agent-stack-k8s) Helm chart
 - [X] [Argo CD Declarative GitOps](https://argo-cd.readthedocs.io/) — manage deployment of personal projects
-    * Install on main RKE cluster using the [`argo-cd`](https://github.com/argoproj/argo-helm/tree/main/charts/argo-cd) Helm chart
+    * Install on main RKE cluster using the [`argo-cd`](https://github.com/erhhung/argo-helm/tree/argo-cd-redis-cluster/charts/argo-cd) Helm chart
 - [ ] [Meshery Visual GitOps Platform](https://meshery.io/) — manage infrastructure visually and collaboratively
     * Install on K3s cluster using the [`meshery`](https://docs.meshery.io/installation/kubernetes/helm) Helm chart, along with  
     [`meshery-istio`](https://docs.meshery.io/concepts/architecture/adapters) and [`meshery-nighthawk`](https://getnighthawk.dev/) adapters
@@ -165,7 +168,7 @@ All cluster services will be provisioned with TLS certificates from Erhhung's pr
 - [X] [OpenClaw Agent Gateway](https://docs.openclaw.ai/) — collaborate with my personal AI assistant using messaging apps
     * Install on main RKE cluster using the [`openclaw`](https://github.com/serhanekicii/openclaw-helm/tree/main/charts/openclaw) Helm chart
 - [X] [Flowise Agentic Workflows](https://flowiseai.com/) — build AI agents using visual workflows
-    * Install on main RKE cluster using the [`flowise`](https://github.com/cowboysysop/charts/tree/master/charts/flowise) Helm chart
+    * Install on main RKE cluster using the [`flowise`](https://github.com/erhhung/cowboysysop-charts/tree/flowise-redis-tls) Helm chart
 - [ ] [Backstage Developer Portal](https://backstage.io/) — software catalog and developer portal
 - [ ] [SonarQube Automated Code Reviews](https://docs.sonarsource.com/sonarqube-community-build) — run static code analysis during CI/CD pipelines
     * Install on main RKE cluster using the [`sonarqube`](https://docs.sonarsource.com/sonarqube-community-build/server-installation/on-kubernetes-or-openshift/installing-helm-chart) Helm chart
@@ -232,6 +235,7 @@ ansible-vault view   $VAULTFILE
 | `valkey_pass`                     |
 | `monitoring_pass`                 |
 | `oauth2_proxy_cookie_secret`      |
+| `gitea_secret_key`                |
 | `gitlab_secrets_data.*`           |
 | `gitlab_omniauth.*`               |
 | `jenkins_slack_token`             |
@@ -519,79 +523,87 @@ however, all privileged operations using `sudo` will require the password stored
     ```
 </details>
 
-25. <details><summary>Install <strong>GitLab EE</strong> CI/CD platform to deploy local projects</summary><br/>
+25. <details><summary>Install <strong>Gitea</strong> DevOps platform to deploy local projects</summary><br/>
 
-    25.1. Import Erhhung's SSH and GPG public keys, and create the `Homelab` group  
-    25.2. Configure **Harbor** and **Slack** integrations, and access GitHub using OmniAuth  
-    25.3. Configure and deploy **Kubernetes runner** for building images using `buildah`  
-    25.4. Use [`al2023-devops`](https://github.com/erhhung/al2023-devops) as the build container and load common pre-build script  
-    25.5. Import projects from GitHub and run pipelines to build images for later installs  
-    25.6. Deploy **CI Pipelines Exporter** to export metrics and visualize them in Grafana  
+    25.1. Import Erhhung's SSH and GPG public keys, and create the `Homelab` organization  
+
+    ```bash
+    make gitea
+    ```
+
+26. <details><summary>Install <strong>GitLab EE</strong> CI/CD platform to deploy local projects</summary><br/>
+
+    26.1. Import Erhhung's SSH and GPG public keys, and create the `Homelab` group  
+    26.2. Configure **Harbor** and **Slack** integrations, and access GitHub using OmniAuth  
+    26.3. Configure and deploy **Kubernetes runner** for building images using `buildah`  
+    26.4. Use [`al2023-devops`](https://github.com/erhhung/al2023-devops) as the build container and load common pre-build script  
+    26.5. Import projects from GitHub and run pipelines to build images for later installs  
+    26.6. Deploy **CI Pipelines Exporter** to export metrics and visualize them in Grafana  
 
     ```bash
     make gitlab
     ```
 </details>
 
-26. <details><summary>Install <strong>Jenkins</strong> CI/CD platform to deploy local projects</summary><br/>
+27. <details><summary>Install <strong>Jenkins</strong> CI/CD platform to deploy local projects</summary><br/>
 
-    26.1. Configure and provision **Jenkins agent** for building images using `buildah`  
-    26.2. Install and configure popular plugins for pipeline and job output visualization  
-    26.3. Implicitly load shared library with Bash functions from Harbor in all pipelines  
-    26.4. Create pipelines from GitHub repositories  
+    27.1. Configure and provision **Jenkins agent** for building images using `buildah`  
+    27.2. Install and configure popular plugins for pipeline and job output visualization  
+    27.3. Implicitly load shared library with Bash functions from Harbor in all pipelines  
+    27.4. Create pipelines from GitHub repositories  
 
     ```bash
     make jenkins
     ```
 </details>
 
-27. <details><summary>Install <strong>Buildkite</strong> agent connected to <code>buildkite.com</code></summary><br/>
+28. <details><summary>Install <strong>Buildkite</strong> agent connected to <code>buildkite.com</code></summary><br/>
 
-    27.1. Configure agent pod spec with [`al2023-devops`](https://github.com/erhhung/al2023-devops) to build images using `buildah`  
-    27.2. Mount Git, SSH, and Harbor credentials in `checkout` and `command` containers  
-    27.3. Create YAML pipelines from GitHub repositories  
+    28.1. Configure agent pod spec with [`al2023-devops`](https://github.com/erhhung/al2023-devops) to build images using `buildah`  
+    28.2. Mount Git, SSH, and Harbor credentials in `checkout` and `command` containers  
+    28.3. Create YAML pipelines from GitHub repositories  
 
     ```bash
     make buildkite
     ```
 </details>
 
-28. <details><summary>Install <strong>Argo CD</strong> GitOps delivery in <em><strong>HA</strong></em> mode</summary><br/>
+29. <details><summary>Install <strong>Argo CD</strong> GitOps delivery in <em><strong>HA</strong></em> mode</summary><br/>
 
-    28.1. Configure Argo CD to use **Valkey** for caching  
-    28.2. Configure **GitLab** as an allowed SCM provider  
+    29.1. Configure Argo CD to use **Valkey** for caching  
+    29.2. Configure **GitLab** as an allowed SCM provider  
 
     ```bash
     make argocd
     ```
 </details>
 
-29. <details><summary>Install <strong>Ansible AWX</strong> automation platform</summary><br/>
+30. <details><summary>Install <strong>Ansible AWX</strong> automation platform</summary><br/>
 
-    29.1. Create organization and custom execution environments based on [`al2023-devops`](https://github.com/erhhung/al2023-devops)  
-    29.2. Create credentials for all homelab hosts and access tokens for GitHub and GitLab  
-    29.3. Import this project and [`homelab-xcp`](https://github.com/erhhung/homelab-xcp), and inventories from their `hosts.ini` files  
+    30.1. Create organization and custom execution environments based on [`al2023-devops`](https://github.com/erhhung/al2023-devops)  
+    30.2. Create credentials for all homelab hosts and access tokens for GitHub and GitLab  
+    30.3. Import this project and [`homelab-xcp`](https://github.com/erhhung/homelab-xcp), and inventories from their `hosts.ini` files  
 
     ```bash
     make awx
     ```
 </details>
 
-30. <details><summary>Install <strong>Metacontroller</strong> to create Operators</summary><br/>
+31. <details><summary>Install <strong>Metacontroller</strong> to create Operators</summary><br/>
 
     ```bash
     make metacontroller
     ```
 </details>
 
-31. <details><summary>Install <strong>Qdrant</strong> vector database in <em><strong>HA</strong></em> mode</summary><br/>
+32. <details><summary>Install <strong>Qdrant</strong> vector database in <em><strong>HA</strong></em> mode</summary><br/>
 
     ```bash
     make qdrant
     ```
 </details>
 
-32. <details><summary>Install <strong>SearXNG</strong> metasearch engine<br/>
+33. <details><summary>Install <strong>SearXNG</strong> metasearch engine<br/>
     &nbsp; &nbsp; Install <strong>Playwright</strong> WebSocket server</summary><br/>
 
     ```bash
@@ -599,42 +611,42 @@ however, all privileged operations using `sudo` will require the password stored
     ```
 </details>
 
-33. <details><summary>Install <strong>LiteLLM</strong> AI gateway with vendor models</summary><br/>
+34. <details><summary>Install <strong>LiteLLM</strong> AI gateway with vendor models</summary><br/>
 
     ```bash
     make litellm
     ```
 </details>
 
-34. <details><summary>Install <strong>Ollama</strong> LLM server with modest models<br/>
+35. <details><summary>Install <strong>Ollama</strong> LLM server with modest models<br/>
     &nbsp; &nbsp; Install <strong>Open WebUI</strong> AI platform with <strong>Pipelines</strong><br/>
     &nbsp; &nbsp; Install <strong>MCP OpenAPI</strong> proxy with MCP servers</summary><br/>
 
-    34.1. Add LiteLLM connection in Open WebUI to proxy OpenAI, Anthropic, and Groq models  
-    34.2. Create `Accounts` knowledge base and `Accounts` custom model that embeds that KB  
-    34.3. **NOTE**: Populate `Accounts` KB by running `make openwebui -t knowledge` separately  
-    34.4. Deploy MCP tool servers, including `time`, `memory`, `browser`, `weather`, and `lights`  
-    34.5. Define **SLOs** for HTTP success rates + latency for server, LiteLLM, Ollama, and MCPO  
+    35.1. Add LiteLLM connection in Open WebUI to proxy OpenAI, Anthropic, and Groq models  
+    35.2. Create `Accounts` knowledge base and `Accounts` custom model that embeds that KB  
+    35.3. **NOTE**: Populate `Accounts` KB by running `make openwebui -t knowledge` separately  
+    35.4. Deploy MCP tool servers, including `time`, `memory`, `browser`, `weather`, and `lights`  
+    35.5. Define **SLOs** for HTTP success rates + latency for server, LiteLLM, Ollama, and MCPO  
 
     ```bash
     make ollama openwebui
     ```
 </details>
 
-35. <details><summary>Install <strong>OpenClaw</strong> AI agent gateway with skills</summary><br/>
+36. <details><summary>Install <strong>OpenClaw</strong> AI agent gateway with skills</summary><br/>
 
-    35.1. Proxy access to primary and fallback models, as well as web search, through LiteLLM  
-    35.2. Install skills, such as `gog` and `github`, from ClawHub to enhance agent capabilities  
-    35.3. Define user and agent identities through `USER.md`, `IDENTITY.md` and `SOUL.md`  
-    35.4. Configure **Slack** messaging _(requires manual creation of `OpenClaw` Slack app)_  
-    35.5. Automatically pair pending devices (clients)  
+    36.1. Proxy access to primary and fallback models, as well as web search, through LiteLLM  
+    36.2. Install skills, such as `gog` and `github`, from ClawHub to enhance agent capabilities  
+    36.3. Define user and agent identities through `USER.md`, `IDENTITY.md` and `SOUL.md`  
+    36.4. Configure **Slack** messaging _(requires manual creation of `OpenClaw` Slack app)_  
+    36.5. Automatically pair pending devices (clients)  
 
     ```bash
     make openclaw
     ```
 </details>
 
-36. <details><summary>Install <strong>Flowise</strong> AI platform and integrations</summary><br/>
+37. <details><summary>Install <strong>Flowise</strong> AI platform and integrations</summary><br/>
 
     Current deployment uses local images in Harbor registry that were built by GitLab CI.  
     36.1. **NOTE**: Populate documents by running `make flowise -t documents` separately  

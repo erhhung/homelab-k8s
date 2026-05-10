@@ -130,7 +130,10 @@ cd "$HOME"
 ./cert.sh --exp=365 \
   erhhung erhhung@gmail.com
 
-# .key file is binary
+# .key file is binary; to convert to PEM:
+# openssl pkcs8 -inform DER -outform PEM \
+#      -nocrypt -in keycloak_db.key -out - | \
+#            sponge keycloak_db.key
 ./cert.sh --exp=365 \
           --pk8="-outform DER" \
           --out=keycloak_db \
@@ -248,6 +251,16 @@ cd "$HOME"
   istio.fourteeners.local
 
 ./cert.sh --exp=365 \
+          --out=gitea_db \
+  gitea gitea@fourteeners.local
+
+./cert.sh --exp=365 \
+     gitea.fourteeners.local \
+       git.fourteeners.local \
+  \*.gitea.svc.cluster.local \
+  \*.gitea.svc
+
+./cert.sh --exp=365 \
           --out=gitlab_db \
   gitlab gitlab@fourteeners.local
 
@@ -262,6 +275,9 @@ cd "$HOME"
   \*.gitlab-gitaly-default.gitlab.svc \
                         \*.gitlab.svc.cluster.local \
                         \*.gitlab.svc
+
+./cert.sh --exp=365 \
+  jenkins.fourteeners.local
 
 ./cert.sh --exp=365 \
      argocd \
