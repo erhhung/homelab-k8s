@@ -439,7 +439,9 @@
 
     - name: Get list of paired nodes
       kubernetes.core.k8s_exec:
-        command: openclaw nodes list --json
+        # remove non-JSON lines because CLI isn't doing it:
+        # https://github.com/openclaw/openclaw/issues/84293
+        command: bash -c "openclaw nodes list --json 2> /dev/null | sed '1,/^{/ { /^{/!d; }'"
       register: openclaw_nodes
       changed_when: false
 

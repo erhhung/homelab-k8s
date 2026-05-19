@@ -7,8 +7,8 @@ openclaw_cron_jobs:
     # description: optional
     cron: 0 8 * * *
     # tz: $TZ default
-    # session=isolated requires message;
-    # session=main requires system_event
+    # session=isolated requires `message`;
+    # session=main requires `system_event`
     session: isolated
     message: >-
       Check Gmail for notifications from GitHub in the past 24 hours.
@@ -17,6 +17,10 @@ openclaw_cron_jobs:
       All gog CLI commands must be executed using the exec tool with
       host="gateway", and the entire command must begin with `gog`--
       don't prefix the command with environment variable assignments.
+      Use the following paths and commands to get you started:
+      - Workspace skills: `/home/node/.openclaw/workspace/skills`
+      - Get gog skill description: `cat /app/skills/gog/SKILL.md`
+      - Get Gmail messages: `gog gmail messages search 'from:github.com newer_than:1d' --all --include-body --json --results-only`
     # if announce=true Ansible task will additionally append
     # `--channel` and `--to` to send the report via Slack DM
     announce: true

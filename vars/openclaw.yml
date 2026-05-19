@@ -50,13 +50,13 @@ openclaw_common_env:
 
 # https://github.com/serhanekicii/openclaw-helm/tree/main/charts/openclaw
 openclaw_chart_repo_url: https://serhanekicii.github.io/openclaw-helm
-openclaw_chart_version: "1.5.31"
+openclaw_chart_version: "1.5.37"
 openclaw_release_name: openclaw
 
 # comment out `openclaw_app_version` below
 # to let playbook get chart's `appVersion`
 # https://github.com/openclaw/openclaw/pkgs/container/openclaw/versions?filters%5Bversion_type%5D=tagged
-openclaw_app_version: "2026.5.2"
+openclaw_app_version: "2026.5.18"
 
 # https://github.com/serhanekicii/openclaw-helm/tree/main/charts/openclaw/values.yaml
 openclaw_chart_values:
@@ -516,10 +516,15 @@ openclaw_chart_values:
 
 # {id,[setup],package,version,[env]}
 openclaw_plugins:
+  # https://clawhub.ai/plugins/@openclaw/slack
+  - id: slack
+    package: "@openclaw/slack"
+    version: "2026.5.18"
+
   # https://github.com/Martian-Engineering/lossless-claw
   - id: lossless-claw
     package: "@martian-engineering/lossless-claw"
-    version: "0.5.2"
+    version: "0.11.1"
 
   # https://github.com/erhhung/openclaw-searxng-search
   - id: searxng-search
@@ -555,8 +560,8 @@ openclaw_skills:
 
       # this wrapper script is necessary because OpenClaw host-env
       # security policy blacklists XDG_CONFIG_HOME, and having the
-      # agent run `XDG_CONFIG_HOME="$OPENCLAW_HOME/config" gog ...`
-      # won't work with `gog` in the allowlist because the env var
+      # agent run XDG_CONFIG_HOME="\$OPENCLAW_HOME/config" gog ...
+      # won't work with 'gog' in the allowlist because the env var
       # assignment becomes argv[0] and doesn't match an executable:
       # https://github.com/openclaw/openclaw/tree/main/src/infra/host-env-security-policy.json
 

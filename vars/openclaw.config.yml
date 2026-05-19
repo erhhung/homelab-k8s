@@ -229,6 +229,12 @@ openclaw_config:
           enabled: true
           requireMention: true
 
+      # https://docs.openclaw.ai/channels/slack#exec-approvals-in-slack
+      execApprovals:
+        enabled: true
+        approvers: *slack-allow-from
+        target: both # dm|channel|both
+
       allowBots: false # prevents reply loops
       # reply into threads? `first` will reuse a single thread
       # per channel; `all` will create a thread per triggering
