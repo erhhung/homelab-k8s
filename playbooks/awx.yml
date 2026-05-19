@@ -94,9 +94,9 @@
         post_wait: 30 # wait for reconciliation
 
         extras: # adopt extra resources into Helm release
-          - cert-manager.io/v1 Certificate {{ awx_secrets['ingress']        }}
-          - cert-manager.io/v1 Certificate {{ awx_secrets['database']       }}
-          - cert-manager.io/v1 Certificate {{ monitoring_secrets['scraper'] }}
+          - cert-manager.io/v1 Certificate {{        awx_secrets['ingress']  }}
+          - cert-manager.io/v1 Certificate {{        awx_secrets['database'] }}
+          - cert-manager.io/v1 Certificate {{ monitoring_secrets['scraper']  }}
           - v1 Secret {{ awx_secrets['gitlab']  }} ? # optional (created later)
           - v1 Secret {{ awx_secrets['scraper'] }} ? # optional (created later)
           - v1 Secret    awx-receptor-ca           ? # created by awx-operator

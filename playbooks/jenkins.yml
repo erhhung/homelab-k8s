@@ -117,8 +117,8 @@
           'ICLOUD_PASSWORD':  icloud_smtp.passwords['jenkins'],
           'HARBOR_PASSWORD':  jenkins_harbor_pass,
           'ERHHUNG_SSH_KEY':  ssh_key,
-          'GITHUB_TOKEN':     github_access_token,
           'GITEA_TOKEN':      gitea_tokens['erhhung-repos'],
+          'GITHUB_TOKEN':     github_access_token,
           'GITLAB_TOKEN':     gitlab_pats['repos'],
           'SLACK_TOKEN':      jenkins_slack_token,
           } }}"

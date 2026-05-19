@@ -287,7 +287,7 @@ argocd_chart_values:
 
   server:
     # https://github.com/argoproj/argo-helm/tree/main/charts/argo-cd#ha-mode-without-autoscaling
-    replicas: 2
+    replicas: 1
 
     # extra args plus Redis options:
     # https://argo-cd.readthedocs.io/en/stable/operator-manual/server-commands/argocd-server
@@ -338,7 +338,6 @@ argocd_chart_values:
     # this metrics config is shared by all components
     metrics: &metrics
       enabled: true
-
       serviceMonitor:
         enabled: true
         additionalLabels: "{{ monitoring_selector_labels }}"
@@ -366,7 +365,7 @@ argocd_chart_values:
     metrics: *metrics
 
   applicationSet:
-    replicas: 2
+    replicas: 1
 
     # enabling the allowAnyNamespace feature requires
     # allowed.scm.providers setting in configs.params
@@ -375,7 +374,7 @@ argocd_chart_values:
     metrics: *metrics
 
   repoServer:
-    replicas: 2
+    replicas: 1
 
     # extra args plus Redis options:
     # https://argo-cd.readthedocs.io/en/stable/operator-manual/server-commands/argocd-repo-server

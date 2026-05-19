@@ -134,6 +134,12 @@ harbor_users:
     role: maintainer # project: library
     # comment: optional
 
+  - real_name: Gitea Actions
+    email: gitea@{{ homelab_domain  }}
+    username: "{{ gitea_harbor_user }}"
+    password: "{{ gitea_harbor_pass }}"
+    role: maintainer # project: library
+
   - real_name: GitLab CI/CD
     email: gitlab@{{ homelab_domain  }}
     username: "{{ gitlab_harbor_user }}"

@@ -1,21 +1,41 @@
 # create ServiceAccount with cluster-admin role
-# so Job pods can deploy into other namespaces
-{% set sa_name = buildkite_release_name ~'-runner' %}
+# so Job pods  can deploy into other namespaces
+{% set app_name = buildkite_release_name ~'-runner' %}
 ---
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: {{ sa_name }}
+  name: {{ app_name }}
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: {{ sa_name }}
+  name: {{ app_name }}
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
   name: cluster-admin
 subjects:
   - kind: ServiceAccount
-    name: {{ sa_name }}
+    name: {{ app_name }}
     namespace: {{ buildkite_namespace }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ buildkite_configmaps['scripts'] }}
+data:
+  ci-utils.sh: |
+    {% set script = files_dir ~ '/buildkite/ciutils.sh' -%}
+    {{ lookup('ansible.builtin.file', script, rstrip=false) | indent(4) }}
+
+  # this script will be sourced via `$BASH_ENV` defined
+  # in the agent's `container-N`, but unset immediately
+  # to prevent repeat execution in subshell environment
+  step-init.sh: |
+    unset BASH_ENV
+    . /ci/scripts/ci-utils.sh
+    sys_info
+    env_vars
+    identities
+    section_end 'End of step init script'

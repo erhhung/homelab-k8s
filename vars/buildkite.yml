@@ -23,6 +23,7 @@ buildkite_secrets:
   env-vars: buildkite-command-env
 
 buildkite_configmaps:
+  # templates/buildkite/extras.yaml.j2
   scripts: buildkite-command-scripts
 
 buildkite_harbor_user: buildkite
@@ -136,8 +137,7 @@ buildkite_chart_values:
           image: "{{ harbor_container_registry }}/library/al2023-devops:latest"
           imagePullPolicy: Always
 
-          # enable building OCI
-          # images using Buildah
+          # allow building OCI images using Buildah
           securityContext:
             runAsUser: 0
             runAsGroup: 0
@@ -145,7 +145,7 @@ buildkite_chart_values:
               type: Localhost
               localhostProfile: buildah
 
-          # use same request settings as
+          # use same resource requests as
           # GitLab runner build container
           resources:
             requests:

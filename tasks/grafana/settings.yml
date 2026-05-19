@@ -28,7 +28,7 @@
       profile: "{{ api_base }}"
       preferences: "{{ api_base }}/preferences"
       # not looping on help_flags
-    uri_params: &uri_params
+    uri_params: &uri-params
       url_username: "{{ username }}"
       url_password: "{{ password }}"
       force_basic_auth: true
@@ -37,7 +37,7 @@
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/uri_module.html
       ansible.builtin.uri:
         url: "{{ item.url }}"
-        <<: *uri_params
+        <<: *uri-params
         # ignore if Grafana
         # not installed yet
         status_code: [200, -1]
@@ -80,7 +80,7 @@
         needs_apply: "{{ lookup('vars', 'apply_'~ item.key, default=false) }}"
       ansible.builtin.uri:
         url: "{{ item.url }}"
-        <<: *uri_params
+        <<: *uri-params
         method: PUT
         body_format: json
         body: "{{ settings[item.key] }}"
@@ -100,7 +100,7 @@
         flags: "{{ settings['help_flags'] | default([]) }}"
       ansible.builtin.uri:
         url: "{{ api_base }}/helpflags/{{ item }}"
-        <<: *uri_params
+        <<: *uri-params
         method: PUT
         # no body needed
       loop: "{{ flags }}"

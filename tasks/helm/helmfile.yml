@@ -140,8 +140,11 @@
     # ignored because Rancher adds them to Deployments
     ignore_always:
       - "annotations:"
+      - volume.*\.kubernetes\.io/
+      - pv\.kubernetes\.io/
       - field\.cattle\.io/
       - wave\.pusher\.com/
+
     ignore_lines: "{{ (ignore_always + [ignore.lines | default([])]) | flatten | unique }}"
     ignore_kinds: "{{ [ignore.kinds  | default([])]  | flatten }}" # `helm diff --suppress`
 

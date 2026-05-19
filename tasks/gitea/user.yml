@@ -22,7 +22,9 @@
 # Secret named {{ gitea_secrets['tokens'] }}
 ---
 - name: Create/update user account
+  delegate_to: localhost
   vars:
+    # https://docs.gitea.com/development/api-usage#authentication
     uri_auth: &uri-auth
       url_username: "{{ gitea_users['admin'].username }}"
       url_password: "{{ gitea_users['admin'].password }}"

@@ -9,8 +9,9 @@
         platform: "{{ platforms | default([local_machine_arch]) |
           map('regex_replace', '^', 'linux/') }}"
         dockerfile: "{{ dockerfile | default(omit) }}"
-        path: "{{ context_path }}"
+        args: "{{ build_args       | default(omit) }}"
         name: "{{ local_name   }}"
+        path: "{{ context_path }}"
         # no idempotency
         rebuild: always
         pull: true

@@ -15,7 +15,7 @@
   become: false
   vars:
     ansible_python_interpreter: "{{ local_python_interpreter }}"
-    uri_params: &uri_params
+    uri_params: &uri-params
       url: "{{ kibana_api_url }}/opensearch-dashboards/settings"
       url_username: "{{ username }}"
       url_password: "{{ password }}"
@@ -24,7 +24,7 @@
     - name: Get existing user settings
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/uri_module.html
       ansible.builtin.uri:
-        <<: *uri_params
+        <<: *uri-params
         # ignore if Dashboards
         # is not installed yet
         status_code: [200, -1]
@@ -50,7 +50,7 @@
 
     - name: Apply custom user settings
       ansible.builtin.uri:
-        <<: *uri_params
+        <<: *uri-params
         method: POST
         headers:
           osd-xsrf: "true"

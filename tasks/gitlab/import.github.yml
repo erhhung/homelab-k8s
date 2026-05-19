@@ -6,7 +6,7 @@
 #   gitlab_token    <required>  write_repository PAT
 #   source_repo     <required> "{owner}/{repository}"
 #   target_repo     <required> "{namespace}/{project}"
-#   project_avatar  [optional]  {avatar.png}
+#   avatar          [optional]  {avatar.png}
 #   default_branch  [optional]  default=main
 #   run_pipeline    [optional]  default=false
 #   pipeline_inputs [optional]  dict of inputs
@@ -51,9 +51,9 @@
       vars:
         github_proj_id: "{{ source_info.json.id }}"
       ansible.builtin.uri:
+        method: POST
         # https://docs.gitlab.com/api/import#import-repository-from-github
         url: "{{ gitlab_api_url }}/import/github"
-        method: POST
         headers: "{{ auth_headers }}"
         body_format: json
         body:
@@ -123,12 +123,10 @@
           - ["-X", "PUT"]
           - ["-H", "PRIVATE-TOKEN: {{ gitlab_token }}"]
           - ["-F", "default_branch={{  def_branch  }}"]
-          - >-
-            {{ ['-F', 'avatar=@' ~ icons_dir ~'/'~ project_avatar]
-               if project_avatar is defined and
-                  project_avatar is truthy else [] }}
           # https://docs.gitlab.com/api/projects#upload-a-project-avatar
-          - "{{ gitlab_api_url }}/projects/{{ gitlab_proj_id }}"
+          - "{{ ['-F', 'avatar=@' ~ avatar]
+            if avatar is defined and avatar is truthy else [] }}"
+          - "{{ gitlab_api_url  }}/projects/{{ gitlab_proj_id }}"
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/command_module.html
       ansible.builtin.command:
         argv: "{{ argv | flatten }}"
@@ -136,46 +134,46 @@
       changed_when: true
 
     - name: Run default branch pipeline
-      ansible.builtin.uri:
-        # https://docs.gitlab.com/api/pipelines#create-a-new-pipeline
-        url: "{{ gitlab_api_url }}/projects/{{ gitlab_proj_id }}/pipeline?ref={{ def_branch }}"
-        method: POST
-        headers: "{{ auth_headers }}"
-        body_format: json
-        body:
-          inputs: |
-            {{ pipeline_inputs if pipeline_inputs is defined and
-                                  pipeline_inputs is truthy else omit }}
-        status_code: [200, 201]
       when:
-        - needs_import
         - run_pipeline is defined
         - run_pipeline is truthy
-      changed_when: true
+      block:
+        - name: Run default branch pipeline
+          ansible.builtin.uri:
+            method: POST
+            # https://docs.gitlab.com/api/pipelines#create-a-new-pipeline
+            url: "{{ gitlab_api_url }}/projects/{{ gitlab_proj_id }}/pipeline?ref={{ def_branch }}"
+            headers: "{{ auth_headers }}"
+            body_format: json
+            body:
+              inputs: |
+                {{ pipeline_inputs if pipeline_inputs is defined and
+                                      pipeline_inputs is truthy else omit }}
+            status_code: [200, 201]
+          when: needs_import
+          changed_when: true
 
-    - name: Get status of pipeline run
-      ansible.builtin.uri:
-        # https://docs.gitlab.com/api/pipelines#retrieve-the-latest-pipeline
-        url: "{{ gitlab_api_url }}/projects/{{ gitlab_proj_id }}/pipelines/latest"
-        headers: "{{ auth_headers }}"
-        status_code: [200, 403]
-      register: pipeline_run
-      when:
-        - not needs_import
-        - run_pipeline is defined
-        - run_pipeline is truthy
+        - name: Get status of pipeline run
+          ansible.builtin.uri:
+            # https://docs.gitlab.com/api/pipelines#retrieve-the-latest-pipeline
+            url: "{{ gitlab_api_url }}/projects/{{ gitlab_proj_id }}/pipelines/latest"
+            headers: "{{ auth_headers }}"
+            # returns 403 if no pipeline has been run
+            status_code: [200, 403]
+          register: pipeline_run
+          when: not needs_import
 
-    - name: Retry failed pipeline jobs
-      vars:
-        project_id: "{{  pipeline_run.json.project_id }}"
-        pipeline_id: "{{ pipeline_run.json.id }}"
-      ansible.builtin.uri:
-        # https://docs.gitlab.com/api/pipelines#retry-jobs-in-a-pipeline
-        url: "{{ gitlab_api_url }}/projects/{{ project_id }}/pipelines/{{ pipeline_id }}/retry"
-        method: POST
-        headers: "{{ auth_headers }}"
-        status_code: [200, 201]
-      when:
-        - pipeline_run.status | default(403) == 200
-        - pipeline_run.json.status == 'failed'
-      changed_when: true
+        - name: Retry failed pipeline jobs
+          vars:
+            project_id: "{{  pipeline_run.json.project_id }}"
+            pipeline_id: "{{ pipeline_run.json.id }}"
+          ansible.builtin.uri:
+            method: POST
+            # https://docs.gitlab.com/api/pipelines#retry-jobs-in-a-pipeline
+            url: "{{ gitlab_api_url }}/projects/{{ project_id }}/pipelines/{{ pipeline_id }}/retry"
+            headers: "{{ auth_headers }}"
+            status_code: [200, 201]
+          when:
+            - pipeline_run.status | default(403) == 200
+            - pipeline_run.json.status == 'failed'
+          changed_when: true

@@ -222,6 +222,17 @@
                         resourceRequest: false
                         path: /metrics
 
+            - apiVersion: apps/v1
+              kind: StatefulSet
+              metadata:
+                name: "{{ monitoring_release_name }}-grafana"
+                namespace: "{{ monitoring_namespace }}"
+              spec:
+                revisionHistoryLimit: 2
+                persistentVolumeClaimRetentionPolicy:
+                  whenScaled: Retain
+                  whenDeleted: Delete
+
           json_patches:
             # Helm chart doesn't currently allow specifying
             # basicAuth in .prometheus.thanosServiceMonitor

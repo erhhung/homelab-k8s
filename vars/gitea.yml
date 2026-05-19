@@ -42,6 +42,13 @@ gitea_secrets:
   config: gitea-config-secrets
   signing: gitea-signing-key
   tokens: gitea-access-tokens
+  runner: gitea-runner-token
+  # env vars like CI_REGISTRY
+  dotenv: gitea-runner-dotenv
+
+gitea_configmaps:
+  # templates/gitea/runner/extras.yaml.j2
+  scripts: gitea-runner-scripts
 
 gitea_db_user: gitea
 gitea_db_name: gitea
@@ -59,6 +66,9 @@ gitea_os_conn_str: >-
 # https://github.com/go-gitea/gitea/tree/main/modules/nosql/manager_redis.go#L98
 gitea_vk_conn_str: rediss+cluster://:{{ gitea_vk_pass }}@{{ valkey_node_eps | join(',') }}
 
+gitea_harbor_user: gitea
+gitea_harbor_pass: "{{ harbor_admin_pass }}"
+
 # use modified Helm chart in our forked repo on
 # branch fix-env-ini-encoding to support - and .
 # chars in config setting keys:
@@ -71,7 +81,7 @@ gitea_chart_repo_url: git+https://gitea.com/erhhung/helm-gitea?ref=fix-env-ini-e
 # comment out `gitea_app_version` below
 # to let playbook get chart `appVersion`
 # https://github.com/go-gitea/gitea/pkgs/container/gitea/versions?filters%5Bversion_type%5D=tagged
-gitea_app_version: "1.25.5"
+gitea_app_version: "1.26.1"
 
 # https://gitea.com/gitea/helm-gitea
 gitea_chart_version: "12.5.3"
@@ -127,6 +137,7 @@ gitea_chart_values:
 
       # https://docs.gitea.com/administration/config-cheat-sheet#database-database
       database:
+        LOG_SQL: "false"
         DB_TYPE: postgres # mysql|postgres|mssql|sqlite3
         HOST: "{{ pgpool_service_host }}"
         NAME: "{{ gitea_db_name }}"
@@ -197,6 +208,12 @@ gitea_chart_values:
         # default: actions_artifacts/
         MINIO_BASE_PATH: artifacts/
 
+      # https://docs.gitea.com/administration/config-cheat-sheet#webhook-webhook
+      webhook:
+        QUEUE_LENGTH: 100
+        DELIVER_TIMEOUT: 5 # seconds
+        ALLOWED_HOST_LIST: hooks.slack.com
+
       # https://docs.gitea.com/administration/config-cheat-sheet#mailer-mailer
       mailer:
         ENABLED: "true"
@@ -230,13 +247,15 @@ gitea_chart_values:
         LFS_START_SERVER: "true"
 
       # https://docs.gitea.com/administration/config-cheat-sheet#log-log
+      # also see `database.LOG_SQL` setting
       log:
+        MODE: console
+        LEVEL: Info # Trace|Debug|Info|Warn|Error|Fatal
         logger.router.MODE: console-warn
         logger.access.MODE: console-warn
       # https://docs.gitea.com/administration/logging-config#disable-router-logs-and-record-some-access-logs-to-file
       log.console-warn:
-        MODE: console
-        LEVEL: Warn # Trace|Debug|Info|Warn|Error|Fatal
+        LEVEL: Warn
 
       # https://docs.gitea.com/administration/config-cheat-sheet#security-security
       security:
@@ -301,6 +320,20 @@ gitea_chart_values:
         # match signer identity
         user.name: Gitea Server
         user.email: gitea@{{ homelab_domain }}
+
+      # https://docs.gitea.com/administration/config-cheat-sheet#actions-actions
+      actions:
+        ENABLED: "true"
+        # will use the first workflow dir found (in order)
+        WORKFLOW_DIRS: .gitea/workflows,.github/workflows
+        LOG_RETENTION_DAYS: "21"
+        ARTIFACT_RETENTION_DAYS: "7"
+
+      # https://docs.gitea.com/administration/config-cheat-sheet#metrics-metrics
+      metrics:
+        ENABLED: "true"
+        ENABLED_ISSUE_BY_REPOSITORY: "true"
+        ENABLED_ISSUE_BY_LABEL: "true"
 
     metrics:
       enabled: true
@@ -625,3 +658,147 @@ gitea_chart_values:
       nginx.ingress.kubernetes.io/proxy-body-size: 10m
     # https://docs.ansible.com/ansible/latest/collections/community/general/dict_kv_filter.html
     hosts: "{{ gitea_fqdns | map('community.general.dict_kv', 'host') }}"
+
+# =================================== Gitea Actions ===================================
+
+# use yet-to-be-released Helm chart in official repo
+# containing fix for `storageClassName` template bug
+actions_chart_repo_url: git+https://gitea.com/gitea/helm-actions?ref=main
+# actions_chart_repo_url: https://dl.gitea.com/charts
+
+# https://gitea.com/gitea/helm-actions
+actions_chart_version: "0.1.0"
+actions_release_name: actions
+
+actions_app_name: "{{ actions_release_name }}-act-runner"
+actions_metrics_port: 9101
+
+actions_runner_image:
+  registry: "{{ harbor_container_registry }}"
+  repository: library/gitea-runner
+  # build custom image using this `gitea-runner` image:
+  # `skopeo list-tags docker://docker.gitea.com/runner`
+  tag: "1.0.4"
+
+# https://gitea.com/gitea/helm-actions/src/branch/main/values.yaml
+actions_chart_values:
+  enabled: true
+
+  giteaRootURL: "{{ gitea_service_url }}"
+  existingSecret: "{{ gitea_secrets['runner'] }}"
+  existingSecretKey: token
+
+  global:
+    storageClass: "{{ storage_classes['default'] }}"
+
+  init:
+    image:
+      pullPolicy: IfNotPresent
+      repository: busybox
+      tag: latest
+
+  statefulset:
+    replicas: 1
+    timezone: "{{ system_time_zone }}"
+
+    affinity:
+      nodeAffinity:
+        # preferredDuringSchedulingIgnoredDuringExecution:
+        #   - weight: 100
+        #     preference:
+        #       matchExpressions:
+        #         - key: node-role.kubernetes.io/runner
+        #           operator: Exists
+        requiredDuringSchedulingIgnoredDuringExecution:
+          nodeSelectorTerms:
+            - matchExpressions:
+                # label defined in vars/kubernetes.yml
+                - key: node-role.kubernetes.io/runner
+                  operator: Exists
+
+    # service account with cluster admin access
+    # see templates/gitea/runner/extras.yaml.j2
+    serviceAccountName: "{{ actions_app_name }}"
+
+    # since the runner pod also hosts THE build container and
+    # is long-running (unlike the GitLab runner with a proper
+    # Kubernetes executor that launches and terminates pods),
+    # we shouldn't request full resources for low utilization
+    resources:
+      requests:
+        cpu: 50m
+        memory: 512Mi
+
+    # StatefulSet persistentVolumeClaimRetentionPolicy
+    # whenDeleted=Delete will be patched by Helmfile
+    persistence:
+      size: 4Gi
+
+    actRunner:
+      registry: "{{   actions_runner_image.registry }}"
+      repository: "{{ actions_runner_image.repository }}"
+      tag: "{{        actions_runner_image.tag }}"
+      pullPolicy: IfNotPresent
+
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/template_lookup.html
+      config: "{{ lookup('ansible.builtin.template',
+        templates_dir ~ '/gitea/runner/config.yaml.j2') }}"
+
+      extraVolumeMounts:
+        - name: certs
+          # custom runner image entrypoint script
+          # will invoke `update-ca-trust` as root
+          mountPath: /etc/pki/ca-trust/source/anchors/ca.crt
+          subPath: ca.crt
+          readOnly: true
+        - name: dotenv
+          # see `runner.env_file` in runner config
+          mountPath: /var/run/secrets/environment
+          readOnly: true
+        - &certs-mount
+          name: certs
+          mountPath: /tls/certs/ca.crt
+          subPath: ca.crt
+          readOnly: true
+        - &scripts-mount
+          name: scripts
+          mountPath: /ci/scripts
+          readOnly: true
+
+    # `dind` is implemented as sidecar container via `initContainers`:
+    # https://kubernetes.io/docs/concepts/workloads/pods/sidecar-containers
+    dind:
+      rootless: false
+
+      extraVolumeMounts:
+        # path will be passed through to job
+        # container via Docker bind mount so
+        # step-init.sh can call `init_certs`
+        - *certs-mount
+        - *scripts-mount
+
+    extraVolumes:
+      - name: certs
+        secret:
+          secretName: "{{ gitea_secrets['ingress'] }}"
+          defaultMode: 416 # "0640"
+      - name: dotenv
+        secret:
+          secretName: "{{ gitea_secrets['dotenv'] }}"
+          defaultMode: 416 # "0640"
+      - name: scripts
+        configMap:
+          name: "{{ gitea_configmaps['scripts'] }}"
+          defaultMode: 493 # "0755"
+
+# https://grafana.com/grafana/dashboards/?search=Gitea&dataSource=prometheus
+gitea_grafana_dashboards:
+  # https://grafana.com/grafana/dashboards/17802-gitea-dashbaord
+  - title: Gitea Dashboard
+    gnet_id: 17802
+    tags: ["-prometheus"]
+    jq_patches:
+      - >-
+        walk(if type=="string" then
+          gsub("job=~?\"gitea\""; "job=~\"gitea-http\"")
+          else . end)

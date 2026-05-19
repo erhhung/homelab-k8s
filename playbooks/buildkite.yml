@@ -136,41 +136,13 @@
         secret_name: "{{ buildkite_secrets['env-vars'] }}"
         secret_data:
           # https://www.gnu.org/software/bash/manual/html_node/Bash-Startup-Files.html#Invoked-non_002dinteractively
-          BASH_ENV: /ci/scripts/pre-build.sh
+          BASH_ENV: /ci/scripts/step-init.sh # templates/buildkite/extras.yaml.j2
 
           CI_REGISTRY: "{{ harbor_url }}"
           CI_REGISTRY_PATH: "{{ ci_reg_path }}"
           CI_REGISTRY_USER: "{{ buildkite_harbor_user }}"
           CI_REGISTRY_PASSWORD: "{{ buildkite_harbor_pass }}"
       ansible.builtin.include_tasks: "{{ tasks_dir }}/k8s/secrets/generic.yml"
-
-    # CI scripts used by command containers
-    - name: Create command scripts ConfigMap
-      # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_module.html
-      kubernetes.core.k8s:
-        kubeconfig: "{{ kubeconfig }}"
-        definition:
-          apiVersion: v1
-          kind: ConfigMap
-          metadata:
-            name: "{{ buildkite_configmaps['scripts'] }}"
-            namespace: "{{ buildkite_namespace }}"
-          data:
-            ci-utils.sh: "{{ lookup('ansible.builtin.file',
-              files_dir ~ '/buildkite/ciutils.sh', rstrip=false) }}"
-            # this script will be sourced via `$BASH_ENV` defined
-            # in the agent's `container-N`, but unset immediately
-            # to prevent repeat execution in subshell environment
-            pre-build.sh: |
-              unset BASH_ENV
-              . /ci/scripts/ci-utils.sh
-              sys_info
-              env_vars
-              identities
-              section_end 'End of pre-build script'
-        validate:
-          fail_on_error: true
-        state: present
 
     - name: Install Buildkite Agent Helm chart
       vars:
@@ -222,11 +194,10 @@
               {% endif %}
 
         extras: # adopt extra resources into Helm release
-          - v1 Secret    {{ buildkite_secrets['ca-certs']   }}
-          - v1 Secret    {{ buildkite_secrets['ssh-creds']  }}
-          - v1 Secret    {{ buildkite_secrets['git-creds']  }}
-          - v1 Secret    {{ buildkite_secrets['env-vars']   }}
-          - v1 ConfigMap {{ buildkite_configmaps['scripts'] }}
+          - v1 Secret {{ buildkite_secrets['ca-certs']  }}
+          - v1 Secret {{ buildkite_secrets['ssh-creds'] }}
+          - v1 Secret {{ buildkite_secrets['git-creds'] }}
+          - v1 Secret {{ buildkite_secrets['env-vars']  }}
           # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/from_yaml_all_filter.html
           - "{{ extra_objs | from_yaml_all }}"
       ansible.builtin.include_tasks: "{{ tasks_dir }}/helm/helmfile.yml"
@@ -241,10 +212,10 @@
   tasks:
     - name: Create/update Buildkite pipeline
       vars:
-        pipeline_name: "{{  item.name }}"
-        pipeline_slug: "{{  item.slug | default(none) }}"
+        pipeline_name: "{{  item.name     }}"
+        pipeline_slug: "{{  item.slug     }}"
         repository_url: "{{ item.repo_url }}"
-        default_branch: "{{ item.default_branch | default(none) }}"
+        default_branch: "{{ item.default_branch }}"
       ansible.builtin.include_tasks: "{{ tasks_dir }}/buildkite/pipeline.yml"
       loop: "{{ buildkite_pipelines }}"
       loop_control:

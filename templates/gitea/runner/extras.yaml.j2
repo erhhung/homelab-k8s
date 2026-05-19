@@ -1,0 +1,84 @@
+# create ServiceAccount with cluster-admin role so
+# host-mode jobs  can deploy into other namespaces
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ actions_app_name }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ actions_app_name }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-admin
+subjects:
+  - kind: ServiceAccount
+    name: {{ actions_app_name }}
+    namespace: {{ gitea_namespace }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ gitea_configmaps['scripts'] }}
+data:
+  ci-utils.sh: |
+    {% set script = files_dir ~ '/gitea/runner/ciutils.sh' -%}
+    {{ lookup('ansible.builtin.file', script, rstrip=false) | indent(4) }}
+
+  # this script  will be sourced via `$BASH_ENV` defined in
+  # the runner config for all job containers, including the
+  # runner container in host mode, but unset immediately to
+  # prevent repeat execution in subshell environment
+  step-init.sh: |
+    unset BASH_ENV
+    . /ci/scripts/ci-utils.sh
+    if [ ! "$CI_JOB_INITIALIZED" ]; then
+      export_env CI_JOB_INITIALIZED true
+      init_certs
+      sys_info
+      env_vars
+      identities
+    fi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ actions_app_name }}
+  labels:
+    app: {{     actions_app_name    }}
+    version: {{ actions_app_version }}
+    app.kubernetes.io/name: {{     actions_app_name     }}
+    app.kubernetes.io/version: {{  actions_app_version  }}
+    app.kubernetes.io/instance: {{ actions_release_name }}
+spec:
+  type: ClusterIP
+  ports:
+    - name: metrics
+      port: {{ actions_metrics_port }}
+      targetPort: metrics
+      protocol: TCP
+  selector:
+    app.kubernetes.io/name: {{ actions_app_name }}
+    app.kubernetes.io/instance: {{ actions_release_name }}
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ actions_app_name }}
+  labels: {{ monitoring_selector_labels }}
+spec:
+  jobLabel: {{ actions_app_name }}
+  namespaceSelector:
+    matchNames:
+      - {{ gitea_namespace }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ actions_app_name }}
+      app.kubernetes.io/instance: {{ actions_release_name }}
+  endpoints:
+    - port: metrics
+      path: /metrics
+      interval: 30s

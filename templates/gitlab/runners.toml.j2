@@ -18,10 +18,10 @@
   # see: files/gitlab/ciutils.sh
   pre_build_script = '''
     . /ci/scripts/ci-utils.sh
+    init_certs
     sys_info
     env_vars
     identities
-    init_certs
   '''
   # build log size limit in KiB
   output_limit = 10240 # 10 MiB

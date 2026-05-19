@@ -1,0 +1,64 @@
+# create or update repo/user/org/system webhook
+#
+# pass the following vars:
+#   level     <required> repo|user|org|system
+#   api_base  <required> e.g. https://.../orgs/:org
+#   api_auth  <required> {url_username,url_password}
+#   hook:     <required> webhook spec
+#     type    <required> service type
+#     name    <required> webhook name
+#     events  <required> trigger events
+#     config: <required> webhook config
+#       url   <required> webhook URL
+#       ...   [optional] type-specific
+#     filter  [optional] branch filter
+#   existing  <required> existing hook
+#                        0/1-item list
+---
+- name: Create/update {{ hook.type }} webhook
+  vars:
+    uri_auth: &uri-auth
+      url_username: "{{ api_auth.url_username }}"
+      url_password: "{{ api_auth.url_password }}"
+      force_basic_auth: true
+    def_config:
+      content_type: "{{ hook.config.content_type | default('json') }}"
+    desired: # PATCH request body
+      name: "{{   hook.name   }}"
+      events: "{{ hook.events }}"
+      config: "{{ hook.config | combine(def_config) }}"
+      branch_filter: "{{ hook.filter | default('*') }}"
+      active: true # default=false
+  block:
+    # https://gitea.fourteeners.local/api/swagger#/organization/orgCreateHook
+    - name: Create {{ hook.type }} {{ level }} webhook
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/uri_module.html
+      ansible.builtin.uri:
+        <<: *uri-auth
+        method: POST
+        url: "{{ api_base }}/hooks"
+        body_format: json
+        body: "{{ {'type': hook.type} | combine(desired) }}"
+        status_code: 201
+      when: existing is falsy
+      changed_when: true
+
+    # https://gitea.fourteeners.local/api/swagger#/organization/orgEditHook
+    - name: Update {{ hook.type }} {{ level }} webhook
+      vars:
+        existing_: |
+          {# https://docs.ansible.com/ansible/latest/collections/community/general/keep_keys_filter.html #}
+          {% set hook   =   existing    | community.general.keep_keys(desired.keys())        | first %}
+          {% set config = [hook.config] | community.general.keep_keys(desired.config.keys()) | first %}
+          {% set   _    =  hook.update({'config': config}) %}
+          {{ hook }}
+      ansible.builtin.uri:
+        <<: *uri-auth
+        method: PATCH
+        url: "{{ api_base }}/hooks/{{ existing[0].id }}"
+        body_format: json
+        body: "{{ desired }}"
+      when:
+        - existing  is truthy
+        - existing_ != desired
+      changed_when: true

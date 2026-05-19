@@ -10,7 +10,7 @@
 #   praefect_ready: true/false
 ---
 - name: Wait until Praefect is ready
-  become: false
+  delegate_to: "{{ rke_control_plane_host }}"
   vars:
     # required kubernetes>=24.2 package only in user virtualenv
     ansible_python_interpreter: "{{ venv_python_interpreter }}"

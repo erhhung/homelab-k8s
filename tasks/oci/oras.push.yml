@@ -68,12 +68,12 @@
           rm   -rf "$tmp_path"
 
           manifest="$(oras push \
-            --oci-layout "$tmp_path:expected" $dir_name "${oras_args[@]}" \
+            --oci-layout "$tmp_path:desired" $dir_name "${oras_args[@]}" \
             --annotation   org.opencontainers.image.created="$created")"
-          echo -e >&2 "EXPECTED MANIFEST:\n${manifest}"
+          echo -e >&2 "DESIRED MANIFEST:\n${manifest}"
 
-          expected="$(jq -r '.digest' <<< "$manifest")"
-          [ "$existing" == "$expected" ] && exit 9 # no change
+          desired="$(jq -r '.digest' <<< "$manifest")"
+          [ "$existing" == "$desired" ] && exit 9 # no change
         fi
         set -x; oras push $harbor_ref $dir_name "${oras_args[@]}"
       args:

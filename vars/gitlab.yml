@@ -296,6 +296,8 @@ gitlab_chart_values:
           # this is repeat of global.gitaly.tls.secretName
           tlsSecretName: "{{ gitlab_secrets['node-tls'] }}"
 
+          # StatefulSet persistentVolumeClaimRetentionPolicy
+          # whenDeleted=Delete will be patched by Helmfile
           persistence: &gitaly-persistence
             enabled: true
             ## no need for storage level replicas when
@@ -661,7 +663,6 @@ gitlab_chart_values:
       # using default SSH daemon "openssh"
       metrics: &metrics-smon-http
         enabled: true
-
         serviceMonitor: &metrics-mon-http
           enabled: true
           additionalLabels: "{{ monitoring_selector_labels }}"
@@ -935,7 +936,6 @@ gitlab_chart_values:
         storageClass: "{{ storage_classes['default'] }}"
         accessModes: ["ReadWriteOnce"]
         size: 384Mi
-
       persistentVolumeClaimRetentionPolicy:
         enabled: true
         whenScaled: Retain

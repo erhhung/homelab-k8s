@@ -137,6 +137,7 @@ All cluster services will be provisioned with TLS certificates from Erhhung's pr
     * Install on main RKE cluster using the [`vault`](https://github.com/hashicorp/vault-helm) and [`external-secrets`](https://external-secrets.io/latest/introduction/getting-started#installing-with-helm) Helm charts
 - [X] [Gitea DevOps Platform](https://about.gitea.com/) — Git and package repositories with CI/CD pipelines for local deployments
     * Install on main RKE cluster using the [`gitea`](https://gitea.com/erhhung/helm-gitea/src/branch/fix-env-ini-encoding) Helm chart
+    * Install [Gitea Runner](https://gitea.com/gitea/runner) using the [`actions`](https://gitea.com/gitea/helm-actions) Helm chart
 - [X] [GitLab CI/CD Platform](https://gitlab.com/rluna-gitlab/gitlab-ce) — Git repository server with CI/CD pipelines for local deployments
     * Install on main RKE cluster using the [`gitlab`](https://gitlab.com/gitlab-org/charts/gitlab) Helm chart
     * [X] Install [GitLab CI Pipelines Exporter](https://github.com/mvisonneau/gitlab-ci-pipelines-exporter) using the [`gitlab-ci-pipelines-exporter`](https://github.com/mvisonneau/helm-charts/tree/main/charts/gitlab-ci-pipelines-exporter) Helm chart
@@ -525,16 +526,21 @@ however, all privileged operations using `sudo` will require the password stored
 
 25. <details><summary>Install <strong>Gitea</strong> DevOps platform to deploy local projects</summary><br/>
 
-    25.1. Import Erhhung's SSH and GPG public keys, and create the `Homelab` organization  
+    25.1. Create the `Homelab` organization, and import Erhhung's SSH and GPG keys  
+    25.2. Configure and deploy **Gitea Actions runner** with two types of job containers  
+    &nbsp; &nbsp; &nbsp; a. "host" mode for building images using `buildah`  
+    &nbsp; &nbsp; &nbsp; b. `DinD` mode to use `ubuntu-latest` container  
+    25.3. Use [`al2023-devops`](https://github.com/erhhung/al2023-devops) as the runner container and load common "step init" script  
+    25.4. Migrate projects from GitHub and run workflows to build images for later installs  
 
     ```bash
     make gitea
     ```
 
-26. <details><summary>Install <strong>GitLab EE</strong> CI/CD platform to deploy local projects</summary><br/>
+26. <details><summary>Install <strong>GitLab</strong> EE CI/CD platform to deploy local projects</summary><br/>
 
     26.1. Import Erhhung's SSH and GPG public keys, and create the `Homelab` group  
-    26.2. Configure **Harbor** and **Slack** integrations, and access GitHub using OmniAuth  
+    26.2. Configure **Harbor** and **Slack** integrations; connect to GitHub using OmniAuth  
     26.3. Configure and deploy **Kubernetes runner** for building images using `buildah`  
     26.4. Use [`al2023-devops`](https://github.com/erhhung/al2023-devops) as the build container and load common pre-build script  
     26.5. Import projects from GitHub and run pipelines to build images for later installs  
@@ -784,43 +790,52 @@ to confirm available disk space on all cluster nodes.</summary><br/>
 rancher
 -------
 Filesystem                         Size  Used Avail Use% Mounted on
-/dev/mapper/ubuntu--vg-ubuntu--lv   44G   16G   27G  38% /
+/dev/mapper/ubuntu--vg-ubuntu--lv   44G   20G   22G  48% /
 
 k8s1
 ----
 Filesystem                         Size  Used Avail Use% Mounted on
-/dev/mapper/ubuntu--vg-ubuntu--lv   53G   22G   29G  44% /
-/dev/mapper/ubuntu--vg-data--lv     60G  1.2G   59G   2% /data
+/dev/mapper/ubuntu--vg-ubuntu--lv   58G   37G   19G  67% /
+/dev/mapper/ubuntu--vg-data--lv     60G   20G   41G  33% /data
 
 k8s2
 ----
 Filesystem                         Size  Used Avail Use% Mounted on
-/dev/mapper/ubuntu--vg-ubuntu--lv   53G   18G   33G  36% /
-/dev/mapper/ubuntu--vg-data--lv     60G  1.2G   59G   2% /data
+/dev/mapper/ubuntu--vg-ubuntu--lv   58G   42G   14G  76% /
+/dev/mapper/ubuntu--vg-data--lv     60G  4.4G   56G   8% /data
 
 k8s3
 ----
 Filesystem                         Size  Used Avail Use% Mounted on
-/dev/mapper/ubuntu--vg-ubuntu--lv   53G   23G   28G  46% /
-/dev/mapper/ubuntu--vg-data--lv     60G  1.2G   59G   2% /data
+/dev/mapper/ubuntu--vg-ubuntu--lv   58G   39G   17G  71% /
+/dev/mapper/ubuntu--vg-data--lv     60G   15G   46G  25% /data
 
 k8s4
 ----
 Filesystem                         Size  Used Avail Use% Mounted on
-/dev/mapper/ubuntu--vg-ubuntu--lv   53G   20G   31G  39% /
-/dev/mapper/ubuntu--vg-data--lv     60G  1.2G   59G   2% /data
+/dev/mapper/ubuntu--vg-ubuntu--lv   58G   43G   13G  78% /
+/dev/mapper/ubuntu--vg-data--lv     60G   31G   30G  51% /data
 
 k8s5
 ----
 Filesystem                         Size  Used Avail Use% Mounted on
-/dev/mapper/ubuntu--vg-ubuntu--lv   53G   16G   35G  32% /
-/dev/mapper/ubuntu--vg-data--lv     60G  1.2G   59G   2% /data
+/dev/mapper/ubuntu--vg-ubuntu--lv   58G   45G   11G  81% /
+/dev/mapper/ubuntu--vg-data--lv     60G   15G   46G  24% /data
 
 k8s6
 ----
 Filesystem                         Size  Used Avail Use% Mounted on
-/dev/mapper/ubuntu--vg-ubuntu--lv   53G   23G   28G  46% /
-/dev/mapper/ubuntu--vg-data--lv     60G  1.2G   59G   2% /data
+/dev/mapper/ubuntu--vg-ubuntu--lv   82G   63G   15G  81% /
+/dev/mapper/ubuntu--vg-data--lv     60G   18G   43G  30% /data
+
+NODE  DISK                       CAPACITY  ALLOCATABLE  AVAILABLE  SCHEDULABLE  SCHEDULED  RESERVED
+---------------------------------------------------------------------------------------------------
+k8s1  default-disk-fc0100000000       60G          14G        41G          14G        29G       18G
+k8s2  default-disk-fc0100000000       60G          24G        56G          24G        19G       18G
+k8s3  default-disk-fc0100000000       60G          19G        46G          19G        24G       18G
+k8s4  default-disk-fc0100000000       60G        1010M        30G        1010M        41G       18G
+k8s5  default-disk-fc0100000000       60G          18G        46G          18G        25G       18G
+k8s6  default-disk-fc0100000000       60G          24G        43G          24G        19G       18G
 ```
 </details>
 

@@ -1,0 +1,218 @@
+# migrate project from github.com into Gitea and, optionally,
+# run workflow on the default branch, or retry failed jobs if
+# workflow already ran but failed due to app not deployed yet
+#
+# pass the following vars:
+#   gitea_token     <required>  write:repository token
+#   source_repo     <required> "{owner}/{repository}"
+#   target_repo     <required> "{owner}/{repository}"
+#   avatar          [optional]  {avatar.png}
+#   default_branch  [optional]  default=main
+#   run_workflow    [optional]  default=false
+#   workflow_inputs [optional]  dict of inputs
+---
+- name: Migrate GitHub project
+  delegate_to: localhost
+  vars:
+    ansible_python_interpreter: "{{ local_python_interpreter }}"
+    def_branch: >-
+      {{ default_branch if default_branch is defined and
+                           default_branch is truthy else 'main' }}
+    # https://docs.gitea.com/development/api-usage#authentication
+    auth_headers:
+      Authorization: token {{ gitea_token }}
+  block:
+    # https://gitea.fourteeners.local/api/swagger#/repository/repoGet
+    - name: Is already imported?
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/uri_module.html
+      ansible.builtin.uri:
+        url: "{{ gitea_api_url }}/repos/{{ target_repo }}"
+        headers: "{{ auth_headers }}"
+        status_code: [200, 404]
+        return_content: true
+      register: target_info
+
+    - name: Set needs_migrate fact
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/set_fact_module.html
+      ansible.builtin.set_fact:
+        needs_migrate: "{{ target_info.status == 404 }}"
+
+    # https://gitea.fourteeners.local/api/swagger#/repository/repoMigrate
+    - name: Migrate "{{ source_repo }}"
+      ansible.builtin.uri:
+        method: POST
+        url: "{{ gitea_api_url }}/repos/migrate"
+        headers: "{{ auth_headers }}"
+        body_format: json
+        body:
+          service: github # git|github|gitea|gitlab|gogs|onedev|gitbucket|codebase|codecommit
+          clone_addr: https://github.com/{{ source_repo }}.git
+          auth_username: "{{ github_username }}"
+          auth_password: "{{ github_access_token }}"
+          auth_token: "{{    github_access_token }}"
+          repo_owner: "{{ target_repo |  dirname }}"
+          repo_name: "{{  target_repo | basename }}"
+          # description: use source repo description
+          private: false # make Gitea repo private?
+          mirror: false # make repo a pull mirror?
+          # mirror_interval: 1d # update interval
+          lfs: false # migrate Git LFS objects?
+          wiki: false # migrate project wiki?
+          issues: false # migrate project issues?
+          labels: false # migrate issue/PR labels?
+          milestones: false # migrate project milestones?
+          pull_requests: false # migrate pull requests?
+          releases: false # migrate project releases?
+        # synchronous migration of large
+        # repos can easily take over 30s
+        timeout: 300
+        status_code: 201
+        return_content: true
+      register: migration_info
+      when: needs_migrate
+      changed_when: true
+
+    # https://gitea.fourteeners.local/api/swagger#/repository/repoEdit
+    - name: Configure project settings
+      vars:
+        desired:
+          default_branch: "{{ def_branch }}"
+        repo_info: "{{ migration_info.json if needs_migrate else target_info.json }}"
+        # https://docs.ansible.com/ansible/latest/collections/community/general/keep_keys_filter.html
+        existing: "{{ [repo_info] | community.general.keep_keys(desired.keys()) | first }}"
+      ansible.builtin.uri:
+        method: PATCH
+        url: "{{ gitea_api_url }}/repos/{{ target_repo }}"
+        headers: "{{ auth_headers }}"
+        body_format: json
+        body: "{{ desired }}"
+      when: existing != desired
+      changed_when: true
+
+    # not possible to detect changes,
+    # so only upload while migrating:
+    # https://gitea.fourteeners.local/api/swagger#/repository/repoUpdateAvatar
+    - name: Upload custom avatar image
+      vars:
+        # https://docs.ansible.com/ansible/latest/collections/community/general/binary_file_lookup.html
+        image_b64: "{{ lookup('community.general.binary_file', avatar) }}"
+      ansible.builtin.uri:
+        method: POST
+        url: "{{ gitea_api_url }}/repos/{{ target_repo }}/avatar"
+        headers: "{{ auth_headers }}"
+        body_format: json
+        body:
+          image: "{{ image_b64 }}"
+        status_code: 204 # No Content
+      changed_when: true
+      when:
+        - needs_migrate
+        - avatar is defined
+        - avatar is truthy
+
+    # default branch must have only one workflow or
+    # have a workflow file named "ci.y*ml" and must
+    # also declare `workflow_dispatch` as a trigger
+    - name: Run default branch workflow
+      when:
+        - run_workflow is defined
+        - run_workflow is truthy
+      block:
+        # https://gitea.fourteeners.local/api/swagger#/repository/ActionsListRepositoryWorkflows
+        - name: Get list of workflows
+          ansible.builtin.uri:
+            url: "{{ gitea_api_url }}/repos/{{ target_repo }}/actions/workflows"
+            headers: "{{ auth_headers }}"
+            return_content: true
+          register: workflow_list
+
+        - name: Set workflow_path fact
+          vars:
+            path_regex: ^\.git(ea|hub)/workflows/ci\.ya?ml$
+            workflows: "{{ workflow_list.json.workflows }}"
+            workflow: "{{ workflows if workflows | length < 2 else
+              workflows | selectattr('path', 'regex_match', path_regex) }}"
+          ansible.builtin.set_fact:
+            workflow_path: "{{ workflow[0].path if workflow is truthy else none }}"
+            workflow_id: "{{   workflow[0].id   if workflow is truthy else none }}"
+
+        - name: Fail if no suitable workflow
+          # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/assert_module.html
+          ansible.builtin.assert:
+            that: workflow_path is truthy
+            fail_msg: No suitable workflow
+            quiet: true
+
+        # https://gitea.fourteeners.local/api/swagger#/repository/repoGetRawFile
+        - name: Retrieve workflow file
+          ansible.builtin.uri:
+            url: "{{ gitea_api_url }}/repos/{{ target_repo
+              }}/raw/{{ def_branch }}/{{ workflow_path }}"
+            headers: "{{ auth_headers }}"
+            return_content: true
+          register: workflow_file
+
+        - name: Fail if no workflow_dispatch
+          vars:
+            # IMPORTANT: must quote the `on` key in YAML
+            # to prevent Ansible parsing it as a Boolean
+            workflow: "{{ workflow_file.content |
+              regex_replace('^(\\s*)on:', '\\1\"on\":',
+              ignorecase=true, multiline=true) | from_yaml }}"
+            triggers: "{{ workflow['on'] | default({}) | to_yaml }}"
+          ansible.builtin.assert:
+            that: triggers is search('workflow_dispatch')
+            fail_msg: Workflow lacks `workflow_dispatch`
+            quiet: true
+
+        # https://gitea.fourteeners.local/api/swagger#/repository/getWorkflowRuns
+        - name: Get list of workflow runs
+          ansible.builtin.uri:
+            # set high `limit` to avoid pagination since
+            # we just want status of the most recent run
+            url: "{{ gitea_api_url }}/repos/{{ target_repo
+              }}/actions/runs?branch={{ def_branch }}&limit=1000"
+            headers: "{{ auth_headers }}"
+            return_content: true
+          register: workflow_runs
+
+        # https://gitea.fourteeners.local/api/swagger#/repository/ActionsDispatchWorkflow
+        - name: Run default branch workflow
+          vars:
+            run_count: "{{ workflow_runs.json.total_count }}"
+            return_details: true # return `workflow_run_id`
+          ansible.builtin.uri:
+            method: POST
+            url: >-
+              {{ gitea_api_url }}/repos/{{ target_repo }}/actions/workflows/{{ workflow_id
+              }}/dispatches?return_run_details={{ 'true' if return_details else 'false' }}
+            headers: "{{ auth_headers }}"
+            body_format: json
+            body:
+              ref: refs/heads/{{ def_branch }}
+              inputs: "{{ workflow_inputs | default(omit) }}"
+            status_code: "{{ 200 if return_details else 204 }}"
+            return_content: "{{ return_details }}"
+          register: workflow_run
+          when: run_count == 0
+          changed_when: true
+
+        # https://gitea.fourteeners.local/api/swagger#/repository/rerunFailedWorkflowRun
+        - name: Retry failed workflow jobs
+          vars:
+            run_count: "{{ workflow_runs.json.total_count }}"
+            last_run: "{{  workflow_runs.json.workflow_runs |
+              sort(attribute='run_number') | last }}"
+          ansible.builtin.uri:
+            method: POST
+            url: "{{ gitea_api_url }}/repos/{{ target_repo
+              }}/actions/runs/{{ last_run.id }}/rerun-failed-jobs"
+            headers: "{{ auth_headers }}"
+            status_code: 201 # No Content
+          when:
+            - run_count > 0
+            # status: queued|waiting|in_progress|completed
+            # conclusion: success|failure|cancelled|skipped
+            - last_run.status     == 'completed'
+            - last_run.conclusion == 'failure'
+          changed_when: true

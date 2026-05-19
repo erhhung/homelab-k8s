@@ -298,8 +298,7 @@ thanos_chart_values:
       storageClass: "{{ storage_classes['default'] }}"
       # min XFS volume size is 300Mi
       size: 384Mi
-
-    persistentVolumeClaimRetentionPolicy:
+    persistentVolumeClaimRetentionPolicy: &pvc-retention-policy
       enabled: true
       whenScaled: Retain
       whenDeleted: Delete
@@ -411,11 +410,7 @@ thanos_chart_values:
       ## data can be recreated on startup
       storageClass: "{{ storage_classes['default'] }}"
       size: 1Gi
-
-    persistentVolumeClaimRetentionPolicy:
-      enabled: true
-      whenScaled: Delete
-      whenDeleted: Delete
+    persistentVolumeClaimRetentionPolicy: *pvc-retention-policy
 
     grpc:
       server:
@@ -606,7 +601,6 @@ thanos_chart_values:
   # https://github.com/bitnami/charts/tree/main/bitnami/thanos#metrics-parameters
   metrics:
     enabled: true
-
     serviceMonitor:
       enabled: true
       labels: "{{ monitoring_selector_labels }}"

@@ -1,0 +1,79 @@
+# https://gitea.com/gitea/runner/src/branch/main/internal/pkg/config/config.example.yaml
+---
+log:
+  level: info # trace|debug|info|warn|error|fatal|panic
+
+runner:
+  file: /data/.runner # post-registration state file
+
+  # since Buildah builds will run in host mode inside the one
+  # runner container, don't start more than one job at a time
+  capacity: 1
+
+  timeout: 1h     # max run time of a job
+  insecure: false # use mounted CA bundle
+
+  # job polling interval
+  fetch_interval: 5s
+  # max interval for exponential backoff
+  fetch_interval_max: 40s
+  fetch_timeout: 5s
+
+  # define label for workflows to specify `runs-on: al2023-devops`
+  # (`:host` suffix means steps run directly in runner container)
+  labels:
+    - al2023-devops:host
+    - ubuntu-latest:docker://docker.gitea.com/runner-images:ubuntu-latest
+
+  envs:
+    # https://www.gnu.org/software/bash/manual/html_node/Bash-Startup-Files.html#Invoked-non_002dinteractively
+    BASH_ENV: /ci/scripts/step-init.sh # templates/gitea/runner/extras.yaml.j2
+
+    # https://git-scm.com/docs/git-config#Documentation/git-config.txt-GITCONFIGCOUNT
+    # https://git-scm.com/docs/git-config#Documentation/git-config.txt-httpsslCAInfo
+    GIT_CONFIG_COUNT: "1"
+    GIT_CONFIG_KEY_0: http.{{ gitea_service_url }}/.sslCAInfo
+    GIT_CONFIG_VALUE_0: /tls/certs/ca.crt # volume/bind mounted
+
+  # volume mounted `gitea-runner-dotenv` Secret
+  env_file: /var/run/secrets/environment/job.env
+
+host:
+  # parent directory for host-mode work
+  # directories inside runner container
+  workdir_parent: /workspace
+
+container:
+  privileged: false
+
+  # still use DinD for lighter images that don't
+  # require al2023-devops to build Docker images
+  require_docker: true
+  docker_timeout: 300s
+
+  workdir_parent: /workspace
+  # required for DinD when jobs use
+  # Docker Compose with bind mounts
+  bind_workdir: true
+
+  # pass through volumes mounted in the
+  # `dind` container  to job containers
+  options: >-
+    --volume  /tls/certs:/tls/certs:ro
+    --volume /ci/scripts:/ci/scripts:ro
+
+  valid_volumes:
+    - /workspace
+    - /tls/certs
+    - /ci/scripts
+
+cache:
+  enabled: true
+  dir: /data/cache
+
+# Prometheus metrics will be served at
+# http://<addr>/metrics and a liveness
+# check at /healthz
+metrics:
+  enabled: true
+  addr: :{{ actions_metrics_port }}

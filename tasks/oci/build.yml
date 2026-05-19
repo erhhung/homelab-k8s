@@ -4,7 +4,8 @@
 # pass the following vars:
 #   context_dir <required> Docker context dir
 #   dockerfile  [optional] default=Dockerfile
-#   image_name  <required> base image name
+#   build_args  [optional] dict of build ARGs
+#   image_name  <required> bare image name
 #   image_tag   [optional] default=latest
 #   platforms   [optional] default=[ARCH]
 #   if_changed  [optional] notify handler (only if

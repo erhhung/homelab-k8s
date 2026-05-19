@@ -1,15 +1,25 @@
 # create or update Gitea organization
 #
 # pass the following vars:
-#   full_name <required> full name
-#   org_name  <required> org identifier
-#   desc      [optional] org description
-#   email     <required> contact e-mail
-#   avatar    [optional] path to image
-#   location  [optional] site location
+#   full_name   <required> full name
+#   org_name    <required> org identifier
+#   desc        [optional] org description
+#   email       <required> contact e-mail
+#   avatar      [optional] path to image
+#   location    [optional] site location
+#   webhooks:   [optional] webhooks dict
+#     {type}:   <required> service type
+#       name    <required> webhook name
+#       events  <required> trigger events
+#       config: <required> webhook config
+#         url   <required> webhook URL
+#         ...   [optional] type-specific
+#       filter  [optional] branch filter
 ---
 - name: Create/update organization
+  delegate_to: localhost
   vars:
+    # https://docs.gitea.com/development/api-usage#authentication
     uri_auth: &uri-auth
       url_username: "{{ gitea_users['admin'].username }}"
       url_password: "{{ gitea_users['admin'].password }}"
@@ -92,3 +102,31 @@
         - needs_create
         - avatar is defined
         - avatar is truthy
+
+    - name: Set up org-level webhooks
+      when:
+        - webhooks is defined
+        - webhooks is truthy
+      vars:
+        api_base: "{{ gitea_api_url }}/orgs/{{ org_name }}"
+        api_auth: *uri-auth # pass through to included task
+      block:
+        # https://gitea.fourteeners.local/api/swagger#/organization/orgListHooks
+        - name: Get existing org webhooks
+          ansible.builtin.uri:
+            <<: *uri-auth
+            url: "{{ api_base }}/hooks"
+            return_content: true
+          register: org_webhooks
+
+        - name: Create/update org webhook
+          vars:
+            level: org
+            hook: "{{ {'type': item.key} | combine(item.value) }}"
+            existing: "{{ org_webhooks.json | selectattr('type', '==', hook.type) }}"
+          # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
+          ansible.builtin.include_tasks: "{{ tasks_dir }}/gitea/webhook.yml"
+          # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/dict2items_filter.html
+          loop: "{{ webhooks | ansible.builtin.dict2items }}"
+          loop_control:
+            label: "{{ hook.type }}"

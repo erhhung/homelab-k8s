@@ -60,6 +60,8 @@ jenkins_plugins:
   - prometheus
   # https://plugins.jenkins.io/gitlab-logo
   - gitlab-logo
+  # https://plugins.jenkins.io/gitea
+  - gitea
   # https://plugins.jenkins.io/slack
   - slack
   # https://plugins.jenkins.io/global-slack-notifier
@@ -215,17 +217,19 @@ jenkins_jcasc_configs:
                     directEntry:
                       privateKey: ${ERHHUNG_SSH_KEY}
 
+              # credential type available only
+              # upon installing `gitea` plugin
+              - giteaAccessToken:
+                  scope: GLOBAL
+                  id: gitea-token
+                  description: Gitea personal access token
+                  token: ${GITEA_TOKEN}
+
               - string:
                   scope: GLOBAL
                   id: github-token
                   description: GitHub personal access token
                   secret: ${GITHUB_TOKEN}
-
-              - string:
-                  scope: GLOBAL
-                  id: gitea-token
-                  description: Gitea personal access token
-                  secret: ${GITEA_TOKEN}
 
               - string:
                   scope: GLOBAL

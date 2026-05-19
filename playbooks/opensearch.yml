@@ -129,8 +129,8 @@
               spec:
                 revisionHistoryLimit: 2
                 persistentVolumeClaimRetentionPolicy:
-                  whenDeleted: Delete
                   whenScaled: Retain
+                  whenDeleted: Delete
 
             # https://github.com/opensearch-project/helm-charts/issues/673
             # https://github.com/opensearch-project/helm-charts/pull/674

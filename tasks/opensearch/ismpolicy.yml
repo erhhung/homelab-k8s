@@ -14,8 +14,8 @@
   vars:
     ansible_python_interpreter: "{{ local_python_interpreter }}"
     # https://docs.opensearch.org/latest/im-plugin/ism/api
-    policy_url: "{{ opensearch_url }}/_plugins/_ism/policies/{{ policy['name'] }}"
-    uri_params: &uri_params
+    policy_url: "{{ opensearch_url }}/_plugins/_ism/policies/{{ policy.name }}"
+    uri_params: &uri-params
       url_username: admin
       url_password: "{{ opensearch_admin_pass }}"
       force_basic_auth: true
@@ -24,7 +24,7 @@
     - name: Get ISM policy if exists
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/uri_module.html
       ansible.builtin.uri:
-        <<: *uri_params
+        <<: *uri-params
         url: "{{ policy_url }}"
         status_code: [200, 404]
       register: ism_policy
@@ -45,16 +45,16 @@
 
     - name: >-
         {{ 'Create' if ism_policy.status == 404 else 'Update' }}
-        policy "{{ policy['name'] }}"
+        policy "{{ policy.name }}"
       vars:
         url: "{{ policy_url ~ url_params | default('') }}"
       ansible.builtin.uri:
-        <<: *uri_params
+        <<: *uri-params
         method: PUT
         url: "{{ url }}"
         body_format: json
         body:
-          policy: "{{ policy['policy'] }}"
+          policy: "{{ policy.policy }}"
         status_code: [200, 201]
       # update almost never changes anything
       changed_when: ism_policy.status == 404

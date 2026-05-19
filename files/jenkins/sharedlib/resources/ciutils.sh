@@ -49,8 +49,12 @@ fake_tty() {
 colorize() {
   # lexer: yaml|json|bash...
   # style: see Pygments docs
-  local lexer=$1 style=${2:-$PYGMENTSTYLE}
-  pygmentize -l $lexer -O style=${style:-fruity}
+  if command -v pygmentize &> /dev/null; then
+    local lexer=$1 style=${2:-$PYGMENTSTYLE}
+    pygmentize -l $lexer -O style=${style:-fruity}
+  else
+    cat
+  fi
 }
 
 # show color output but strip from log file
@@ -61,27 +65,37 @@ tee_noclr() {
 
 # add custom CA cert to system trust store
 init_certs() {
+  section_start init_certs 'System Trust Store'
   # secret mounted in job container
   local ca_cert="/tls/certs/ca.crt"
   [ -f $ca_cert ] || {
     echo >&2 "CA certificate not found: $ca_cert"
-    return 0
+    section_end init_certs
+    return
   }
 
   if [ $(id -u) -eq 0 ]; then
     local debian_certs="/usr/local/share/ca-certificates" # Debian/Ubuntu/Alpine
     local fedora_certs="/etc/pki/ca-trust/source/anchors" # Fedora/CentOS/RHEL
 
+    __cp_cert() {
+      local dest="$1/ca.crt"
+      # return 1 if target already exists
+      # and is the same file (same inode)
+      [[ -e $dest && $ca_cert -ef $dest ]] && return 1
+      cp -f $ca_cert $dest
+    }
     if [ -d $debian_certs ] && \
       command -v update-ca-certificates &> /dev/null; then
-        cp $ca_cert $debian_certs
-        update-ca-certificates
-        return
+        __cp_cert $debian_certs && \
+          update-ca-certificates 2> /dev/null
+        section_end init_certs; return
+
     elif [ -d $fedora_certs ] && \
       command -v update-ca-trust &> /dev/null; then
-        cp $ca_cert $fedora_certs
-        update-ca-trust
-        return
+        __cp_cert $fedora_certs && \
+          update-ca-trust 2> /dev/null
+        section_end init_certs; return
     fi
   fi
 
@@ -106,6 +120,7 @@ init_certs() {
   export PIP_CERT="$dest_bundle"            # Python PIP
   export REQUESTS_CA_BUNDLE="$dest_bundle"  # Python requests
   export NODE_EXTRA_CA_CERTS="$dest_bundle" # Node.js
+  section_end init_certs
 }
 
 sys_info() {

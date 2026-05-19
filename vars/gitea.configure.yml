@@ -1,14 +1,34 @@
-# gitea_admin_pass: {vault.yml}
+# slack_webhook_urls.*: {vault.yml}
+# gitea_admin_pass:     {vault.yml}
 
 # POST /orgs
 gitea_organization:
   name: Homelab
   org_name: homelab
   desc: Erhhung's homelab projects
-  email: "{{ homelab_admin.email }}"
+  email: "{{ user_erhhung.email }}"
   # `avatar` must be a local file path
   avatar: "{{ icons_dir }}/homelab.png"
   location: Home
+
+  # configure webhooks only at organizational level:
+  # https://docs.gitea.com/usage/repository/webhooks
+  webhooks:
+    # gitea|gogs|slack|msteams|wechatwork|discord|telegram|feishu|dingtalk|packagist
+    slack:
+      name: Slack Notifications
+      # https://docs.gitea.com/usage/repository/webhooks#events
+      events:
+        - repository # created/deleted
+        # - release # published/updated/deleted
+        # - package # created/deleted
+        # - issues # opened/edited/closed/reopened/deleted
+        # - issue_comment # created/edited/deleted
+        - workflow_run # queued/waiting/in_progress/completed
+      config:
+        # optional: username, icon_url, color
+        url: "{{ slack_webhook_urls['gitea'] }}"
+        channel: "#gitea"
 
 # POST /admin/users
 gitea_users:
@@ -57,3 +77,41 @@ gitea_users:
       - key_id: B9C45C9F62942408
         public_key: "{{ lookup('ansible.builtin.file',
           files_dir ~ '/erhhung/erhhung.asc', rstrip=false) }}"
+
+# NOTE: only `from: github` is currently supported
+# POST /repos/migrate then PATCH /repos/:org/:repo
+gitea_projects:
+  # https://github.com/erhhung/argo-cd/tree/gitlab-ci
+  - from: github
+    source_repo: erhhung/argo-cd
+    target_repo: homelab/argo-cd
+    # `avatar` must be a local file path
+    avatar: "{{ icons_dir }}/argocd.png"
+    # branch must already exist!
+    default_branch: gitea-ci
+    # default branch must have only one workflow or
+    # have a workflow file named "ci.y*ml" and must
+    # also declare `workflow_dispatch` as a trigger
+    run_workflow: true
+
+  # https://github.com/erhhung/xen-exporter-kustomize
+  - from: github
+    source_repo: erhhung/xen-exporter-kustomize
+    target_repo: homelab/xen-exporter
+    avatar: "{{ icons_dir }}/xcpng.png"
+
+  # https://github.com/erhhung/mcp-crawl4ai/tree/gitlab-ci
+  - from: github
+    source_repo: erhhung/mcp-crawl4ai
+    target_repo: homelab/mcp-crawl4ai
+    avatar: "{{ icons_dir }}/mcp.png"
+    default_branch: gitea-ci
+    run_workflow: true
+
+  # https://github.com/erhhung/flowise/tree/gitlab-ci
+  - from: github
+    source_repo: erhhung/flowise
+    target_repo: homelab/flowise
+    avatar: "{{ icons_dir }}/flowise.png"
+    default_branch: gitea-ci
+    run_workflow: true

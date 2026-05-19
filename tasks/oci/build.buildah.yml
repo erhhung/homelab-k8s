@@ -23,6 +23,16 @@
             {{  '--manifest=' ~ local_name  if plats | length > 1 else
                 ['-t',          local_name] }}
           - "{{ ['-f', dockerfile] if dockerfile is defined else [] }}"
+          # add zero or more `--build-arg key=value`
+          - |
+            {% set args = [] %}
+            {# https://docs.ansible.com/ansible/latest/collections/ansible/builtin/dict2items_filter.html #}
+            {% for arg in build_args | default({}) | ansible.builtin.dict2items %}
+            {%   set _ = args.extend(['--build-arg',
+                   arg.key ~'='~ arg.value | string,
+                 ])   %}
+            {% endfor %}
+            {{ args   }}
           - "{{ context_path }}"
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/command_module.html
       ansible.builtin.command:

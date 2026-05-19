@@ -321,7 +321,6 @@ keycloakx_chart_values:
 
   metrics:
     enabled: true
-
   serviceMonitor:
     enabled: "{{ prometheus_crds_installed }}"
     labels: "{{ monitoring_selector_labels }}"

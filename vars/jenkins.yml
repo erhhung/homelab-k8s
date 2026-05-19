@@ -244,8 +244,8 @@ jenkins_chart_values:
               runAsUser: 0
               runAsGroup: 0
 
-              # use same resource requests
-              # as GitLab runner container
+              # use same resource requests as
+              # GitLab runner build container
               resourceRequestCpu: 500m
               resourceRequestMemory: 2Gi
               resourceRequestEphemeralStorage: 40Gi

@@ -51,9 +51,9 @@
         values: "{{ vault_chart_values }}"
 
         extras: # adopt extra resources into Helm release
-          - cert-manager.io/v1 Certificate {{ vault_secrets['node-tls']     }}
-          - cert-manager.io/v1 Certificate {{ monitoring_secrets['scraper'] }}
-          - v1 Secret {{ vault_secrets['unseal'] }} ? # populated by bootstrap
+          - cert-manager.io/v1 Certificate {{      vault_secrets['node-tls'] }}
+          - cert-manager.io/v1 Certificate {{ monitoring_secrets['scraper']  }}
+          - v1 Secret {{ vault_secrets['unseal'] }} ? # optional (created during bootstrap)
           - | # ServiceAccount/Role/RoleBinding/Job
             {{ lookup('ansible.builtin.template', templates_dir ~ '/vault/bootstrap.yaml.j2')
                | split('---') | select('search', 'apiVersion:') | map('from_yaml') }}

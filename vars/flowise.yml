@@ -122,7 +122,6 @@ flowise_chart_values:
         storageClass: "{{ storage_classes['default'] }}"
         accessModes: ["ReadWriteOnce"]
         size: 384Mi
-
       persistentVolumeClaimRetentionPolicy:
         enabled: true
         whenScaled: Retain

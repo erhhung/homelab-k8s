@@ -88,6 +88,8 @@ qdrant_chart_values:
   apiKey: "{{ qdrant_api_key.read_write }}"
   readOnlyApiKey: "{{ qdrant_api_key.read_only }}"
 
+  # StatefulSet persistentVolumeClaimRetentionPolicy
+  # whenDeleted=Delete will be patched by Helmfile
   persistence:
     storageVolumeName: qdrant-storage
     ## no need for storage level replicas when

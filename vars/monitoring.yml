@@ -375,8 +375,7 @@ prometheus_stack_chart_values:
             resources:
               requests:
                 storage: 8Gi
-
-      persistentVolumeClaimRetentionPolicy:
+      persistentVolumeClaimRetentionPolicy: &pvc-retention-policy
         whenScaled: Retain
         whenDeleted: Delete
 
@@ -743,10 +742,7 @@ prometheus_stack_chart_values:
               requests:
                 # min XFS volume size is 300Mi
                 storage: 384Mi
-
-      persistentVolumeClaimRetentionPolicy:
-        whenScaled: Retain
-        whenDeleted: Delete
+      persistentVolumeClaimRetentionPolicy: *pvc-retention-policy
 
       # data retention period
       retention: 72h # 3 days
@@ -881,6 +877,8 @@ prometheus_stack_chart_values:
     # https://github.com/grafana-community/helm-charts/tree/main/charts/grafana
     # https://github.com/grafana-community/helm-charts/tree/main/charts/grafana/values.yaml
     replicas: 1
+    # chart templates will only apply this
+    # limit to Deployment, not StatefulSet
     revisionHistoryLimit: 2
 
     admin:
@@ -982,6 +980,8 @@ prometheus_stack_chart_values:
     persistence:
       enabled: true
       type: StatefulSet
+      # StatefulSet persistentVolumeClaimRetentionPolicy
+      # whenDeleted=Delete will be patched by Helmfile
       storageClassName: "{{ storage_classes['default'] }}"
       accessModes: ["ReadWriteOnce"]
       size: 2Gi

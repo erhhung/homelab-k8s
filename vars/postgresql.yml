@@ -201,6 +201,8 @@ postgresql_chart_values:
       {% set use_primary = [
                   'postgres',
                  awx_db_name,
+               gitea_db_name,
+              gitlab_db_name,
              litellm_db_name,
            openwebui_db_name,
          ] -%}
@@ -380,7 +382,6 @@ postgresql_chart_values:
     # https://github.com/bitnami/charts/tree/main/bitnami/postgresql-ha#prometheus-metrics
     # https://github.com/prometheus-community/postgres_exporter
     enabled: true
-
     # scrape dedicated postgresql-metrics
     # service on HTTP "metrics" port 9187
     serviceMonitor:

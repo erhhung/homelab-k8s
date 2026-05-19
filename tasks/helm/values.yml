@@ -1,0 +1,48 @@
+# get contents of default values
+# file from Helm chart as a dict
+#
+# pass the following vars:
+#   repo_url  [optional] Helm repository URL
+#   chart_ref <required> name  or oci:// URL
+#   chart_ver [optional] chart version
+#   fact_name [optional] fact to store values
+#                        default=chart_values
+# sets the following facts:
+#   {fact_name}  default chart values dict
+---
+- name: Get default Helm chart values
+  become: false
+  vars:
+    # required kubernetes>=24.2 package only in user virtualenv
+    ansible_python_interpreter: "{{ venv_python_interpreter }}"
+    val_fact: "{{ fact_name | default('chart_values') }}"
+  block:
+    - name: Run `helm show values` command
+      vars:
+        base_args:
+          - helm
+          - show
+          - values
+        chart_args: |
+          {% set args = [chart_ref] %}
+          {% if repo_url is defined and
+                repo_url is truthy  and not
+                chart_ref.startswith('oci://') %}
+          {%   set _ = args.append('--repo=' ~ repo_url) %}
+          {% endif %}
+          {% if chart_ver is defined and
+                chart_ver is truthy  %}
+          {%   set _ = args.append('--version=' ~ chart_ver) %}
+          {% endif %}
+          {{ args  }}
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/shell_module.html
+      ansible.builtin.shell: |
+        set -o pipefail
+        {{ (base_args + chart_args) | join(' ') }} | yq '... comments=""'
+      register: show_values
+      changed_when: false
+
+    - name: Set {{ val_fact }} fact
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/set_fact_module.html
+      ansible.builtin.set_fact:
+        "{{ val_fact }}": "{{ show_values.stdout | from_yaml }}"

@@ -92,7 +92,6 @@ valkey_chart_values:
     ## the cluster itself stores data in replicas
     storageClass: "{{ storage_classes['default'] }}"
     size: 512Mi
-
   persistentVolumeClaimRetentionPolicy:
     enabled: true
     whenScaled: Retain

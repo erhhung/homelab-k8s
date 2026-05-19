@@ -10,6 +10,7 @@ velero_daily_backup:
     # and telemetry can be recreated, but telemetry aren't
     # too critical in our resource constrained environment
     - "{{ postgresql_namespace }}"
+    - "{{ opensearch_namespace }}"
   exclude_namespaces:
     - vcluster-*
 

@@ -1,3 +1,5 @@
+# https://docs.gitea.com/category/administration
+# https://docs.gitea.com/administration/config-cheat-sheet
 # https://docs.gitea.com/usage/actions/act-runner
 ---
 - name: Install Gitea DevOps platform
@@ -13,7 +15,7 @@
     - vars/minio.yml
     - vars/gitea.configure.yml
     - vars/gitea.yml
-  vars:
+  vars: &vars
     # required kubernetes>=24.2 package only in user virtualenv
     ansible_python_interpreter: "{{ venv_python_interpreter }}"
     kubeconfig: "{{ rke_kubeconfig }}"
@@ -28,7 +30,7 @@
         repo_url: "{{ gitea_chart_repo_url }}"
         chart_ref: gitea
         fact_name: gitea_app_version
-        # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
       ansible.builtin.include_tasks: "{{ tasks_dir }}/helm/appversion.yml"
       when: gitea_app_version is undefined
 
@@ -90,6 +92,9 @@
           privateKey: "{{ lookup('ansible.builtin.unvault', files_dir ~ '/gitea/gnupg/signing.asc') }}"
       ansible.builtin.include_tasks: "{{ tasks_dir }}/k8s/secrets/generic.yml"
 
+    - name: Create monitoring scraper secret
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/monitoring/scraper.yml"
+
     - name: Install Gitea Helm chart
       vars:
         repo_name: gitea
@@ -100,17 +105,19 @@
         values: "{{ gitea_chart_values }}"
 
         extras: # adopt extra resources into Helm release
-          - cert-manager.io/v1 Certificate {{ gitea_secrets['ingress']  }}
-          - cert-manager.io/v1 Certificate {{ gitea_secrets['database'] }}
+          - cert-manager.io/v1 Certificate {{      gitea_secrets['ingress']  }}
+          - cert-manager.io/v1 Certificate {{      gitea_secrets['database'] }}
+          - cert-manager.io/v1 Certificate {{ monitoring_secrets['scraper']  }}
           - v1 Secret {{ gitea_secrets['admin']   }}
           - v1 Secret {{ gitea_secrets['config']  }}
           - v1 Secret {{ gitea_secrets['signing'] }}
+          - v1 Secret {{ gitea_secrets['tokens']  }} ? # optional (created later)
       ansible.builtin.include_tasks: "{{ tasks_dir }}/helm/helmfile.yml"
 
 - name: Configure Gitea installation
   tags: configure
   hosts: localhost
-  vars_files:
+  vars_files: &vars_files
     - vars/gitea.yml
     - vars/gitea.configure.yml
   pre_tasks:
@@ -126,28 +133,216 @@
       vars:
         org: "{{ gitea_organization }}"
         org_name: "{{  org.org_name }}"
-        full_name: "{{ org.name  }}"
-        email: "{{     org.email }}"
-        desc: "{{      org.desc     | default('') }}"
-        avatar: "{{    org.avatar   | default('') }}"
-        location: "{{  org.location | default('') }}"
+        full_name: "{{ org.name     }}"
+        email: "{{     org.email    }}"
+        desc: "{{      org.desc     }}"
+        avatar: "{{    org.avatar   }}"
+        location: "{{  org.location }}"
+        webhooks: "{{  org.webhooks }}"
       ansible.builtin.include_tasks: "{{ tasks_dir }}/gitea/org.yml"
 
     - name: Create/update user account
       vars:
-        user: "{{      item.value }}"
-        email: "{{     user.email }}"
-        full_name: "{{ user.name  }}"
+        user: "{{      item.value    }}"
+        email: "{{     user.email    }}"
+        full_name: "{{ user.name     }}"
         username: "{{  user.username }}"
         password: "{{  user.password }}"
-        is_admin: "{{  user.is_admin | default(false) }}"
-        location: "{{  user.location | default('') }}"
-        avatar: "{{    user.avatar   | default('') }}"
-        tokens: "{{    user.tokens   | default([]) }}"
-        ssh_keys: "{{  user.ssh_keys | default([]) }}"
-        gpg_keys: "{{  user.gpg_keys | default([]) }}"
+        is_admin: "{{  user.is_admin }}"
+        location: "{{  user.location }}"
+        avatar: "{{    user.avatar   }}"
+        tokens: "{{    user.tokens   }}"
+        ssh_keys: "{{  user.ssh_keys }}"
+        gpg_keys: "{{  user.gpg_keys }}"
       ansible.builtin.include_tasks: "{{ tasks_dir }}/gitea/user.yml"
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/dict2items_filter.html
       loop: "{{ gitea_users | ansible.builtin.dict2items }}"
       loop_control:
         label: "{{ item.key }}"
+
+- name: Build Actions runner image
+  tags: build
+  hosts: localhost
+  vars_files:
+    - vars/gitea.yml
+  tasks:
+    - name: Build image and push to Harbor
+      vars:
+        image_name: gitea-runner
+        image_tag: "{{ actions_runner_image.tag }}"
+        build_args:
+          RUNNER_IMAGE_TAG: "{{ image_tag }}"
+        context_dir: "{{ files_dir }}/gitea/runner"
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/oci/build.yml"
+
+- name: Configure Gitea Actions runner
+  tags: runner
+  hosts: "{{ rke_control_plane_host }}"
+  vars_files:
+    - vars/kubernetes.yml
+    - vars/monitoring.yml
+    - vars/storage.yml
+    - vars/harbor.yml
+    - vars/gitea.yml
+  vars:
+    <<: *vars
+    chart_ver: "{{ actions_chart_version if
+      actions_chart_repo_url is match('^http') else none }}"
+  pre_tasks:
+    # used in metrics service labels
+    - name: Get Actions chart appVersion
+      vars:
+        repo_url: "{{ actions_chart_repo_url }}"
+        chart_ref: actions
+        fact_name: actions_app_version
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/helm/appversion.yml"
+
+    - name: Look up existing runner token
+      # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_info_module.html
+      kubernetes.core.k8s_info:
+        kubeconfig: "{{ kubeconfig }}"
+        api_version: v1
+        kind: Secret
+        name: "{{ gitea_secrets['runner'] }}"
+        namespace: "{{ gitea_namespace }}"
+      register: token_info
+  tasks:
+    - name: Get runner registration token
+      when: token_info.resources is falsy
+      block:
+        - name: Get tokens from Gitea secret
+          ansible.builtin.include_tasks: "{{ tasks_dir }}/gitea/tokens.yml"
+          # sets fact: gitea_tokens
+
+        - name: Get runner registration token
+          ansible.builtin.uri:
+            method: POST
+            url: "{{ gitea_api_url }}/admin/actions/runners/registration-token"
+            # https://docs.gitea.com/development/api-usage#authentication
+            headers:
+              Authorization: token {{ gitea_tokens['admin'] }}
+            return_content: true
+          register: runner_token
+
+        - name: Store runner token in secret
+          vars:
+            secret_name: "{{ gitea_secrets['runner'] }}"
+            secret_data:
+              token: "{{ runner_token.json.token }}"
+          ansible.builtin.include_tasks: "{{ tasks_dir }}/k8s/secrets/generic.yml"
+
+    # env vars set in all job containers
+    - name: Create runner dotenv secret
+      vars:
+        ci_reg_path: "{{ harbor_container_registry }}/{{ harbor_default_project }}"
+
+        # === Inputs ===
+        secret_name: "{{ gitea_secrets['dotenv'] }}"
+        secret_data:
+          job.env: |
+            CI_REGISTRY={{ harbor_url }}
+            CI_REGISTRY_PATH={{ ci_reg_path }}
+            CI_REGISTRY_USER={{ gitea_harbor_user }}
+            CI_REGISTRY_PASSWORD={{ gitea_harbor_pass }}
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/k8s/secrets/generic.yml"
+
+    - name: Install Actions Helm chart
+      vars:
+        # deploy extra objects like runner ServiceAccount
+        # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/template_lookup.html
+        extra_objs: "{{ lookup('ansible.builtin.template',
+          templates_dir ~ '/gitea/runner/extras.yaml.j2') }}"
+
+        # === Inputs ===
+        repo_name: gitea
+        repo_url: "{{ actions_chart_repo_url }}"
+        chart_ref: actions
+        release: "{{ actions_release_name }}"
+        release_ns: "{{ gitea_namespace }}"
+        values: "{{ actions_chart_values }}"
+
+        patches:
+          merge_patches:
+            - apiVersion: apps/v1
+              kind: StatefulSet
+              metadata:
+                name: "{{ actions_app_name }}"
+                namespace: "{{ gitea_namespace }}" # required
+              spec:
+                revisionHistoryLimit: 2
+                persistentVolumeClaimRetentionPolicy:
+                  whenScaled: Retain
+                  whenDeleted: Delete
+
+                template:
+                  spec:
+                    initContainers:
+                      - name: dind
+                        # be conservative with declaring failure
+                        # because Buildah build in host mode can
+                        # grind the node to a halt
+                        startupProbe: &probe
+                          periodSeconds: 20
+                          timeoutSeconds: 5
+                          successThreshold: 1
+                          failureThreshold: 6
+                        livenessProbe: *probe
+
+                    containers:
+                      - name: act-runner
+                        # allow building OCI images using Buildah
+                        securityContext:
+                          runAsUser: 0
+                          runAsGroup: 0
+                          appArmorProfile:
+                            type: Localhost
+                            localhostProfile: buildah
+                        # expose port for app Service
+                        ports:
+                          - name: metrics
+                            containerPort: "{{ actions_metrics_port }}"
+                            protocol: TCP
+
+        extras: # adopt extra resources into Helm release
+          - v1 Secret {{ gitea_secrets['runner'] }}
+          - v1 Secret {{ gitea_secrets['dotenv'] }}
+          # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/from_yaml_all_filter.html
+          - "{{ extra_objs | from_yaml_all }}"
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/helm/helmfile.yml"
+
+- name: Migrate projects from GitHub
+  tags: projects
+  hosts: localhost
+  vars_files: *vars_files
+  pre_tasks:
+    - name: Get tokens from Gitea secret
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/gitea/tokens.yml"
+      when: gitea_tokens is undefined
+  tasks:
+    - name: Migrate project from GitHub
+      vars:
+        projects: "{{ gitea_projects | selectattr('from', '==', 'github') }}"
+
+        # === Inputs ===
+        gitea_token: "{{ gitea_tokens['erhhung-repos'] }}"
+        source_repo: "{{      item.source_repo     }}"
+        target_repo: "{{      item.target_repo     }}"
+        avatar: "{{           item.avatar          }}"
+        default_branch: "{{   item.default_branch  }}"
+        run_workflow: "{{     item.run_workflow    }}"
+        workflow_inputs: "{{  item.workflow_inputs }}"
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/gitea/migrate.github.yml"
+      loop: "{{ projects }}"
+      loop_control:
+        label: "{{ item.target_repo | basename }}"
+
+- name: Configure Gitea dashboards
+  tags: dashboards
+  hosts: localhost
+  vars_files:
+    - vars/gitea.yml
+  tasks:
+    - name: Import Grafana dashboards
+      vars:
+        dashboards: "{{ gitea_grafana_dashboards }}"
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/grafana/dashboards.yml"

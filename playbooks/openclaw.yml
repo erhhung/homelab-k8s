@@ -558,7 +558,7 @@
         jobs: "{{ (openclaw_cron.stdout | from_json).jobs }}"
         job: "{{ jobs | selectattr('name', '==', item.name) }}"
         tz: "{{ item.tz | default(system_time_zone) }}"
-        expected:
+        desired:
           name: "{{ item.name }}"
           enabled: true
           schedule: |
@@ -601,10 +601,10 @@
         del_keys:
           - schedule.anchorMs
         exists: "{{ job is truthy }}"
+        # omit_keys: plugins/filter/filters.py
         existing: |
-          {# omit_keys: plugins/filter/filters.py #}
-          {{ job | community.general.keep_keys(target=expected.keys())
-                 | first |  omit_keys(del_keys) if exists else none }}
+          {{ job | community.general.keep_keys(target=desired.keys())
+                 | first | omit_keys(del_keys) if exists else none }}
         cron_args: |
           {% set args = item %}
           {% if item.cron is defined %}
@@ -635,5 +635,5 @@
       loop: "{{ openclaw_cron_jobs }}"
       loop_control:
         label: "{{ item.name }}"
-      when: existing != expected
+      when: existing != desired
       changed_when: true

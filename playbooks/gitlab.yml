@@ -195,11 +195,16 @@
                 name: "{{ gitlab_release_name }}-{{ gitaly }}"
                 namespace: "{{ gitlab_namespace }}" # required
               spec:
+                revisionHistoryLimit: 2
+                persistentVolumeClaimRetentionPolicy:
+                  whenScaled: Retain
+                  whenDeleted: Delete
                 template:
                   spec:
                     containers:
                       - name: gitaly
                         <<: *probes
+
             # the workhorse container probes had been
             # "exec /scripts/healthcheck", which sent
             # a non-HTTPS "GET / HTTP/1.1" request to
@@ -225,6 +230,7 @@
                           httpGet:
                             <<: *http-get
                             path: /-/liveness
+
             # the Zoekt chart templates only set each
             # probe's httpGet property, leaving other
             # properties as defaults without a way to
@@ -263,8 +269,8 @@
               {% endif %}
 
         extras: # adopt extra resources into Helm release
-          - cert-manager.io/v1 Certificate {{ gitlab_secrets['node-tls']      }}
-          - cert-manager.io/v1 Certificate {{ gitlab_secrets['database']      }}
+          - cert-manager.io/v1 Certificate {{     gitlab_secrets['node-tls']  }}
+          - cert-manager.io/v1 Certificate {{     gitlab_secrets['database']  }}
           - cert-manager.io/v1 Certificate {{ postgresql_secrets['superuser'] }}
           - cert-manager.io/v1 Certificate {{ monitoring_secrets['scraper']   }}
           - v1 Secret    {{ gitlab_secrets['certs']      }}
@@ -389,12 +395,10 @@
       ansible.builtin.include_tasks: "{{ tasks_dir }}/localfacts.yml"
 
     - name: Wait until Praefect is ready
-      block:
-        - name: Wait until Praefect is ready
-          vars:
-            kubeconfig: "{{ rke_kubeconfig }}"
-          ansible.builtin.include_tasks: "{{ tasks_dir }}/gitlab/praefectready.yml"
-      delegate_to: "{{ rke_control_plane_host }}"
+      vars:
+        kubeconfig: "{{ rke_kubeconfig }}"
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/gitlab/praefectready.yml"
+      # sets fact: praefect_ready
 
     - name: Wait until GitLab is ready
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/uri_module.html
@@ -564,13 +568,11 @@
         wait: true
 
 - name: Import projects from GitHub
-  tags: import
-  hosts: "{{ rke_control_plane_host }}"
+  tags: projects
+  hosts: localhost
   vars_files:
-    - vars/kubernetes.yml
     - vars/gitlab.configure.yml
     - vars/gitlab.yml
-  vars: *vars
   pre_tasks:
     - name: Get PATs from GitLab secret
       ansible.builtin.include_tasks: "{{ tasks_dir }}/gitlab/tokens/pats.yml"
@@ -598,15 +600,15 @@
 
     - name: Import project from GitHub
       vars:
-        projects: "{{ gitlab_import_projects | selectattr('from', '==', 'github') }}"
+        projects: "{{ gitlab_projects | selectattr('from', '==', 'github') }}"
 
         # === Inputs ===
-        source_repo: "{{     item.source_repo    }}"
-        target_repo: "{{     item.target_repo    }}"
-        default_branch: "{{  item.default_branch  | default(none) }}"
-        project_avatar: "{{  item.project_avatar  | default(none) }}"
-        run_pipeline: "{{    item.run_pipeline    | default(none) }}"
-        pipeline_inputs: "{{ item.pipeline_inputs | default(none) }}"
+        source_repo: "{{     item.source_repo     }}"
+        target_repo: "{{     item.target_repo     }}"
+        avatar: "{{          item.avatar          }}"
+        default_branch: "{{  item.default_branch  }}"
+        run_pipeline: "{{    item.run_pipeline    }}"
+        pipeline_inputs: "{{ item.pipeline_inputs }}"
       ansible.builtin.include_tasks: "{{ tasks_dir }}/gitlab/import.github.yml"
       loop: "{{ projects }}"
       loop_control:
@@ -630,7 +632,7 @@
         api_version: v1
         kind: Secret
         name: "{{ pipelines_exporter_secrets['auth'] }}"
-        namespace: "{{ secret_ns }}"
+        namespace: "{{ gitlab_namespace }}"
       register: exporter_pat
   tasks:
     # https://github.com/mvisonneau/gitlab-ci-pipelines-exporter/tree/main/docs/configuration_syntax.md

@@ -17,7 +17,6 @@
 ---
 - name: Set application settings
   delegate_to: localhost
-  become: false
   vars:
     page_url: "{{ site_base }}/admin/application_settings/{{ section }}"
     # using YAML anchors allows re-evaluation of

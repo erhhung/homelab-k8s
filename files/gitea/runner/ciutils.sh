@@ -1,6 +1,3 @@
-# this script is automatically sourced
-# by the runner when a build pod starts
-
 # shellcheck disable=SC2148 # Tips depend on target shell
 # shellcheck disable=SC2155 # Declare and assign separately
 # shellcheck disable=SC2086 # Double quote prevent globbing
@@ -8,6 +5,7 @@
 # shellcheck disable=SC2206 # Quote to avoid word splitting
 # shellcheck disable=SC2015 # A && B || C isn't if-then-else
 # shellcheck disable=SC2012 # find is better at non-alphanum
+# shellcheck disable=SC2034 # Variable appears unused
 
 # show root path of current (super) project
 git_root() {
@@ -15,17 +13,14 @@ git_root() {
   [ "$root" ] && echo "$root" || git rev-parse --show-toplevel
 }
 
-# <section> <title>
+# <title>
 section_start() {
-  # https://docs.gitlab.com/ci/jobs/job_logs#custom-collapsible-sections
-  local section=$1 title="${*:2}" erase_eol='\e[0K' blue='\e[1;34m' clear='\e[0m'
-  echo -e "${erase_eol}section_start:$(date +%s):${section}[collapsed=true]\r${erase_eol}$blue===== $title =====$clear"
+  # https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-commands#grouping-log-lines
+  echo -e "::group::$*"
 }
 
-# <section>
 section_end() {
-  local section=$1 erase_eol='\e[0K'
-  echo -e "${erase_eol}section_end:$(date +%s):$section\r$erase_eol"
+  echo -e "::endgroup::"
 }
 
 # trim leading and trailing newlines from stdin
@@ -59,12 +54,12 @@ tee_noclr() {
 
 # add custom CA cert to system trust store
 init_certs() {
-  section_start init_certs 'System Trust Store'
+  section_start 'System Trust Store'
   # secret mounted in job container
   local ca_cert="/tls/certs/ca.crt"
   [ -f $ca_cert ] || {
     echo >&2 "CA certificate not found: $ca_cert"
-    section_end init_certs; return
+    section_end; return
   }
 
   if [ $(id -u) -eq 0 ]; then
@@ -82,13 +77,13 @@ init_certs() {
       command -v update-ca-certificates &> /dev/null; then
         __cp_cert $debian_certs && \
           update-ca-certificates 2> /dev/null
-        section_end init_certs; return
+        section_end; return
 
     elif [ -d $fedora_certs ] && \
       command -v update-ca-trust &> /dev/null; then
         __cp_cert $fedora_certs && \
           update-ca-trust 2> /dev/null
-        section_end init_certs; return
+        section_end; return
     fi
   fi
 
@@ -113,26 +108,36 @@ init_certs() {
   export PIP_CERT="$dest_bundle"            # Python PIP
   export REQUESTS_CA_BUNDLE="$dest_bundle"  # Python requests
   export NODE_EXTRA_CA_CERTS="$dest_bundle" # Node.js
-  section_end init_certs
+  section_end
 }
 
 sys_info() {
-  section_start sys_info 'System Information'
+  section_start 'System Information'
   printf "%s\n------\n%s\n------\n%s\n" \
     "$(lscpu)" "$(free -thw)" "$(df -lh .)"
-  section_end sys_info
+  section_end
 }
 
 env_vars() {
-  section_start env_vars 'Environment Variables'
+  section_start 'Environment Variables'
+  # register env vars containing secrets
+  # to be masked before displaying them:
+  # https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-commands#masking-a-value-in-a-log
+  local env_vars var_name
   # use sed to filter out exported functions
-  env | sort | sed -En '/^[[:alnum:]_]+=/p' \
-      | colorize  bash
-  section_end env_vars
+  env_vars="$(env | sort | sed -En '/^[[:alnum:]_]+=/p')"
+  while read -r var_name; do
+    echo "::add-mask::${!var_name}"
+  done < <(
+    SECRET_REGEX='^(.*?(?<![A-Z])(KEY|TOKEN|PASSWORD)(?![A-Z]).*?)='
+    perl -ne 'print "$1\n" if /'"$SECRET_REGEX"'/i' <<< "$env_vars"
+  )
+  colorize bash <<< "$env_vars"
+  section_end
 }
 
 identities() {
-  section_start identities 'Git/OS Identities'
+  section_start 'Git/OS Identities'
   __identity() {
     local label=$1 name_var=$2 email_var=${3:-_NA_}
     local name="${!name_var}"  email="${!email_var}"
@@ -143,23 +148,20 @@ identities() {
       echo "$label: $name"
     fi
   }
-  __identity "Commit author" CI_COMMIT_AUTHOR
-  __identity "Job initiator" GITLAB_USER_NAME GITLAB_USER_EMAIL
+  # https://docs.gitea.com/usage/actions/actions-variables#pre-defined-environment-variables
+  local author_name="$(git show -s --format='%an' "$GITHUB_SHA" 2> /dev/null)"
+  local author_email=$(git show -s --format='%ae' "$GITHUB_SHA" 2> /dev/null)
+  __identity "Commit author" author_name author_email
+  __identity "Job initiator" GITHUB_ACTOR
   id
-  section_end identities
+  section_end
 }
 
-# wrapper to dump log file if install fails
-npm_install() {
-  rm -rf ~/.npm/_logs
-  npm config set loglevel warn
-
-  if ! npm install --no-fund "$@"; then
-    local red='\e[0;31m' clear='\e[0m'
-    echo -e "\n$red===== Debug Log =====$clear"
-    cat ~/.npm/_logs/*.log
-    return 1
-  fi
+# <name> <value>
+export_env() {
+  export "$1"="$2"
+  # don't write "$2" when appending to env file!
+  [ "$GITEA_ENV" ] && echo "$1=$2" >> $GITEA_ENV
 }
 
 buildah_login() {
@@ -172,31 +174,28 @@ buildah_login() {
 # <repo> <args>...
 # (assumes local image is <repo>:latest)
 buildah_build() {
-  local section repo="${1%:*}"
+  local repo="${1%:*}"; shift
   local args=(--format docker)
-  section="build_${repo//-/_}"
-  shift
 
-  section_start $section "Build $repo"
+  section_start "Build $repo"
   # use --manifest for  multi-platform build
   # use -t/--tag   for single-platform build
   [[ "$*" == *--manifest* ]] || args+=(-t $repo)
   buildah build "${args[@]}" "$@"
-  section_end $section
+  section_end
 }
 
 # <repo> <tag>
 # (assumes local image is <repo>:latest)
 buildah_push() {
-  local section repo="${1%:*}" tag=$2
+  local repo="${1%:*}" tag=$2
   local dest="$CI_REGISTRY_PATH/$repo:$tag"
-  section="push_${repo//-/_}"
 
-  section_start $section "Push $repo"
+  section_start "Push $repo"
   buildah tag "$repo:latest" $dest
   buildah push $dest
   buildah rmi  $dest
-  section_end $section
+  section_end
 }
 
 # <kind> <namespace>  <resource-name> \
@@ -233,18 +232,23 @@ wait_k8s_job() (
   wait -n $completion_pid $failure_pid
 )
 
-# sleep for post-mortem
-# debugging if job fails
-_ci_debug() {
-  local rc=$? red='\e[0;31m' clear='\e[0m'
-  ((rc)) || return 0
+_ci_exit() {
+  local rc=$?; set +eux
+  if ((rc)) && [ "$CI_DEBUG" ]; then
+    # sleep for post-mortem debugging
+    local red='\e[0;31m' clear='\e[0m'
 
-  echo -e "\n$red===== Job Failed =====$clear"
-  echo "Sleeping for $CI_DEBUG seconds to allow debugging..."
-  sleep $CI_DEBUG
-  return $rc
+    echo -e "\n$red===== Job Failed =====$clear"
+    echo "Sleeping for $CI_DEBUG seconds to allow debugging..."
+    sleep $CI_DEBUG
+  fi
 }
-[ "$CI_DEBUG" ] && trap _ci_debug EXIT
+trap _ci_exit EXIT
+
+# https://docs.gitea.com/usage/actions/actions-variables#pre-defined-environment-variables
+if [ "$GITHUB_SHA" ] && [ ! "$GIT_COMMIT_SHORT_SHA" ]; then
+  export_env GIT_COMMIT_SHORT_SHA "${GITHUB_SHA::8}"
+fi
 
 set +H # disable history expansion
 
@@ -258,7 +262,7 @@ export -f fake_tty
 export -f colorize
 export -f tee_noclr
 export -f init_certs
-export -f npm_install
+export -f export_env
 export -f buildah_login
 export -f buildah_build
 export -f buildah_push

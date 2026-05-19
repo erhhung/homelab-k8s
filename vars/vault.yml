@@ -145,7 +145,6 @@ vault_chart_values:
       storageClass: "{{ storage_classes['default'] }}"
       # min XFS volume size is 300Mi
       size: 384Mi
-
     # use same specs for audit as for data,
     # but PVC mount path will be different:
     # https://developer.hashicorp.com/vault/docs/audit
@@ -154,7 +153,6 @@ vault_chart_values:
     persistentVolumeClaimRetentionPolicy:
       whenScaled: Retain
       whenDeleted: Delete
-
     # StatefulSet update strategy
     updateStrategyType: OnDelete
 

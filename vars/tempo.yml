@@ -192,6 +192,8 @@ tempo_chart_values:
 
   persistence:
     enabled: true
+    # set both `whenScaled` and
+    # `whenDeleted` to "Delete"
     enableStatefulSetAutoDeletePVC: true
 
     storageClassName: "{{ storage_classes['default'] }}"

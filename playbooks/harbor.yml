@@ -113,6 +113,7 @@
 
     # these are only needed for their
     # *_harbor_user|_harbor_pass vars
+    - vars/gitea.yml
     - vars/gitlab.yml
     - vars/jenkins.yml
     - vars/buildkite.yml
