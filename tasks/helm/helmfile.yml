@@ -417,10 +417,11 @@
         chdir: "{{ temp_dir }}"
       register: helmfile_apply
       changed_when:
-        - helmfile_apply.rc == 2
         # if all diffs suppressed, message would
         # be "has changed, but diff is empty..."
         - >-
+          helmfile_apply.stderr is search("Release .+? does not exist") or
+          helmfile_apply.rc     == 2 and
           helmfile_apply.stdout_lines |
           select('search', '^[^ ]{2,}.+has.+(added|removed|changed):$') is truthy
       failed_when: helmfile_apply.rc not in [0,2]

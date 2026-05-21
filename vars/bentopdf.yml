@@ -1,0 +1,67 @@
+bentopdf_namespace: bentopdf
+bentopdf_host_names: # aliases of "ingress"
+  - bentopdf
+  - pdf
+
+# https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_filters.html#products
+bentopdf_fqdns: "{{ bentopdf_host_names | product(search_domains) | map('join','.') }}"
+
+bentopdf_secrets:
+  ingress: bentopdf-ingress-tls
+
+# https://github.com/alam00000/bentopdf/tree/main/chart
+# there doesn't appear to be an official chart
+# repo, so install directly from chart sources
+# * requires installation of helm-git plugin:
+# https://github.com/aslafy-z/helm-git#usage
+bentopdf_chart_repo_url: git+https://github.com/alam00000/bentopdf@chart?ref=main
+bentopdf_release_name: bentopdf
+
+# comment out `bentopdf_app_version`
+# below to use  chart's `appVersion`
+# https://github.com/alam00000/bentopdf/pkgs/container/bentopdf-simple/versions?filters%5Bversion_type%5D=tagged
+bentopdf_app_version: "2.8.4"
+
+# https://github.com/alam00000/bentopdf/tree/main/chart/values.yaml
+bentopdf_chart_values:
+  replicaCount: 1
+
+  image:
+    repository: ghcr.io/alam00000/bentopdf-simple
+    pullPolicy: IfNotPresent
+    tag: "{{ bentopdf_app_version | default('') }}"
+
+  resources:
+    requests:
+      cpu: 10m
+      memory: 32Mi
+
+  readinessProbe: &probe
+    periodSeconds: 10
+    timeoutSeconds: 3
+  livenessProbe: *probe
+
+  # the BentoPDF container is just an Nginx server serving
+  # static single-page webapp files--all PDF processing is
+  # in the browser using WASM libraries!
+  ingress:
+    enabled: true
+    tls:
+      - secretName: "{{ bentopdf_secrets['ingress'] }}"
+        hosts: "{{ bentopdf_fqdns }}"
+    className: "{{ rke_ingress_class }}"
+    annotations:
+      nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+      nginx.ingress.kubernetes.io/backend-protocol: HTTP
+    hosts: |
+      {% set hosts = [] %}
+      {% for fqdn in bentopdf_fqdns %}
+      {%   set _ = hosts.append({
+             'host':  fqdn,
+             'paths': [{
+                'path':     '/',
+                'pathType': 'Prefix',
+             }],
+           })   %}
+      {% endfor %}
+      {{ hosts  }}

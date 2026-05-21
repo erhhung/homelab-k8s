@@ -1,0 +1,34 @@
+# https://www.bentopdf.com/
+---
+- name: Install BentoPDF on RKE cluster
+  tags: install
+  hosts: "{{ rke_control_plane_host }}"
+  vars_files:
+    - vars/kubernetes.yml
+    - vars/bentopdf.yml
+  vars:
+    # required kubernetes>=24.2 package only in user virtualenv
+    ansible_python_interpreter: "{{ venv_python_interpreter }}"
+    kubeconfig: "{{ rke_kubeconfig }}"
+  tasks:
+    - name: Create BentoPDF ingress secret
+      vars:
+        secret_name: "{{ bentopdf_secrets['ingress'] }}"
+        secret_ns: "{{ bentopdf_namespace }}"
+        cert_name: bentopdf-ingress
+        sans: "{{ bentopdf_fqdns }}"
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/k8s/secrets/tls.step.yml"
+
+    - name: Install BentoPDF Helm chart
+      vars:
+        repo_name: bentopdf
+        repo_url: "{{ bentopdf_chart_repo_url }}"
+        chart_ref: bentopdf
+        release: "{{ bentopdf_release_name }}"
+        release_ns: "{{ bentopdf_namespace }}"
+        values: "{{ bentopdf_chart_values }}"
+
+        extras: # adopt extra resources into Helm release
+          - cert-manager.io/v1 Certificate {{ bentopdf_secrets['ingress'] }}
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/helm/helmfile.yml"

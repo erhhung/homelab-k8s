@@ -218,3 +218,7 @@
 - name: Include OpenClaw AI agents playbook
   ansible.builtin.import_playbook: playbooks/openclaw.yml
   tags: openclaw
+
+- name: Include BentoPDF toolkit playbook
+  ansible.builtin.import_playbook: playbooks/bentopdf.yml
+  tags: bentopdf

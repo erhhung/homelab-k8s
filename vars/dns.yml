@@ -142,6 +142,10 @@ pfsense_dns_records:
         desc: OpenClaw Control UI
       - host: agents
         desc: OpenClaw Control UI
+      - host: bentopdf
+        desc: BentoPDF Toolkit
+      - host: pdf
+        desc: BentoPDF Toolkit
       - host: void
         desc: No Such Host
 
