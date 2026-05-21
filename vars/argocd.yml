@@ -13,8 +13,6 @@ argocd_use_waypoint: false
 
 argocd_host_name: argocd # alias of "ingress"
 
-# remember to add argocd.fourteeners.local to pfSense DNS
-# as an alias of ingress.fourteeners.local: 192.168.4.222
 # https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_filters.html#products
 argocd_fqdn: "{{ [argocd_host_name] | product(search_domains) | map('join','.') | first }}"
 

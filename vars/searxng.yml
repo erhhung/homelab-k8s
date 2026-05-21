@@ -7,8 +7,6 @@ searxng_hostnames: # aliases of "ingress"
   - searxng
   - searx
 
-# remember to add searxng.fourteeners.local (also search./searx.) to
-# pfSense DNS as aliases of ingress.fourteeners.local: 192.168.4.222
 # https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_filters.html#products
 searxng_fqdns: "{{ searxng_hostnames | product(search_domains) | map('join','.') }}"
 

@@ -4,8 +4,6 @@
 jenkins_namespace: jenkins
 jenkins_host_name: jenkins # alias of "ingress"
 
-# remember to add jenkins.fourteeners.local to pfSense DNS
-# as an alias of  ingress.fourteeners.local: 192.168.4.222
 # https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_filters.html#products
 jenkins_fqdn: "{{ [jenkins_host_name] | product(search_domains) | map('join','.') | first }}"
 

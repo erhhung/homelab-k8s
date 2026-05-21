@@ -92,8 +92,6 @@ minio_host_names: # aliases of "ingress"
   - minio # console
   - s3 # S3 API
 
-# remember to add minio.fourteeners.local and s3.fourteeners.local to
-# pfSense DNS as aliases of ingress.fourteeners.local:  192.168.4.222
 # https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_filters.html#products
 minio_fqdns: "{{ minio_host_names | product(search_domains) | map('join','.') }}"
 

@@ -3,8 +3,6 @@ pyrra_host_names: # aliases of "ingress"
   - slo
   - pyrra
 
-# remember to add pyrra.fourteeners.local & slo.fourteeners.local to
-# pfSense DNS as aliases of ingress.fourteeners.local: 192.168.4.222
 # https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_filters.html#products
 pyrra_fqdns: "{{ pyrra_host_names | product(search_domains) | map('join','.') }}"
 

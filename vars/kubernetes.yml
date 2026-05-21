@@ -62,7 +62,6 @@ k3s_cluster_name: rancher
 rke_cluster_name: homelab
 rke_cluster_desc: Erhhung's Kubernetes Cluster at Home
 
-# remember to add rancher.fourteeners.local to pfSense DNS!
 # https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_filters.html#products
 k3s_fqdn: "{{ [k3s_cluster_name] | product(search_domains) | map('join','.') | first }}"
 

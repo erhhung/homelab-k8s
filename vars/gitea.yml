@@ -10,8 +10,6 @@ gitea_host_names: # aliases of "ingress"
   - gitea
   - git
 
-# remember to add gitea.fourteeners.local & git.fourteeners.local to
-# pfSense DNS as aliases of ingress.fourteeners.local: 192.168.4.222
 # https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_filters.html#products
 gitea_fqdns: "{{ gitea_host_names | product(search_domains) | map('join','.') }}"
 
@@ -78,14 +76,14 @@ gitea_harbor_pass: "{{ harbor_admin_pass }}"
 gitea_chart_repo_url: git+https://gitea.com/erhhung/helm-gitea?ref=fix-env-ini-encoding
 # gitea_chart_repo_url: https://dl.gitea.com/charts
 
+# https://gitea.com/gitea/helm-gitea
+gitea_chart_version: "12.5.3"
+gitea_release_name: gitea
+
 # comment out `gitea_app_version` below
 # to let playbook get chart `appVersion`
 # https://github.com/go-gitea/gitea/pkgs/container/gitea/versions?filters%5Bversion_type%5D=tagged
 gitea_app_version: "1.26.1"
-
-# https://gitea.com/gitea/helm-gitea
-gitea_chart_version: "12.5.3"
-gitea_release_name: gitea
 
 # `gitea_app_version` is fact set by task;
 # chart `image.rootless` is true by default

@@ -22,8 +22,6 @@ openwebui_host_names: # aliases of "ingress"
   - chatgpt
   - chat
 
-# remember to add openwebui.fourteeners.local (also chatgpt. and chat.)
-# to pfSense DNS as aliases of ingress.fourteeners.local: 192.168.4.222
 # https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_filters.html#products
 openwebui_fqdns: "{{ openwebui_host_names | product(search_domains) | map('join','.') }}"
 

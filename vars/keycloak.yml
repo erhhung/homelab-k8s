@@ -8,8 +8,6 @@ keycloak_host_names: # aliases of "ingress"
   - iam
   - sso
 
-# remember to add keycloak.fourteeners.local (also iam. and sso.) to
-# pfSense DNS as aliases of ingress.fourteeners.local: 192.168.4.222
 # https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_filters.html#products
 keycloak_fqdns: "{{ keycloak_host_names | product(search_domains) | map('join','.') }}"
 

@@ -2,7 +2,6 @@
 rancher_namespace: cattle-system
 rancher_host_name: rancher
 
-# remember to add rancher.fourteeners.local to pfSense DNS: 192.168.0.164
 # https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_filters.html#products
 rancher_fqdn: "{{ [rancher_host_name] | product(search_domains) | map('join','.') | first }}"
 

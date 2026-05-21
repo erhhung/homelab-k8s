@@ -4,8 +4,6 @@ playwright_use_waypoint: true
 
 playwright_host_name: playwright # alias of "ingress"
 
-# remember to add  playwright.fourteeners.local to pfSense
-# DNS as alias of ingress.fourteeners.local: 192.168.4.222
 # https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_filters.html#products
 playwright_fqdn: "{{ [playwright_host_name] | product(search_domains) | map('join','.') | first }}"
 

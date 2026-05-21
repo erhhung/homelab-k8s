@@ -5,8 +5,6 @@ kibana_host_names: # aliases of "ingress"
   - kibana
   - logs
 
-# remember to add kibana.fourteeners.local (and logs.fourteeners.local)
-# to pfSense DNS as aliases of ingress.fourteeners.local: 192.168.4.222
 # https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_filters.html#products
 kibana_fqdns: "{{ kibana_host_names | product(search_domains) | map('join','.') }}"
 

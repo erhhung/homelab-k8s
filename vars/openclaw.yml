@@ -7,8 +7,6 @@ openclaw_host_names: # aliases of "ingress"
   - openclaw
   - agents
 
-# remember to add openclaw.fourteeners.local & agents.fourteeners.local
-# to pfSense DNS as aliases of ingress.fourteeners.local: 192.168.4.222
 # https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_filters.html#products
 openclaw_fqdns: "{{ openclaw_host_names | product(search_domains) | map('join','.') }}"
 
@@ -56,7 +54,7 @@ openclaw_release_name: openclaw
 # comment out `openclaw_app_version` below
 # to let playbook get chart's `appVersion`
 # https://github.com/openclaw/openclaw/pkgs/container/openclaw/versions?filters%5Bversion_type%5D=tagged
-openclaw_app_version: "2026.5.18"
+openclaw_app_version: "2026.5.19"
 
 # https://github.com/serhanekicii/openclaw-helm/tree/main/charts/openclaw/values.yaml
 openclaw_chart_values:
@@ -516,11 +514,6 @@ openclaw_chart_values:
 
 # {id,[setup],package,version,[env]}
 openclaw_plugins:
-  # https://clawhub.ai/plugins/@openclaw/slack
-  - id: slack
-    package: "@openclaw/slack"
-    version: "2026.5.18"
-
   # https://github.com/Martian-Engineering/lossless-claw
   - id: lossless-claw
     package: "@martian-engineering/lossless-claw"

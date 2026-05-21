@@ -5,8 +5,6 @@
 harbor_namespace: harbor
 harbor_host_name: harbor # alias of "rancher"
 
-# remember to add harbor.fourteeners.local to pfSense DNS
-# as an alias of rancher.fourteeners.local: 192.168.0.164
 # https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_filters.html#products
 harbor_fqdn: "{{ [harbor_host_name] | product(search_domains) | map('join','.') | first }}"
 

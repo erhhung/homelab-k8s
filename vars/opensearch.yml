@@ -19,8 +19,6 @@ opensearch_host_names: # aliases of "ingress"
   - opensearch
   - es
 
-# remember to add opensearch.fourteeners.local and es.fourteeners.local
-# to pfSense DNS as aliases of ingress.fourteeners.local: 192.168.4.222
 # https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_filters.html#products
 opensearch_fqdns: "{{ opensearch_host_names | product(search_domains) | map('join','.') }}"
 

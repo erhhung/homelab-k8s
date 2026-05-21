@@ -5,8 +5,6 @@ mcpo_host_names: # aliases of "ingress"
   - mcpo
   - mcp
 
-# remember to add mcpo.fourteeners.local and mcp. to pfSense
-# DNS as aliases of ingress.fourteeners.local: 192.168.4.222
 # https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_filters.html#products
 mcpo_fqdns: "{{ mcpo_host_names | product(search_domains) | map('join','.') }}"
 

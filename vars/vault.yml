@@ -3,8 +3,6 @@
 vault_namespace: vault
 vault_host_name: vault # alias of "ingress"
 
-# remember to add  vault.fourteeners.local to pfSense DNS
-# as an alias of ingress.fourteeners.local: 192.168.4.222
 # https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_filters.html#products
 vault_fqdn: "{{ [vault_host_name] | product(search_domains) | map('join','.') | first }}"
 
