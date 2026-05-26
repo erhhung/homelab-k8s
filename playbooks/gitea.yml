@@ -289,7 +289,7 @@
                         livenessProbe: *probe
 
                     containers:
-                      - name: act-runner
+                      - name: runner
                         # allow building OCI images using Buildah
                         securityContext:
                           runAsUser: 0

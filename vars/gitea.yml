@@ -77,7 +77,7 @@ gitea_chart_repo_url: git+https://gitea.com/erhhung/helm-gitea?ref=fix-env-ini-e
 # gitea_chart_repo_url: https://dl.gitea.com/charts
 
 # https://gitea.com/gitea/helm-gitea
-gitea_chart_version: "12.5.3"
+gitea_chart_version: "12.6.0"
 gitea_release_name: gitea
 
 # comment out `gitea_app_version` below
@@ -659,16 +659,14 @@ gitea_chart_values:
 
 # =================================== Gitea Actions ===================================
 
-# use yet-to-be-released Helm chart in official repo
-# containing fix for `storageClassName` template bug
-actions_chart_repo_url: git+https://gitea.com/gitea/helm-actions?ref=main
-# actions_chart_repo_url: https://dl.gitea.com/charts
+# actions_chart_repo_url: git+https://gitea.com/gitea/helm-actions?ref=main
+actions_chart_repo_url: https://dl.gitea.com/charts
 
 # https://gitea.com/gitea/helm-actions
-actions_chart_version: "0.1.0"
+actions_chart_version: "0.1.1"
 actions_release_name: actions
 
-actions_app_name: "{{ actions_release_name }}-act-runner"
+actions_app_name: "{{ actions_release_name }}-runner"
 actions_metrics_port: 9101
 
 actions_runner_image:
@@ -676,7 +674,7 @@ actions_runner_image:
   repository: library/gitea-runner
   # build custom image using this `gitea-runner` image:
   # `skopeo list-tags docker://docker.gitea.com/runner`
-  tag: "1.0.4"
+  tag: "1.0.6"
 
 # https://gitea.com/gitea/helm-actions/src/branch/main/values.yaml
 actions_chart_values:
@@ -732,10 +730,10 @@ actions_chart_values:
     persistence:
       size: 4Gi
 
-    actRunner:
-      registry: "{{   actions_runner_image.registry }}"
+    runner:
+      registry: "{{   actions_runner_image.registry   }}"
       repository: "{{ actions_runner_image.repository }}"
-      tag: "{{        actions_runner_image.tag }}"
+      tag: "{{        actions_runner_image.tag        }}"
       pullPolicy: IfNotPresent
 
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/template_lookup.html
