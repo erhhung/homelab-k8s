@@ -7,3 +7,12 @@ description: Give higher priority to database pods that are critical to the func
 globalDefault: false
 value: 10000
 preemptionPolicy: PreemptLowerPriority
+---
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: scanning-priority
+description: Give lower priority to security scanning jobs that can be rerun when resources are available.
+globalDefault: false
+value: -1000
+preemptionPolicy: PreemptLowerPriority

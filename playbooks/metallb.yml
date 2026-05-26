@@ -14,8 +14,12 @@
     ansible_python_interpreter: "{{ venv_python_interpreter }}"
     kubeconfig: "{{ rke_kubeconfig }}"
   pre_tasks:
-    - name: Is the monitoring stack ready?
+    - name: Do Harbor mirror repos exist?
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/harbor/mirrorready.yml"
+      when: harbor_mirror_ready is undefined
+
+    - name: Is the monitoring stack ready?
       ansible.builtin.include_tasks: "{{ tasks_dir }}/monitoring/stackready.yml"
       when: monitoring_stack_ready is undefined
 

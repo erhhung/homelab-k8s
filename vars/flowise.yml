@@ -108,12 +108,21 @@ flowise_chart_values:
   # https://github.com/cowboysysop/charts/tree/master/charts/redis/values.yaml
   redis:
     enabled: true
+    architecture: standalone # standalone|replication
 
     image:
+      registry: "{{ harbor_container_registry }}"
       repository: bitnami/redis
       tag: 8.2.1-debian-12-r0
+
+    auth: # use the same password as external Valkey cluster
+      existingSecret: "{{ flowise_secrets['credentials'] }}"
+      existingSecretPasswordKey: valkey-password
+
     master:
       revisionHistoryLimit: 2
+      pdb:
+        create: false
 
       persistence:
         enabled: true
@@ -130,13 +139,17 @@ flowise_chart_values:
           cpu: 25m
           memory: 32Mi
 
+    networkPolicy:
+      enabled: true
+      allowExternalEgress: false
+
   externalRedis:
     # mode=queue
     enabled: false
     host: "{{ valkey_service_host }}"
     port: "{{ valkey_service_port }}"
-    # existingSecret: "{{ flowise_secrets['credentials'] }}"
-    # existingSecretKeyPassword: valkey-password
+    existingSecret: "{{ flowise_secrets['credentials'] }}"
+    existingSecretKeyPassword: valkey-password
     useTLS: true
 
   persistence:

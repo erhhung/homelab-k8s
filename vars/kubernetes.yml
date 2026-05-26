@@ -101,6 +101,7 @@ priority_classes:
   # "critical" is created automatically by RKE2
   critical: system-cluster-critical # 2000000000
   database: database-priority # 10000
+  scanning: scanning-priority # -1000
 
 docker_username: erhhung
 # {{ docker_access_token }}

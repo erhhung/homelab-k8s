@@ -1,0 +1,99 @@
+# https://trivy.dev/docs/latest/guide/scanner/vulnerability
+# https://trivy.dev/docs/latest/guide/scanner/secret
+# https://aquasecurity.github.io/trivy-operator
+---
+# build wrapper image with env vars CONTAINERD_ADDRESS
+# and CONTAINERD_NAMESPACE baked in for job containers
+- name: Build Trivy scanner image
+  tags: build
+  hosts: localhost
+  vars_files:
+    - vars/trivy.yml
+  tasks:
+    - name: Build image and push to Harbor
+      vars:
+        image_name: trivy
+        image_tag: "{{ trivy_scanner_image.tag }}"
+        build_args:
+          TRIVY_IMAGE_TAG: "{{ image_tag }}"
+        context_dir: "{{ files_dir }}/trivy"
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/oci/build.yml"
+
+- name: Install Trivy Operator
+  tags: install
+  hosts:
+    - "{{ k3s_control_plane_host }}"
+    - "{{ rke_control_plane_host }}"
+  vars_files:
+    - vars/kubernetes.yml
+    - vars/monitoring.yml
+    - vars/storage.yml
+    - vars/trivy.yml
+  vars:
+    # required kubernetes>=24.2 package only in user virtualenv
+    ansible_python_interpreter: "{{ venv_python_interpreter }}"
+    # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/ternary_filter.html
+    cluster: "{{ (inventory_hostname in groups['k3s_cluster']) | ternary('k3s','rke') }}"
+    kubeconfig: "{{ vars[cluster ~'_kubeconfig'] }}"
+    secret_ns: "{{ trivy_namespace }}"
+    create_ns: false
+  pre_tasks:
+    - name: Is the monitoring stack ready?
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/monitoring/stackready.yml"
+      when: monitoring_stack_ready is undefined
+  tasks:
+    - name: Create Trivy credentials secret
+      vars:
+        secret_name: "{{ trivy_secrets['credentials'] }}"
+        secret_data:
+          redis-password: "{{ valkey_pass }}"
+        create_ns: true
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/k8s/secrets/generic.yml"
+
+    # https://trivy.dev/docs/latest/guide/configuration#environment-variables
+    - name: Create Trivy envFrom secret
+      vars:
+        values: "{{ trivy_operator_chart_values }}"
+        redis_host: "{{ values.redis.fullnameOverride }}-master.{{
+          trivy_namespace }}.svc.{{ cluster_domain }}"
+
+        # === Inputs ===
+        secret_name: "{{ trivy_secrets['env-vars'] }}"
+        secret_data:
+          # https://trivy.dev/docs/latest/guide/references/configuration/cli/trivy_server#options
+          TRIVY_CACHE_BACKEND: redis://:{{ valkey_pass }}@{{ redis_host }}:6379/0
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/k8s/secrets/generic.yml"
+
+    - name: Install Trivy Operator Helm chart
+      vars:
+        repo_name: aqua
+        repo_url: https://aquasecurity.github.io/helm-charts
+        chart_ref: trivy-operator
+        chart_ver: "{{ trivy_operator_chart_version }}"
+        release: "{{ trivy_operator_release_name }}"
+        release_ns: "{{ trivy_namespace }}"
+        values: "{{ trivy_operator_chart_values }}"
+
+        patches:
+          merge_patches:
+            - apiVersion: apps/v1
+              kind: StatefulSet
+              metadata:
+                name: trivy-server # not templated
+                namespace: "{{ trivy_namespace }}"
+              spec:
+                revisionHistoryLimit: 2
+                persistentVolumeClaimRetentionPolicy:
+                  whenScaled: Retain
+                  whenDeleted: Delete
+
+        subcharts:
+          - dependency:
+              chart: oci://ghcr.io/cowboysysop/charts/redis
+              # helm show chart oci://ghcr.io/cowboysysop/charts/redis
+              version: "21.2.6"
+        extras: # adopt extra resources into Helm release
+          - v1 Secret {{ trivy_secrets['credentials'] }}
+          - v1 Secret {{ trivy_secrets['env-vars']    }}
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/helm/helmfile.yml"

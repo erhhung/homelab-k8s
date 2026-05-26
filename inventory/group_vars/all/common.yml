@@ -32,6 +32,7 @@ project_dir: "{{ hostvars['localhost']['project_dir'] |
 vars_dir: "{{ project_dir }}/vars"
 tasks_dir: "{{ project_dir }}/tasks"
 templates_dir: "{{ project_dir }}/templates"
+manifests_dir: "{{ project_dir }}/manifests"
 files_dir: "{{ project_dir }}/files"
 icons_dir: "{{ project_dir }}/images/icons"
 scripts_dir: "{{ project_dir }}/scripts"
@@ -75,3 +76,4 @@ bcrypt_rounds: 11
 
 # useful in YAML multiline strings
 LF: "\n"
+BS: "\\"

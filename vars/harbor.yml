@@ -172,7 +172,35 @@ harbor_settings:
   # Docker/Buildah sessions
   token_expiration: 120 # minutes
 
-# copy into Harbor
-harbor_copy_images:
-  # items must include the registry name
-  - ghcr.io/erhhung/al2023-devops:latest
+harbor_mirror_images:
+  - # src must begin with the registry
+    # domain name, even if `docker.io`
+    src: ghcr.io/erhhung/al2023-devops:latest
+    # dest, if not specified, defaults
+    # to library/<name>:<tag> from src
+    dest: library/al2023-devops:latest
+
+  # this exact image is used by
+  # many standalone deployments
+  - src: docker.io/bitnamilegacy/redis:8.2.1-debian-12-r0
+    dest: bitnami/redis:8.2.1-debian-12-r0
+
+  - src: docker.io/bitnamilegacy/metallb-controller:0.15.2-debian-12-r7
+    dest: bitnami/metallb-controller:0.15.2-debian-12-r7
+  - src: docker.io/bitnamilegacy/metallb-speaker:0.15.2-debian-12-r6
+    dest: bitnami/metallb-speaker:0.15.2-debian-12-r6
+
+  # used by PostgreSQL and PgPool-II
+  - src: docker.io/bitnamilegacy/os-shell:12-debian-12-r51
+    dest: bitnami/os-shell:12-debian-12-r51
+  - src: docker.io/bitnamilegacy/postgresql-repmgr:17.6.0-debian-12-r2
+    dest: bitnami/postgresql-repmgr:17.6.0-debian-12-r2
+  - src: docker.io/bitnamilegacy/pgpool:4.6.3-debian-12-r0
+    dest: bitnami/pgpool:4.6.3-debian-12-r0
+  - src: docker.io/bitnamilegacy/postgres-exporter:0.17.1-debian-12-r16
+    dest: bitnami/postgres-exporter:0.17.1-debian-12-r16
+
+  - src: docker.io/bitnamilegacy/valkey-cluster:8.1.3-debian-12-r1
+    dest: bitnami/valkey-cluster:8.1.3-debian-12-r1
+  - src: docker.io/bitnamilegacy/redis-exporter:1.74.0-debian-12-r2
+    dest: bitnami/redis-exporter:1.74.0-debian-12-r2

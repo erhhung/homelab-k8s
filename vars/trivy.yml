@@ -1,0 +1,235 @@
+trivy_namespace: trivy-system
+
+trivy_secrets:
+  credentials: trivy-credentials
+  env-vars: trivy-env-variables
+
+# https://github.com/aquasecurity/trivy-operator/tree/main/deploy/helm
+trivy_operator_chart_version: "0.32.1"
+trivy_operator_release_name: trivy-operator
+
+trivy_scanner_image:
+  registry: "{{ harbor_container_registry }}"
+  repository: library/trivy
+  # build custom wrapper image based on this `trivy` image:
+  # `skopeo list-tags docker://mirror.gcr.io/aquasec/trivy`
+  tag: "0.70.0"
+
+# https://github.com/aquasecurity/trivy-operator/tree/main/deploy/helm/values.yaml
+trivy_operator_chart_values:
+  targetWorkloads: pod,replicaset,replicationcontroller,statefulset,daemonset,cronjob,job
+  targetNamespaces: "" # all namespaces
+  excludeNamespaces: "" # namespace CSV
+
+  operator:
+    replicas: 1
+    revisionHistoryLimit: 2
+
+    # run Trivy in client-server mode so vulnerability
+    # database is cached/updated and shared across all
+    # scan jobs (forces `trivy.mode: ClientServer`)
+    builtInTrivyServer: true
+
+    # enable/disable scanners by type
+    vulnerabilityScannerEnabled: true
+    exposedSecretScannerEnabled: false
+    infraAssessmentScannerEnabled: true
+    rbacAssessmentScannerEnabled: true
+    configAuditScannerEnabled: true
+    clusterComplianceEnabled: false
+
+    # rescan an image for vulnerabilities every 3 days
+    scannerReportTTL: 72h # 3 days
+    # SBOM is required for ClusterVulnerabilityReports
+    sbomGenerationEnabled: true
+    # create cluster-scoped ClusterSbomReport objects
+    # in addition to namespaced SbomReport objects to
+    # speed up SBOM generation for widely used images
+    clusterSbomCacheEnabled: true
+    # keep cached SBOM reports for a week to speed up
+    # vulnerability scans
+    cacheReportTTL: &cache-ttl 168h # 1 week
+
+    scanNodeCollectorLimit: 1
+    # set concurrency limit for individual clusters, but
+    # cap to cluster node count due to `podAntiAffinity`
+    scanJobsConcurrentLimit: "{{ [3 if cluster == 'rke' else 1,
+      groups[cluster ~'_cluster'] | length] | min }}"
+    scanJobTimeout: 10m # Job activeDeadlineSeconds
+    scanJobsRetryDelay: 60s
+
+  trivyOperator:
+    scanJobPodTemplateLabels: app.kubernetes.io/part-of=trivy-operator,app.kubernetes.io/component=scan-job
+    scanJobPodPriorityClassName: "{{ priority_classes['scanning'] }}" # -1000
+
+    scanJobAffinity:
+      # run concurrent scan jobs on different nodes
+      podAntiAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          - topologyKey: kubernetes.io/hostname
+            labelSelector:
+              matchLabels:
+                app.kubernetes.io/part-of: trivy-operator
+                app.kubernetes.io/component: scan-job
+
+    scanJobCustomVolumes:
+      # need to provide Trivy direct access to the host's containerd
+      # socket because it has been configured with path rewrite rule
+      # for "bitnami/*" => "bitnamilegacy/*", which Trivy's registry
+      # mirroring support doesn't handle:
+      # https://trivy.dev/docs/latest/guide/configuration/others#mirror-registries
+      - name: containerd-sock
+        # https://kubernetes.io/docs/concepts/storage/volumes#hostpath
+        hostPath:
+          # defined in vars/kubernetes.yml
+          # and same for both K3s and RKE2
+          path: "{{ containerd_socket }}"
+          type: Socket
+
+    scanJobCustomVolumesMount:
+      # required env vars CONTAINERD_ADDRESS & CONTAINERD_NAMESPACE
+      # are defined directly in our custom Trivy image since Trivy
+      # Operator doesn't expose a method to inject extra env vars:
+      # https://github.com/aquasecurity/trivy-operator/issues/2971
+      - name: containerd-sock
+        mountPath: "{{ containerd_socket }}"
+        readOnly: true
+
+  resources: # for Trivy operator
+    requests:
+      cpu: 100m
+      memory: 512Mi
+
+  trivy:
+    mode: ClientServer # Standalone|ClientServer
+
+    image: # for both Trivy server and client
+      registry: "{{   trivy_scanner_image.registry   }}"
+      repository: "{{ trivy_scanner_image.repository }}"
+      tag: "{{        trivy_scanner_image.tag        }}"
+      pullPolicy: IfNotPresent
+
+    server:
+      replicas: 1
+
+      resources: # for Trivy server
+        requests:
+          cpu: 25m
+          memory: 128Mi
+
+    # pass extra TRIVY_* env vars for Redis connection
+    valuesFromSecret: "{{ trivy_secrets['env-vars'] }}"
+
+    # only RKE cluster has Longhorn storage class
+    storageClassEnabled: "{{ cluster == 'rke' }}"
+    storageClassName: "{{ storage_classes['default'] }}"
+    # Trivy server StatefulSet will request PVC
+    # to mount at /home/scanner/.cache to store
+    # vulnerability+Java DBs and checks bundle
+    # (scan analysis cache uses Redis instead)
+    storageSize: 2Gi
+
+    podLabels:
+      # required by `redis.networkPolicy.allowExternal`
+      trivy-redis-client: "true"
+
+    # https://trivy.dev/docs/latest/guide/references/configuration/config-file
+    configFile:
+      # https://trivy.dev/docs/latest/guide/references/configuration/config-file#cache-options
+      cache:
+        # backend: see `TRIVY_CACHE_BACKEND` in env vars Secret
+        ttl: *cache-ttl
+
+      # https://trivy.dev/docs/latest/guide/references/configuration/config-file#scan-options
+      # https://trivy.dev/docs/latest/guide/references/configuration/cli/trivy_image#options
+      scan:
+        skip-version-check: true
+        # trade scanning time for less CPU/memory usage
+        parallel: 1
+
+      # https://trivy.dev/docs/latest/guide/references/configuration/config-file#image-options
+      image:
+        source: # docker,containerd,podman,remote
+          # prefer using containerd on Kubernetes node since images
+          # may already exist in the host's registry and containerd
+          # has been configured with mirrors and path rewrite rules
+          - containerd
+          - remote
+
+    # https://trivy.dev/docs/latest/guide/configuration/filtering#trivyignoreyaml
+    ignoreFileName: .trivyignore.yaml
+    ignoreFile: "{{ trivy_ignore_file }}"
+
+    # https://github.com/aquasecurity/trivy-operator/issues/2896
+    slow: false # deprecated! see trivy.configFile.scan.parallel
+
+    resources: # for scan job containers
+      requests:
+        cpu: 500m
+        memory: 64Mi
+      limits:
+        cpu: 750m
+        memory: 512Mi
+
+  # subchart values attached via Helmfile:
+  # https://github.com/cowboysysop/charts/tree/master/charts/redis/values.yaml
+  redis:
+    fullnameOverride: trivy-redis
+    architecture: standalone # standalone|replication
+
+    image:
+      registry: "{{ harbor_container_registry }}"
+      repository: bitnami/redis
+      tag: 8.2.1-debian-12-r0
+
+    auth:
+      existingSecret: "{{ trivy_secrets['credentials'] }}"
+      existingSecretPasswordKey: redis-password
+
+    # use in-memory only
+    commonConfiguration: |-
+      appendonly no
+      save ""
+
+    master:
+      kind: Deployment
+      revisionHistoryLimit: 2
+
+      podLabels:
+        app.kubernetes.io/part-of: trivy-operator
+        app.kubernetes.io/component: scan-cache
+      pdb:
+        create: false
+
+      persistence:
+        enabled: false
+        sizeLimit: 256Mi # emptyDir
+
+      resources:
+        requests:
+          cpu: 50m
+          memory: 64Mi
+
+      # prevent unbounded memory usage,
+      # evicting when limit is reached
+      extraFlags:
+        - "--maxmemory 256mb"
+        - "--maxmemory-policy allkeys-lru"
+
+    networkPolicy:
+      enabled: true
+      # restrict access to Trivy server by requiring
+      # `trivy.podLabels.trivy-redis-client: "true"`
+      allowExternal: false
+      allowExternalEgress: false
+
+  serviceMonitor:
+    enabled: "{{ prometheus_crds_installed }}"
+    labels: "{{ monitoring_selector_labels }}"
+    interval: 1m
+
+# https://trivy.dev/docs/latest/guide/configuration/filtering#trivyignoreyaml
+trivy_ignore_file:
+  misconfigurations:
+    - id: AVD-KCV-0086 # Do not override node hostnames.
+      statement: RKE2 sets node-name equal to hostname.

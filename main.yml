@@ -33,6 +33,10 @@
   ansible.builtin.import_playbook: playbooks/cluster.yml
   tags: cluster
 
+- name: Include resource manifests playbook
+  ansible.builtin.import_playbook: playbooks/manifests.yml
+  tags: manifests
+
 - name: Include MetalLB load balancer playbook
   ansible.builtin.import_playbook: playbooks/metallb.yml
   tags: metallb
@@ -72,14 +76,15 @@
   ansible.builtin.import_playbook: playbooks/velero.yml
   tags: velero
 
-- name: Include resource manifests playbook
-  ansible.builtin.import_playbook: playbooks/manifests.yml
-  tags: manifests
-
 # Harbor depends on NFS storage provisioner
 - name: Include Harbor OCI registry playbook
   ansible.builtin.import_playbook: playbooks/harbor.yml
   tags: harbor
+
+# Trivy depends on Harbor and Longhorn
+- name: Include Trivy security scanner playbook
+  ansible.builtin.import_playbook: playbooks/trivy.yml
+  tags: trivy
 
 - name: Include OpenSearch cluster playbook
   ansible.builtin.import_playbook: playbooks/opensearch.yml

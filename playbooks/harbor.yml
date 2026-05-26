@@ -56,8 +56,7 @@
           ver=$(v=`harbor version | yq .Version`; echo ${v#v})
           [ "$ver" == "$VER" ] && exit 9 # no change
         }
-        ARCH=$(uname -m | sed -e 's/aarch64/arm64/' \
-                              -e  's/x86_64/amd64/')
+        ARCH=$(uname -m | sed -e 's/aarch64/arm64/' -e 's/x86_64/amd64/')
         tarball="$REL/download/v${VER}/harbor-cli_${VER}_linux_${ARCH}.tar.gz"
 
         # this project is known to create a new release but fail to
@@ -230,13 +229,30 @@
         create_users.rc not in [0,9] or
         create_users.stdout is search('errors')
 
-- name: Copy images into Harbor
-  tags: copy
+- name: Mirror images into Harbor
+  tags:
+    - mirror
+    - copy
   hosts: "{{ k3s_control_plane_host }}"
   vars_files:
     - vars/kubernetes.yml
     - vars/harbor.yml
   vars:
+    mirror_images: |
+      {% set images = [] %}
+      {% for image    in harbor_mirror_images %}
+      {%   set parts = image.src.split('/')   %}
+      {%   set dest  = image.dest | default('library/'~ parts[-1]) %}
+      {%   set _     = images.append({
+             'reg':  parts[0],
+             'src':  image.src,
+             'dest':      dest,
+             'proj':      dest.split('/')[0],
+             'repo': parts[-1].split(':')[0],
+             'tag':  parts[-1].split(':')[1] if ':' in parts[-1] else 'latest',
+           })   %}
+      {% endfor %}
+      {{ images }}
     preamble: |-
       # restart Bash and load .bash_aliases
       exec /bin/bash -l <<'EOT'
@@ -245,61 +261,73 @@
       . .bash_aliases
       set -eo pipefail
   pre_tasks:
-    - name: Determine source images
+    - name: Determine copying needs
       # noqa risky-shell-pipe
       ansible.builtin.shell: |
         {{ preamble }}
 
-        images=({{ harbor_copy_images | join(' ') }})
-        sources=() registries=()
+        proj_list=($(harbor project list -o json | jq -r '.[].name'))
+        sources=() registries=() projects=()
 
-        for image in "${images[@]}"; do
-          repo="${image##*/}"
-           tag="${repo##*:}"
-          repo="library/${repo%%:*}"
-           tag="${tag:-latest}"
-          echo >&2 "repo=$repo tag=$tag"
+        add_unique() {
+          local -n array="$1"; local value="$2"
+          [[ " ${array[*]} " == *" $value "* ]] || \
+            array+=($value)
+        }
+        {% for image in mirror_images %}
+        repo={{ image.proj }}/{{ image.repo }}
 
-          id="$(harbor artifact list $repo -o json 2> /dev/null | \
-            jq --arg tag $tag -r  '.Payload[] |
-                  select($tag == (.tags // [])[].name) | .id')" || true
-          [ "$id" ] || {
-            sources+=($image)
-            registry=${image%%/*}
-            [[ " ${registries[*]} " == *" $registry "* ]] || \
-              registries+=($registry)
-          }
-        done
+        id=$(harbor artifact list $repo -o json 2> /dev/null | \
+          jq --arg tag {{ image.tag }} -r '.Payload[] |
+            select($tag == (.tags // [])[].name) | .id'
+        ) || true
+
+        if [ ! "$id" ]; then
+          # add sources to be copied
+          sources+=({{ image.src }})
+
+          # add registries to log into
+          add_unique registries {{ image.reg }}
+
+          # add projects to be created
+          [[ " ${proj_list[*]} " == *" {{ image.proj }} "* ]] || \
+            add_unique projects {{ image.proj }}
+        fi
+        {% endfor %}
 
         jo -p sources="$(jo -a -- <<< ""    "${sources[@]}")" \
+             projects="$(jo -a -- <<< ""   "${projects[@]}")" \
            registries="$(jo -a -- <<< "" "${registries[@]}")"
         EOT
-      register: copy_info
+      register: copy_needs
       changed_when: false
 
-    - name: Set source image facts
+    - name: Set image copying facts
       vars:
-        info: "{{ copy_info.stdout | from_json }}"
+        needs: "{{ copy_needs.stdout | from_json }}"
       ansible.builtin.set_fact:
-        source_images: "{{ info.sources }}"
-        source_registries: "{{ info.registries }}"
+        login_registries: "{{ needs['registries'] }}"
+        create_projects: "{{  needs['projects']   }}"
+        image_sources: "{{    needs['sources']    }}"
   tasks:
     - name: Log in to registries
       ansible.builtin.shell: |
         {{ preamble }}
 
         registries=(
-          {{ source_registries | join(' ') }}
-          {{ harbor_container_registry     }}
+          {{ login_registries | join(' ') }}
+          {{ harbor_container_registry    }}
         )
         for registry in "${registries[@]}"; do
           user={{ user_erhhung.username }}
           unset pass
 
           case "$registry" in
-            docker.io) pass={{ docker_access_token }} ;;
-              ghcr.io) pass={{ github_access_token }} ;;
-              harbor*) pass={{ harbor_admin_pass   }} ;;
+              # only Harbor admins can create projects
+              harbor*) user='{{ harbor_admin_user   }}'
+                       pass='{{ harbor_admin_pass   }}' ;;
+            docker.io) pass='{{ docker_access_token }}' ;;
+              ghcr.io) pass='{{ github_access_token }}' ;;
           esac
 
           [ "$pass" ] || {
@@ -308,32 +336,45 @@
             continue
           }
           echo "Logging in to $registry..."
-          skopeo login $registry -u $user -p $pass
+          skopeo login $registry -u $user -p "$pass"
           rc=0
         done
         set +e; exit ${rc-9}
         EOT
       register: reg_logins
-      when: source_registries is truthy
+      when: login_registries is truthy
       changed_when: reg_logins.rc == 0
       failed_when: reg_logins.rc not in [0,9]
 
-    - name: Copy image into Harbor
-      vars:
-        # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/basename_filter.html
-        image: "{{ item | ansible.builtin.basename }}"
-        dest: "{{ harbor_container_registry }}/library/{{ image }}"
+    - name: Create Harbor project
       ansible.builtin.shell: |
         {{ preamble }}
 
-        # https://github.com/containers/skopeo#copying-images
-        # https://github.com/containers/skopeo/tree/main/docs/skopeo-copy.1.md
-        skopeo copy --multi-arch system --retry-times 2 \
-          docker://{{ item }} \
-          docker://{{ dest }}
+        # https://unioslo.github.io/harbor-cli/commands/project#project-create
+        harbor project create {{ item }} --public=true \
+          --proxy-cache=false --storage-limit=-1
         EOT
-      loop: "{{ source_images }}"
-      loop_control:
-        label: "{{ image }}"
-      timeout: 900
+      loop: "{{ create_projects }}"
       changed_when: true
+
+    # https://github.com/containers/skopeo#copying-images
+    - name: Copy image into Harbor
+      vars:
+        image: "{{ mirror_images | selectattr('src', '==', item) | first }}"
+        image_dest: "{{ harbor_container_registry }}/{{ image.dest }}"
+      # noqa risky-shell-pipe
+      ansible.builtin.shell: |
+        {{ preamble }}
+
+        # https://github.com/containers/skopeo/tree/main/docs/skopeo-copy.1.md
+        ARCH=$(uname -m | sed -e 's/aarch64/arm64/' -e 's/x86_64/amd64/')
+        skopeo --override-os linux --override-arch $ARCH \
+          copy --multi-arch system --retry-times 2 \
+          docker://{{ image.src  }} \
+          docker://{{ image_dest }}
+        EOT
+      loop: "{{ image_sources }}"
+      loop_control:
+        label: "{{ image.dest }}"
+      changed_when: true
+      timeout: 900

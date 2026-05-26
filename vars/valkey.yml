@@ -73,6 +73,12 @@ valkey_release_name: valkey
 valkey_chart_values:
   nameOverride: "{{ valkey_release_name }}"
 
+  global:
+    # use mirrored images in Harbor
+    security:
+      allowInsecureImages: true # allow non-Bitnami registry
+    imageRegistry: "{{ harbor_container_registry }}"
+
   tls:
     enabled: true
     # IRedis doesn't currently support mTLS parameters

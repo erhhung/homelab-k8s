@@ -52,6 +52,11 @@ postgresql_chart_values:
   nameOverride: "{{ postgresql_release_name }}"
 
   global:
+    # use mirrored images in Harbor
+    security:
+      allowInsecureImages: true # allow non-Bitnami registry
+    imageRegistry: "{{ harbor_container_registry }}"
+
     # provide explicit passwords to prevent
     # random generation during Helm upgrade
     postgresql: &global-postgresql
@@ -60,6 +65,7 @@ postgresql_chart_values:
     pgpool: &global-pgpool
       adminPassword: "{{ postgresql_pass }}" # user "admin"
       srCheckPassword: "{{ pgpool_sr_pass }}" # user "sr_check_user"
+
     defaultStorageClass: "{{ storage_classes['default'] }}"
 
   persistence:

@@ -101,7 +101,7 @@
         secret_name: "{{ flowise_secrets['credentials'] }}"
         secret_data:
           postgresql-password: "{{ flowise_pg_pass }}"
-          # valkey-password: "{{ flowise_vk_pass }}"
+          valkey-password: "{{     flowise_vk_pass }}"
       ansible.builtin.include_tasks: "{{ tasks_dir }}/k8s/secrets/generic.yml"
 
     - name: Install Flowise Helm chart

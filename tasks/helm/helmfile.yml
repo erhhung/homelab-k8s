@@ -13,7 +13,15 @@
 #   release      <required> release name
 #   release_ns   <required> release namespace
 #   values       [optional] chart values dict
-#   patches:     [optional] kustomize patches
+#   subcharts:       [optional] extra subcharts
+#     - repository:  [optional] omit for oci://
+#         name       <required> Helm repository name
+#         url        <required> Helm repository URL
+#       dependency:  <required> subchart reference
+#         chart      <required> name or oci:// URL
+#         version    [optional] subchart version
+#         alias      [optional] chart name alias
+#   patches:         [optional] kustomize patches
 #     merge_patches  [optional] list flatten(1)
 #     json_patches   [optional] list flatten(1)
 #     transformers   [optional] list flatten(1)
@@ -24,9 +32,9 @@
 #     - {apiVersion,  kind, ...}       full resource (dict)
 #   helm_hooks:  [optional] run before helm command
 #                           ($CHART_DIR is defined)
-#     template:  [optional] Bash commands
-#     install:   [optional] Bash commands
-#     upgrade:   [optional] Bash commands
+#     template   [optional] Bash commands
+#     install    [optional] Bash commands
+#     upgrade    [optional] Bash commands
 #   ignore:      [optional] ignore diffs
 #     lines      [optional] line regexes
 #     kinds      [optional] object kinds
@@ -188,16 +196,20 @@
       vars:
         repos:
           - "{{ { 'name': repo_name, 'url': repo_url } if chart_repo != '' else [] }}"
-          - "{{    extras_chart.repository             if has_extras       else [] }}"
+          - "{{ subcharts | default([]) | map(attribute='repository') | select('defined') }}"
+          - "{{ extras_chart.repository if has_extras else [] }}"
+        deps:
+          - "{{ subcharts | default([]) | map(attribute='dependency') }}"
+          - "{{ extras_chart.dependency if has_extras else [] }}"
         _values:
+          - "{{ values_file if values is defined else [] }}"
           # https://github.com/bedag/helm-charts/tree/master/charts/raw#examples
           # https://github.com/bedag/helm-charts/tree/master/charts/raw/values.yaml
-          - | # keep extras values at index 0
+          - | # keep extras values at end-of-list
             {{ { extras_chart.dependency.alias: {
                    'enabled':   true,
                    'resources': objects,
-               } }          if has_extras        else [] }}
-          - "{{ values_file if values is defined else [] }}"
+               } } if has_extras else [] }}
 
         # https://helmfile.readthedocs.io/en/latest#configuration
         helmfile:
@@ -245,8 +257,8 @@
               version: "{{ chart_ver if chart_ver is defined and chart_ver != omit else '' }}"
 
               # https://helmfile.readthedocs.io/en/latest/advanced-features#adding-dependencies-without-forking-the-chart
-              dependencies: "{{ [extras_chart.dependency] if has_extras else [] }}"
-              values: "{{ _values | flatten(1) }}"
+              dependencies: "{{ deps | flatten(1) }}"
+              values: "{{    _values | flatten(1) }}"
 
               # https://helmfile.readthedocs.io/en/latest/advanced-features#adhoc-kustomization-of-helm-charts
               strategicMergePatches: "{{ patchsets['merge_patches'] }}"
@@ -303,7 +315,7 @@
             exit 1
           fi
 
-          jq '.releases[0].values[0].{{ extras_chart.dependency.alias }}.resources += [input]' \
+          jq '.releases[0].values[-1].{{ extras_chart.dependency.alias }}.resources += [input]' \
             <(yq -oj {{ helmfile_file }}) <(canonicalize <<< "$json") \
             | yq -pj -oy | sponge {{ helmfile_file }}
         done < <(

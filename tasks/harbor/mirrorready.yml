@@ -1,0 +1,40 @@
+# check if the local Harbor container registry has
+# been deployed and populated with mirrored images
+#
+# sets the following facts:
+#   harbor_mirror_repos: repo list
+#   harbor_mirror_ready: true/false
+---
+- name: Do Harbor mirror repos exist?
+  become: false
+  vars:
+    # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/random_filter.html
+    rke_host: "{{ groups['rke_cluster'] | random }}"
+    projects:
+      - bitnami
+  block:
+    - name: List mirror repos by project
+      delegate_to: "{{ rke_host }}"
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/shell_module.html
+      ansible.builtin.shell: |
+        # restart Bash and load .bash_env.d/*
+        exec /bin/bash -l <<'EOT'
+        . .bash_aliases
+        set -o pipefail
+
+        command -v harbor  &> /dev/null  || exit 1
+        harbor project search {{ item }} -o json | \
+          jq -r '[.Payload.repository[].repository_name] | sort[]'
+        EOT
+      loop: "{{ projects }}"
+      register: mirror_list
+      changed_when: false
+      failed_when: false
+
+    - name: Set harbor_mirror_repos fact
+      vars:
+        repos: "{{ mirror_list.results | map(attribute='stdout_lines') | flatten }}"
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/set_fact_module.html
+      ansible.builtin.set_fact:
+        harbor_mirror_repos: "{{ repos }}"
+        harbor_mirror_ready: "{{ repos is truthy }}"

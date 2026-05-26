@@ -1,6 +1,8 @@
 from ansible.utils.display import Display
+from typing import TypeVar, overload
 
 log = Display()
+U = TypeVar("U")
 
 
 class FilterModule(object):
@@ -21,13 +23,25 @@ class FilterModule(object):
         "Python string slicing"
         return str[start:end]
 
-    def append(self, str: str, suffix: str) -> str:
-        "add suffix to string"
-        return str + suffix
+    @overload
+    def append(self, item1: str, item2: str) -> str: ...
 
-    def prepend(self, str: str, prefix: str) -> str:
-        "add prefix to string"
-        return prefix + str
+    @overload
+    def append(self, item1: list[U], item2: list[U]) -> list[U]: ...
+
+    def append(self, item1, item2):
+        "append second of two items of the same type (str or list) to the first"
+        return item1 + item2
+
+    @overload
+    def prepend(self, item1: str, item2: str) -> str: ...
+
+    @overload
+    def prepend(self, item1: list[U], item2: list[U]) -> list[U]: ...
+
+    def prepend(self, item1, item2):
+        "prepend second of two items of the same type (str or list) to the first"
+        return item2 + item1
 
     def to_case(self, str: str, case: str) -> str:
         "convert string to upper|lower|title|camel|pascal|snake|kebab case"

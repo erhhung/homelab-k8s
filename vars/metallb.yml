@@ -39,6 +39,12 @@ metallb_release_name: metallb
 metallb_chart_values:
   installCRDs: true
 
+  global:
+    # use mirrored images in Harbor once populated
+    security:
+      allowInsecureImages: "{{ harbor_mirror_ready }}" # allow non-Bitnami registry
+    imageRegistry: "{{ harbor_container_registry if harbor_mirror_ready else '' }}"
+
   controller:
     priorityClassName: "{{ priority_classes['critical'] }}"
 

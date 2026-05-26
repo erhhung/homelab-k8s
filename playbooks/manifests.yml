@@ -15,13 +15,13 @@
         # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/fileglob_lookup.html
         # https://docs.ansible.com/ansible/latest/plugins/lookup.html#forcing-lookups-to-return-lists-query-and-wantlist-true
         manifests: |
-          {{ query('ansible.builtin.fileglob', 'manifests/*.yaml') |
+          {{ query('ansible.builtin.fileglob', manifests_dir ~'/*.yaml') |
                map('ansible.builtin.basename') | reject('search', '^\..+') }}
       # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_module.html
       kubernetes.core.k8s:
         kubeconfig: "{{ rke_kubeconfig }}"
         # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/file_lookup.html
-        definition: "{{ lookup('ansible.builtin.file', 'manifests/'~ item) }}"
+        definition: "{{ lookup('ansible.builtin.file', manifests_dir ~'/'~ item) }}"
         validate:
           fail_on_error: false
         state: present

@@ -67,7 +67,7 @@ awx_operator_chart_values:
       admin_email: "{{ awx_admin_email }}"
       # first and last names set by task
 
-      redis_image: docker.io/bitnami/redis
+      redis_image: "{{ harbor_container_registry }}/bitnami/redis"
       redis_image_version: 8.2.1-debian-12-r0
 
       # https://docs.ansible.com/projects/awx-operator/en/latest/user-guide/advanced-configuration/scaling-the-web-and-task-pods-independently.html
