@@ -25,7 +25,7 @@ fluent_operator_chart_values:
         memory: 64Mi
       limits:
         cpu: 50m
-        memory: 96Mi
+        memory: 256Mi
 
   fluentbit:
     enable: true

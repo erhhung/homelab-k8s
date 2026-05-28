@@ -1,0 +1,90 @@
+harbor_users:
+  - real_name: "{{ user_erhhung.full_name }}"
+    email: "{{     user_erhhung.email     }}"
+    username: "{{  user_erhhung.username  }}"
+    # 8+ chars w/ upper + lower + digit
+    password: "{{ harbor_admin_pass }}"
+    role: maintainer # project: library
+    # comment: optional
+
+  - real_name: Gitea Actions
+    email: gitea@{{ homelab_domain  }}
+    username: "{{ gitea_harbor_user }}"
+    password: "{{ gitea_harbor_pass }}"
+    role: maintainer # project: library
+
+  - real_name: GitLab CI/CD
+    email: gitlab@{{ homelab_domain  }}
+    username: "{{ gitlab_harbor_user }}"
+    password: "{{ gitlab_harbor_pass }}"
+    role: maintainer # project: library
+
+  - real_name: Jenkins CI/CD
+    email: jenkins@{{ homelab_domain  }}
+    username: "{{ jenkins_harbor_user }}"
+    password: "{{ jenkins_harbor_pass }}"
+    role: maintainer # project: library
+
+  - real_name: Buildkite CI/CD
+    email: buildkite@{{ homelab_domain  }}
+    username: "{{ buildkite_harbor_user }}"
+    password: "{{ buildkite_harbor_pass }}"
+    role: maintainer # project: library
+
+# https://github.com/goharbor/harbor/tree/main/src/portal/src/app/shared/entities/shared.const.ts#L295-L309
+harbor_roles:
+  projectAdmin: 1
+  maintainer: 4
+  developer: 2
+  guest: 3
+  limitedGuest: 5
+
+# system settings API payload:
+# PUT /api/v2.0/configurations
+harbor_settings:
+  # Harbor UI user sessions
+  session_timeout: 480 # minutes
+  # Docker/Buildah sessions
+  token_expiration: 120 # minutes
+
+harbor_mirror_images:
+  - # src must begin with the registry
+    # domain name, even if `docker.io`
+    src: ghcr.io/erhhung/al2023-devops:latest
+    # dest, if not specified, defaults
+    # to library/<name>:<tag> from src
+    dest: library/al2023-devops
+
+  # this exact image is used by
+  # many standalone deployments
+  - src: docker.io/bitnamilegacy/redis:8.2.1-debian-12-r0
+    dest: bitnami/redis
+
+  - src: docker.io/bitnamilegacy/metallb-controller:0.15.2-debian-12-r7
+    dest: bitnami/metallb-controller
+  - src: docker.io/bitnamilegacy/metallb-speaker:0.15.2-debian-12-r6
+    dest: bitnami/metallb-speaker
+
+  # used by PostgreSQL and PgPool-II
+  - src: docker.io/bitnamilegacy/os-shell:12-debian-12-r51
+    dest: bitnami/os-shell
+  - src: docker.io/bitnamilegacy/postgresql-repmgr:17.6.0-debian-12-r2
+    dest: bitnami/postgresql-repmgr
+  - src: docker.io/bitnamilegacy/pgpool:4.6.3-debian-12-r0
+    dest: bitnami/pgpool
+  - src: docker.io/bitnamilegacy/postgres-exporter:0.17.1-debian-12-r16
+    dest: bitnami/postgres-exporter
+
+  - src: docker.io/bitnamilegacy/valkey-cluster:8.1.3-debian-12-r1
+    dest: bitnami/valkey-cluster
+  - src: docker.io/bitnamilegacy/redis-exporter:1.74.0-debian-12-r2
+    dest: bitnami/redis-exporter
+
+# if repos are copied into new projects, remember to add
+# to the projects list in "tasks/harbor/mirrorready.yml"
+
+harbor_mirror_charts:
+  - # src URL format: <repo-url>/<chart-name>[@version]
+    src: https://bedag.github.io/helm-charts/raw@2.0.2
+    # dest should be `charts/<repo-name>/<chart-name>`
+    dest: charts/bedag/raw

@@ -109,6 +109,7 @@
   vars_files:
     - vars/kubernetes.yml
     - vars/harbor.yml
+    - vars/harbor.configure.yml
 
     # these are only needed for their
     # *_harbor_user|_harbor_pass vars
@@ -234,9 +235,10 @@
     - mirror
     - copy
   hosts: "{{ k3s_control_plane_host }}"
-  vars_files:
+  vars_files: &vars_files
     - vars/kubernetes.yml
     - vars/harbor.yml
+    - vars/harbor.configure.yml
   vars:
     mirror_images: |
       {% set images = [] %}
@@ -253,7 +255,7 @@
            })   %}
       {% endfor %}
       {{ images }}
-    preamble: |-
+    preamble: &preamble |-
       # restart Bash and load .bash_aliases
       exec /bin/bash -l <<'EOT'
       # don`t load .rancher_api
@@ -280,12 +282,9 @@
         id=$(harbor artifact list $repo -o json 2> /dev/null | \
           jq --arg tag {{ image.tag }} -r '.Payload[] |
             select($tag == (.tags // [])[].name) | .id'
-        ) || true
+        ) && [ "$id" ] || sources+=({{ image.src }})
 
         if [ ! "$id" ]; then
-          # add sources to be copied
-          sources+=({{ image.src }})
-
           # add registries to log into
           add_unique registries {{ image.reg }}
 
@@ -312,8 +311,6 @@
   tasks:
     - name: Log in to registries
       ansible.builtin.shell: |
-        {{ preamble }}
-
         registries=(
           {{ login_registries | join(' ') }}
           {{ harbor_container_registry    }}
@@ -340,7 +337,8 @@
           rc=0
         done
         set +e; exit ${rc-9}
-        EOT
+      args:
+        executable: /bin/bash
       register: reg_logins
       when: login_registries is truthy
       changed_when: reg_logins.rc == 0
@@ -351,8 +349,7 @@
         {{ preamble }}
 
         # https://unioslo.github.io/harbor-cli/commands/project#project-create
-        harbor project create {{ item }} --public=true \
-          --proxy-cache=false --storage-limit=-1
+        harbor project create {{ item }} --public --storage-limit=-1
         EOT
       loop: "{{ create_projects }}"
       changed_when: true
@@ -361,10 +358,11 @@
     - name: Copy image into Harbor
       vars:
         image: "{{ mirror_images | selectattr('src', '==', item) | first }}"
-        image_dest: "{{ harbor_container_registry }}/{{ image.dest }}"
-      # noqa risky-shell-pipe
+        # use specified destination tag if provided; use source tag otherwise
+        dest_path: "{{ image.dest ~ ('' if ':' in image.dest else ':'~ image.tag) }}"
+        image_dest: "{{ harbor_container_registry }}/{{ dest_path }}"
       ansible.builtin.shell: |
-        {{ preamble }}
+        set -eo pipefail
 
         # https://github.com/containers/skopeo/tree/main/docs/skopeo-copy.1.md
         ARCH=$(uname -m | sed -e 's/aarch64/arm64/' -e 's/x86_64/amd64/')
@@ -372,9 +370,107 @@
           copy --multi-arch system --retry-times 2 \
           docker://{{ image.src  }} \
           docker://{{ image_dest }}
-        EOT
+      args:
+        executable: /bin/bash
       loop: "{{ image_sources }}"
       loop_control:
-        label: "{{ image.dest }}"
+        label: "{{ dest_path }}"
       changed_when: true
       timeout: 900
+
+- name: Mirror charts into Harbor
+  tags:
+    - mirror
+    - copy
+  hosts: "{{ k3s_control_plane_host }}"
+  vars_files: *vars_files
+  vars:
+    mirror_charts: |
+      {% set charts = [] %}
+      {% for chart    in harbor_mirror_charts %}
+      {%   set repo = chart.src |  dirname %}
+      {%   set base = chart.src | basename %}
+      {%   set _    = charts.append({
+             'src':  chart.src,
+             'dest': chart.dest,
+             'repo': repo,
+             'name': base.split('@')[0],
+             'ver':  base.split('@')[1] if '@' in base else 'latest',
+           })   %}
+      {% endfor %}
+      {{ charts }}
+    preamble: *preamble
+    tmp_path: /tmp/charts
+  pre_tasks:
+    - name: Determine copying needs
+      # noqa risky-shell-pipe
+      ansible.builtin.shell: |
+        {{ preamble }}
+
+        if ! harbor project search charts &> /dev/null; then
+          # store charts under "charts" project; don`t clobber stdout
+          harbor project create charts --public --storage-limit=-1 >&2
+        fi
+        sources=()
+
+        {% for chart in mirror_charts %}
+        repo={{ chart.dest }}
+
+        id=$(harbor artifact list $repo -o json 2> /dev/null | \
+          jq --arg ver {{ chart.ver }} -r '.Payload[] |
+            select($ver == (.tags // [])[].name) | .id'
+        ) && [ "$id" ] || sources+=({{ chart.src }})
+        {% endfor %}
+
+        if {% raw %}(( ${#sources[@]} )){% endraw %}; then
+          # this #} is just to satisfy ansible-lint parser
+          mkdir -p {{ tmp_path }}
+        fi
+        jo -p sources="$(jo -a -- <<< "" "${sources[@]}")"
+        EOT
+      register: copy_needs
+      changed_when: false
+
+    - name: Set chart copying facts
+      vars:
+        needs: "{{ copy_needs.stdout | from_json }}"
+      ansible.builtin.set_fact:
+        chart_sources: "{{ needs['sources'] }}"
+  tasks:
+    - name: Do Helm login to Harbor
+      ansible.builtin.shell: |
+        set -eo pipefail
+
+        echo -n '{{ harbor_admin_pass  }}' | helm registry login  \
+          {{ harbor_container_registry }} -u {{ harbor_admin_user }} \
+          --password-stdin
+      args:
+        executable: /bin/bash
+      when: chart_sources is truthy
+      changed_when: true
+
+    # https://goharbor.io/docs/main/working-with-projects/working-with-oci/working-with-helm-oci-charts#pushing-oci-helm-charts
+    - name: Copy chart into Harbor
+      vars:
+        chart: "{{ mirror_charts | selectattr('src', '==', item) | first }}"
+        chart_dest: oci://{{ harbor_container_registry }}/{{
+          chart.dest | dirname }}
+      ansible.builtin.shell: |
+        helm pull --repo {{ chart.repo }} {{ chart.name }} --version {{ chart.ver }}
+
+        tarball={{ chart.name }}-{{ chart.ver }}.tgz
+        [ -f "$tarball" ] || {
+          echo >&2 "Failed to pull Helm chart \"{{ chart.name }}@{{
+            chart.ver }}\" from {{ chart.repo }}"
+          exit 1
+        }
+        trap "rm -f \$tarball" EXIT
+
+        helm push $tarball {{ chart_dest }}
+      args:
+        executable: /bin/bash
+        chdir: "{{ tmp_path }}"
+      loop: "{{ chart_sources }}"
+      loop_control:
+        label: "{{ chart.dest ~'@'~ chart.ver }}"
+      changed_when: true

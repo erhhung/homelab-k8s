@@ -103,11 +103,11 @@
         # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/to_datetime_filter.html
         # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/strftime_filter.html
         # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/search_test.html
-        filtered: |
+        filtered_snapshots: |
           {% set filtered = [] %}
           {% for s in snapshots | default([]) %}
-          {#   # if > 1 snapshot matches per host, select most recent one #}
-          {%   if filtered | selectattr('host', '==', s.host) | length == 0 %}
+          {#   # if > 1 snapshot matches per host, select most recent  #}
+          {%   if filtered | selectattr('host', '==', s.host) is falsy %}
           {%     set secs = (s.date | to_datetime('%Y-%m-%dT%H:%M:%SZ')).timestamp() %}
           {%     set time = '%Y-%m-%d %I:%M %p' | strftime(secs + local_tz_offset.in_seconds) %}
           {%     if s.host in    resolved_hosts  and
@@ -118,15 +118,15 @@
                      'date':   time,
                      'desc': s.desc,
                      'uuid': s.ssid,
-                   }) %}
+                   })  %}
           {%     endif %}
-          {%   endif %}
-          {% endfor %}
-          {{ filtered }}
+          {%   endif   %}
+          {% endfor    %}
+          {{ filtered  }}
 
     # - name: Show filtered list
     #   ansible.builtin.debug:
-    #     var: filtered
+    #     var: filtered_snapshots
   tasks:
     - name: Do {{ do }} snapshots
       ansible.builtin.raw: |
@@ -140,22 +140,28 @@
         name="${!name_var}"
 
         xe vm-snapshot uuid=$uuid \
-                       new-name-label="[Ansible snapshots playbook] $name" \
-                       new-name-description={{ desc | quote }}
+             new-name-label="[Ansible snapshots playbook] $name" \
+             new-name-description={{ desc | quote }}
         EOT
       loop: "{{ resolved_hosts }}"
-      when: do == 'create' and resolved_hosts | length > 0
+      when:
+        - do == 'create'
+        - resolved_hosts is truthy
       changed_when: true
 
     - name: Revert or delete snapshots
-      when: do != 'create' and filtered | length > 0
+      when:
+        - do != 'create'
+        - filtered_snapshots is truthy
       block:
         - name: Show snapshots to {{ do }}
           ansible.builtin.debug:
             msg: |-
-              {% set  max_len = filtered | map(attribute='host') | map('length') | max -%}
-              {% set host_fmt = '%-' ~ max_len ~ 's' -%}
-              {% for s in filtered -%}
+              {% set max_len  = filtered_snapshots |
+                             map(attribute='host') |
+                             map('length') | max   -%}
+              {% set host_fmt = '%-'~ max_len ~'s' -%}
+              {% for s in filtered_snapshots -%}
               {{   host_fmt % s.host }}  {{ s.date }}  {{ s.desc }}
               {% endfor %}
 
@@ -172,7 +178,7 @@
               revert) xe snapshot-revert  uuid={{ item.uuid }} ;;
               delete) xe snapshot-destroy uuid={{ item.uuid }} ;;
             esac
-          loop: "{{ filtered }}"
+          loop: "{{ filtered_snapshots }}"
           loop_control:
             label: "{{ item.uuid }}|{{ item.host }}"
           when: confirm.user_input | lower == 'y'

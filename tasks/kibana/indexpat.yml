@@ -51,7 +51,7 @@
           selectattr('attributes.title', '==', pattern) }}"
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/set_fact_module.html
       ansible.builtin.set_fact:
-        existing_id: "{{ existing[0].id if existing is truthy else '' }}"
+        existing_pattern_id: "{{ existing[0].id if existing is truthy else '' }}"
 
     - name: Create index pattern
       ansible.builtin.uri:
@@ -63,11 +63,11 @@
             timeFieldName: "{{ time_field | default('@timestamp') }}"
           workspaces: "{{ [osd_workspace_id] if osd_workspace_id is defined else omit }}"
       register: create_pattern
-      when: existing_id is falsy
+      when: existing_pattern_id is falsy
       changed_when: true
       retries: 5
       delay: 2
 
     - name: Set index_pattern_id
       ansible.builtin.set_fact:
-        index_pattern_id: "{{ existing_id or create_pattern.json.id }}"
+        index_pattern_id: "{{ existing_pattern_id or create_pattern.json.id }}"

@@ -39,7 +39,7 @@
       vars:
         existing: "{{ ism_policy.json }}"
       ansible.builtin.set_fact:
-        url_params: "?if_seq_no={{ existing._seq_no
+        policy_url_query: "?if_seq_no={{ existing._seq_no
           }}&if_primary_term={{ existing._primary_term }}"
       when: ism_policy.status == 200
 
@@ -47,7 +47,7 @@
         {{ 'Create' if ism_policy.status == 404 else 'Update' }}
         policy "{{ policy.name }}"
       vars:
-        url: "{{ policy_url ~ url_params | default('') }}"
+        url: "{{ policy_url ~ policy_url_query | default('') }}"
       ansible.builtin.uri:
         <<: *uri-params
         method: PUT

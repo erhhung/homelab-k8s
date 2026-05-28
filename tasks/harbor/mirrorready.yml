@@ -11,6 +11,7 @@
     # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/random_filter.html
     rke_host: "{{ groups['rke_cluster'] | random }}"
     projects:
+      - charts
       - bitnami
   block:
     - name: List mirror repos by project

@@ -279,20 +279,20 @@ postgresql_chart_values:
               for host in "${hosts[@]}"; do
                 role=$(psql -h $host -tAc "SELECT CASE WHEN pg_is_in_recovery() THEN 'r' ELSE 'p' END")
                 case "$role" in
-                  p)  ((primary++)) || true ;;
-                  r) ((replicas++)) || true ;;
+                  p) ((  primary++ )) || true ;;
+                  r) (( replicas++ )) || true ;;
                 esac
               done
 
               if [ $primary  -eq 1 ] && \
             {%- raw %}
-                 [ $replicas -eq $(( ${#hosts[@]} - 1 )) ]; then
+                 [ $replicas -eq $(( ${#hosts[@]}-1 )) ]; then
             {% endraw %}
                 echo "Topology stable: 1 primary, $replicas replicas"
                 break
               fi
 
-              ((tries++))  || true
+              (( tries++ )) || true
               if [ $tries -gt 60 ]; then
                 echo >&2 "Timed out waiting for stable topology."
                 exit 1

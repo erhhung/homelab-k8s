@@ -25,7 +25,7 @@
       content_type: "{{ hook.config.content_type | default('json') }}"
     desired: # PATCH request body
       name: "{{   hook.name   }}"
-      events: "{{ hook.events }}"
+      events: "{{ hook.events | sort }}"
       config: "{{ hook.config | combine(def_config) }}"
       branch_filter: "{{ hook.filter | default('*') }}"
       active: true # default=false
@@ -48,9 +48,14 @@
       vars:
         existing_: |
           {# https://docs.ansible.com/ansible/latest/collections/community/general/keep_keys_filter.html #}
-          {% set hook   =   existing    | community.general.keep_keys(desired.keys())        | first %}
-          {% set config = [hook.config] | community.general.keep_keys(desired.config.keys()) | first %}
-          {% set   _    =  hook.update({'config': config}) %}
+          {% set hook   =   existing    | community.general.keep_keys(desired.keys())        | first     %}
+          {% set config = [hook.config] | community.general.keep_keys(desired.config.keys()) | first     %}
+          {# https://docs.ansible.com/ansible/latest/collections/ansible/builtin/intersect_filter.html   #}
+          {% set events =  hook.events  | ansible.builtin.intersect(desired.events) | sort %}
+          {% set   _    =  hook.update({
+               'config': config,
+               'events': events,
+             })   %}
           {{ hook }}
       ansible.builtin.uri:
         <<: *uri-auth

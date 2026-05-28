@@ -45,13 +45,13 @@
         spec: "{{ res_info.resources[0].spec }}"
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/set_fact_module.html
       ansible.builtin.set_fact:
-        resource: "{{ res_info.resources[0] }}"
-        containers: "{{ spec.containers if res_kind == 'Pod' else
-          spec.template.spec.containers }}"
+        probe_resource: "{{ res_info.resources[0] }}"
+        probe_containers: "{{ spec.containers if res_kind == 'Pod'
+          else spec.template.spec.containers }}"
 
     - name: Ensure all containers found
       vars:
-        valid: "{{ containers | map(attribute='name') }}"
+        valid: "{{ probe_containers | map(attribute='name') }}"
         # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/difference_filter.html
         invalid: "{{ probes.keys() | ansible.builtin.difference(valid) }}"
         error: No container named "{{ (invalid | list + ['']) | first }}"
@@ -73,13 +73,11 @@
           - metadata.annotations.kubectl\.kubernetes\.io/restartedAt
           - status
       ansible.builtin.set_fact:
-        res_specs: |
-          {% set containers  = resource.spec.containers if res_kind == 'Pod' else
-                 resource.spec.template.spec.containers %}
+        _res_specs: |
           {# use index so that we can reference
-             outer object within the loop scope  #}
-          {% for i in range(containers | length) %}
-          {%   set name = containers[i].name %}
+             outer object within the loop scope #}
+          {% for i in range(probe_containers | length) %}
+          {%   set name = probe_containers[i].name %}
           {%   if  name in probes  %}
           {%     for probe, config in probes[name].items() %}
           {%       for k, v in config.items()           %}
@@ -87,28 +85,28 @@
           {%           set _ = config.update({k: omit}) %}
           {%         endif %}
           {%       endfor  %}
-          {%       if probe in containers[i] %}
+          {%       if probe in probe_containers[i] %}
           {#         https://docs.ansible.com/ansible/latest/collections/ansible/builtin/combine_filter.html #}
-          {%         set merged = containers[i][probe]  | combine(config, recursive=true) %}
-          {%         set _ = containers[i].update({probe: merged}) %}
+          {%         set merged = probe_containers[i][probe] | combine(config, recursive=true) %}
+          {%         set _      = probe_containers[i].update({probe: merged}) %}
           {%       else  %}
-          {%         set _ = containers[i].update({probe: config}) %}
+          {%         set _ = probe_containers[i].update({probe: config}) %}
           {%       endif %}
           {%     endfor  %}
           {%   endif %}
           {% endfor  %}
           {# omit_keys: plugins/filter/filters.py #}
-          {{ resource | omit_keys(del_keys) }}
+          {{ probe_resource | omit_keys(del_keys) }}
 
     # - name: Show patched resource spec
     #   ansible.builtin.debug:
-    #     var: res_specs
+    #     var: _res_specs
 
     - name: Apply patched resource spec
       # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_module.html
       kubernetes.core.k8s:
         kubeconfig: "{{ kubeconfig }}"
-        definition: "{{ res_specs  }}"
+        definition: "{{ _res_specs }}"
         state: present
         apply: true
         validate:

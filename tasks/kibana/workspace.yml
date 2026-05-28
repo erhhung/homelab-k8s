@@ -53,7 +53,7 @@
           selectattr('name', '==', ws_name) }}"
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/set_fact_module.html
       ansible.builtin.set_fact:
-        existing_id: "{{ existing[0].id if existing is truthy else '' }}"
+        existing_workspace_id: "{{ existing[0].id if existing is truthy else '' }}"
 
     - name: Create {{ ws_name }} workspace
       ansible.builtin.uri:
@@ -64,13 +64,12 @@
             name: "{{ ws_name }}"
             description: "{{ description | default(omit) }}"
             features: "{{ [features] | flatten }}"
-      when: existing_id is falsy
       register: osd_workspace
+      when: existing_workspace_id is falsy
       changed_when: true
       retries: 5
       delay: 2
 
     - name: Set osd_workspace_id
       ansible.builtin.set_fact:
-        osd_workspace_id: "{{ existing_id
-          or osd_workspace.json.result.id }}"
+        osd_workspace_id: "{{ existing_workspace_id or osd_workspace.json.result.id }}"

@@ -32,14 +32,16 @@
         file: "{{ files | selectattr('meta.data.path', '==', file_info.rel_path) }}"
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/set_fact_module.html
       ansible.builtin.set_fact:
-        existing: "{{ file[0] if file is truthy else None }}"
+        existing_file: "{{ file[0] if file is truthy else none }}"
         needs_upload: >-
           {{ file                   is falsy     or
              file[0].meta.data.sha1 is undefined or
              file[0].meta.data.sha1 != file_info.sha1 }}
 
     - name: Delete existing file before upload
-      when: existing is truthy and needs_upload
+      when:
+        - existing_file is truthy
+        - needs_upload
       block:
         - name: Remove file from knowledge
           # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/uri_module.html
@@ -49,7 +51,7 @@
             headers: "{{ headers }}"
             body_format: json
             body:
-              file_id: "{{ existing.id }}"
+              file_id: "{{ existing_file.id }}"
           # not important enough
           # to report as changed
           changed_when: false
@@ -57,7 +59,7 @@
         - name: Remove file from Open WebUI
           ansible.builtin.uri:
             method: DELETE
-            url: "{{ api_base }}/files/{{ existing.id }}"
+            url: "{{ api_base }}/files/{{ existing_file.id }}"
             headers: "{{ headers }}"
           # retry on best effort
           register: remove_file

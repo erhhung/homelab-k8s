@@ -31,6 +31,8 @@
         status_code: [200, 404]
         return_content: true
       register: target_info
+      retries: 2
+      delay: 5
 
     - name: Set needs_migrate fact
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/set_fact_module.html

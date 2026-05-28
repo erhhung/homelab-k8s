@@ -19,12 +19,13 @@ gitea_organization:
       name: Slack Notifications
       # https://docs.gitea.com/usage/repository/webhooks#events
       events:
-        - repository # created/deleted
-        # - release # published/updated/deleted
-        # - package # created/deleted
-        # - issues # opened/edited/closed/reopened/deleted
-        # - issue_comment # created/edited/deleted
         - workflow_run # queued/waiting/in_progress/completed
+        - repository # created/deleted
+        # `issues` automatically includes issue_comment,
+        # issue_assign, issue_label, and issue_milestone
+        - issues # opened/edited/closed/reopened/deleted
+        - package # created/deleted
+        - release # published/updated/deleted
       config:
         # optional: username, icon_url, color
         url: "{{ slack_webhook_urls['gitea'] }}"

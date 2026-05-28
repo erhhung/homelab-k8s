@@ -59,7 +59,12 @@
 ---
 # always get most current list of APIs
 - name: Gather facts about the cluster
+  # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
   ansible.builtin.include_tasks: "{{ tasks_dir }}/k8s/clusterfacts.yml"
+
+- name: Do Harbor mirror charts exist?
+  ansible.builtin.include_tasks: "{{ tasks_dir }}/harbor/mirrorready.yml"
+  when: "'charts/bedag/raw' not in harbor_mirror_repos | default([])"
 
 - name: Install Helm chart using Helmfile
   become: false
@@ -67,17 +72,27 @@
     # required kubernetes>=24.2 package only in user virtualenv
     ansible_python_interpreter: "{{ venv_python_interpreter }}"
 
-    extras_chart:
-      repository:
-        # https://github.com/bedag/helm-charts/tree/master/charts/raw
-        name: bedag
-        url: https://bedag.github.io/helm-charts
-      dependency:
-        chart: bedag/raw
-        version: "2.0.2"
-        # intentionally use unique name to avoid
-        # possible conflict with another subchart
-        alias: exxtraas
+    # intentionally use unique alias to avoid
+    # possible conflict with another subchart
+    extras_chart: |
+      {% set mirrored  = 'charts/bedag/raw' in harbor_mirror_repos %}
+      {% set chart     = {
+           'dependency': {
+             'alias':   'exxtraas',
+             'chart':   'oci://'~ harbor_container_registry ~'/charts/bedag/raw'
+                                                    if mirrored else 'bedag/raw',
+             'version': '2.0.2',
+           },
+         } %}
+      {% if not mirrored %}
+      {%   set _ = chart.update({
+             'repository': {
+               'name': 'bedag',
+               'url':  'https://bedag.github.io/helm-charts',
+             },
+           })  %}
+      {% endif %}
+      {{ chart }}
 
     chart_repo: >-
       {{ repo_name ~'/' if repo_name is defined and
@@ -197,16 +212,17 @@
         repos:
           - "{{ { 'name': repo_name, 'url': repo_url } if chart_repo != '' else [] }}"
           - "{{ subcharts | default([]) | map(attribute='repository') | select('defined') }}"
-          - "{{ extras_chart.repository if has_extras else [] }}"
+          - "{{ extras_chart['repository'] if has_extras
+            and 'repository' in extras_chart else [] }}"
         deps:
           - "{{ subcharts | default([]) | map(attribute='dependency') }}"
-          - "{{ extras_chart.dependency if has_extras else [] }}"
+          - "{{ extras_chart['dependency'] if has_extras else [] }}"
         _values:
           - "{{ values_file if values is defined else [] }}"
           # https://github.com/bedag/helm-charts/tree/master/charts/raw#examples
           # https://github.com/bedag/helm-charts/tree/master/charts/raw/values.yaml
-          - | # keep extras values at end-of-list
-            {{ { extras_chart.dependency.alias: {
+          - | # keep extras chart values at the end
+            {{ { extras_chart['dependency'].alias: {
                    'enabled':   true,
                    'resources': objects,
                } } if has_extras else [] }}

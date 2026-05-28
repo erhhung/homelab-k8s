@@ -125,7 +125,12 @@
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/uri_module.html
       ansible.builtin.uri:
         url: "{{ gitea_http_url }}/api/healthz"
+        return_content: true
       # https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_loops.html#retrying-a-task-until-a-condition-is-met
+      register: site_check
+      until:
+        - site_check.status      ==  200
+        - site_check.json.status == 'pass'
       retries: 20
       delay: 3
   tasks:
