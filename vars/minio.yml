@@ -180,7 +180,8 @@ minio_operator_chart_values:
 # https://github.com/minio/operator/issues/940
 # https://github.com/minio/operator/tree/master/pkg/resources/configmaps/prometheus.go#L99
 # so we can't enable this feature yet; we instead add
-# custom scrape configs to additional_scrape_configs:
+# custom scrape configs to `additional_scrape_configs`
+# defined in vars/monitoring.yml
 minio_prometheus_operator: false
 
 # /minio/v2/metrics/{type}

@@ -1,6 +1,7 @@
-# aliases of "ingress" and subdomains
-# of thanos.fourteeners.local (itself
-# routes to Query)
+# ingress for bare subdomain routes to Query
+thanos_subdomain: thanos.{{ homelab_domain }}
+
+# aliases of "ingress"
 thanos_host_names:
   query:
     - query
@@ -18,7 +19,6 @@ thanos_host_names:
     - compact
     - compactor
 
-thanos_subdomain: thanos.{{ homelab_domain }}
 # https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_filters.html#products
 thanos_fqdns: |
   {% set fqdns = {} %}
@@ -115,7 +115,7 @@ thanos_chart_values:
   query:
     enabled: true
     replicaCount: 1
-    revisionHistoryLimit: 2
+    revisionHistoryLimit: "{{ k8s_max_revisions }}"
 
     # https://github.com/bitnami/charts/tree/main/bitnami/thanos#resource-requests-and-limits
     # use a preset instead of explicitly configuring resources:
@@ -212,7 +212,7 @@ thanos_chart_values:
   queryFrontend:
     enabled: true
     replicaCount: 1
-    revisionHistoryLimit: 2
+    revisionHistoryLimit: "{{ k8s_max_revisions }}"
 
     # override default args because the chart depends on
     # .https.enabled for --query-frontend.downstream-url,
@@ -276,7 +276,7 @@ thanos_chart_values:
   ruler:
     enabled: true
     replicaCount: 1
-    revisionHistoryLimit: 2
+    revisionHistoryLimit: "{{ k8s_max_revisions }}"
 
     # default interval
     # see related setting for Prometheus:
@@ -391,7 +391,7 @@ thanos_chart_values:
   storegateway:
     enabled: true
     replicaCount: 1
-    revisionHistoryLimit: 2
+    revisionHistoryLimit: "{{ k8s_max_revisions }}"
 
     # shard using StatefulSet based on
     # time ranges or hashmod of blocks
@@ -469,7 +469,7 @@ thanos_chart_values:
   bucketweb:
     enabled: true
     replicaCount: 1
-    revisionHistoryLimit: 2
+    revisionHistoryLimit: "{{ k8s_max_revisions }}"
 
     # interval to refresh bucket metadata
     refresh: 30m
@@ -516,7 +516,7 @@ thanos_chart_values:
   # https://github.com/bitnami/charts/tree/main/bitnami/thanos#thanos-compactor-parameters
   compactor:
     enabled: true
-    revisionHistoryLimit: 2
+    revisionHistoryLimit: "{{ k8s_max_revisions }}"
 
     # deploy as a service
     # instead of cron job

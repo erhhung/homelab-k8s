@@ -83,7 +83,7 @@ argocd_chart_values:
     keep: false # delete on uninstall
 
   global:
-    revisionHistoryLimit: 2
+    revisionHistoryLimit: "{{ k8s_max_revisions }}"
     domain: "{{ argocd_fqdn }}"
 
     image:
@@ -345,7 +345,7 @@ argocd_chart_values:
 
   controller:
     replicas: 1
-    revisionHistoryLimit: 2
+    revisionHistoryLimit: "{{ k8s_max_revisions }}"
 
     # extra args plus Redis options:
     # https://argo-cd.readthedocs.io/en/stable/operator-manual/server-commands/argocd-application-controller

@@ -8,34 +8,48 @@
 - name: Do Harbor mirror repos exist?
   become: false
   vars:
-    # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/random_filter.html
-    rke_host: "{{ groups['rke_cluster'] | random }}"
     projects:
       - charts
       - bitnami
   block:
     - name: List mirror repos by project
-      delegate_to: "{{ rke_host }}"
+      delegate_to: "{{ k3s_control_plane_host }}"
+      run_once: true
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/shell_module.html
       ansible.builtin.shell: |
         # restart Bash and load .bash_env.d/*
         exec /bin/bash -l <<'EOT'
+        # don`t load .rancher_api
+        ADMIN_PASS=none
         . .bash_aliases
         set -o pipefail
 
         command -v harbor  &> /dev/null  || exit 1
-        harbor project search {{ item }} -o json | \
+        harbor project search {{ proj }} -o json | \
           jq -r '[.Payload.repository[].repository_name] | sort[]'
         EOT
       loop: "{{ projects }}"
+      loop_control:
+        loop_var: proj
       register: mirror_list
       changed_when: false
       failed_when: false
 
-    - name: Set harbor_mirror_repos fact
+    - &set-facts
+      name: Set harbor_mirror_repos fact
       vars:
-        repos: "{{ mirror_list.results | map(attribute='stdout_lines') | flatten }}"
+        # https://docs.ansible.com/ansible/latest/reference_appendices/special_variables.html#term-ansible_play_batch
+        host_vars: "{{ hostvars[ansible_play_batch[0]] }}"
+        repos: "{{ host_vars['mirror_list'].results |
+          map(attribute='stdout_lines') | flatten }}"
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/set_fact_module.html
       ansible.builtin.set_fact:
         harbor_mirror_repos: "{{ repos }}"
         harbor_mirror_ready: "{{ repos is truthy }}"
+
+    # also set facts on localhost because
+    # they're often checked there as well
+    - <<: *set-facts
+      delegate_to: localhost
+      delegate_facts: true
+      run_once: true

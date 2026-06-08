@@ -689,9 +689,10 @@ actions_chart_values:
 
   init:
     image:
-      pullPolicy: IfNotPresent
+      registry: docker.io
       repository: busybox
-      tag: latest
+      pullPolicy: IfNotPresent
+      tag: "1.38.0"
 
   statefulset:
     replicas: 1

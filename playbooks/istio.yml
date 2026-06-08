@@ -24,11 +24,8 @@
   tags: istioctl
   hosts: "{{ rke_control_plane_group }}"
   become: true
-  vars_files: &vars_files
+  vars_files:
     - vars/kubernetes.yml
-    - vars/monitoring.yml
-    - vars/observability.yml
-    - vars/tempo.yml
     - vars/istio.yml
   tasks:
     # https://istio.io/latest/docs/setup/additional-setup/download-istio-release
@@ -73,7 +70,9 @@
 - name: Install K8s Gateway API CRDs
   tags: gateway
   hosts: "{{ rke_control_plane_host }}"
-  vars_files: *vars_files
+  vars_files:
+    - vars/kubernetes.yml
+    - vars/istio.yml
   vars: &vars
     # required kubernetes>=24.2 package only in user virtualenv
     ansible_python_interpreter: "{{ venv_python_interpreter }}"
@@ -91,7 +90,8 @@
 - name: Install Istio control plane
   tags: install
   hosts: "{{ rke_control_plane_host }}"
-  vars_files: *vars_files
+  vars_files:
+    - vars/kubernetes.yml
   tasks:
     - name: Create ~/.istio subdirectory
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/file_module.html
@@ -143,7 +143,13 @@
 - name: Install Kiali web console
   tags: kiali
   hosts: "{{ rke_control_plane_host }}"
-  vars_files: *vars_files
+  vars_files:
+    - vars/kubernetes.yml
+    - vars/monitoring.yml
+    - vars/observability.yml
+    - vars/tempo.yml
+    - vars/keycloak.yml
+    - vars/istio.yml
   vars:
     <<: *vars
     secret_ns: "{{ kiali_namespace }}"
@@ -182,8 +188,8 @@
         secret_name: "{{ kiali_secrets['creds'] }}"
         secret_data:
           # `oidc-secret` key name is expected
-          # keycloak_client_secrets.*: {vault.yml}
-          oidc-secret: "{{ keycloak_client_secrets['kiali'] }}"
+          # oidc_client_secrets.*: {vault.yml}
+          oidc-secret: "{{ oidc_client_secrets['kiali'] }}"
           grafana-pass: "{{ grafana_admin_pass }}"
       ansible.builtin.include_tasks: "{{ tasks_dir }}/k8s/secrets/generic.yml"
 
@@ -229,7 +235,10 @@
 - name: Enable Prometheus monitoring
   tags: dashboards
   hosts: "{{ rke_control_plane_host }}"
-  vars_files: *vars_files
+  vars_files:
+    - vars/kubernetes.yml
+    - vars/monitoring.yml
+    - vars/istio.yml
   vars: *vars
   tasks:
     - name: Create missing resources

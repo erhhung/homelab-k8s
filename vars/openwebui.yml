@@ -39,22 +39,25 @@ openwebui_db_user: openwebui
 # https://docs.sqlalchemy.org/en/20/core/engines.html#database-urls
 # https://docs.sqlalchemy.org/en/20/dialects/postgresql.html#ssl-connections
 # https://www.postgresql.org/docs/current/libpq-connect.html#LIBPQ-CONNSTRING-URIS
+# https://docs.ansible.com/ansible/latest/collections/ansible/builtin/dict2items_filter.html
+# https://docs.ansible.com/ansible/latest/collections/ansible/builtin/zip_filter.html
 # (references "pgpool_service_url" var from vars/postgresql.yml)
 openwebui_postgresql_url: >-
   {% set params = {
        'sslmode':     'verify-full',
        'sslcert':     '/tls/database/tls.crt',
        'sslkey':      '/tls/database/tls.key',
-       'sslrootcert': '/tls/database/ca.crt'
+       'sslrootcert': '/tls/database/ca.crt',
      } -%}
-  {% set items = params | dict2items -%}
-  {% set params = items | map(attribute='key')    |
-              zip(items | map(attribute='value')) |
-                    map('join','=') -%}
-  {% set query = params | join('&') -%}
-  {{ pgpool_service_url | regex_replace('//',
-     '//'~ openwebui_db_user ~':'~ openwebui_pg_pass ~'@')
-     }}/{{ openwebui_db_name }}?{{ query }}
+  {% set  items = params | dict2items -%}
+  {% set params =  items | map(attribute='key') |
+               zip(items | map(attribute='value')) |
+                     map('join','=') -%}
+  {% set  query = params | join('&') -%}
+  {{ pgpool_service_url  | replace('//', '//'~
+     openwebui_db_user ~':'~
+     openwebui_pg_pass ~'@') }}/{{
+     openwebui_db_name ~'?'~ query }}
 
 # IMPORTANT: add "openwebui:primary" to PgPool's `database_redirect_preference_list`
 # so that SQLAlchemy upsert queries don't fail due to read-after-write inconsistency:
@@ -69,15 +72,15 @@ openwebui_redis_url: >-
        'ssl_cert_reqs': 'required',
        'ssl_certfile':  '/tls/database/tls.crt',
        'ssl_keyfile':   '/tls/database/tls.key',
-       'ssl_ca_certs':  '/tls/database/ca.crt'
+       'ssl_ca_certs':  '/tls/database/ca.crt',
      } -%}
-  {% set items = params | dict2items -%}
-  {% set params = items | map(attribute='key')    |
-              zip(items | map(attribute='value')) |
-                    map('join','=') -%}
-  {% set query = params | join('&') -%}
-  {{ redis_service_url  | regex_replace('//',
-     '//:'~ openwebui_vk_pass ~'@') }}/0?{{ query }}
+  {% set  items = params | dict2items -%}
+  {% set params =  items | map(attribute='key') |
+               zip(items | map(attribute='value')) |
+                     map('join','=') -%}
+  {% set  query = params | join('&') -%}
+  {{ redis_service_url   | replace('//', '//:'~
+     openwebui_vk_pass ~'@') }}/0?{{ query }}
 
 # PVC specs for "openwebui_pvcs"
 openwebui_pvc_specs:
@@ -182,7 +185,7 @@ openwebui_extras:
 # Open WebUI so that both Playwright server and client versions
 # match. See openwebui_playwright_version in vars/playwright.yml
 openwebui_chart_repo_url: https://helm.openwebui.com
-openwebui_chart_version: "14.5.0"
+openwebui_chart_version: "14.6.0"
 openwebui_release_name: open-webui
 
 # comment out `openwebui_app_version` below
@@ -191,14 +194,14 @@ openwebui_release_name: open-webui
 openwebui_app_version: "0.9.5"
 
 openwebui_image:
-  pullPolicy: IfNotPresent
   repository: ghcr.io/open-webui/open-webui
   tag: "{{ openwebui_app_version }}"
+  pullPolicy: IfNotPresent
 
   # use our own image with Redis Cluster support
   # (REDIS_CLUSTER_MODE="true") and UID+GID=1000
-  # pullPolicy: Always
   # repository: "{{ harbor_container_registry }}/library/open-webui"
+  # pullPolicy: Always
   # tag: latest
 
 # Pipelines is open-webui subchart:
@@ -214,7 +217,6 @@ pipelines_chart_values: &pipelines
 
   persistence:
     enabled: true
-
     storageClass: "{{ storage_classes['default'] }}"
     # use ReadWriteMany if replicaCount > 1
     accessModes: ["ReadWriteOnce"]
@@ -228,7 +230,7 @@ pipelines_chart_values: &pipelines
 
 # https://github.com/open-webui/helm-charts/tree/main/charts/open-webui/values.yaml
 openwebui_chart_values:
-  revisionHistoryLimit: 2
+  revisionHistoryLimit: "{{ k8s_max_revisions }}"
 
   clusterDomain: "{{ cluster_domain }}"
   replicaCount: "{{ openwebui_replicas }}"
@@ -457,7 +459,7 @@ openwebui_chart_values:
     httpGet:
       path: /health
       port: http
-    initialDelaySeconds: 120
+    initialDelaySeconds: 60
     periodSeconds: 5
     timeoutSeconds: 5
     failureThreshold: 96
@@ -466,7 +468,7 @@ openwebui_chart_values:
     httpGet:
       path: /health/db
       port: http
-    initialDelaySeconds: 10
+    initialDelaySeconds: 30
     periodSeconds: 10
     timeoutSeconds: 5
     failureThreshold: 6

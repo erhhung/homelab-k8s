@@ -76,7 +76,7 @@ mcpo_chart_values:
     # between the main mcpo container and MCP servers
     # deployed as sidecar containers
     - name: stdio-pipes
-      image: busybox
+      image: docker.io/busybox:1.38.0
       imagePullPolicy: IfNotPresent
       command: ["sh"]
       args:

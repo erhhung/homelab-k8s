@@ -169,7 +169,7 @@
                             subPath: certs/ca-bundle.crt
 
         extras: # adopt extra resources into Helm release
-          - cert-manager.io/v1 Certificate {{ jenkins_secrets['ingress']  }}
+          - cert-manager.io/v1 Certificate {{ jenkins_secrets['ingress'] }}
           - v1 Secret {{ jenkins_secrets['env-vars'] }}
       ansible.builtin.include_tasks: "{{ tasks_dir }}/helm/helmfile.yml"
   handlers:
@@ -186,7 +186,7 @@
         namespace: "{{ jenkins_namespace }}"
         pod: "{{ jenkins_release_name }}-0"
         container: jenkins
-        command: bash -c "{{ script | regex_replace('([\\"])', '\\\1') }}"
+        command: bash -c {{ script | quote }}
       changed_when: true
 
 - name: Configure Jenkins dashboards

@@ -111,7 +111,7 @@ buildkite_chart_values:
         # fix permissions on ~/.ssh/* files,
         # such as *.pem, config, known_hosts
         - name: ssh-config
-          image: busybox
+          image: docker.io/busybox:1.38.0
           imagePullPolicy: IfNotPresent
           command: ["sh"]
           args:

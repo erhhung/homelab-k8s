@@ -5,7 +5,7 @@ ollama_chart_version: "3.0.0"
 # https://github.com/cowboysysop/charts/tree/master/charts/ollama/values.yaml
 ollama_chart_values:
   replicaCount: 1
-  revisionHistoryLimit: 2
+  revisionHistoryLimit: "{{ k8s_max_revisions }}"
 
   affinity: "{{ ollama_common_values['affinity'] }}"
   resources: "{{ ollama_common_values['resources'] }}"

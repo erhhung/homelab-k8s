@@ -14,7 +14,7 @@ externaldns_release_name: external-dns
 
 # https://github.com/kubernetes-sigs/external-dns/tree/master/charts/external-dns/values.yaml
 externaldns_chart_values:
-  revisionHistoryLimit: 2
+  revisionHistoryLimit: "{{ k8s_max_revisions }}"
 
   logLevel: info # panic|debug|info|warning|error|fatal
   logFormat: text # text|json

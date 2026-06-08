@@ -274,7 +274,7 @@
                 name: "{{ actions_app_name }}"
                 namespace: "{{ gitea_namespace }}" # required
               spec:
-                revisionHistoryLimit: 2
+                revisionHistoryLimit: "{{ k8s_max_revisions }}"
                 persistentVolumeClaimRetentionPolicy:
                   whenScaled: Retain
                   whenDeleted: Delete

@@ -13,6 +13,9 @@ storage_classes:
   local: local-storage
   nfs: nfs-qnap
 
+k3s_default_storage_class: local-path
+rke_default_storage_class: longhorn
+
 snapshot_classes:
   backup: longhorn-backup
 
@@ -113,7 +116,8 @@ longhorn_chart_values:
       metadata:
         name: delete-backups
       spec:
-        schedule: 0 11 * * * # in UTC time; run every day at 3am Pacific time
+        schedule: 0 3 * * * # run every day at 3am Pacific time
+        timeZone: "{{ system_time_zone }}"
         concurrencyPolicy: Forbid
         jobTemplate:
           spec:

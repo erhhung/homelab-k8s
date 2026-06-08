@@ -90,6 +90,8 @@
         body: "{{ desired }}"
       when: existing != desired
       changed_when: true
+      retries: 2
+      delay: 5
 
     # not possible to detect changes,
     # so only upload while migrating:

@@ -11,8 +11,8 @@ openclaw_cron_jobs:
     # session=main requires `system_event`
     session: isolated
     message: >-
-      Check Gmail for notifications from GitHub in the past 24 hours.
-      Create a report showing one-line summaries for each email, and
+      Check Gmail for GitHub notifications from the past 24 hours.
+      Create a report with one-line summaries for each email, and
       include links to the corresponding issues or PRs if available.
       All gog CLI commands must be executed using the exec tool with
       host="gateway", and the entire command must begin with `gog`--

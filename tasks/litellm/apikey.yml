@@ -45,7 +45,7 @@
     - name: Set {{ key_fact }} fact
       vars:
         # b64_decode_k8s_secret: plugins/filter/filters.py
-        user_keys: "{{ keys_secret.resources[0] | b64_decode_k8s_secret }}"
+        _user_keys: "{{ keys_secret.resources[0] | b64_decode_k8s_secret }}"
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/set_fact_module.html
       ansible.builtin.set_fact:
-        "{{ key_fact }}": "{{ user_keys[secret_key] }}"
+        "{{ key_fact }}": "{{ _user_keys[secret_key] }}"

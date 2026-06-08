@@ -57,10 +57,10 @@ flowise_release_name: flowise
 
 # https://github.com/cowboysysop/charts/tree/master/charts/flowise/values.yaml
 flowise_chart_values:
-  revisionHistoryLimit: 2
   # not sure why defaults say don't change
   # replicaCount and updateStrategy values
   replicaCount: 1
+  revisionHistoryLimit: "{{ k8s_max_revisions }}"
 
   # use Recreate deployment strategy to avoid
   # multi-attach error on ReadWriteOnce PVCs
@@ -120,7 +120,7 @@ flowise_chart_values:
       existingSecretPasswordKey: valkey-password
 
     master:
-      revisionHistoryLimit: 2
+      revisionHistoryLimit: "{{ k8s_max_revisions }}"
       pdb:
         create: false
 
@@ -247,7 +247,7 @@ flowise_chart_values:
     # they're defined in .env file during development, but that's very
     # non-Kubernetes practice, where the variables should be pathnames
     - name: create-dotenv
-      image: busybox
+      image: docker.io/busybox:1.38.0
       imagePullPolicy: IfNotPresent
       command: ["sh"]
       args:
@@ -311,7 +311,7 @@ flowise_chart_values:
     # mode=queue
     enabled: true
     replicaCount: 1
-    revisionHistoryLimit: 2
+    revisionHistoryLimit: "{{ k8s_max_revisions }}"
 
     image:
       pullPolicy: "{{ flowise_chart_values.image.pullPolicy }}"

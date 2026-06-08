@@ -209,6 +209,8 @@
               spec:
                 template:
                   spec:
+                    # chart doesn't currently support
+                    # init containers via values file
                     initContainers: "{{ init_containers }}"
                     containers:
                       - name: mcpo

@@ -14,7 +14,7 @@ nfd_chart_values:
   master:
     enable: true
     replicaCount: 1
-    revisionHistoryLimit: 2
+    revisionHistoryLimit: "{{ k8s_max_revisions }}"
 
     # run NFD-Master on a control plane node
     affinity:
@@ -57,7 +57,7 @@ nfd_chart_values:
   # https://kubernetes-sigs.github.io/node-feature-discovery/stable/get-started/introduction.html#nfd-worker
   worker: # DaemonSet
     enable: true
-    revisionHistoryLimit: 2
+    revisionHistoryLimit: "{{ k8s_max_revisions }}"
 
     resources:
       requests:
@@ -85,7 +85,7 @@ nfd_chart_values:
   gc:
     enable: true
     replicaCount: 1
-    revisionHistoryLimit: 2
+    revisionHistoryLimit: "{{ k8s_max_revisions }}"
     interval: 1h
 
     resources:
@@ -148,7 +148,7 @@ intel_dp_operator_chart_values:
       cpu: 20m
       memory: 32Mi
     limits:
-      cpu: 100m
+      cpu: 50m
       memory: 64Mi
 
 intel_device_plugin_crs:

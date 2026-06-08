@@ -54,7 +54,7 @@ pyrra_chart_values:
   genericRules:
     enabled: true
 
-  # deploy Grafana dashboards via ConfigMap?
+  # deploy Grafana dashboards via ConfigMaps?
   dashboards:
     enabled: true
     label: "{{ grafana_dashboard_label }}"

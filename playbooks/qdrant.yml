@@ -62,7 +62,7 @@
               metadata:
                 name: "{{ qdrant_release_name }}"
               spec:
-                revisionHistoryLimit: 2
+                revisionHistoryLimit: "{{ k8s_max_revisions }}"
                 persistentVolumeClaimRetentionPolicy:
                   whenScaled: Retain
                   whenDeleted: Delete

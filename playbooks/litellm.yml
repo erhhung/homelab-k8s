@@ -90,9 +90,9 @@
         values: "{{ litellm_chart_values }}"
 
         patches:
-          # support for migrationJob.extraInitContainers is
-          # a new chart feature that hasn't been published
-          # yet, so also add it as a Helmfile merge patch
+          # support for `migrationJob.extraInitContainers`
+          # is new chart feature that hasn't been released
+          # yet, so add it as Helmfile merge patch instead
           merge_patches:
             - apiVersion: batch/v1
               kind: Job
@@ -101,7 +101,40 @@
               spec:
                 template:
                   spec:
+                    # since the migrations Job  runs as a Helm hook,
+                    # don't depend on resources in the Helm release,
+                    # like ServiceAccount & PVC, because they would
+                    # then also have to be created by the Helm hook,
+                    # but won't get deleted on Helm uninstall
+                    serviceAccountName: null
+
                     initContainers: "{{ [litellm_job_init_container] }}"
+                    containers:
+                      - name: prisma-migrations
+                        volumeMounts:
+                          - $patch: replace
+                          - "{{ values.volumeMounts | first }}"
+                    volumes:
+                      - $patch: replace
+                      - "{{ values.volumes | first }}"
+
+          json_patches:
+            # Helm chart doesn't currently allow
+            # specifying auth in .serviceMonitor
+            - target:
+                group: monitoring.coreos.com
+                version: v1
+                kind: ServiceMonitor
+                name: "{{ litellm_release_name }}"
+              patch:
+                - op: add
+                  # https://prometheus-operator.dev/docs/api-reference/api#monitoring.coreos.com/v1.Endpoint
+                  path: /spec/endpoints/0/authorization
+                  value:
+                    type: Bearer
+                    credentials:
+                      name: "{{ litellm_secrets['env-vars'] }}"
+                      key: LITELLM_MASTER_KEY
 
         extras: # adopt extra resources into Helm release
           - cert-manager.io/v1 Certificate {{ litellm_secrets['ingress']  }}

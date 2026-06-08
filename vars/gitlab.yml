@@ -9,16 +9,16 @@
 # icloud_smtp.*:       {vault.yml}
 
 gitlab_namespace: gitlab
+gitlab_subdomain: gitlab.{{ homelab_domain }}
+
 gitlab_enable_istio: false
 gitlab_use_waypoint: false
 
-# aliases of "ingress" and direct
-# subdomains of fourteeners.local
+# aliases of "ingress"
 gitlab_host_names:
   gitlab: gitlab
   pages: pages.gitlab
 
-gitlab_subdomain: gitlab.{{ homelab_domain }}
 # https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_filters.html#products
 gitlab_fqdns: |
   {% set fqdns = {} %}
@@ -504,7 +504,7 @@ gitlab_chart_values:
         # wait until Redis is ready before
         # running the migrations container
         - name: wait-redis
-          image: wait4x/wait4x
+          image: docker.io/wait4x/wait4x:3.6.0
           imagePullPolicy: IfNotPresent
           command: ["sh"]
           args:
@@ -698,7 +698,7 @@ gitlab_chart_values:
         # been created so the main container can
         # do needed initialization or migrations
         - name: wait-postgresql
-          image: wait4x/wait4x
+          image: docker.io/wait4x/wait4x:3.6.0
           imagePullPolicy: IfNotPresent
           command: ["sh"]
           args:
@@ -709,7 +709,7 @@ gitlab_chart_values:
                 "postgres://${POSTGRESQL_USERNAME}:${POSTGRESQL_PASSWORD}@${POSTGRESQL_HOST}:${POSTGRESQL_PORT}/${POSTGRESQL_DATABASE}?sslmode=disable"
           env:
             - name: POSTGRESQL_HOST
-              value: "{{ pgpool_service_host }}"
+              value: {{ pgpool_service_host }}
             - name: POSTGRESQL_PORT
               value: "{{ pgpool_service_port }}"
             - name: POSTGRESQL_DATABASE
@@ -926,7 +926,7 @@ gitlab_chart_values:
       certCAFilename: ca.crt
 
     master:
-      revisionHistoryLimit: 2
+      revisionHistoryLimit: "{{ k8s_max_revisions }}"
 
       persistence:
         enabled: true
@@ -1004,7 +1004,7 @@ gitlab_chart_values:
     # registered and the runner token secret
     # is created)
     replicas: "{{ runner_replicas }}"
-    revisionHistoryLimit: 2
+    revisionHistoryLimit: "{{ k8s_max_revisions }}"
 
     # https://docs.gitlab.com/runner/install/kubernetes_helm_chart_configuration#run-with-non-root-user
     # https://gitlab.com/gitlab-org/ci-cd/gitlab-runner-ubi-images/container_registry/1766421?orderBy=PUBLISHED_AT&sort=desc&search%5B%5D=v18

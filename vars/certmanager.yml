@@ -89,6 +89,12 @@ step_issuer_release_name: step-issuer
 step_issuer_chart_values:
   replicaCount: 1
 
+  image:
+    # use docker.io to get authenticated pulls
+    repository: docker.io/smallstep/step-issuer
+    pullPolicy: IfNotPresent
+    tag: "" # chart appVersion
+
   resources:
     requests:
       cpu: 20m

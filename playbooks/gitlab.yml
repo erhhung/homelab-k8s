@@ -195,7 +195,7 @@
                 name: "{{ gitlab_release_name }}-{{ gitaly }}"
                 namespace: "{{ gitlab_namespace }}" # required
               spec:
-                revisionHistoryLimit: 2
+                revisionHistoryLimit: "{{ k8s_max_revisions }}"
                 persistentVolumeClaimRetentionPolicy:
                   whenScaled: Retain
                   whenDeleted: Delete
@@ -463,15 +463,22 @@
     - name: Configure by shell script
       when: config_method == 'shell'
       vars:
-        erhhung_ssh_pub_key: |-
-          {{ lookup('ansible.builtin.file', files_dir ~
-             '/erhhung/erhhung.pub', rstrip=false) }}
+        erhhung_ssh_pub_keys: |
+          {% set keys = {} %}
+          {% for usage in ['auth', 'signing'] %}
+          {%   set _ = keys.update({
+                 usage: lookup('ansible.builtin.file', files_dir ~
+                               '/erhhung/id_ed25519_'~ usage[:4] ~
+                               '.pub', rstrip=false)
+               })   %}
+          {% endfor %}
+          {{ keys   }}
         erhhung_gpg_pub_key: |-
           {{ lookup('ansible.builtin.file', files_dir ~
-             '/erhhung/erhhung.asc', rstrip=false) }}
+                    '/erhhung/erhhung.asc', rstrip=false) }}
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/shell_module.html
-      ansible.builtin.shell: |-
-        {{ lookup('ansible.builtin.template', templates_dir ~ '/gitlab/configure.sh.j2') }}
+      ansible.builtin.shell: "{{ lookup('ansible.builtin.template',
+        templates_dir ~ '/gitlab/configure.sh.j2') }}"
       args:
         executable: "{{ local_bash_interpreter }}"
       register: configure_sh

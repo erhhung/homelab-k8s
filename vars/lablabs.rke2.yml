@@ -5,7 +5,8 @@ rke2_servers_group_name: "{{ rke_control_plane_group }}"
 rke2_agents_group_name: "{{ rke_workers_group }}"
 
 # https://github.com/rancher/rke2/releases
-rke2_version: v1.34.3+rke2r1 # 12/18/2025
+# rke2_version: v1.34.3+rke2r1 # 12/18/2025
+rke2_version: v1.35.5+rke2r2 # 5/28/2026
 rke2_architecture: amd64
 
 # rke2_token: {vault.yml}
@@ -41,7 +42,7 @@ rke2_server_options:
   # https://docs.rke2.io/advanced#control-plane-component-resource-requestslimits
   - |-
     control-plane-resource-requests:
-      - kube-apiserver-cpu=250m
+      - kube-apiserver-cpu=300m
       - kube-apiserver-memory=2Gi
 
 # additional RKE2 agent configuration options
@@ -64,6 +65,8 @@ rke2_kube_scheduler_arg:
 rke2_kube_proxy_arg:
   - nodeport-addresses=primary
   - metrics-bind-address=0.0.0.0:10249
+
+rke2_ingress_controller: ingress-nginx # ingress-nginx|traefik|none
 
 # wait for all pods to be have a status of running or
 # succeeded after rke2-server service rolling restart

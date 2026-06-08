@@ -133,6 +133,8 @@
         <<: *uri-auth
         return_content: true
       register: system_settings
+      retries: 3
+      delay: 3
 
     - name: Get library project config
       ansible.builtin.uri:
@@ -140,6 +142,8 @@
         # no auth required
         return_content: true
       register: project_config
+      retries: 3
+      delay: 3
   tasks:
     - name: Configure system settings
       vars:

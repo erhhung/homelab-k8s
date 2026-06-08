@@ -10,6 +10,7 @@ keycloak_host_names: # aliases of "ingress"
 
 # https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_filters.html#products
 keycloak_fqdns: "{{ keycloak_host_names | product(search_domains) | map('join','.') }}"
+oidc_issuer_uri: https://sso.{{ homelab_domain }}/realms/homelab
 
 keycloak_secrets:
   ingress: keycloakx-ingress-tls
@@ -26,25 +27,27 @@ keycloak_db_name: keycloak
 keycloak_db_user: keycloak
 # {{ keycloak_pg_pass }}
 
-# Java requires key file to be in PKCS#8 / DER format:
+# Java requires key file to be in PKCS#8/DER format:
 # openssl pkcs8 -topk8 -inform PEM -outform DER -in tls.key -nocrypt -out key.der
 # https://www.postgresql.org/docs/current/libpq-connect.html#LIBPQ-CONNSTRING-URIS
-# (references "pgpool_service_url" var from vars/postgresql.yml)
 # NOTE: don't include "user:pass@" in the URL as
 # that gets interpreted as part of the host name
+# https://docs.ansible.com/ansible/latest/collections/ansible/builtin/dict2items_filter.html
+# https://docs.ansible.com/ansible/latest/collections/ansible/builtin/zip_filter.html
+# (references `pgpool_service_url` var from vars/postgresql.yml)
 keycloak_jdbc_url: >-
   {% set params = {
        'ssl':         'true',
        'sslmode':     'verify-full',
        'sslcert':     '/opt/keycloak/tls/database/tls.crt',
        'sslkey':      '/opt/keycloak/tls/database/key.der',
-       'sslrootcert': '/opt/keycloak/tls/database/ca.crt'
+       'sslrootcert': '/opt/keycloak/tls/database/ca.crt',
      } -%}
-  {% set items = params | dict2items -%}
-  {% set params = items | map(attribute='key')    |
-              zip(items | map(attribute='value')) |
-                    map('join','=') -%}
-  {% set query = params | join('&') -%}
+  {% set  items = params | dict2items -%}
+  {% set params =  items | map(attribute='key') |
+               zip(items | map(attribute='value')) |
+                     map('join','=') -%}
+  {% set  query = params | join('&') -%}
   jdbc:{{ pgpool_service_url }}/{{ keycloak_db_name }}?{{ query }}
 
 # "keycloakx-database-sql" Secret

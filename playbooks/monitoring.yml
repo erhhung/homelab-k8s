@@ -11,6 +11,7 @@
   hosts: "{{ rke_control_plane_host }}"
   vars_files:
     - vars/kubernetes.yml
+    - vars/keycloak.yml
     - vars/storage.yml
     - vars/minio.yml
     - vars/valkey.yml
@@ -228,7 +229,7 @@
                 name: "{{ monitoring_release_name }}-grafana"
                 namespace: "{{ monitoring_namespace }}"
               spec:
-                revisionHistoryLimit: 2
+                revisionHistoryLimit: "{{ k8s_max_revisions }}"
                 persistentVolumeClaimRetentionPolicy:
                   whenScaled: Retain
                   whenDeleted: Delete
@@ -279,7 +280,7 @@
 - name: Configure monitoring applications
   tags: configure
   hosts: localhost
-  vars_files: &vars_files
+  vars_files:
     - vars/monitoring.yml
   pre_tasks:
     - name: Wait until Grafana API is ready
@@ -300,7 +301,6 @@
 - name: Configure monitoring dashboards
   tags: dashboards
   hosts: localhost
-  vars_files: *vars_files
   pre_tasks:
     - name: Clear private_dashboards
       ansible.builtin.set_fact:

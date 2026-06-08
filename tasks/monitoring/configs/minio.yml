@@ -81,4 +81,3 @@
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/set_fact_module.html
       ansible.builtin.set_fact:
         minio_scrape_configs: "{{ add_configs.stdout | from_yaml }}"
-      when: add_configs.rc == 0

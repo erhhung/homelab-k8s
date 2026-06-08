@@ -439,9 +439,7 @@
 
     - name: Get list of paired nodes
       kubernetes.core.k8s_exec:
-        # remove non-JSON lines because CLI isn't doing it:
-        # https://github.com/openclaw/openclaw/issues/84293
-        command: bash -c "openclaw nodes list --json 2> /dev/null | sed '1,/^{/ { /^{/!d; }'"
+        command: openclaw nodes list --json
       register: openclaw_nodes
       changed_when: false
 
@@ -466,7 +464,7 @@
           {{ allowlist | join(LF) }}
           EOF
       kubernetes.core.k8s_exec:
-        command: bash -c "{{ script | regex_replace('([\\"])', '\\\1') }}"
+        command: bash -c {{ script | quote }}
       register: gateway_allowlist
       changed_when: false
 
@@ -535,10 +533,10 @@
             printf -v cmd  "openclaw approvals allowlist %s --json" "$cmd"
             (eval "set -x; $cmd")
           done <<'EOF'
-          {{ commands | map('append', lf) | join -}}
+          {{ commands | map('append', LF) | join -}}
           EOF
       kubernetes.core.k8s_exec:
-        command: bash -c "{{ script | regex_replace('([\\"])', '\\\1') }}"
+        command: bash -c {{ script | quote }}
       loop: *approval-loop
       loop_control:
         index_var: i
@@ -631,9 +629,7 @@
           {% endif %}
           {{ args  }}
       kubernetes.core.k8s_exec:
-        command: >-
-          bash -xc "openclaw cron {{ cron_args | join(' ')
-                    | regex_replace('([\\"])', '\\\1') }}"
+        command: bash -xc {{ (['openclaw','cron'] + cron_args) | join(' ') | quote }}
       loop: "{{ openclaw_cron_jobs }}"
       loop_control:
         label: "{{ item.name }}"

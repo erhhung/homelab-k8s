@@ -61,7 +61,7 @@
                   value: "{{ metacontroller_release_name }}"
                 - op: add
                   path: /spec/revisionHistoryLimit
-                  value: 2
+                  value: "{{ k8s_max_revisions }}"
 
         extras: # adopt extra resources into Helm release
           - "{{ smon_manifest | from_yaml }}"

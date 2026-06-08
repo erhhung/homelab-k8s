@@ -24,7 +24,7 @@ set -eo pipefail
 #   gitlab_root_pass
 #   gitlab_user_pass
 #   user_erhhung.*
-#   erhhung_ssh_pub_key
+#   erhhung_ssh_pub_keys.*
 #   erhhung_gpg_pub_key
 #   gitlab_user_callouts[]
 #   gitlab_user_prefs.*
@@ -62,7 +62,7 @@ RETRY_ARGS=(
 HTML_ARGS=(
   "${AUTH_ARGS[@]}"
   -H 'Accept: text/html'
-  -o "$RESPONSE_HTML"
+  -o $RESPONSE_HTML
   -w '%{http_code}'
   "${RETRY_ARGS[@]}"
 )
@@ -70,11 +70,16 @@ JSON_ARGS=(
   "${AUTH_ARGS[@]}"
   -H       'Accept: application/json'
   -H 'Content-Type: application/json'
-  -o "$RESPONSE_JSON"
+  -o $RESPONSE_JSON
   -w '%{http_code}'
   "${RETRY_ARGS[@]}"
 )
 rm -f $AUTH_USER $COOKIE_JAR
+
+url_encode() {
+  python3 -c "import sys,urllib.parse as url;
+print(url.quote_plus(sys.stdin.read().strip()))"
+}
 
 # get CSRF token for page given its URL
 # csrf_token <page-url>
@@ -306,7 +311,7 @@ group_homelab() {
   # supported from v18.9.x, chart 9.9.x
   return 0
 
-  group_id="$(sed -En 's/^.+"namespace_id":([0-9]+),.+$/\1/p' "$RESPONSE_HTML")"
+  group_id="$(sed -En 's/^.+"namespace_id":([0-9]+),.+$/\1/p' $RESPONSE_HTML)"
   echo >&2 "group_id: ${group_id:-N/A}"
   [ "$group_id" ] || return
 
@@ -447,9 +452,12 @@ user_pins() {
 
 # remember to add to ~/.ssh/config:
 # Host gitlab.fourteeners.local
-#   IdentityFile ~/.ssh/erhhung
+#   Port 2022
 #   User git
+#   IdentityFile ~/.ssh/id_ed25519_auth
 
+# add_ssh_key <usage>
+# usage: auth|signing
 add_ssh_key() {
   _func_call "$@"
 
@@ -457,9 +465,13 @@ add_ssh_key() {
   local id page_url="$GITLAB_URL/$url_path"
   run curl -s "$page_url" "${HTML_ARGS[@]}"
 
-  id="$(sed -En 's|^.*href="/'"$url_path"'/([0-9]+)".*$|\1|p' \
-             "$RESPONSE_HTML" | sort -nr | head -1)"
-  [ "$id" ] && return
+  local usage=$1 key_var="${1}_key" auth_key signing_key
+     auth_key={{ erhhung_ssh_pub_keys['auth']    | quote }}
+  signing_key={{ erhhung_ssh_pub_keys['signing'] | quote }}
+
+  local md5=$(ssh-keygen -E md5 -lf - <<< "${!key_var}" | \
+        awk  '{print $2}' | cut -d: -f2-)
+  grep -q "$md5" $RESPONSE_HTML && return
   printf ','
 
   # key[key] value must be URL-encoded
@@ -467,9 +479,9 @@ add_ssh_key() {
   run curl -s               "$page_url" \
     "${HTML_ARGS[@]}" \
     -d "authenticity_token=$token" \
-    -d 'key[key]={{ erhhung_ssh_pub_key | urlencode }}' \
-    -d 'key[title]={{ user_erhhung.username }}' \
-    -d 'key[usage_type]=auth_and_signing' \
+    -d "key[key]=$(url_encode <<< "${!key_var}")" \
+    -d "key[title]={{ user_erhhung.email }} ${usage::4}" \
+    -d "key[usage_type]=$usage" \
     -d 'key[expires_at]='
 }
 
@@ -481,7 +493,7 @@ add_gpg_key() {
   run curl -s "$page_url" "${HTML_ARGS[@]}"
 
   id="$(sed -En 's|^.*href="/'"$url_path"'/([0-9]+)".*$|\1|p' \
-             "$RESPONSE_HTML" | sort -nr | head -1)"
+        $RESPONSE_HTML | sort -nr | head -1)"
   [ "$id" ] && return
   printf ','
 
@@ -705,7 +717,8 @@ printf "‖      ‖   Popups: ";  dismiss_popups;         echo
 printf "‖      ‖ Settings: ";  user_settings;          printf  ","
                                user_prefs;             printf  ",["
                                user_pins;              echo     "]"
-printf "‖      ‖ Pub Keys: ";  add_ssh_key;            printf  ","
+printf "‖      ‖ Pub Keys: ";  add_ssh_key signing;    printf  ","
+                               add_ssh_key auth;       printf  ","
                                add_gpg_key;            echo
 printf "‖        Login: ";     root_login;             echo
 printf "‖       Popups: ";     dismiss_popups;         echo

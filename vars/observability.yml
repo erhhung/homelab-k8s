@@ -47,7 +47,7 @@ otel_operator_release_name: otel-operator
 # https://github.com/open-telemetry/opentelemetry-helm-charts/tree/main/charts/opentelemetry-operator/values.yaml
 otel_operator_chart_values:
   nameOverride: "{{ otel_operator_release_name }}"
-  revisionHistoryLimit: 2
+  revisionHistoryLimit: "{{ k8s_max_revisions  }}"
 
   crds:
     create: true

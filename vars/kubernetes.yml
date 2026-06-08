@@ -95,8 +95,8 @@ nginx_tcp_services:
   2222: gitea/gitea-ssh:2222
 nginx_udp_services: {}
 
-# ensure names match those defined
-# in manifests/priorityclasses.yaml
+# make sure names match those defined
+# in manifests/*/priorityclasses.yaml
 priority_classes:
   # "critical" is created automatically by RKE2
   critical: system-cluster-critical # 2000000000
@@ -108,6 +108,7 @@ docker_username: erhhung
 github_username: erhhung
 # {{ github_access_token }}
 
-# maximum number of revisions saved per release:
+# https://kubernetes.io/docs/concepts/workloads/controllers/deployment#revision-history-limit
+k8s_max_revisions: 2
 # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/helm_module.html
 helm_max_history: 3

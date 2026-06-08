@@ -26,7 +26,7 @@ tempo_release_name: tempo
 # https://github.com/grafana-community/helm-charts/tree/main/charts/tempo/values.yaml
 tempo_chart_values:
   replicas: 1
-  revisionHistoryLimit: 2
+  revisionHistoryLimit: "{{ k8s_max_revisions }}"
 
   tempo:
     # reduces Go GC churn
