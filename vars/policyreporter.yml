@@ -1,0 +1,570 @@
+# policy_pg_pass:  {vault.yml}
+# policy_api_pass: {vault.yml}
+
+# disable alerts until ignore list
+# and filters have been fine-tuned
+alertmanager_alerts_enabled: false
+
+policy_reporter_namespace: policy-reporter
+policy_reporter_subdomain: policy.{{ homelab_domain }}
+
+policy_reporter_api_hosts:
+  - core
+  - kyverno
+  - trivy
+# append: plugins/filter/filters.py
+policy_reporter_host_names:
+  rke: # aliases of "ingress"
+    - policy # UI
+    - security
+    - | # primary & plugin REST APIs
+      {{ policy_reporter_api_hosts |
+         map('append', '.rke.policy') }}
+  k3s: # aliases of "rancher"
+    - |
+      {{ policy_reporter_api_hosts |
+         map('append', '.k3s.policy') }}
+
+# policy_reporter_fqdns[rke|k3s][core|kyverno|trivy]=string
+# policy_reporter_fqdns[rke][ui]=list<string>
+policy_reporter_fqdns: |
+  {% set fqdns = {} %}
+  {% for cluster, hosts in policy_reporter_host_names.items() %}
+  {%   set  _fqdns = {} %}
+  {%   set  _hosts =  hosts | flatten %}
+  {%   set n_hosts = _hosts | length  %}
+  {%   set n_apis  = policy_reporter_api_hosts | length %}
+  {%   set  _apis  = _hosts[-n_apis:] %}
+  {%   for i in range(n_apis) %}
+  {%     set _ = _fqdns.update({
+           policy_reporter_api_hosts[i]: _apis[i : i+1] |
+              product(search_domains) | map('join','.') | first,
+         })   %}
+  {%   endfor %}
+  {%   if n_hosts > n_apis %}
+  {%     set _ = _fqdns.update({
+           'ui': _hosts[:-n_apis] |
+             product(search_domains) | map('join','.'),
+         })  %}
+  {%   endif %}
+  {%   set _ = fqdns.update({cluster: _fqdns}) %}
+  {% endfor %}
+  {{ fqdns  }}
+
+# policy_reporter_api_urls[rke|k3s][core|kyverno|trivy]
+policy_reporter_api_urls: |
+  {% set urls = {} %}
+  {% for cluster, fqdns in policy_reporter_fqdns.items() %}
+  {%   set _urls = {} %}
+  {%   for api in policy_reporter_api_hosts %}
+  {%     set _ = _urls.update({api: 'https://'~ fqdns[api]}) %}
+  {%   endfor %}
+  {%   set _ = urls.update({cluster: _urls}) %}
+  {% endfor %}
+  {{ urls   }}
+policy_reporter_ui_url: https://{{ policy_reporter_fqdns['rke']['ui'][0] }}
+
+policy_reporter_secrets:
+  ingress: policy-reporter-ingress-tls
+  database: policy-reporter-database-tls
+  postgres: policy-reporter-database-dsn
+  redis: policy-reporter-redis-creds
+  # credentials for API and metrics
+  basic: policy-reporter-basic-auth
+  smtp: policy-reporter-smtp-creds
+  oidc: policy-reporter-oidc-secret
+
+policy_db_name: policy
+policy_db_user: policy
+# {{ policy_pg_pass }} <db_user>_pg_pass
+
+# https://www.postgresql.org/docs/current/libpq-connect.html#LIBPQ-CONNSTRING-URIS
+# https://docs.ansible.com/ansible/latest/collections/ansible/builtin/dict2items_filter.html
+# https://docs.ansible.com/ansible/latest/collections/ansible/builtin/zip_filter.html
+# (references `pgpool_service_url` var from vars/postgresql.yml)
+policy_reporter_pg_dsn: >-
+  {% set params = {
+       'sslmode':     'verify-full',
+       'sslcert':     '/tls/database/tls.crt',
+       'sslkey':      '/tls/database/tls.key',
+       'sslrootcert': '/tls/database/ca.crt',
+     } -%}
+  {% set  items = params | dict2items -%}
+  {% set params =  items | map(attribute='key') |
+               zip(items | map(attribute='value')) |
+                     map('join','=') -%}
+  {% set  query = params | join('&') -%}
+  {{ pgpool_service_url  | replace('//', '//'~
+     policy_db_user ~':'~
+     policy_pg_pass ~'@') }}/{{
+     policy_db_name ~'?'~ query }}
+
+policy_reporter_oidc_client_id: policy-reporter
+
+# https://github.com/kyverno/policy-reporter/tree/main/charts/policy-reporter
+policy_reporter_chart_version: "3.7.4"
+policy_reporter_release_name: policy-reporter
+
+# https://github.com/kyverno/policy-reporter/tree/main/charts/policy-reporter/values.yaml
+policy_reporter_chart_values:
+  replicaCount: 1
+  revisionHistoryLimit: "{{ k8s_max_revisions }}"
+
+  logging: &logging
+    server: false
+    logLevel: 0 # -1=debug|0=info|1=warn|2=error|3=dpanic|4=panic|5=fatal
+    encoding: console # console|json
+
+  # used by both primary & plugin REST APIs:
+  # Secret with keys `username` & `password`
+  basicAuth:
+    secretRef: "{{ policy_reporter_secrets['basic'] }}"
+
+  rest: # REST API
+    enabled: true
+  metrics: # Prometheus
+    enabled: true
+  profiling: # pprof
+    enabled: false
+
+  # number of queue workers for
+  # *Report resource processing
+  worker: "{{ 1 if cluster == 'k3s' else 2 }}"
+
+  # choose reports to process
+  reportFilter:
+    namespaces:
+      include: []
+      exclude: []
+    disableClusterReports: false
+
+  # https://kyverno.github.io/policy-reporter-docs/policy-reporter/email-reports.html
+  emailReports:
+    clusterName: "{{ 'RKE2' if cluster == 'rke' else 'K3s' }}"
+    titlePrefix: Report
+
+    smtp:
+      host: "{{ icloud_smtp.host }}"
+      port: "{{ icloud_smtp.port }}"
+      encryption: starttls # none|ssl/tls|starttls
+      # Secret with keys `username` and `password`
+      secret: "{{ policy_reporter_secrets['smtp'] }}"
+      from: Policy Reporter <{{ icloud_smtp.from_email }}>
+
+    summary: &send-email
+      enabled: true
+      to: ["{{ homelab_admin.full_name }} <{{ homelab_admin.email }}>"]
+      schedule: "0 16 1 * *" # 1st of month at 8am Pacfic time
+      ttlSecondsAfterFinished: 86400 # 1 day
+
+    violations:
+      <<: *send-email
+      enabled: false
+
+  target:
+    # send violation reports to Alertmanager
+    # for notification routing and silencing:
+    # https://kyverno.github.io/policy-reporter-docs/policy-reporter/integrations.html#alertmanager-configuration
+    # severity levels: ""<info<low<medium<high<critical
+    alertManager: |
+      {{ { 'host':             alertmanager_service_url,
+           'certificate':     '/tls/database/ca.crt',
+           'minimumSeverity': 'high',
+         }
+         if alertmanager_alerts_enabled
+            and cluster == 'rke' else {}
+      }}
+  monitoring:
+    # Prometheus CRDs are only on RKE2 cluster
+    enabled: "{{ prometheus_crds_installed }}"
+
+    serviceMonitor:
+      labels: "{{ monitoring_selector_labels }}"
+      interval: 1m
+
+    grafana:
+      # deploy Grafana dashboards via ConfigMaps?
+      dashboards:
+        enabled: "{{ cluster == 'rke' }}"
+        label: "{{ grafana_dashboard_label }}"
+        value: "1"
+
+        # deploy specific dashboards
+        enable:
+          overview: true
+          policyReportDetails: true
+          clusterPolicyReportDetails: true
+        # filter by cluster in dashboards?
+        multicluster:
+          enabled: true
+
+  # dedicated Redis instance is deployed by subchart (aliased
+  # `cache`) on RKE cluster (K3s cluster uses in-memory cache)
+  redis:
+    enabled: "{{ cluster == 'rke' }}"
+    address: "{{   redis_address  }}"
+    secretRef: "{{ policy_reporter_secrets['redis'] }}"
+    prefix: "" # not needed
+
+  # required by `redis-cache.networkPolicy.allowExternal`
+  podLabels: | # `policy-reporter` Deployment pods
+    {{ { redis_fullname ~'-client': 'true',
+       } if cluster == 'rke' else {}
+    }}
+  # database types: mysql|postgres|mariadb|""=sqlite
+  database: |
+    {{ { 'type':     'postgres',
+         'secretRef': policy_reporter_secrets['postgres'],
+       } if cluster == 'rke' else {}
+    }}
+  extraVolumes: |
+    {{ { 'volumes':  [{
+           'name':   'database-tls',
+           'secret': {
+             'secretName':  policy_reporter_secrets['database'],
+             'defaultMode': 416,
+           },
+         }],
+         'volumeMounts': [{
+           'name':       'database-tls',
+           'mountPath':  '/tls/database',
+           'readOnly':    true,
+         }],
+       } if cluster == 'rke' else {}
+    }}
+  sqliteVolume: |
+    {{ { 'persistentVolumeClaim': {
+           'claimName': policy_reporter_release_name ~'-sqlite',
+         },
+       } if cluster == 'k3s' else {}
+    }}
+  extraManifests:
+    - |
+      {% set default_sc = vars[cluster ~'_default_storage_class'] %}
+      {% if cluster == 'k3s' %}
+      apiVersion: v1
+      kind: PersistentVolumeClaim
+      metadata:
+        name: {{ policy_reporter_release_name }}-sqlite
+      spec:
+        storageClassName: {{ default_sc }}
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 20Mi
+      {% endif %}
+      ---
+      {% if values.plugin.trivy.enabled %}
+      apiVersion: v1
+      kind: PersistentVolumeClaim
+      metadata:
+        name: {{ policy_reporter_release_name }}-trivy
+      spec:
+        storageClassName: {{ default_sc }}
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            # should match size used by Trivy (see
+            # trivy.storageSize in vars/trivy.yml)
+            storage: 2Gi
+      {% endif %}
+
+  # NOT CURRENTLY USED BY CHART
+  # rendered as patches instead
+  initContainers:
+    # create PostgreSQL database
+    # policy if it doesn't exist
+    - name: create-database
+      # `postgresql_image` undefined on K3s cluster,
+      # but init container won't be patched, either
+      image: "{{ postgresql_image | default('') }}"
+      imagePullPolicy: IfNotPresent
+      command: ["bash"]
+      args:
+        - -c
+        - |-
+          # uses connection params added
+          # by PG* environment variables
+          db_found=$(psql -d postgres -tAc "
+            SELECT COUNT(*) FROM pg_catalog.pg_database WHERE datname = '$PGDATABASE'
+          ") || exit $?
+          echo "db_found=$db_found"
+
+          [ "$db_found" -eq 1 ] || {
+            echo -e "\nCreating '$PGDATABASE' database..."
+            psql -d postgres <<EOT
+
+          -- https://www.postgresql.org/docs/current/sql-createdatabase.html
+          CREATE DATABASE $PGDATABASE WITH OWNER $PGUSER;
+          REVOKE ALL ON DATABASE $PGDATABASE FROM PUBLIC;
+          GRANT  ALL ON DATABASE $PGDATABASE  TO $PGUSER;
+          EOT
+          }
+          echo -e "\nDatabase initialization completed ✓"
+      env:
+        # https://www.postgresql.org/docs/current/libpq-envars.html
+        - name: PGHOST
+          value: "{{ pgpool_service_host }}"
+        - name: PGUSER
+          value: "{{ policy_db_user }}"
+        - name: PGDATABASE
+          value: "{{ policy_db_name }}"
+        - name: PGSSLMODE
+          value: verify-full
+        - name: PGSSLCERT
+          value: /tls/tls.crt
+        - name: PGSSLKEY
+          value: /tls/tls.key
+        - name: PGSSLROOTCERT
+          value: /tls/ca.crt
+
+      volumeMounts:
+        - name: database-tls
+          mountPath: /tls
+          readOnly: true
+
+    # wait until Redis is ready before
+    # running the migrations container
+    - name: wait-redis
+      image: docker.io/wait4x/wait4x:3.6.0
+      imagePullPolicy: IfNotPresent
+      command: ["sh"]
+      args:
+        - -c
+        - |-
+          wait4x --interval 3s --timeout 0 redis \
+            "redis://:${REDIS_PASSWORD}@${REDIS_ADDRESS}"
+      env:
+        - name: REDIS_ADDRESS
+          value: "{{ redis_address }}"
+        - name: REDIS_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: "{{ policy_reporter_secrets['redis'] }}"
+              key: password
+
+  # Policy Reporter API
+  resources: &resources
+    requests: |
+      {{ { 'cpu':    '25m',
+           'memory': '128Mi',
+         } if cluster == 'rke' else {
+           'cpu':    '10m',
+           'memory': '64Mi',
+         }
+      }}
+  ingress: &ingress
+    enabled: true
+
+    className: "{{ vars[cluster ~'_ingress_class'] }}"
+    # Traefik middlewares: manifests/k3s/traefikmiddlewares.yaml
+    # https://doc.traefik.io/traefik/reference/install-configuration/providers/overview#provider-namespace
+    annotations: |
+      {{ { 'nginx.ingress.kubernetes.io/force-ssl-redirect': 'true',
+           'nginx.ingress.kubernetes.io/backend-protocol':   'HTTP',
+         } if cluster == 'rke' else {
+           'traefik.ingress.kubernetes.io/router.middlewares':
+              'kube-system-redirect-http-to-https@kubernetescrd',
+           'traefik.ingress.kubernetes.io/service.serversscheme': 'http',
+         }
+      }}
+    tls:
+      - secretName: "{{ policy_reporter_secrets['ingress']  }}"
+        hosts: "{{ [policy_reporter_fqdns[cluster]['core']] }}"
+    hosts:
+      - host: "{{   policy_reporter_fqdns[cluster]['core']  }}"
+        paths: &ingress-paths
+          - path: /
+            pathType: Prefix
+
+  ui: # deploy on single cluster only
+    enabled: "{{ cluster == 'rke' }}"
+    replicaCount: 1
+    revisionHistoryLimit: "{{ k8s_max_revisions }}"
+
+    displayMode: dark # light|dark|colorblind|colorblinddark
+
+    logging:
+      <<: *logging
+      api: true
+
+    # local UI cluster
+    name: RKE2 Cluster
+
+    # https://kyverno.github.io/policy-reporter-docs/policy-reporter-ui/multi-tenant.html
+    clusters:
+      # external clusters
+      - name: K3s Cluster
+        host: "{{ policy_reporter_api_urls['k3s']['core'] }}"
+        secretRef: "{{ policy_reporter_secrets['basic'] }}"
+        certificate: /tls/ca.crt
+        plugins: |
+          {% set plugins = [] %}
+          {% for plugin in ['kyverno', 'trivy'] %}
+          {%   if values.plugin[plugin].enabled %}
+          {%     set _ = plugins.append({
+                   'name':         plugin | ansible.builtin.capitalize,
+                   'host':         policy_reporter_api_urls['k3s'][plugin],
+                   'secretRef':    policy_reporter_secrets['basic'],
+                   'certificate': '/tls/ca.crt',
+                 })  %}
+          {%   endif %}
+          {% endfor  %}
+          {{ plugins }}
+
+    # https://kyverno.github.io/policy-reporter-docs/policy-reporter-ui/authentication.html#openidconnect
+    openIDConnect:
+      enabled: true
+      # Secret containing `clientSecret`
+      secretRef: "{{ policy_reporter_secrets['oidc'] }}"
+      clientId: "{{  policy_reporter_oidc_client_id  }}"
+      discoveryUrl: "{{ oidc_issuer_uri }}" # vars/keycloak.yml
+      callbackUrl: "{{ policy_reporter_ui_url }}/callback"
+      certificate: /tls/ca.crt
+      scopes:
+        - openid # required
+        - basic
+        - email
+        - profile
+
+    # https://kyverno.github.io/policy-reporter-docs/policy-reporter-ui/custom-boards.html
+    crds:
+      customBoard: true
+    customBoards: []
+
+    # Policy Reporter UI
+    resources: *resources
+
+    podSecurityContext: &pod-security
+      runAsNonRoot: true
+      runAsUser: 1234
+      runAsGroup: 1234
+      fsGroup: 1234
+      fsGroupChangePolicy: OnRootMismatch
+
+    extraVolumes:
+      volumes:
+        - name: tls
+          secret:
+            secretName: "{{ policy_reporter_secrets['ingress'] }}"
+            defaultMode: 416 # "0640"
+      volumeMounts:
+        - name: tls
+          mountPath: /tls/ca.crt
+          subPath: ca.crt
+          readOnly: true
+
+    ingress:
+      <<: *ingress
+      tls:
+        - secretName: "{{ policy_reporter_secrets['ingress'] }}"
+          hosts: "{{      policy_reporter_fqdns['rke']['ui'] }}"
+      hosts: |
+        {% set hosts = [] %}
+        {% for fqdn in policy_reporter_fqdns['rke']['ui'] %}
+        {%   set _ = hosts.append({
+               'host':  fqdn,
+               'paths': [{
+                 'path':     '/',
+                 'pathType': 'Prefix',
+               }],
+             })   %}
+        {% endfor %}
+        {{ hosts  }}
+
+  plugin:
+    kyverno: &plugin
+      enabled: true
+
+      replicaCount: 1
+      revisionHistoryLimit: "{{ k8s_max_revisions }}"
+
+      logging: *logging
+      resources: *resources
+
+      ingress:
+        <<: *ingress
+        tls:
+          - secretName: "{{ policy_reporter_secrets['ingress']     }}"
+            hosts: "{{ [policy_reporter_fqdns[cluster]['kyverno']] }}"
+        hosts:
+          - host: "{{   policy_reporter_fqdns[cluster]['kyverno']  }}"
+            paths: *ingress-paths
+
+    trivy:
+      <<: *plugin
+      # disable for now due to startup crash:
+      # https://github.com/kyverno/policy-reporter-plugins/issues/354
+      enabled: false
+
+      # allow calls to CVE AWG/MITRE API:
+      # https://cveawg.mitre.org/api-docs
+      cveawg:
+        disable: false
+      # allow calls to GitHub's GSA API:
+      # https://docs.github.com/en/rest/security-advisories/global-advisories
+      github:
+        disable: false
+        token: "{{ github_access_token }}"
+
+      dbVolume:
+        persistentVolumeClaim:
+          claimName: "{{ policy_reporter_release_name }}-trivy"
+      podSecurityContext: *pod-security
+
+      ingress:
+        <<: *ingress
+        tls:
+          - secretName: "{{ policy_reporter_secrets['ingress']   }}"
+            hosts: "{{ [policy_reporter_fqdns[cluster]['trivy']] }}"
+        hosts:
+          - host: "{{   policy_reporter_fqdns[cluster]['trivy']  }}"
+            paths: *ingress-paths
+
+  # aliased subchart values attached via Helmfile:
+  # https://github.com/cowboysysop/charts/tree/master/charts/redis/values.yaml
+  redis-cache:
+    fullnameOverride: "{{ policy_reporter_release_name }}-redis"
+    architecture: standalone # standalone|replication
+
+    image:
+      registry: "{{ harbor_container_registry }}"
+      repository: bitnami/redis
+      tag: 8.2.1-debian-12-r0
+
+    auth:
+      existingSecret: "{{ policy_reporter_secrets['redis'] }}"
+      existingSecretPasswordKey: password
+
+    # use in-memory only
+    commonConfiguration: |-
+      appendonly no
+      save ""
+
+    master:
+      pdb:
+        create: false
+      kind: Deployment
+      revisionHistoryLimit: "{{ k8s_max_revisions }}"
+
+      persistence:
+        enabled: false
+        sizeLimit: 256Mi # emptyDir
+
+      resources:
+        requests:
+          cpu: 25m
+          memory: 32Mi
+
+      # prevent unbounded memory usage,
+      # evicting when limit is reached
+      extraFlags:
+        - "--maxmemory 256mb"
+        - "--maxmemory-policy allkeys-lru"
+
+    networkPolicy:
+      enabled: true
+      # restrict access to Policy Reporter by requiring
+      # `podLabels.policy-reporter-redis-client: "true"`
+      allowExternal: false
+      allowExternalEgress: false

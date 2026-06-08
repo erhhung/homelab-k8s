@@ -1,0 +1,13 @@
+# https://doc.traefik.io/traefik/reference/routing-configuration/http/middlewares/overview
+# https://doc.traefik.io/traefik/reference/routing-configuration/kubernetes/crd/http/middleware
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: redirect-http-to-https
+  namespace: kube-system
+spec:
+  # https://doc.traefik.io/traefik/reference/routing-configuration/http/middlewares/redirectscheme
+  redirectScheme:
+    scheme: https
+    permanent: true

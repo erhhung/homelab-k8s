@@ -5,10 +5,12 @@
   hosts: localhost
   vars_files:
     - vars/dns.yml
+
     # *_subdomain vars
     - vars/thanos.yml
-    - vars/gitlab.yml
     - vars/vclusters.yml
+    - vars/policyreporter.yml
+    - vars/gitlab.yml
   vars:
     api_base: "https://pfsense.{{ homelab_domain }}/api/v2"
     headers:
@@ -61,6 +63,6 @@
   tasks:
     - name: Ensure DNS resolution works
       vars:
-        test_domain: "{{ pfsense_dns_records[0].host }}.{{ homelab_domain }}"
-        expected_ip: "{{ pfsense_dns_records[0].ip   }}"
+        test_domain: qnap.{{ homelab_domain }}
+        expected_ip: "{{ hostvars['qnap'].ansible_host }}"
       ansible.builtin.include_tasks: "{{ tasks_dir }}/dns/check.yml"

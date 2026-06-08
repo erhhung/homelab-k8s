@@ -12,6 +12,24 @@
 #   sed -E 's/^([[:space:]]+- ip:.+)$/\n\1/' # add newlines
 
 pfsense_dns_records:
+  - ip: 192.168.0.164
+    host: rancher
+    desc: K3s Traefik Ingress
+    aliases:
+      - host: traefik
+        desc: K3s Traefik Ingress
+      - host: harbor
+        desc: Harbor OCI Registry
+      - host: core
+        domain: k3s.{{ policy_reporter_subdomain }}
+        desc: Policy Reporter API
+      - host: kyverno
+        domain: k3s.{{ policy_reporter_subdomain }}
+        desc: Kyverno Plugin API
+      - host: trivy
+        domain: k3s.{{ policy_reporter_subdomain }}
+        desc: Trivy Plugin API
+
   - ip: 192.168.4.222
     host: ingress
     desc: RKE Nginx Ingress
@@ -99,6 +117,19 @@ pfsense_dns_records:
         desc: Kiali Dashboard
       - host: vault
         desc: HashiCorp Vault
+      - host: policy
+        desc: Policy Reporter UI
+      - host: security
+        desc: Policy Reporter UI
+      - host: core
+        domain: rke.{{ policy_reporter_subdomain }}
+        desc: Policy Reporter API
+      - host: kyverno
+        domain: rke.{{ policy_reporter_subdomain }}
+        desc: Kyverno Plugin API
+      - host: trivy
+        domain: rke.{{ policy_reporter_subdomain }}
+        desc: Trivy Plugin API
       - host: gitea
         desc: Gitea UI
       - host: git

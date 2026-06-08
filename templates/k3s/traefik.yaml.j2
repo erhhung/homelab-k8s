@@ -13,8 +13,17 @@ metadata:
 spec:
   valuesContent: |-
     ports:
+      web:
+        # https://doc.traefik.io/traefik/reference/install-configuration/entrypoints#configuration-example
+        # http:
+        #   redirections:
+        #     entryPoint:
+        #       to: websecure
+        #       scheme: https
+        #       permanent: true
+
       websecure:
-        # https://doc.traefik.io/traefik/routing/entrypoints#transport
+        # https://doc.traefik.io/traefik/reference/install-configuration/entrypoints#opt-transport-respondingTimeouts-readTimeout
         transport:
           # these timeout settings are critical when proxying requests
           # to the Harbor registry as large layer transfers could fail
@@ -27,6 +36,9 @@ spec:
             idleTimeout: 10m
 
     additionalArguments:
+      # https://doc.traefik.io/traefik/reference/install-configuration/providers/kubernetes/kubernetes-crd#opt-providers-kubernetesCRD-allowCrossNamespace
+      - --providers.kubernetescrd.allowCrossNamespace=true
+
       # https://doc.traefik.io/traefik-hub/api-gateway/reference/install/ref-defaultserverstransport
       - --serverstransport.forwardingtimeouts.dialtimeout=30s
       - --serverstransport.forwardingtimeouts.responseheadertimeout=10m

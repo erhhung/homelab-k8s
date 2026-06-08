@@ -1,0 +1,73 @@
+# delete non-Job pods that have their "kubectl" status
+# as Completed, Evicted, or ContainerStatusUnknown for
+# over 24 hours
+
+# https://kyverno.io/docs/policy-types/deleting-policy
+# https://kubespec.dev/kyverno/policies.kyverno.io/v1/DeletingPolicy
+# https://kubernetes.io/docs/reference/using-api/cel
+---
+apiVersion: policies.kyverno.io/v1
+kind: DeletingPolicy
+metadata:
+  name: purge-dead-pods
+  labels:
+    reports.kyverno.io/disabled: "true"
+spec:
+  schedule: 0 4 * * * # run every day at 4am Pacific time
+
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        # https://kubernetes.io/docs/reference/kubernetes-api/definitions/named-rule-with-operations-v1-admissionregistration#NamedRuleWithOperations
+        operations: ["*"]
+        # requires pod delete permission in cluster role (see
+        # `cleanupController.rbac.clusterRole.extraResources`
+        # in vars/kyverno.yml)
+        resources: ["pods"]
+        scope: Namespaced
+
+  conditions:
+    # Job TTL handles owned pods
+    - name: pod-not-owned-by-job
+      expression: >-
+        !object.metadata.ownerReferences.exists(o, o.kind == "Job")
+
+    - name: dead-pod-older-than-24h
+      expression: >-
+        (
+          object.status.phase == "Succeeded" &&
+          object.status.containerStatuses.exists(cs,
+                  has(cs.state.terminated) &&
+                  has(cs.state.terminated.finishedAt) &&
+            timestamp(cs.state.terminated.finishedAt) < time.now() - duration("24h")
+          )
+        ) || (
+              object.status.phase  == "Failed"  &&
+          has(object.status.reason)             &&
+              object.status.reason == "Evicted" &&
+          object.status.conditions.filter(c,
+            has(c.lastTransitionTime)
+          ).map(c,
+            timestamp(c.lastTransitionTime)
+          ).max() < time.now() - duration("24h")
+        ) || (
+          object.status.phase == "Failed" &&
+          (
+            object.status.containerStatuses.exists(cs,
+              has(cs.state.waiting)        &&
+              has(cs.state.waiting.reason) &&
+                  cs.state.waiting.reason  == "ContainerStatusUnknown"
+            ) ||
+            object.status.containerStatuses.exists(cs,
+              has(cs.state.terminated)        &&
+              has(cs.state.terminated.reason) &&
+                  cs.state.terminated.reason  == "ContainerStatusUnknown"
+            )
+          ) &&
+          object.status.conditions.filter(c,
+            has(c.lastTransitionTime)
+          ).map(c,
+            timestamp(c.lastTransitionTime)
+          ).max() < time.now() - duration("24h")
+        )

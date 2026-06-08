@@ -1,0 +1,158 @@
+# https://kyverno.github.io/policy-reporter-docs
+---
+- name: Install Policy Reporter and plugins
+  tags: install
+  hosts:
+    - "{{ k3s_control_plane_host }}"
+    - "{{ rke_control_plane_host }}"
+  vars_files:
+    - vars/kubernetes.yml
+    - vars/storage.yml
+    - vars/monitoring.yml
+    - vars/postgresql.yml
+    - vars/keycloak.yml
+    - vars/policyreporter.yml
+  vars:
+    # required kubernetes>=24.2 package only in user virtualenv
+    ansible_python_interpreter: "{{ venv_python_interpreter }}"
+    # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/ternary_filter.html
+    cluster: "{{ (inventory_hostname in groups['k3s_cluster']) | ternary('k3s','rke') }}"
+    kubeconfig: "{{ vars[cluster ~'_kubeconfig'] }}"
+    secret_ns: "{{ policy_reporter_namespace }}"
+    create_ns: false
+  pre_tasks:
+    - name: Is the monitoring stack ready?
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/monitoring/stackready.yml"
+      when: prometheus_crds_installed is undefined
+
+    - name: Get the PostgreSQL image used
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/postgresql/image.yml"
+      when: cluster == 'rke' and postgresql_image is undefined
+  tasks:
+    - name: Create Policy Reporter ingress secret
+      vars:
+        fqdns: "{{ policy_reporter_fqdns[cluster] }}"
+
+        # === Inputs ===
+        secret_name: "{{ policy_reporter_secrets['ingress'] }}"
+        create_ns: true
+        cert_name: policy-reporter-ingress
+        sans:
+          - "{{ fqdns['ui'] | default([]) }}" # use UI FQDN as the CN
+          # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/extract_filter.html
+          - "{{   policy_reporter_api_hosts  | map('extract', fqdns) }}"
+          - "*.{{ policy_reporter_namespace }}.svc.{{ cluster_domain }}"
+          - "*.{{ policy_reporter_namespace }}.svc"
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/k8s/secrets/tls.step.yml"
+
+    - name: Create Policy Reporter database secrets
+      when: cluster == 'rke'
+      block:
+        - name: Create Policy Reporter database TLS secret
+          vars:
+            secret_name: "{{ policy_reporter_secrets['database'] }}"
+            cert_name: policy-reporter-database
+            days: 365
+            sans:
+              - "{{ policy_db_user }}"
+              - "{{ policy_db_user }}@{{ homelab_domain }}"
+          ansible.builtin.include_tasks: "{{ tasks_dir }}/k8s/secrets/tls.step.yml"
+
+        - name: Create Policy Reporter database DSN secret
+          vars:
+            secret_name: "{{ policy_reporter_secrets['postgres'] }}"
+            secret_data:
+              dsn: "{{ policy_reporter_pg_dsn }}"
+          ansible.builtin.include_tasks: "{{ tasks_dir }}/k8s/secrets/generic.yml"
+
+    - name: Create Policy Reporter credential secret
+      vars:
+        secrets:
+          - secret: redis
+            create: "{{ cluster == 'rke' }}"
+            password: "{{ valkey_pass }}"
+          - secret: basic
+            username: policy
+            password: "{{ policy_api_pass }}"
+          - secret: smtp
+            username: "{{ icloud_smtp.username }}"
+            password: "{{ icloud_smtp.passwords['policy'] }}"
+
+        # === Inputs ===
+        secret_name: "{{ policy_reporter_secrets[item.secret] }}"
+        secret_data:
+          username: "{{ item.username | default('') }}"
+          password: "{{ item.password }}"
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/k8s/secrets/generic.yml"
+      when: item.create | default(true)
+      loop: "{{ secrets }}"
+      loop_control:
+        label: "{{ item.secret }}"
+
+    - name: Create Policy Reporter UI OIDC secret
+      vars:
+        secret_name: "{{ policy_reporter_secrets['oidc'] }}"
+        secret_data:
+          # `clientSecret` key name is expected
+          # oidc_client_secrets.*: {vault.yml}
+          clientSecret: "{{ oidc_client_secrets['policy'] }}"
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/k8s/secrets/generic.yml"
+      when: cluster == 'rke'
+
+    - name: Install Policy Reporter Helm chart
+      vars:
+        redis_fullname: "{{ values['redis-cache'].fullnameOverride }}"
+        redis_address: "{{ redis_fullname }}-master.{{
+          policy_reporter_namespace }}.svc.{{ cluster_domain }}:6379"
+        # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/to_nice_yaml_filter.html
+        init_containers: "{{ values.initContainers |
+          ansible.builtin.to_nice_yaml(indent=2, sort_keys=false) }}"
+
+        # === Inputs ===
+        repo_name: policy-reporter
+        repo_url: https://kyverno.github.io/policy-reporter
+        chart_ref: policy-reporter
+        chart_ver: "{{ policy_reporter_chart_version }}"
+        release: "{{ policy_reporter_release_name }}"
+        release_ns: "{{ policy_reporter_namespace }}"
+        values: "{{ policy_reporter_chart_values }}"
+
+        patches:
+          merge_patches:
+            - |
+              {% if cluster == 'rke' %}
+              apiVersion: apps/v1
+              kind: Deployment
+              metadata:
+                name: {{ policy_reporter_release_name }}
+                namespace: {{ policy_reporter_namespace }}
+              spec:
+                template:
+                  spec:
+                    # chart doesn't currently support
+                    # init containers via values file
+                    initContainers:
+                      {{ init_containers | indent(8) }}
+              {% endif %}
+
+        subcharts: |
+          {{ [{ 'dependency': {
+                  'alias':   'redis-cache',
+                  'chart':   'oci://ghcr.io/cowboysysop/charts/redis',
+                  'version': '21.2.6',
+                },
+             }] if cluster == 'rke' else []
+          }}
+        extras: # adopt extra resources into Helm release
+          - cert-manager.io/v1 Certificate {{ policy_reporter_secrets['ingress'] }}
+          - v1 Secret {{ policy_reporter_secrets['basic'] }}
+          - v1 Secret {{ policy_reporter_secrets['smtp']  }}
+          - |
+            {% if cluster == 'rke' %}
+            cert-manager.io/v1 Certificate {{ policy_reporter_secrets['database'] }}
+            v1 Secret {{ policy_reporter_secrets['postgres'] }}
+            v1 Secret {{ policy_reporter_secrets['redis']    }}
+            v1 Secret {{ policy_reporter_secrets['oidc']     }}
+            {% endif %}
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/helm/helmfile.yml"

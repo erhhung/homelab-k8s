@@ -1,0 +1,53 @@
+# force StatefulSet.spec.persistentVolumeClaimRetentionPolicy
+# to Retain whenScaled and Delete whenDeleted
+
+# https://kyverno.io/docs/policy-types/mutating-policy
+---
+apiVersion: policies.kyverno.io/v1
+kind: MutatingPolicy
+metadata:
+  name: pvc-retention-policy
+  labels:
+    reports.kyverno.io/disabled: "true"
+spec:
+  matchConstraints:
+    resourceRules:
+      - apiGroups: ["apps"]
+        apiVersions: ["v1"]
+        # https://kubernetes.io/docs/reference/kubernetes-api/definitions/named-rule-with-operations-v1-admissionregistration#NamedRuleWithOperations
+        operations:
+          - CREATE
+          - UPDATE
+        # requires extra permissions in cluster
+        # role granted to background controller
+        resources: ["statefulsets"]
+        scope: Namespaced
+
+  matchConditions:
+    # check existing value to avoid unnecessary update,
+    # especially with a same-trigger-and-target policy:
+    # https://kyverno.io/docs/policy-types/mutating-policy#same-trigger-and-target
+    - name: update-is-required
+      expression: >-
+        !has(object.spec.persistentVolumeClaimRetentionPolicy)                        ||
+             object.spec.persistentVolumeClaimRetentionPolicy.whenScaled  != "Retain" ||
+             object.spec.persistentVolumeClaimRetentionPolicy.whenDeleted != "Delete"
+
+  evaluation:
+    admission:
+      enabled: true
+    mutateExisting:
+      enabled: true
+
+  mutations:
+    - patchType: ApplyConfiguration
+      applyConfiguration:
+        expression: >-
+          Object{
+            spec: Object.spec{
+              persistentVolumeClaimRetentionPolicy: Object.spec.persistentVolumeClaimRetentionPolicy{
+                whenScaled:  "Retain",
+                whenDeleted: "Delete"
+              }
+            }
+          }

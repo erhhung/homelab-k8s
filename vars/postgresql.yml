@@ -11,9 +11,10 @@ postgresql_users:
   - "{{ user_erhhung.username }}"
   - "{{ scraper_user.username }}"
   - "{{  keycloak_db_user }}"
-  - "{{       awx_db_user }}"
+  - "{{    policy_db_user }}"
   - "{{     gitea_db_user }}"
   - "{{    gitlab_db_user }}"
+  - "{{       awx_db_user }}"
   - "{{   litellm_db_user }}"
   - "{{ openwebui_db_user }}"
   - "{{   flowise_db_user }}"
@@ -206,9 +207,10 @@ postgresql_chart_values:
       # https://www.pgpool.net/docs/latest/en/html/runtime-config-load-balancing.html#GUC-DATABASE-REDIRECT-PREFERENCE-LIST
       {% set use_primary = [
                   'postgres',
-                 awx_db_name,
+              policy_db_name,
                gitea_db_name,
               gitlab_db_name,
+                 awx_db_name,
              litellm_db_name,
            openwebui_db_name,
          ] -%}

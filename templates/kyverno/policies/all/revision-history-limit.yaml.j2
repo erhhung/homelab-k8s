@@ -1,0 +1,53 @@
+# force spec.revisionHistoryLimit to a common value
+# for all Deployments, StatefulSets, and DaemonSets
+# (`k8s_max_revisions` is in "vars/kubernetes.yml")
+
+# https://kyverno.io/docs/policy-types/mutating-policy
+---
+apiVersion: policies.kyverno.io/v1
+kind: MutatingPolicy
+metadata:
+  name: revision-history-limit
+  labels:
+    reports.kyverno.io/disabled: "true"
+spec:
+  matchConstraints:
+    resourceRules:
+      - apiGroups: ["apps"]
+        apiVersions: ["v1"]
+        # https://kubernetes.io/docs/reference/kubernetes-api/definitions/named-rule-with-operations-v1-admissionregistration#NamedRuleWithOperations
+        operations:
+          - CREATE
+          - UPDATE
+        # requires extra permissions in cluster
+        # role granted to background controller
+        resources:
+          - deployments
+          - statefulsets
+          - daemonsets
+        scope: Namespaced
+
+  matchConditions:
+    # check existing value to avoid unnecessary update,
+    # especially with a same-trigger-and-target policy:
+    # https://kyverno.io/docs/policy-types/mutating-policy#same-trigger-and-target
+    - name: update-is-required
+      expression: >-
+        !has(object.spec.revisionHistoryLimit) ||
+             object.spec.revisionHistoryLimit  != {{ k8s_max_revisions }}
+
+  evaluation:
+    admission:
+      enabled: true
+    mutateExisting:
+      enabled: true
+
+  mutations:
+    - patchType: ApplyConfiguration
+      applyConfiguration:
+        expression: >-
+          Object{
+            spec: Object.spec{
+              revisionHistoryLimit: {{ k8s_max_revisions }}
+            }
+          }

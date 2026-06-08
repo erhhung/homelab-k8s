@@ -251,6 +251,15 @@ cd "$HOME"
   istio.fourteeners.local
 
 ./cert.sh --exp=365 \
+  vault.fourteeners.local
+
+./cert.sh --exp=365 \
+      policy.fourteeners.local \
+  k3s.policy.fourteeners.local \
+  rke.policy.fourteeners.local \
+    security.fourteeners.local
+
+./cert.sh --exp=365 \
           --out=gitea_db \
   gitea gitea@fourteeners.local
 
@@ -340,5 +349,9 @@ cd "$HOME"
 ./cert.sh --exp=365 \
   openclaw.fourteeners.local \
     agents.fourteeners.local
+
+./cert.sh --exp=365 \
+  bentopdf.fourteeners.local \
+       pdf.fourteeners.local
 
 rsync certs cosmos:.

@@ -2,30 +2,52 @@
 # (file names must be *.yaml but not .*). IMPORTANT:
 # manifests must specify namespaces to install into
 ---
-- name: Create resources on RKE cluster
-  hosts: "{{ rke_control_plane_host }}"
+- name: Apply Kubernetes manifests
+  hosts:
+    - "{{ k3s_control_plane_host }}"
+    - "{{ rke_control_plane_host }}"
   vars_files:
     - vars/kubernetes.yml
   vars:
     # required kubernetes>=24.2 package only in user virtualenv
     ansible_python_interpreter: "{{ venv_python_interpreter }}"
-  tasks:
-    - name: Apply Kubernetes manifests
+    # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/ternary_filter.html
+    cluster: "{{ (inventory_hostname in groups['k3s_cluster']) | ternary('k3s','rke') }}"
+    kubeconfig: "{{ vars[cluster ~'_kubeconfig'] }}"
+  pre_tasks:
+    - name: Load Kubernetes manifests
       vars:
         # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/fileglob_lookup.html
-        # https://docs.ansible.com/ansible/latest/plugins/lookup.html#forcing-lookups-to-return-lists-query-and-wantlist-true
-        manifests: |
-          {{ query('ansible.builtin.fileglob', manifests_dir ~'/*.yaml') |
-               map('ansible.builtin.basename') | reject('search', '^\..+') }}
+        files: |
+          {% set files = [] %}
+          {% for dest in ['all', cluster] %}
+          {%   set dir = manifests_dir ~'/'~ dest %}
+          {%   if  dir is directory %}
+          {%     set _ = files.extend(query('ansible.builtin.fileglob',
+                           dir ~'/*.yaml') | reject('search', '/\.[^/]+$')
+                                           | ansible.builtin.sort) %}
+          {%   endif %}
+          {% endfor  %}
+          {{ files   }}
+        # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/file_lookup.html
+        # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/from_yaml_all_filter.html
+        manifests: "{{ lookup('ansible.builtin.file', item) | from_yaml_all }}"
+        label: "{{ manifests | map(attribute='metadata.name') | join(',')   }}"
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/set_fact_module.html
+      ansible.builtin.set_fact:
+        static_manifests: "{{ static_manifests | default([]) + manifests }}"
+      loop: "{{ files }}"
+      loop_control:
+        label: "{{ label }}"
+  tasks:
+    - name: Apply Kubernetes manifest
       # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_module.html
       kubernetes.core.k8s:
-        kubeconfig: "{{ rke_kubeconfig }}"
-        # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/file_lookup.html
-        definition: "{{ lookup('ansible.builtin.file', manifests_dir ~'/'~ item) }}"
-        validate:
-          fail_on_error: false
+        kubeconfig: "{{ kubeconfig }}"
+        definition: "{{ item }}"
         state: present
         apply: true
         wait: true
-      loop: "{{ manifests }}"
-      timeout: 300
+      loop: "{{ static_manifests }}"
+      loop_control:
+        label: "{{ item.metadata.name }}"

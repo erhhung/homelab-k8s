@@ -1,6 +1,7 @@
 # https://trivy.dev/docs/latest/guide/scanner/vulnerability
 # https://trivy.dev/docs/latest/guide/scanner/secret
 # https://aquasecurity.github.io/trivy-operator
+# reports CRs API group: aquasecurity.github.io
 ---
 # build wrapper image with env vars CONTAINERD_ADDRESS
 # and CONTAINERD_NAMESPACE baked in for job containers
@@ -20,8 +21,10 @@
       ansible.builtin.include_tasks: "{{ tasks_dir }}/oci/build.yml"
 
 - name: Install Trivy Operator
-  tags: install
-  hosts:
+  tags:
+    - install
+    - operator
+  hosts: &hosts
     - "{{ k3s_control_plane_host }}"
     - "{{ rke_control_plane_host }}"
   vars_files:
@@ -29,7 +32,7 @@
     - vars/monitoring.yml
     - vars/storage.yml
     - vars/trivy.yml
-  vars:
+  vars: &vars
     # required kubernetes>=24.2 package only in user virtualenv
     ansible_python_interpreter: "{{ venv_python_interpreter }}"
     # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/ternary_filter.html
@@ -54,8 +57,8 @@
     # https://trivy.dev/docs/latest/guide/configuration#environment-variables
     - name: Create Trivy envFrom secret
       vars:
-        values: "{{ trivy_operator_chart_values }}"
-        redis_host: "{{ values.redis.fullnameOverride }}-master.{{
+        values: "{{ trivy_operator_chart_values['redis-cache'] }}"
+        redis_host: "{{ values.fullnameOverride }}-master.{{
           trivy_namespace }}.svc.{{ cluster_domain }}"
 
         # === Inputs ===
@@ -83,17 +86,44 @@
                 name: trivy-server # not templated
                 namespace: "{{ trivy_namespace }}"
               spec:
-                revisionHistoryLimit: 2
+                revisionHistoryLimit: "{{ k8s_max_revisions }}"
                 persistentVolumeClaimRetentionPolicy:
                   whenScaled: Retain
                   whenDeleted: Delete
 
         subcharts:
           - dependency:
+              alias: redis-cache
               chart: oci://ghcr.io/cowboysysop/charts/redis
               # helm show chart oci://ghcr.io/cowboysysop/charts/redis
               version: "21.2.6"
+
         extras: # adopt extra resources into Helm release
           - v1 Secret {{ trivy_secrets['credentials'] }}
           - v1 Secret {{ trivy_secrets['env-vars']    }}
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/helm/helmfile.yml"
+
+# Trivy Operator Polr Adapter converts report CRs in
+# API group `aquasecurity.github.io` into report CRs
+# in API group `wgpolicyk8s.io` or `openreports.io`
+# so Policy Reporter can interpret them for display
+- name: Install Trivy Operator Polr Adapter
+  tags:
+    - install
+    - adapter
+  hosts: *hosts
+  vars_files:
+    - vars/kubernetes.yml
+    - vars/trivy.yml
+  vars: *vars
+  tasks:
+    - name: Install Trivy Polr Adapter Helm chart
+      vars:
+        repo_name: trivy-adapter
+        repo_url: https://fjogeleit.github.io/trivy-operator-polr-adapter
+        chart_ref: trivy-operator-polr-adapter
+        chart_ver: "{{ trivy_adapter_chart_version }}"
+        release: "{{ trivy_adapter_release_name }}"
+        release_ns: "{{ trivy_namespace }}"
+        values: "{{ trivy_adapter_chart_values }}"
       ansible.builtin.include_tasks: "{{ tasks_dir }}/helm/helmfile.yml"

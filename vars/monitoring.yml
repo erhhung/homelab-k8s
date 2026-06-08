@@ -170,6 +170,12 @@ alertmanager_config:
   route:
     group_by:
       - namespace
+      # https://kyverno.github.io/policy-reporter-docs/policy-reporter/integrations.html#alertmanager-configuration
+      - alertname
+      - severity
+      - policy
+      - rule
+      - source
     group_wait: 30s
     group_interval: 5m
     repeat_interval: 12h
@@ -208,13 +214,10 @@ alertmanager_config:
     - target_matchers:
         - alertname = InfoInhibitor
 
-# keycloak_client_secrets.*: {vault.yml}
-monitoring_oidc_client_id:
+# oidc_client_secrets.*: {vault.yml}
+monitoring_oidc_client_ids:
   prometheus: prometheus
   alertmanager: alertmanager
-
-# sso.fourteeners.local is same host as keycloak.fourteeners.local
-monitoring_oidc_issuer_uri: https://sso.{{ homelab_domain }}/realms/homelab
 
 # https://github.com/oauth2-proxy/oauth2-proxy/releases
 monitoring_oauth2_proxy_version: "7.12.0"
@@ -224,20 +227,17 @@ monitoring_oauth2_proxy_version: "7.12.0"
 # (references "redis_service_url" var from vars/valkey.yml)
 monitoring_oauth2_proxy_config: |
   {% set configs = {} %}
-  {% for app in [
-         'prometheus',
-         'alertmanager'
-       ] %}
+  {% for app in monitoring_oidc_client_ids.keys() %}
   {%   set config = {
          'provider':              'keycloak-oidc',
          'provider_display_name': 'Keycloak',
          'skip_provider_button':   true,
          'provider_ca_files':    ['/tls/server/ca.crt'],
-         'client_id':        monitoring_oidc_client_id[app],
-         'client_secret':    keycloak_client_secrets[app],
+         'client_id':   monitoring_oidc_client_ids[app],
+         'client_secret':      oidc_client_secrets[app],
+         'oidc_issuer_url':    oidc_issuer_uri,
          'code_challenge_method': 'S256',
          'redirect_url':    'https://'~ monitoring_fqdns[app][0] ~'/oauth2/callback',
-         'oidc_issuer_url':  monitoring_oidc_issuer_uri,
          'cookie_secret':    oauth2_proxy_cookie_secret,
          'cookie_domains':  '.'~ search_domains[0],
          'cookie_samesite': 'lax',
@@ -250,7 +250,7 @@ monitoring_oauth2_proxy_config: |
          'redis_use_cluster':               true,
          'redis_insecure_skip_tls_verify':  true,
          'redis_cluster_connection_urls':  [redis_service_url],
-         'redis_password':                  valkey_pass
+         'redis_password':                  valkey_pass,
        } %}
   {#   https://docs.ansible.com/ansible/latest/collections/community/general/to_toml_filter.html #}
   {#   (requires Python package "tomlkit" on Ansible controller) #}
@@ -310,7 +310,7 @@ prometheus_stack_chart_values:
     enabled: true
     tls:
       enabled: true
-    revisionHistoryLimit: 2
+    revisionHistoryLimit: "{{ k8s_max_revisions }}"
 
     prometheusInstanceNamespaces:
       - "{{ monitoring_namespace }}"
@@ -877,7 +877,7 @@ prometheus_stack_chart_values:
     replicas: 1
     # chart templates will only apply this
     # limit to Deployment, not StatefulSet
-    revisionHistoryLimit: 2
+    revisionHistoryLimit: "{{ k8s_max_revisions }}"
 
     admin:
       existingSecret: "{{ monitoring_secrets['credentials'] }}"
@@ -1051,7 +1051,7 @@ prometheus_stack_chart_values:
         memory: 64Mi
       limits:
         cpu: 50m
-        memory: 128Mi
+        memory: 256Mi
 
     volumes:
       # volume to be mounted in
@@ -1176,7 +1176,7 @@ prometheus_stack_chart_values:
 
     extraInitContainers:
       - name: textfile-init
-        image: busybox
+        image: docker.io/busybox:1.38.0
         imagePullPolicy: IfNotPresent
         env: &textfile-env
           - name: NODE_NAME
@@ -1201,7 +1201,7 @@ prometheus_stack_chart_values:
       # subPath on shared volume to private
       # `collector.textfile.directory` path
       - name: textfile-sync
-        image: busybox
+        image: docker.io/busybox:1.38.0
         imagePullPolicy: IfNotPresent
         env: *textfile-env
         command: ["sh"]
@@ -1231,9 +1231,8 @@ prometheus_stack_chart_values:
         metadata:
           name: prometheus-node-exporter-textfile
         spec:
-          accessModes:
-            - ReadWriteMany
           storageClassName: {{ storage_classes['single'] }}
+          accessModes: ["ReadWriteMany"]
           resources:
             requests:
               # min XFS volume size is 300Mi

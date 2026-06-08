@@ -37,6 +37,10 @@
   ansible.builtin.import_playbook: playbooks/manifests.yml
   tags: manifests
 
+- name: Include Kyverno policy engine playbook
+  ansible.builtin.import_playbook: playbooks/kyverno.yml
+  tags: kyverno
+
 - name: Include MetalLB load balancer playbook
   ansible.builtin.import_playbook: playbooks/metallb.yml
   tags: metallb
@@ -151,6 +155,12 @@
   ansible.builtin.import_playbook: playbooks/externalsecrets.yml
   tags: externalsecrets
 
+# Policy Reporter depends on Harbor,
+# PostgreSQL, OpenSearch, Kyverno, Trivy
+- name: Include Policy Reporter playbook
+  ansible.builtin.import_playbook: playbooks/policyreporter.yml
+  tags: policyreporter
+
 # Gitea depends on MinIO, PostgreSQL, Valkey, OpenSearch
 - name: Include Gitea DevOps platform playbook
   ansible.builtin.import_playbook: playbooks/gitea.yml
@@ -214,15 +224,15 @@
   ansible.builtin.import_playbook: playbooks/openwebui.yml
   tags: openwebui
 
-# Flowise depends on PostgreSQL and Valkey
-- name: Include Flowise AI platform playbook
-  ansible.builtin.import_playbook: playbooks/flowise.yml
-  tags: flowise
-
 # OpenClaw depends on Ollama and LiteLLM
 - name: Include OpenClaw AI agents playbook
   ansible.builtin.import_playbook: playbooks/openclaw.yml
   tags: openclaw
+
+# Flowise depends on PostgreSQL and Valkey
+- name: Include Flowise AI platform playbook
+  ansible.builtin.import_playbook: playbooks/flowise.yml
+  tags: flowise
 
 - name: Include BentoPDF toolkit playbook
   ansible.builtin.import_playbook: playbooks/bentopdf.yml

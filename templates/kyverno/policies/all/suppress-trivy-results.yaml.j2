@@ -1,0 +1,104 @@
+# remove results[] entries (and update summary.* counters) from
+# Report and ClusterReport CRs that match ignored AVD* policies
+# defined in Trivy's ignoreFile (see "vars/trivy.yml") but that
+# Trivy's assessment and audit scanners cannot presently ignore
+
+# https://kyverno.io/docs/policy-types/mutating-policy
+# https://kubespec.dev/kyverno/policies.kyverno.io/v1/MutatingPolicy
+# https://kubernetes.io/docs/reference/using-api/cel
+---
+apiVersion: policies.kyverno.io/v1
+kind: MutatingPolicy
+metadata:
+  name: suppress-trivy-results
+  labels:
+    # prevent feedback loop by matching on generated reports:
+    # https://kyverno.io/docs/guides/reports#report-internals
+    reports.kyverno.io/disabled: "true"
+spec:
+  matchConstraints:
+    resourceRules:
+      - apiGroups: ["openreports.io"]
+        apiVersions: ["v1alpha1"]
+        operations:
+          - CREATE
+          - UPDATE
+        resources:
+          - reports
+          - clusterreports
+
+  matchConditions:
+    - name: created-by-adapter
+      expression: >-
+        has(object.metadata.labels) && "app.kubernetes.io/created-by" in object.metadata.labels &&
+            object.metadata.labels["app.kubernetes.io/created-by"] == "trivy-operator-polr-adapter"
+
+    - name: update-is-required
+      expression: variables.ignoredResults.size() > 0
+
+  evaluation:
+    admission:
+      enabled: true
+    mutateExisting:
+      enabled: false
+
+  failurePolicy: Ignore
+
+  variables:
+    # compile AVD-* policy IDs defined in
+    # Trivy's ignoreFile (vars/trivy.yml)
+    - name: ignoredPolicies
+      expression: >-
+        {{ trivy_ignore_file      | ansible.builtin.dict2items |
+           map(attribute='value') | ansible.builtin.flatten    |
+           map(attribute='id')    | select('search', '^AVD-')  | to_json }}
+
+    - name: ignoredSources
+      expression: >-
+        {{ [
+             'Trivy InfraAssessment',
+             'Trivy RbacAssessment',
+             'Trivy ConfigAudit',
+           ] | to_json
+        }}
+    - name: ignoredResults
+      expression: >-
+        object.results.filter(r,
+          has(r.source) &&
+              r.source in variables.ignoredSources &&
+          (
+            has(r.policy) && r.policy in variables.ignoredPolicies ||
+            has(r.rule)   && r.rule   in variables.ignoredPolicies
+          )
+        )
+    - name: keptResults
+      expression: >-
+        object.results.filter(r,
+          !(r in variables.ignoredResults)
+        )
+    - name: newSummary
+      expression: >-
+        {
+          "pass":  variables.keptResults.filter(r, has(r.result) && r.result == "pass" ).size(),
+          "fail":  variables.keptResults.filter(r, has(r.result) && r.result == "fail" ).size(),
+          "warn":  variables.keptResults.filter(r, has(r.result) && r.result == "warn" ).size(),
+          "error": variables.keptResults.filter(r, has(r.result) && r.result == "error").size(),
+          "skip":  variables.keptResults.filter(r, has(r.result) && r.result == "skip" ).size()
+        }
+
+  mutations:
+    - patchType: JSONPatch
+      jsonPatch:
+        expression: >-
+          [
+            JSONPatch{
+              op:    "add",
+              path:  "/results",
+              value: variables.keptResults
+            },
+            JSONPatch{
+              op:    "add",
+              path:  "/summary",
+              value: variables.newSummary
+            }
+          ]

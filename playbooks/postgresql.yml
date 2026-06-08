@@ -13,9 +13,10 @@
     # these are only needed for
     # their *_db_user variables
     - vars/keycloak.yml
-    - vars/awx.yml
+    - vars/policyreporter.yml
     - vars/gitea.yml
     - vars/gitlab.yml
+    - vars/awx.yml
     - vars/litellm.yml
     - vars/openwebui.yml
     - vars/flowise.yml
@@ -64,6 +65,57 @@
         wait_timeout: 600
         task_timeout: 1800
       ansible.builtin.include_tasks: "{{ tasks_dir }}/helm/helmfile.yml"
+
+    # this task creates roles defined after initial deployment when
+    # the one-time init script ("templates/postgresql/init.sql.j2")
+    # executed the same `CREATE ROLE` commands
+    - name: Create missing PostgreSQL roles
+      vars:
+        replicas: "{{ postgresql_chart_values.postgresql.replicaCount }}"
+        # prepend: plugins/filter/filters.py
+        sts_pods: "{{ range(replicas) | map('string') | map('prepend',
+          postgresql_release_name ~'-postgresql-') }}"
+        script: |-
+          run_query() {
+            psql -U postgres -tAc "$1"
+          }
+          is_primary() {
+            local result=$(run_query 'SELECT pg_is_in_recovery()')
+            if [ "$result" == t ]; then
+              echo >&2 "Replica node"
+              return 1
+            fi
+            echo >&2 "Primary node"
+          }
+          role_exists() {
+            local result=$(run_query "SELECT EXISTS (SELECT FROM pg_roles WHERE rolname = '$1')")
+            [ "$result" == t ]
+          }
+          rc=9; is_primary || exit $rc
+          while read -r  role pass; do
+            role_exists $role && continue
+
+            echo >&2 "Creating role: $role"
+            run_query >&2 "CREATE ROLE $role WITH CREATEDB LOGIN PASSWORD '$pass'"
+            rc=0
+          done <<'EOF'
+          {% for role in postgresql_users[2:] %}
+          {{ role }} {{ vars[role ~'_pg_pass'] | default(pgpool_pass) }}
+          {% endfor %}
+          EOF
+
+          exit $rc
+      # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_exec_module.html
+      kubernetes.core.k8s_exec:
+        kubeconfig: "{{ kubeconfig }}"
+        namespace: "{{ postgresql_namespace }}"
+        pod: "{{ item }}"
+        container: postgresql
+        command: bash -c {{ script | quote }}
+      loop: "{{ sts_pods }}"
+      register: create_roles
+      changed_when: create_roles.rc == 0
+      failed_when: create_roles.rc not in [0,9]
 
 - name: Configure PostgreSQL dashboards
   tags: dashboards

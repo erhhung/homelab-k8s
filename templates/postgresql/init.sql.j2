@@ -1,13 +1,13 @@
-{% set host_vars = hostvars[inventory_hostname] -%}
-
 -- https://www.postgresql.org/docs/current/sql-createrole.html
-CREATE ROLE erhhung WITH LOGIN SUPERUSER CREATEROLE CREATEDB
-                               PASSWORD '{{ pgpool_pass }}';
-CREATE ROLE scraper WITH LOGIN PASSWORD '{{ pgpool_pass }}';
--- https://www.postgresql.org/docs/current/sql-grant.html
-GRANT ALL PRIVILEGES ON DATABASE postgres TO scraper;
+CREATE ROLE {{ user_erhhung.username }} WITH CREATEROLE
+  LOGIN PASSWORD '{{ pgpool_pass }}' SUPERUSER CREATEDB;
+CREATE ROLE {{ scraper_user.username }} WITH
+  LOGIN PASSWORD '{{ pgpool_pass }}';
 
-{% for role in postgresql_users | reject('in', ['erhhung','scraper']) %}
-CREATE ROLE {{ role }} WITH LOGIN CREATEDB PASSWORD '{{
-  host_vars[role ~'_pg_pass'] | default(pgpool_pass) }}';
+-- https://www.postgresql.org/docs/current/sql-grant.html
+GRANT SELECT PRIVILEGES ON DATABASE postgres TO {{ scraper_user.username }};
+
+{% for role in postgresql_users[2:] %}
+CREATE ROLE {{ role }} WITH CREATEDB LOGIN PASSWORD '{{
+  vars[role ~'_pg_pass'] | default(pgpool_pass) }}';
 {% endfor %}

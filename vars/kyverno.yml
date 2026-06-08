@@ -1,0 +1,212 @@
+kyverno_namespace: kyverno
+
+# https://github.com/kyverno/kyverno/tree/main/charts/kyverno
+kyverno_chart_version: "3.8.1"
+kyverno_release_name: kyverno
+
+# https://github.com/kyverno/kyverno/tree/main/charts/kyverno/values.yaml
+kyverno_chart_values:
+  # CRDs in API groups:
+  # wgpolicyk8s.io
+  # kyverno.io
+  # reports.kyverno.io
+  crds:
+    install: true
+
+  global:
+    # watch for newly installed
+    # CRDs and invalidate cache
+    crdWatcher: true
+
+    # set the time zone in all controller
+    # containers to anchor cron schedules
+    extraEnvVars:
+      - name: TZ
+        value: "{{ system_time_zone }}"
+
+  config:
+    # recreate the ConfigMap on Helm
+    # upgrade and delete on uninstall
+    preserve: false
+
+    # max number of `UpdateRequest` CRs created for `mutateExisting`
+    # and generate policies (TIP: if admission controller logs start
+    # showing errors about exceeded threshold, check status messages
+    # of `UpdateRequest` CRs to see if missing RBAC permissions are
+    # causing the queue to fill up)
+    updateRequestThreshold: 2000
+
+  openreports:
+    enabled: true
+    # CRDs in API groups:
+    # openreports.io
+    installCrds: true
+
+  # moves storage of PolicyReport
+  # CRs from Kubernetes etcd into
+  # PostgreSQL DB for scalability
+  reportsServer:
+    enabled: false
+
+  # deploy Grafana dashboards via ConfigMaps?
+  grafana:
+    enabled: true
+    labels: "{{ {grafana_dashboard_label: '1'} }}"
+
+  # https://kyverno.io/docs/installation/customization#configmap-keys
+  # https://kyverno.io/docs/installation/customization#container-flags
+  features:
+    # whether Kyverno creates
+    # *PolicyReport resources
+    policyReports:
+      enabled: true
+    admissionReports:
+      enabled: true
+    # aggregate AdmissionReports?
+    aggregateReports:
+      enabled: true
+    # convert rules to Kubernetes-native
+    # admission policies for enforcement?
+    generateValidatingAdmissionPolicy:
+      enabled: true
+    # match generate*AdmissionPolicy
+    validatingAdmissionPolicyReports:
+      enabled: true
+    generateMutatingAdmissionPolicy:
+      # only supported in K8s 1.36+
+      enabled: false
+    mutatingAdmissionPolicyReports:
+      # only supported in K8s 1.36+
+      enabled: false
+    # report results for rule types
+    reporting:
+      validate: true
+      mutate: true
+      mutateExisting: true
+      imageVerify: true
+      generate: true
+
+    backgroundScan:
+      enabled: true
+      backgroundScanWorkers: 1
+      backgroundScanInterval: 6h
+      skipResourceFilters: true
+
+    # allow namespaced policy exemptions?
+    # https://kyverno.io/docs/guides/exceptions
+    policyExceptions:
+      enabled: false
+      # either one namespace or all namespaces
+      # (wildcards and multiple not supported)
+      namespace: "" # "*"=all
+    # set Kubernetes API server behavior to Ignore
+    # instead of Fail when webhook server is down:
+    # https://kyverno.io/docs/policy-types/cluster-policy/policy-settings
+    forceFailurePolicyIgnore:
+      # prefer availability over
+      # strict policy enforcement
+      enabled: true
+
+    globalContext:
+      maxApiCallResponseLength: 2000000 # 0=unlimited
+      apiCallTimeout: 30s # 0=unlimited
+    controllerRuntimeMetrics:
+      bindAddress: :8080 # "0"=disable
+
+    logging:
+      format: text # text|json
+      verbosity: 2 # up to 6
+    # dump AdmissionReview and patch
+    # payloads to debug policy rules
+    dumpPayload:
+      enabled: false
+    dumpPatches:
+      enabled: false
+    omitEvents:
+      eventTypes:
+        # - PolicyApplied
+        - PolicySkipped
+        # - PolicyViolation
+        # - PolicyError
+
+  reportsController: &controller
+    replicas: 1
+    revisionHistoryLimit: "{{ k8s_max_revisions }}"
+
+    resources: &resources
+      requests:
+        cpu: 25m
+        memory: "{{ '64Mi' if cluster == 'k3s' else '256Mi' }}"
+      limits:
+        cpu: 100m
+        memory: null
+
+    # only admission and reports controllers have
+    # `apiPriorityAndFairness` and `priorityLevelConfigurationSpec` settings:
+    # https://kubernetes.io/docs/concepts/cluster-administration/flow-control
+    apiPriorityAndFairness: true
+
+    # only admission and cleanup controllers have
+    # container probe settings
+    startupProbe:
+      timeoutSeconds: 5
+    livenessProbe:
+      failureThreshold: 6
+
+    serviceMonitor:
+      enabled: "{{ prometheus_crds_installed }}"
+      additionalLabels: "{{ monitoring_selector_labels }}"
+
+  admissionController:
+    <<: *controller
+    replicas: "{{ 1 if cluster == 'k3s' else 2 }}"
+
+    container:
+      resources: *resources
+    resources: null
+
+  backgroundController:
+    <<: *controller
+    rbac:
+      clusterRole:
+        extraResources:
+          - apiGroups:
+              - apps
+            resources:
+              - deployments
+              - statefulsets
+              - daemonsets
+            verbs:
+              - get
+              - list
+              - patch
+
+    featuresOverride:
+      logging:
+        verbosity: 4 # up to 6
+
+    # https://kyverno.io/docs/installation/customization#container-flags
+    extraArgs:
+      # default QPS/Burst=300
+      clientRateLimitQPS: 400
+      clientRateLimitBurst: 500
+
+    resources: *resources
+
+  cleanupController:
+    <<: *controller
+    rbac:
+      clusterRole:
+        extraResources:
+          # allow the controller to delete
+          # completed/evicted/unknown pods
+          - apiGroups:
+              - ""
+            resources:
+              - pods
+              - secrets
+              - configmaps
+            verbs:
+              - get
+              - list
+              - delete

@@ -59,6 +59,7 @@ All cluster services will be provisioned with TLS certificates from Erhhung's pr
 |      ~~https://tracing.fourteeners.local~~ | ~~Jaeger UI _(Tempo Query)_~~
 |          https://kiali.fourteeners.local | Kiali console _(Keycloak SSO)_
 |          https://vault.fourteeners.local | Vault UI
+|         https://policy.fourteeners.local | Policy Reporter UI
 |          https://gitea.fourteeners.local | Gitea UI
 |         https://gitlab.fourteeners.local | GitLab UI
 |  ssh://git@gitlab.fourteeners.local:2222 | GitLab SSH Git access
@@ -86,6 +87,9 @@ All cluster services will be provisioned with TLS certificates from Erhhung's pr
     * Install on K3s cluster using the [`rancher`](https://ranchermanager.docs.rancher.com/getting-started/installation-and-upgrade/install-upgrade-on-a-kubernetes-cluster#install-the-rancher-helm-chart) Helm chart
 - [X] [RKE2 Kubernetes Cluster](https://rke2.io/) — Kubernetes distribution with focus on security and compliance
     * Install on hosts `k8s1`-`k8s4` using the [RKE2 Ansible Role](https://github.com/lablabs/ansible-role-rke2) with HA mode enabled
+- [X] [Kyverno Policy Engine](https://kyverno.io/docs) — apply resource mutations and enforce cluster policies
+    * Install on K3s and RKE clusters using the [`kyverno`](https://github.com/kyverno/kyverno/tree/main/charts/kyverno) Helm chart
+    * [X] Install [Policy Reporter](https://kyverno.github.io/policy-reporter-docs) with Kyverno and Trivy plugins using the [`policy-reporter`](https://github.com/kyverno/policy-reporter/tree/main/charts/policy-reporter) Helm chart
 - [X] [MetalLB Load Balancer](https://metallb.io/) — network load-balancer for "bare metal" Kubernetes clusters
     * Install on main RKE cluster using Bitnami's [`metallb`](https://github.com/bitnami/charts/tree/main/bitnami/metallb) Helm chart
 - [X] [ExternalDNS](https://kubernetes-sigs.github.io/external-dns) with [Unbound Webhook](https://github.com/guillomep/external-dns-unbound-webhook) — automatically manage DNS records in pfSense
@@ -180,11 +184,12 @@ All cluster services will be provisioned with TLS certificates from Erhhung's pr
 ## To-Do Tasks
 
 - [X] Migrate manually provisioned certificates and secrets to ones issued by `cert-manager` with auto-rotation
+- [X] Automate static DNS records creation in pfSense _(dynamically assigned IPs still managed by ExternalDNS)_
+- [ ] Install Traefik in RKE2 cluster with Gateway API support, and then gradually migrate `Ingress` to `Gateway`
+- [ ] Enable OIDC authentication for additional services: GitLab, Jenkins, AWX, ArgoCD, LiteLLM, Open WebUI
 - [ ] Switch the CNI on the RKE2 cluster from Canal to Cilium and install Hubble web UI to visualize L3/L4 traffic
 - [ ] Harden security posture by applying `seccompProfile.type: RuntimeDefault` to as many pods as possible
-- [X] Automate creation of static DNS records in pfSense _(dynamically assigned IPs are managed by ExternalDNS)_
-- [ ] Identify and upload additional sources of personal documents into Open WebUI knowledge base collections
-- [ ] Enable OIDC authentication for additional services: GitLab, Jenkins, AWX, ArgoCD, LiteLLM, Open WebUI
+- [ ] Identify & upload additional sources of personal documents into Open WebUI knowledge base collections
 
 ## Requirements
 
@@ -234,10 +239,11 @@ ansible-vault view   $VAULTFILE
 | `dashboards_os_pass`              | `litellm_admin_pass`
 | `fluent_os_pass`                  | `openwebui_admin_pass`
 | `postgresql_pass`                 | `flowise_admin_pass`
-| `keycloak_client_secrets.*`       |
 | `valkey_pass`                     |
-| `monitoring_pass`                 |
+| `oidc_client_secrets.*`           |
 | `oauth2_proxy_cookie_secret`      |
+| `monitoring_pass`                 |
+| `policy_reporter_api_pass`        |
 | `gitea_secret_key`                |
 | `gitlab_secrets_data.*`           |
 | `gitlab_omniauth.*`               |
@@ -351,9 +357,17 @@ however, all privileged operations using `sudo` will require the password stored
     ```
 </details>
 
-7. <details><summary>Install <strong>MetalLB</strong> network load-balancer in BGP mode</summary><br/>
+7. <details><summary>Install <strong>Kyverno</strong> policy engine and custom policies<br/>
+    &nbsp; &nbsp; Install <strong>Policy Reporter</strong> to view and notify findings</summary><br/>
 
-    7.1. Create `BGPPeer`, `IPAddressPool`, and `BGPAdvertisement` CRs  
+    ```bash
+    make kyverno policyreporter
+    ```
+</details>
+
+8. <details><summary>Install <strong>MetalLB</strong> network load-balancer in BGP mode</summary><br/>
+
+    8.1. Create `BGPPeer`, `IPAddressPool`, and `BGPAdvertisement` CRs  
          to complement **FRR BGP** configuration on **pfSense**, the local router  
 
     ```bash
@@ -361,264 +375,267 @@ however, all privileged operations using `sudo` will require the password stored
     ```
 </details>
 
-8. <details><summary>Create static DNS records in <strong>pfSense</strong> DNS Resolver</summary><br/>
+9. <details><summary>Create static DNS records in <strong>pfSense</strong> DNS Resolver</summary><br/>
 
     ```bash
     make dns
     ```
 </details>
 
-9. <details><summary>Install <strong>ExternalDNS</strong> to manage DNS records in <strong>pfSense</strong></summary><br/>
+10. <details><summary>Install <strong>ExternalDNS</strong> to manage DNS records in <strong>pfSense</strong></summary><br/>
 
-    9.1. Deploy webhook provider **Unbound** used by pfSense  
+    10.1. Deploy webhook provider **Unbound** used by pfSense  
 
     ```bash
     make externaldns
     ```
 </details>
 
-10. <details><summary>Install <strong><code>cert-manager</code></strong> to automate certificate issuing</summary><br/>
+11. <details><summary>Install <strong><code>cert-manager</code></strong> to automate certificate issuing</summary><br/>
 
-    10.1. Connect to **Step CA** `pki.fourteeners.local` as a `StepClusterIssuer`  
+    11.1. Connect to **Step CA** `pki.fourteeners.local` as a `StepClusterIssuer`  
 
     ```bash
     make certmanager
     ```
 </details>
 
-11. <details><summary>Install <strong>Node Feature Discovery</strong> to identify GPU nodes</summary><br/>
+12. <details><summary>Install <strong>Node Feature Discovery</strong> to identify GPU nodes</summary><br/>
 
-    11.1. Install Intel Device Plugins and `GpuDevicePlugin`  
+    12.1. Install Intel Device Plugins and `GpuDevicePlugin`  
 
     ```bash
     make nodefeatures
     ```
 </details>
 
-12. <details><summary>Install <strong>Wave</strong> to monitor <code>ConfigMaps</code> and <code>Secrets</code></summary><br/>
+13. <details><summary>Install <strong>Wave</strong> to monitor <code>ConfigMaps</code> and <code>Secrets</code></summary><br/>
 
     ```bash
     make wave
     ```
 </details>
 
-13. <details><summary>Install <strong>Longhorn</strong> dynamic PV provisioner<br/>
+14. <details><summary>Install <strong>Longhorn</strong> dynamic PV provisioner<br/>
     &nbsp; &nbsp; Install <strong>MinIO</strong> object storage in <em><strong>HA</strong></em> mode<br/>
     &nbsp; &nbsp; Install <strong>Velero</strong> backup and restore tools</summary><br/>
 
-    13.1. Create a pool of LVM logical volumes  
-    13.2. Install Longhorn storage components  
-    13.3. Install NFS dynamic PV provisioner  
-    13.4. Install MinIO tenant using NFS PVs  
-    13.5. Create MinIO buckets, users, groups  
-    13.6. Install Velero using MinIO as target  
-    13.7. Install Velero Dashboard  
+    14.1. Create a pool of LVM logical volumes  
+    14.2. Install Longhorn storage components  
+    14.3. Install NFS dynamic PV provisioner  
+    14.4. Install MinIO tenant using NFS PVs  
+    14.5. Create MinIO buckets, users, groups  
+    14.6. Install Velero using MinIO as target  
+    14.7. Install Velero Dashboard  
 
     ```bash
     make storage minio velero
     ```
 </details>
 
-14. <details><summary>Install <strong>Harbor</strong> OCI & Helm registry</summary><br/>
+15. <details><summary>Install <strong>Harbor</strong> OCI & Helm registry</summary><br/>
 
-    14.1. Automatically populate Harbor with select images from external registries  
+    15.1. Mirror images like `bitnamilegacy/*` from registries  
+    15.2. Mirror charts like `bedag/raw` from Helm repositories  
 
     ```bash
     make harbor
     ```
 </details>
 
-15. <details><summary>Install <strong>Trivy</strong> security scanner</summary><br/>
+16. <details><summary>Install <strong>Trivy Operator</strong> security scanner</summary><br/>
+
+    16.1. Install Trivy Operator **Polr Adapter** to generate Open Reports CRs  
 
     ```bash
     make trivy
     ```
 </details>
 
-16. <details><summary>Install <strong>OpenSearch</strong> cluster in <em><strong>HA</strong></em> mode</summary><br/>
+17. <details><summary>Install <strong>OpenSearch</strong> cluster in <em><strong>HA</strong></em> mode</summary><br/>
 
-    16.1. Configure the OpenSearch security plugin (users and roles) for downstream applications  
-    16.2. Install **OpenSearch Dashboards** UI  
+    17.1. Configure the OpenSearch security plugin (users and roles) for downstream applications  
+    17.2. Install **OpenSearch Dashboards** UI  
 
     ```bash
     make opensearch
     ```
 </details>
 
-17. <details><summary>Install <strong>Fluent Bit</strong> to ingest logs into <strong>OpenSearch</strong></summary><br/>
+18. <details><summary>Install <strong>Fluent Bit</strong> to ingest logs into <strong>OpenSearch</strong></summary><br/>
 
     ```bash
     make logging
     ```
 </details>
 
-18. <details><summary>Install <strong>PostgreSQL</strong> database in <em><strong>HA</strong></em> mode</summary><br/>
+19. <details><summary>Install <strong>PostgreSQL</strong> database in <em><strong>HA</strong></em> mode</summary><br/>
 
-    18.1. Run initialization SQL script to create roles and databases for downstream applications  
-    18.2. Create users in both PostgreSQL and **Pgpool**  
+    19.1. Run initialization SQL script to create roles and databases for downstream applications  
+    19.2. Create users in both PostgreSQL and **Pgpool**  
 
     ```bash
     make postgresql
     ```
 </details>
 
-19. <details><summary>Install <strong>Keycloak</strong> IAM & OIDC provider</summary><br/>
+20. <details><summary>Install <strong>Keycloak</strong> IAM & OIDC provider</summary><br/>
 
-    19.1. Bootstrap **PostgreSQL** database with realm `homelab`, user `erhhung`, and OIDC clients  
+    20.1. Bootstrap **PostgreSQL** database with realm `homelab`, user `erhhung`, and OIDC clients  
 
     ```bash
     make keycloak
     ```
 </details>
 
-20. <details><summary>Install <strong>Valkey</strong> key-value store in <em><strong>HA</strong></em> mode</summary><br/>
+21. <details><summary>Install <strong>Valkey</strong> key-value store in <em><strong>HA</strong></em> mode</summary><br/>
 
-    20.1. Deploy 6 nodes in total: 3 primaries and 3 replicas  
+    21.1. Deploy 6 nodes in total: 3 primaries and 3 replicas  
 
     ```bash
     make valkey
     ```
 </details>
 
-21. <details><summary>Install <strong>Prometheus</strong>, <strong>Alertmanager</strong>, and <strong>Thanos</strong><br/>
+22. <details><summary>Install <strong>Prometheus</strong>, <strong>Alertmanager</strong>, and <strong>Thanos</strong><br/>
     &nbsp; &nbsp; Install <strong>Grafana</strong> for dashboards, traces, and logs<br/>
     &nbsp; &nbsp; Install <strong>Pyrra</strong> to manage Service Level Objectives</summary><br/>
 
-    21.1. Expose Prometheus & Alertmanager UIs via `oauth2-proxy` integration with **Keycloak**  
-    21.2. Connect Thanos sidecars to **MinIO** to store scraped metrics in the `telemetry` bucket  
-    21.3. Deploy and integrate additional Thanos components with Prometheus & Alertmanager  
-    21.4. Import example SLOs to monitor K8s `apiserver`/`kubelet`/`coredns` and Prometheus  
-    21.5. Add **OpenSearch** data source to Grafana to display application logs  
-    21.6. Add **Tempo** data source to Grafana with traces-to-logs and -metrics  
+    22.1. Expose Prometheus & Alertmanager UIs via `oauth2-proxy` integration with **Keycloak**  
+    22.2. Connect Thanos sidecars to **MinIO** to store scraped metrics in the `telemetry` bucket  
+    22.3. Deploy and integrate additional Thanos components with Prometheus & Alertmanager  
+    22.4. Import example SLOs to monitor K8s `apiserver`/`kubelet`/`coredns` and Prometheus  
+    22.5. Add **OpenSearch** data source to Grafana to display application logs  
+    22.6. Add **Tempo** data source to Grafana with traces-to-logs and -metrics  
 
     ```bash
     make monitoring thanos pyrra
     ```
 </details>
 
-22. <details><summary>Install <strong>OpenTelemetry</strong> collector and <strong>Tempo</strong> backend</summary><br/>
+23. <details><summary>Install <strong>OpenTelemetry</strong> collector and <strong>Tempo</strong> backend</summary><br/>
 
-    22.1. Enable **OTLP** receiver and exporter as well as Prometheus exporter  
-    22.2. Connect Tempo to **MinIO** to store traces in the `telemetry` bucket  
+    23.1. Enable **OTLP** receiver and exporter as well as Prometheus exporter  
+    23.2. Connect Tempo to **MinIO** to store traces in the `telemetry` bucket  
 
     ```bash
     make observability tempo
     ```
 </details>
 
-23. <details><summary>Install <strong>Istio</strong> service mesh in <em><strong>ambient</strong></em> mode</summary><br/>
+24. <details><summary>Install <strong>Istio</strong> service mesh in <em><strong>ambient</strong></em> mode</summary><br/>
 
     ```bash
     make istio
     ```
 </details>
 
-24. <details><summary>Create <strong>virtual Kubernetes clusters</strong> in RKE</summary><br/>
+25. <details><summary>Create <strong>virtual Kubernetes clusters</strong> in RKE</summary><br/>
 
     ```bash
     make vclusters
     ```
 </details>
 
-25. <details><summary>Install <strong>HashiCorp Vault</strong> in <em><strong>HA</strong></em> mode<br/>
+26. <details><summary>Install <strong>HashiCorp Vault</strong> in <em><strong>HA</strong></em> mode<br/>
     &nbsp; &nbsp; Install <strong>External Secrets Operator</strong></summary><br/>
 
-    25.1. Initialize Vault cluster and unseal cluster pods  
-    25.2. Create policies, `Userpass` accounts, k8s roles  
-    25.3. Create `KV` mounts and populate secrets data  
-    25.4. Create ESO's `ClusterSecretStore` for Vault  
+    26.1. Initialize Vault cluster and unseal cluster pods  
+    26.2. Create policies, `Userpass` accounts, k8s roles  
+    26.3. Create `KV` mounts and populate secrets data  
+    26.4. Create ESO's `ClusterSecretStore` for Vault  
 
     ```bash
     make vault externalsecrets
     ```
 </details>
 
-26. <details><summary>Install <strong>Gitea</strong> DevOps platform to deploy local projects</summary><br/>
+27. <details><summary>Install <strong>Gitea</strong> DevOps platform to deploy local projects</summary><br/>
 
-    26.1. Create the `Homelab` organization, and import Erhhung's SSH and GPG keys  
-    26.2. Configure and deploy **Gitea Actions runner** with two types of job containers  
+    27.1. Create the `Homelab` organization, and import Erhhung's SSH and GPG keys  
+    27.2. Configure and deploy **Gitea Actions runner** with two types of job containers  
     &nbsp; &nbsp; &nbsp; a. "host" mode for building images using `buildah`  
     &nbsp; &nbsp; &nbsp; b. `DinD` mode to use `ubuntu-latest` container  
-    26.3. Use [`al2023-devops`](https://github.com/erhhung/al2023-devops) as the runner container and load common "step init" script  
-    26.4. Migrate projects from GitHub and run workflows to build images for later installs  
+    27.3. Use [`al2023-devops`](https://github.com/erhhung/al2023-devops) as the runner container and load common "step init" script  
+    27.4. Migrate projects from GitHub and run workflows to build images for later installs  
 
     ```bash
     make gitea
     ```
 
-27. <details><summary>Install <strong>GitLab</strong> EE CI/CD platform to deploy local projects</summary><br/>
+28. <details><summary>Install <strong>GitLab</strong> EE CI/CD platform to deploy local projects</summary><br/>
 
-    27.1. Import Erhhung's SSH and GPG public keys, and create the `Homelab` group  
-    27.2. Configure **Harbor** and **Slack** integrations; connect to GitHub using OmniAuth  
-    27.3. Configure and deploy **Kubernetes runner** for building images using `buildah`  
-    27.4. Use [`al2023-devops`](https://github.com/erhhung/al2023-devops) as the build container and load common pre-build script  
-    27.5. Import projects from GitHub and run pipelines to build images for later installs  
-    27.6. Deploy **CI Pipelines Exporter** to export metrics and visualize them in Grafana  
+    28.1. Import Erhhung's SSH and GPG public keys, and create the `Homelab` group  
+    28.2. Configure **Harbor** and **Slack** integrations; connect to GitHub using OmniAuth  
+    28.3. Configure and deploy **Kubernetes runner** for building images using `buildah`  
+    28.4. Use [`al2023-devops`](https://github.com/erhhung/al2023-devops) as the build container and load common pre-build script  
+    28.5. Import projects from GitHub and run pipelines to build images for later installs  
+    28.6. Deploy **CI Pipelines Exporter** to export metrics and visualize them in Grafana  
 
     ```bash
     make gitlab
     ```
 </details>
 
-28. <details><summary>Install <strong>Jenkins</strong> CI/CD platform to deploy local projects</summary><br/>
+29. <details><summary>Install <strong>Jenkins</strong> CI/CD platform to deploy local projects</summary><br/>
 
-    28.1. Configure and provision **Jenkins agent** for building images using `buildah`  
-    28.2. Install and configure popular plugins for pipeline and job output visualization  
-    28.3. Implicitly load shared library with Bash functions from Harbor in all pipelines  
-    28.4. Create pipelines from GitHub repositories  
+    29.1. Configure and provision **Jenkins agent** for building images using `buildah`  
+    29.2. Install and configure popular plugins for pipeline and job output visualization  
+    29.3. Implicitly load shared library with Bash functions from Harbor in all pipelines  
+    29.4. Create pipelines from GitHub repositories  
 
     ```bash
     make jenkins
     ```
 </details>
 
-29. <details><summary>Install <strong>Buildkite</strong> agent connected to <code>buildkite.com</code></summary><br/>
+30. <details><summary>Install <strong>Buildkite</strong> agent connected to <code>buildkite.com</code></summary><br/>
 
-    29.1. Configure agent pod spec with [`al2023-devops`](https://github.com/erhhung/al2023-devops) to build images using `buildah`  
-    29.2. Mount Git, SSH, and Harbor credentials in `checkout` and `command` containers  
-    29.3. Create YAML pipelines from GitHub repositories  
+    30.1. Configure agent pod spec with [`al2023-devops`](https://github.com/erhhung/al2023-devops) to build images using `buildah`  
+    30.2. Mount Git, SSH, and Harbor credentials in `checkout` and `command` containers  
+    30.3. Create YAML pipelines from GitHub repositories  
 
     ```bash
     make buildkite
     ```
 </details>
 
-30. <details><summary>Install <strong>Argo CD</strong> GitOps delivery in <em><strong>HA</strong></em> mode</summary><br/>
+31. <details><summary>Install <strong>Argo CD</strong> GitOps delivery in <em><strong>HA</strong></em> mode</summary><br/>
 
-    30.1. Configure Argo CD to use **Valkey** for caching  
-    30.2. Configure **GitLab** as an allowed SCM provider  
+    31.1. Configure Argo CD to use **Valkey** for caching  
+    31.2. Configure **GitLab** as an allowed SCM provider  
 
     ```bash
     make argocd
     ```
 </details>
 
-31. <details><summary>Install <strong>Ansible AWX</strong> automation platform</summary><br/>
+32. <details><summary>Install <strong>Ansible AWX</strong> automation platform</summary><br/>
 
-    31.1. Create organization and custom execution environments based on [`al2023-devops`](https://github.com/erhhung/al2023-devops)  
-    31.2. Create credentials for all homelab hosts and access tokens for GitHub and GitLab  
-    31.3. Import this project and [`homelab-xcp`](https://github.com/erhhung/homelab-xcp), and inventories from their `hosts.ini` files  
+    32.1. Create organization and custom execution environments based on [`al2023-devops`](https://github.com/erhhung/al2023-devops)  
+    32.2. Create credentials for all homelab hosts and access tokens for GitHub and GitLab  
+    32.3. Import this project and [`homelab-xcp`](https://github.com/erhhung/homelab-xcp), and inventories from their `hosts.ini` files  
 
     ```bash
     make awx
     ```
 </details>
 
-32. <details><summary>Install <strong>Metacontroller</strong> to create Operators</summary><br/>
+33. <details><summary>Install <strong>Metacontroller</strong> to create Operators</summary><br/>
 
     ```bash
     make metacontroller
     ```
 </details>
 
-33. <details><summary>Install <strong>Qdrant</strong> vector database in <em><strong>HA</strong></em> mode</summary><br/>
+34. <details><summary>Install <strong>Qdrant</strong> vector database in <em><strong>HA</strong></em> mode</summary><br/>
 
     ```bash
     make qdrant
     ```
 </details>
 
-34. <details><summary>Install <strong>SearXNG</strong> metasearch engine<br/>
+35. <details><summary>Install <strong>SearXNG</strong> metasearch engine<br/>
     &nbsp; &nbsp; Install <strong>Playwright</strong> WebSocket server</summary><br/>
 
     ```bash
@@ -626,53 +643,60 @@ however, all privileged operations using `sudo` will require the password stored
     ```
 </details>
 
-35. <details><summary>Install <strong>LiteLLM</strong> AI gateway with vendor models</summary><br/>
+36. <details><summary>Install <strong>LiteLLM</strong> AI gateway with vendor models</summary><br/>
 
-    35.1. Proxy `gpt-5.x` models through both ChatGPT subscription _("free")_ and API _(metered)_  
-    35.2. Proxy Anthropic and Groq models through API _(metered)_  
-    35.3. Proxy web search through local SearXNG instance  
-    35.4. Send Slack alerts about LLM issues and spending reports  
+    36.1. Proxy `gpt-5.x` models through both ChatGPT subscription _("free")_ and API _(metered)_  
+    36.2. Proxy Anthropic and Groq models through API _(metered)_  
+    36.3. Proxy web search through local SearXNG instance  
+    36.4. Send Slack alerts about LLM issues and spending reports  
 
     ```bash
     make litellm
     ```
 </details>
 
-36. <details><summary>Install <strong>Ollama</strong> LLM server with modest models<br/>
+37. <details><summary>Install <strong>Ollama</strong> LLM server with modest models<br/>
     &nbsp; &nbsp; Install <strong>Open WebUI</strong> AI platform with <strong>Pipelines</strong><br/>
     &nbsp; &nbsp; Install <strong>MCP OpenAPI</strong> proxy with MCP servers</summary><br/>
 
-    36.1. Add LiteLLM connection in Open WebUI to proxy OpenAI, Anthropic, and Groq models  
-    36.2. Create `Accounts` knowledge base and `Accounts` custom model that embeds that KB  
-    36.3. **NOTE**: Populate `Accounts` KB by running `make openwebui -t knowledge` separately  
-    36.4. Deploy MCP tool servers, including `time`, `memory`, `browser`, `weather`, and `lights`  
-    36.5. Define **SLOs** for HTTP success rates + latency for server, LiteLLM, Ollama, and MCPO  
+    37.1. Add LiteLLM connection in Open WebUI to proxy OpenAI, Anthropic, and Groq models  
+    37.2. Create `Accounts` knowledge base and `Accounts` custom model that embeds that KB  
+    37.3. **NOTE**: Populate `Accounts` KB by running `make openwebui -t knowledge` separately  
+    37.4. Deploy MCP tool servers, including `time`, `memory`, `browser`, `weather`, and `lights`  
+    37.5. Define **SLOs** for HTTP success rates + latency for server, LiteLLM, Ollama, and MCPO  
 
     ```bash
     make ollama openwebui
     ```
 </details>
 
-37. <details><summary>Install <strong>OpenClaw</strong> AI agent gateway with skills</summary><br/>
+38. <details><summary>Install <strong>OpenClaw</strong> AI agent gateway and skills</summary><br/>
 
-    37.1. Proxy access to primary and fallback models, as well as web search, through LiteLLM  
-    37.2. Install skills, such as `gog` and `github`, from ClawHub to enhance agent capabilities  
-    37.3. Define user and agent identities through `USER.md`, `IDENTITY.md` and `SOUL.md`  
-    37.4. Configure **Slack** messaging _(requires manual creation of `OpenClaw` Slack app)_  
-    37.5. Automatically pair pending devices (clients)  
+    38.1. Proxy access to primary and fallback models, as well as web search, through LiteLLM  
+    38.2. Install skills, such as `gog` and `github`, from ClawHub to enhance agent capabilities  
+    38.3. Define user and agent identities through `USER.md`, `IDENTITY.md` and `SOUL.md`  
+    38.4. Configure **Slack** messaging _(requires manual creation of `OpenClaw` Slack app)_  
+    38.5. Automatically pair pending devices (clients)  
 
     ```bash
     make openclaw
     ```
 </details>
 
-38. <details><summary>Install <strong>Flowise</strong> AI platform and integrations</summary><br/>
+39. <details><summary>Install <strong>Flowise</strong> AI platform with integrations</summary><br/>
 
     Current deployment uses local images in Harbor registry that were built by GitLab CI.  
-    38.1. **NOTE**: Populate documents by running `make flowise -t documents` separately  
+    39.1. **NOTE**: Populate documents by running `make flowise -t documents` separately  
 
     ```bash
     make flowise
+    ```
+</details>
+
+40. <details><summary>Install <strong>BentoPDF</strong> PDF tools</summary><br/>
+
+    ```bash
+    make bentopdf
     ```
 </details>
 

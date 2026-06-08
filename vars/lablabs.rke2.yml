@@ -66,6 +66,7 @@ rke2_kube_proxy_arg:
   - nodeport-addresses=primary
   - metrics-bind-address=0.0.0.0:10249
 
+# ingress controller selection can be single value or list of values
 rke2_ingress_controller: ingress-nginx # ingress-nginx|traefik|none
 
 # wait for all pods to be have a status of running or

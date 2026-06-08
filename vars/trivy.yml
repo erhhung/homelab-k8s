@@ -23,16 +23,18 @@ trivy_operator_chart_values:
 
   operator:
     replicas: 1
-    revisionHistoryLimit: 2
+    revisionHistoryLimit: "{{ k8s_max_revisions }}"
 
     # run Trivy in client-server mode so vulnerability
     # database is cached/updated and shared across all
     # scan jobs (forces `trivy.mode: ClientServer`)
     builtInTrivyServer: true
 
-    # enable/disable scanners by type
-    vulnerabilityScannerEnabled: true
-    exposedSecretScannerEnabled: false
+    # K3s cluster is too resource constrained to
+    # run vulnerability scanning without causing
+    # frequent cluster instability
+    vulnerabilityScannerEnabled: "{{ cluster == 'rke' }}"
+    exposedSecretScannerEnabled: true
     infraAssessmentScannerEnabled: true
     rbacAssessmentScannerEnabled: true
     configAuditScannerEnabled: true
@@ -56,13 +58,30 @@ trivy_operator_chart_values:
     scanJobsConcurrentLimit: "{{ [3 if cluster == 'rke' else 1,
       groups[cluster ~'_cluster'] | length] | min }}"
     scanJobTimeout: 10m # Job activeDeadlineSeconds
-    scanJobsRetryDelay: 60s
+    scanJobsRetryDelay: 120s
 
   trivyOperator:
     scanJobPodTemplateLabels: app.kubernetes.io/part-of=trivy-operator,app.kubernetes.io/component=scan-job
     scanJobPodPriorityClassName: "{{ priority_classes['scanning'] }}" # -1000
 
     scanJobAffinity:
+      # prefer running jobs on non-control-plane nodes
+      nodeAffinity:
+        preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 40
+            preference:
+              matchExpressions:
+                - key: node-role.kubernetes.io/control-plane
+                  operator: DoesNotExist
+          # schedule on the node that has
+          # the most CPU cores and memory
+          - weight: 60
+            preference:
+              matchExpressions:
+                # label defined in vars/kubernetes.yml
+                - key: node-role.kubernetes.io/runner
+                  operator: Exists
+
       # run concurrent scan jobs on different nodes
       podAntiAffinity:
         requiredDuringSchedulingIgnoredDuringExecution:
@@ -99,6 +118,8 @@ trivy_operator_chart_values:
     requests:
       cpu: 100m
       memory: 512Mi
+    limits:
+      cpu: 200m
 
   trivy:
     mode: ClientServer # Standalone|ClientServer
@@ -129,8 +150,8 @@ trivy_operator_chart_values:
     # (scan analysis cache uses Redis instead)
     storageSize: 2Gi
 
-    podLabels:
-      # required by `redis.networkPolicy.allowExternal`
+    # required by `redis-cache.networkPolicy.allowExternal`
+    podLabels: # `trivy-server` StatefulSet pods
       trivy-redis-client: "true"
 
     # https://trivy.dev/docs/latest/guide/references/configuration/config-file
@@ -144,7 +165,7 @@ trivy_operator_chart_values:
       # https://trivy.dev/docs/latest/guide/references/configuration/cli/trivy_image#options
       scan:
         skip-version-check: true
-        # trade scanning time for less CPU/memory usage
+        # trade shorter scanning time for less CPU/memory usage
         parallel: 1
 
       # https://trivy.dev/docs/latest/guide/references/configuration/config-file#image-options
@@ -165,15 +186,15 @@ trivy_operator_chart_values:
 
     resources: # for scan job containers
       requests:
-        cpu: 500m
+        cpu: 100m
         memory: 64Mi
       limits:
-        cpu: 750m
+        cpu: 250m
         memory: 512Mi
 
-  # subchart values attached via Helmfile:
+  # aliased subchart values attached via Helmfile:
   # https://github.com/cowboysysop/charts/tree/master/charts/redis/values.yaml
-  redis:
+  redis-cache:
     fullnameOverride: trivy-redis
     architecture: standalone # standalone|replication
 
@@ -192,14 +213,10 @@ trivy_operator_chart_values:
       save ""
 
     master:
-      kind: Deployment
-      revisionHistoryLimit: 2
-
-      podLabels:
-        app.kubernetes.io/part-of: trivy-operator
-        app.kubernetes.io/component: scan-cache
       pdb:
         create: false
+      kind: Deployment
+      revisionHistoryLimit: "{{ k8s_max_revisions }}"
 
       persistence:
         enabled: false
@@ -207,8 +224,10 @@ trivy_operator_chart_values:
 
       resources:
         requests:
+          cpu: 25m
+          memory: 32Mi
+        limits:
           cpu: 50m
-          memory: 64Mi
 
       # prevent unbounded memory usage,
       # evicting when limit is reached
@@ -230,6 +249,59 @@ trivy_operator_chart_values:
 
 # https://trivy.dev/docs/latest/guide/configuration/filtering#trivyignoreyaml
 trivy_ignore_file:
+  # DOES NOT WORK! *AssessmentReport findings cannot be ignored:
+  # https://github.com/aquasecurity/trivy-operator/issues/1366
   misconfigurations:
     - id: AVD-KCV-0086 # Do not override node hostnames.
       statement: RKE2 sets node-name equal to hostname.
+
+# ============================ Trivy Operator Polr Adapter ============================
+
+# https://github.com/fjogeleit/trivy-operator-polr-adapter
+trivy_adapter_chart_version: "0.11.3"
+trivy_adapter_release_name: trivy-operator-polr-adapter
+
+# https://github.com/fjogeleit/trivy-operator-polr-adapter/tree/main/charts/trivy-operator-polr-adapter/values.yaml
+trivy_adapter_chart_values:
+  replicaCount: 1
+
+  crds: # wgpolicyk8s.io
+    install: false # CRDs already installed by Kyverno
+  openreports: # openreports.io
+    install: false # CRDs already installed by Kyverno
+    enabled: true
+
+  # these should match scanners
+  # enabled for Trivy Operator
+  adapters:
+    vulnerabilityReports:
+      enabled: true
+      # adapter controller cache
+      # sync timeout in minutes
+      timeout: 5
+    clusterVulnerabilityReports:
+      enabled: true
+    exposedSecretReports:
+      enabled: true
+      timeout: 5
+    infraAssessmentReports:
+      enabled: true
+    clusterInfraAssessmentReports:
+      enabled: true
+    rbacAssessmentReports:
+      enabled: true
+      timeout: 5
+    cisKubeBenchReports:
+      enabled: false
+    configAuditReports:
+      enabled: true
+      timeout: 5
+    complianceReports:
+      enabled: false
+
+  resources:
+    requests:
+      cpu: 10m
+      memory: 32Mi
+    limits:
+      cpu: 50m
