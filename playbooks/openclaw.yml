@@ -194,6 +194,11 @@
           # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/from_yaml_all_filter.html
           - "{{ rule_manifests | from_yaml_all }}"
           - "{{  slo_manifests | from_yaml_all }}"
+
+        # installing plugins/skills and
+        # dependencies can take a while
+        wait_timeout: 1200
+        task_timeout: 1600
       ansible.builtin.include_tasks: "{{ tasks_dir }}/helm/helmfile.yml"
 
 # this setup is workaround because the Mac companion
@@ -297,6 +302,20 @@
       changed_when: create_plist.rc == 0
       failed_when: create_plist.rc not in [0,9]
       notify: Relaunch Mac companion app+node
+
+    - name: Launch Mac companion if stopped
+      vars: &svc-vars
+        domain_target: gui/{{ ansible_user_uid }}
+        service_target: "{{ domain_target }}/{{ service_name }}"
+      ansible.builtin.shell: |
+        set -o pipefail
+        launchctl print {{ service_target }} 2>/dev/null | \
+          grep -qE '^\s*pid = [0-9]+'
+      args: *local-shell-args
+      register: svc_status
+      failed_when: false
+      changed_when: svc_status.rc != 0
+      notify: Relaunch Mac companion app+node
   handlers:
     # useful launchd docs:
     # https://launchd.info/
@@ -306,12 +325,10 @@
     # not sure why community.general.launchd keeps
     # failing with "Unable to find the plist file"
     - name: Relaunch Mac companion app+node
-      vars:
-        domain_target: gui/{{ ansible_user_uid }}
-        service_target: "{{ domain_target }}/{{ service_name }}"
+      vars: *svc-vars
       ansible.builtin.shell: |
         # try restarting bootstrapped service first
-        launchctl kickstart -k {{ service_target }}
+        launchctl kickstart -k {{ service_target }} 2> /dev/null
         rc=$?
         if [ $rc -eq 113 ]; then
           # could not find service "{{ service_name     }}"

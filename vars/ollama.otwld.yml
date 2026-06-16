@@ -1,6 +1,6 @@
 # https://github.com/otwld/ollama-helm
 ollama_chart_repo_url: https://helm.otwld.com
-ollama_chart_version: "1.54.0"
+ollama_chart_version: "1.60.0"
 
 # https://github.com/otwld/ollama-helm/tree/main/values.yaml
 ollama_chart_values:
@@ -106,3 +106,5 @@ ollama_models:
   # warnings that can be ignored:
   # https://github.com/ollama/ollama/issues/10811
   - nomic-embed-text:v1.5 # 274MB
+
+ollama_default_model: gemma3:4b

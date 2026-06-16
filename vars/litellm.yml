@@ -516,6 +516,8 @@ litellm_models:
   #     model: ollama/gemma3:4b
   #     api_base: "{{ ollama_service_url }}"
 
+litellm_default_model: gpt-5.5
+
 # TIP: use stable, non-provider-specific tool names so that
 # backing providers can be swapped or additional providers
 # added under the same name for load-balancing and failover

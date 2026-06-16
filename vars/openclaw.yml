@@ -40,11 +40,15 @@ openclaw_common_env:
   NPM_CONFIG_UPDATE_NOTIFIER: "false"
   PNPM_HOME: $(OPENCLAW_HOME)/pnpm
   PNPM_STORE_DIR: $(PNPM_HOME)/store
+  PNPM_CONFIG_UPDATE_NOTIFIER: "false"
   PATH:
-    value: $(OPENCLAW_HOME)/bin:$(PNPM_HOME):/usr/local/bin:/usr/local/sbin:/usr/bin:/usr/sbin:/bin:/sbin
+    value: $(OPENCLAW_HOME)/bin:$(PNPM_HOME)/bin:/usr/local/bin:/usr/local/sbin:/usr/bin:/usr/sbin:/bin:/sbin
     dependsOn:
       - OPENCLAW_HOME
       - PNPM_HOME
+  LD_LIBRARY_PATH:
+    value: $(OPENCLAW_HOME)/lib
+    dependsOn: OPENCLAW_HOME
 
 # https://github.com/serhanekicii/openclaw-helm/tree/main/charts/openclaw
 openclaw_chart_repo_url: https://serhanekicii.github.io/openclaw-helm
@@ -54,7 +58,7 @@ openclaw_release_name: openclaw
 # comment out `openclaw_app_version` below
 # to let playbook get chart's `appVersion`
 # https://github.com/openclaw/openclaw/pkgs/container/openclaw/versions?filters%5Bversion_type%5D=tagged
-openclaw_app_version: "2026.6.1"
+openclaw_app_version: "2026.6.6"
 
 # https://github.com/serhanekicii/openclaw-helm/tree/main/charts/openclaw/values.yaml
 openclaw_chart_values:
@@ -111,7 +115,7 @@ openclaw_chart_values:
         replicas: 1
 
         initContainers:
-          ca-bundle:
+          1-init-deps:
             image: &openclaw-image
               repository: ghcr.io/openclaw/openclaw
               tag: "{% raw %}{{ .Values.openclawVersion }}{% endraw %}"
@@ -121,14 +125,50 @@ openclaw_chart_values:
             args:
               - -c
               - |-
-                mkdir  -p  {{ openclaw_data_dir }}/{.openclaw,certs,bin,config}
-                chmod 700  {{ openclaw_data_dir }}/{.openclaw,.}
-                CERTS_DIR="{{ openclaw_data_dir }}/certs"
-                  BIN_DIR="{{ openclaw_data_dir }}/bin"
+                mkdir -p  {{ openclaw_data_dir }}/{.openclaw,bin,lib,certs,config}
+                chmod 700 {{ openclaw_data_dir }}/{.openclaw,.}
+
+                 SRC_BIN=/usr/bin
+                 SRC_LIB=/usr/lib/$(uname -m)-linux-gnu
+                DEST_BIN={{ openclaw_data_dir }}/bin
+                DEST_LIB={{ openclaw_data_dir }}/lib
+
+                log() {
+                  if [ "$1" == -n ]; then echo; shift; fi
+                  echo "[$(date +"%Y-%m-%d %H:%M:%S")] $*"
+                }
+                packages=()
+                [ -L $DEST_LIB/libatomic.so.1 ] || packages+=(libatomic1) # required by pnpm
+                [ -f $DEST_BIN/xz ]             || packages+=(xz-utils) # required by tar xJ
+                [ -f $DEST_BIN/less ]           || packages+=(less)
+
+                if [ "$packages" ]; then
+                  log "Installing packages: ${packages[*]}"
+                  apt-get update && apt-get install -y "${packages[@]}"
+
+                  [ -L $DEST_LIB/libatomic.so.1 ] || cp -a $SRC_LIB/libatomic.so.* $DEST_LIB
+                  [ -f $DEST_BIN/xz ]             || cp -a $SRC_BIN/*xz*           $DEST_BIN
+                  [ -f $DEST_BIN/less ]           || cp -a $SRC_BIN/less           $DEST_BIN
+
+                  echo; find $DEST_BIN $DEST_LIB | sort
+                else
+                  log "Dependencies already installed ✓"
+                fi
+
+          2-ca-bundle:
+            image: *openclaw-image
+            securityContext:
+              runAsUser: 0
+            command: ["bash"]
+            args:
+              - -c
+              - |-
+                # path created by 1-init-deps container
+                CERTS_DIR={{ openclaw_data_dir }}/certs
 
                 # ca.crt is already mounted
-                CA_CERT="/usr/local/share/ca-certificates/ca.crt"
-                CA_BUNDLE="/etc/ssl/certs/ca-certificates.crt"
+                CA_CERT=/usr/local/share/ca-certificates/ca.crt
+                CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt
                 NSSDB_DIR="$CERTS_DIR/nssdb"
 
                 log() {
@@ -137,12 +177,10 @@ openclaw_chart_values:
                 }
                 packages=()
                 [ -f $NSSDB_DIR/cert9.db ] || packages+=(libnss3-tools)
-                [ -f   $BIN_DIR/less     ] || packages+=(less)
 
                 if [ "$packages" ]; then
                   log "Installing packages: ${packages[*]}"
                   apt-get update && apt-get install -y "${packages[@]}"
-                  [ -f $BIN_DIR/less ] || cp -a $(which less) $BIN_DIR
                 fi
 
                 if [ -f $CERTS_DIR/ca-bundle.crt ]; then
@@ -174,7 +212,7 @@ openclaw_chart_values:
                 find {{ openclaw_data_dir }} -maxdepth 2 -exec chown node:node {} \;
                 log -n "Trust store setup completed ✓"
 
-          init-config:
+          3-init-config:
             image: *openclaw-image
             env: "{{ openclaw_common_env }}"
             command: ["bash"]
@@ -183,7 +221,7 @@ openclaw_chart_values:
               - |-
                 set -eo pipefail
 
-                BIN_DIR="$OPENCLAW_HOME/bin"
+                BIN_DIR=$OPENCLAW_HOME/bin
                 ARCH="$(uname -m | sed -e 's/aarch64/arm64/' \
                                        -e  's/x86_64/amd64/')"
                 log() {
@@ -236,7 +274,7 @@ openclaw_chart_values:
                 log -n "Configuration update completed ✓"
 
           # https://docs.openclaw.ai/tools/plugin
-          init-plugins:
+          4-init-plugins:
             image: *openclaw-image
             envFrom: &env-from
               - secretRef:
@@ -248,7 +286,7 @@ openclaw_chart_values:
               - |-
                 set -eo pipefail
 
-                BIN_DIR="$OPENCLAW_HOME/bin"
+                BIN_DIR=$OPENCLAW_HOME/bin
 
                 log() {
                   if [ "$1" == -n ]; then echo; shift; fi
@@ -282,11 +320,12 @@ openclaw_chart_values:
                   # https://docs.astral.sh/uv/getting-started/installation
                   curl -sfL https://astral.sh/uv/install.sh | UV_INSTALL_DIR=$BIN_DIR sh
                 }
-                [ -f "$PNPM_HOME/pnpm" ] || {
+                [ -f "$PNPM_HOME/bin/pnpm" ] || {
                   log -n "Installing pnpm..."
                   # https://pnpm.io/installation#in-a-docker-container
                   curl -fsL https://get.pnpm.io/install.sh | ENV=/dev/null SHELL=/bin/sh sh
                 }
+                hash -r
                 {% for plugin in openclaw_plugins %}
 
                 log -n "Installing plugin: {{ plugin.id }}"
@@ -304,7 +343,7 @@ openclaw_chart_values:
 
           # install ClawHub (https://clawhub.com)
           # skills and their runtime dependencies
-          init-skills:
+          5-init-skills:
             image: *openclaw-image
             env: "{{ openclaw_common_env }}"
             envFrom: *env-from
@@ -314,12 +353,12 @@ openclaw_chart_values:
               - |-
                 set -eo pipefail
 
-                CONFIG_DIR="/conf/skills"
-                BIN_DIR="$OPENCLAW_HOME/bin"
+                CONFIG_DIR=/conf/skills
+                BIN_DIR=$OPENCLAW_HOME/bin
                 ARCH="$(uname -m | sed -e 's/aarch64/arm64/' \
                                        -e  's/x86_64/amd64/')"
-                WORKSPACE_DIR="$OPENCLAW_HOME/workspace"
-                SKILL_DIR="$WORKSPACE_DIR/skills"
+                WORKSPACE_DIR=$OPENCLAW_HOME/workspace
+                SKILL_DIR=$WORKSPACE_DIR/skills
                 mkdir -p $SKILL_DIR
 
                 log() {
@@ -409,16 +448,16 @@ openclaw_chart_values:
                 cpu: 1000m
                 memory: 2Gi
 
+    # https://bjw-s-labs.github.io/helm-charts/docs/app-template/reference/persistence#type-variants
     persistence:
       ca-certs:
         enabled: true
-        # https://bjw-s-labs.github.io/helm-charts/docs/common-library/storage/types/secret
         type: secret
         name: "{{ openclaw_secrets['ingress'] }}"
         defaultMode: 420 # "0644"
         advancedMounts:
           main:
-            ca-bundle:
+            2-ca-bundle:
               - path: /usr/local/share/ca-certificates/ca.crt
                 subPath: ca.crt
                 readOnly: true
@@ -428,27 +467,26 @@ openclaw_chart_values:
                 readOnly: true
 
       config:
-        # https://bjw-s-labs.github.io/helm-charts/docs/common-library/storage/types/configmap
         type: configMap
         identifier: config
         advancedMounts:
           main:
-            init-config:
+            3-init-config:
               - path: /conf
 
       # PVC for /home/node/.openclaw
       data:
-        # https://bjw-s-labs.github.io/helm-charts/docs/common-library/storage/types/nfs-share
         type: nfs
         server: "{{ homelab_nfs.server }}"
         path: "{{ homelab_nfs.base_path }}/openclaw"
         advancedMounts:
           main:
-            ca-bundle: &data-dir
+            1-init-deps: &data-dir
               - path: "{{ openclaw_data_dir }}"
-            init-config: *data-dir
-            init-plugins: *data-dir
-            init-skills: *data-dir
+            2-ca-bundle: *data-dir
+            3-init-config: *data-dir
+            4-init-plugins: *data-dir
+            5-init-skills: *data-dir
             main:
               - path: "{{ openclaw_data_dir }}"
               - path: /etc/ssl/certs/ca-certificates.crt
@@ -469,7 +507,7 @@ openclaw_chart_values:
         defaultMode: 420 # "0644"
         advancedMounts:
           main:
-            init-skills:
+            5-init-skills:
               - path: /conf/skills
 
     ingress:
@@ -514,10 +552,15 @@ openclaw_chart_values:
 
 # {id,[setup],package,version,[env]}
 openclaw_plugins:
+  # https://clawhub.ai/plugins/@openclaw/slack
+  - id: slack
+    package: "@openclaw/slack"
+    version: "2026.6.5"
+
   # https://github.com/Martian-Engineering/lossless-claw
   - id: lossless-claw
     package: "@martian-engineering/lossless-claw"
-    version: "0.11.1"
+    version: "0.13.0"
 
   # https://github.com/erhhung/openclaw-searxng-search
   - id: searxng-search

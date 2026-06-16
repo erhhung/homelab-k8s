@@ -352,7 +352,7 @@
               ui:
                 version: "{{ openwebui_version.json.version }}"
                 system: "{{ openwebui_system_prompt }}"
-                models: "{{ [ollama_models | first] }}"
+                models: "{{ litellm_default_model }}"
                 params: {}
           retries: 3
           delay: 3
@@ -561,7 +561,7 @@
       vars:
         model: "{{ list_models.json['items'] |
           selectattr('name', '==', 'Accounts') }}"
-        base_model: "{{ ollama_models | select('search', '^gemma3') | first }}"
+        base_model: "{{ ollama_default_model }}"
         # https://docs.ansible.com/ansible/latest/collections/community/general/binary_file_lookup.html
         image_b64: "{{ lookup('community.general.binary_file', icons_dir ~ '/assistant.png') }}"
         image_uri: data:image/png;base64,{{ image_b64 }}
@@ -642,7 +642,7 @@
       vars:
         model: "{{ list_models.json['items'] |
           selectattr('name', '==', 'Browsing') }}"
-        base_model: "{{ ollama_models | select('search', '^gemma3') | first }}"
+        base_model: "{{ litellm_default_model  }}"
         image_b64: "{{ lookup('community.general.binary_file', icons_dir ~ '/chromium.png') }}"
         image_uri: data:image/png;base64,{{ image_b64 }}
       ansible.builtin.uri:

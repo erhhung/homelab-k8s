@@ -185,13 +185,13 @@ openwebui_extras:
 # Open WebUI so that both Playwright server and client versions
 # match. See openwebui_playwright_version in vars/playwright.yml
 openwebui_chart_repo_url: https://helm.openwebui.com
-openwebui_chart_version: "14.6.0"
+openwebui_chart_version: "14.8.0"
 openwebui_release_name: open-webui
 
 # comment out `openwebui_app_version` below
 # to let playbook get  chart's `appVersion`
 # https://github.com/open-webui/open-webui/pkgs/container/open-webui/versions?filters%5Bversion_type%5D=tagged
-openwebui_app_version: "0.9.5"
+openwebui_app_version: "0.9.6"
 
 openwebui_image:
   repository: ghcr.io/open-webui/open-webui

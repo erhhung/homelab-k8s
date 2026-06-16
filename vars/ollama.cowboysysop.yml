@@ -151,3 +151,5 @@ ollama_models:
   # IPEX-LLM is based on an Ollama version that
   # is too old to run some of the latest models
   #- deepseek-r1:8b # 5.2GB
+
+ollama_default_model: llama3.2:3b
