@@ -15,7 +15,7 @@ endif
 
  PHONY := all play debug check lint cloc tags
  PHONY += vmstart vmshutdown vmsnapshot
- PHONY += diskfree unseal
+ PHONY += diskfree volrepair unseal
 .PHONY: $(PHONY)
 
 # targets are playbook names with optional dash prefix/suffix (refer to
@@ -115,6 +115,11 @@ endef
 # show available disk space on all cluster nodes
 diskfree:
 	@scripts/diskfree.sh || true
+
+# run `xfs_repair` on specified Longhorn volume
+#   `make volrepair pvc-<volume-uuid>`
+volrepair:
+	@scripts/volrepair.sh $(rest_goals) || true
 
 # unseal Vault pods, optionally restarting them first
 #  `make unseal [-r|--restart] [index1] [index2]...`

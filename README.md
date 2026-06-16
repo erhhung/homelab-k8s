@@ -974,6 +974,7 @@ Ansible's [ad-hoc commands](https://docs.ansible.com/ansible/latest/command_guid
     ```bash
     $ ssh k8s4
 
+    # grep may or may not find a match, but /dev/longhorn/pvc-* should still exist
     $ mount | grep 1508f1bfa1a751aaa24514b7576847e7f7ac042c6d8295a6d07417fb4e0068f1
 
     /dev/longhorn/pvc-7bc42f2c-4bb6-42f4-ad31-a9fa27185103 on /var/lib/kubelet/plugins/kubernetes.io/csi/driver.longhorn.io/
@@ -1022,5 +1023,7 @@ Ansible's [ad-hoc commands](https://docs.ansible.com/ansible/latest/command_guid
     done
     ```
     </details>
+
+    _**💡** The above steps have been scripted into a `Make` target. Simply run: `make volrepair pvc-<volume-uuid>`_
 
     Then restart the pod, and it should run successfully.
