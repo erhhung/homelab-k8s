@@ -16,6 +16,7 @@
     - vars/policyreporter.yml
     - vars/gitea.yml
     - vars/gitlab.yml
+    - vars/buildbuddy.yml
     - vars/awx.yml
     - vars/litellm.yml
     - vars/openwebui.yml
@@ -65,6 +66,15 @@
         wait_timeout: 600
         task_timeout: 1800
       ansible.builtin.include_tasks: "{{ tasks_dir }}/helm/helmfile.yml"
+
+    # add Wave annotations so Pgpool pods restart when
+    # `postgresql-pgpool-custom-users` Secret changes
+    - name: Add Wave annotations to Deployment
+      vars:
+        res_kind: Deployment
+        res_name: "{{ postgresql_release_name }}-pgpool"
+        res_ns: "{{ postgresql_namespace }}"
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/k8s/wave.yml"
 
     # this task creates roles defined after initial deployment when
     # the one-time init script ("templates/postgresql/init.sql.j2")

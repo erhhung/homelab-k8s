@@ -85,7 +85,6 @@ gitea_release_name: gitea
 # https://github.com/go-gitea/gitea/pkgs/container/gitea/versions?filters%5Bversion_type%5D=tagged
 gitea_app_version: "1.26.1"
 
-# `gitea_app_version` is fact set by task;
 # chart `image.rootless` is true by default
 gitea_image: docker.gitea.com/gitea:{{ gitea_app_version }}-rootless
 
@@ -182,7 +181,7 @@ gitea_chart_values:
         # `CONN_STR` set via `GITEA__queue__CONN_STR`
         # no prefix param available in connection
         # string, so namespace keys using suffixes
-        QUEUE_NAME: :{gitea}:queue
+        QUEUE_NAME: ":queue:#gitea#"
         SET_NAME: :unique
 
       # https://docs.gitea.com/administration/config-cheat-sheet#storage-storage
@@ -647,9 +646,11 @@ gitea_chart_values:
       nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
       # nginx.ingress.kubernetes.io/ssl-passthrough: "true"
       nginx.ingress.kubernetes.io/backend-protocol: HTTPS
+
       # https://kubernetes.github.io/ingress-nginx/user-guide/nginx-configuration/annotations#custom-timeouts
       nginx.ingress.kubernetes.io/proxy-read-timeout: "1800"
       nginx.ingress.kubernetes.io/proxy-send-timeout: "1800"
+
       # allow uploading large files and prevent 413 (Entity
       # Too Large) errors; set to "0" to disable size limit:
       # https://kubernetes.github.io/ingress-nginx/user-guide/nginx-configuration/annotations#custom-max-body-size

@@ -1,0 +1,65 @@
+# https://github.com/buildbuddy-io/buildbuddy-helm/tree/master/charts/buildbuddy/templates/ingress.yaml
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ buildbuddy_release_name }}-http
+  annotations:
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/backend-protocol: HTTP
+spec:
+  ingressClassName: {{ rke_ingress_class }}
+  tls:
+    - secretName: {{ buildbuddy_secrets['ingress'] }}
+      hosts: {{ buildbuddy_fqdns[:1] | to_json }}
+  rules:
+    - host: {{ buildbuddy_fqdns | first }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ buildbuddy_release_name }}
+                port:
+                  name: http
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ buildbuddy_release_name }}-grpc
+  annotations:
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/backend-protocol: GRPC
+
+    # since BuildBuddy CE (non-Enterprise) has no API
+    # key auth, require mTLS on all external requests:
+    # https://kubernetes.github.io/ingress-nginx/user-guide/nginx-configuration/annotations#client-certificate-authentication
+    nginx.ingress.kubernetes.io/auth-tls-secret: {{
+      buildbuddy_namespace ~'/'~ buildbuddy_secrets['ingress'] }}
+    nginx.ingress.kubernetes.io/auth-tls-verify-client: "on"
+    # verify depth is number of intermediate CAs in chain
+    nginx.ingress.kubernetes.io/auth-tls-verify-depth: "1"
+
+    # events ingestion can be long-lived:
+    # https://kubernetes.github.io/ingress-nginx/user-guide/nginx-configuration/annotations#custom-timeouts
+    # https://kubernetes.github.io/ingress-nginx/user-guide/nginx-configuration/configmap#proxy-connect-timeout
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "60"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+spec:
+  ingressClassName: {{ rke_ingress_class }}
+  tls:
+    - secretName: {{ buildbuddy_secrets['ingress'] }}
+      hosts: {{ buildbuddy_fqdns[1:] | to_json }}
+  rules:
+    - host: "{{ buildbuddy_fqdns | last }}"
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ buildbuddy_release_name }}
+                port:
+                  name: grpc

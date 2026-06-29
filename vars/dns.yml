@@ -141,6 +141,13 @@ pfsense_dns_records:
         desc: GitLab Pages
       - host: jenkins
         desc: Jenkins CI/CD
+      - host: buildfarm
+        desc: Buildfarm CAS/RBE
+      - host: buildbuddy
+        desc: BuildBuddy UI/API
+      - host: events
+        domain: "{{ buildbuddy_subdomain }}"
+        desc: BuildBuddy BES
       - host: argocd
         desc: Argo CD GitOps
       - host: ollama

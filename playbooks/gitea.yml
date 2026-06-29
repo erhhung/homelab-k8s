@@ -78,8 +78,8 @@
           postgresql-password: "{{ gitea_pg_pass }}"
           opensearch-conn-str: "{{ gitea_os_conn_str }}"
           valkey-conn-str: "{{     gitea_vk_conn_str }}" # for queues, which don't support `?prefix` param
-          cache-conn-str: "{{      gitea_vk_conn_str }}?prefix={gitea}:cache:&hset_name={gitea}:cache:keys"
-          session-conn-str: "{{    gitea_vk_conn_str }}?prefix={gitea}:session:"
+          cache-conn-str: "{{      gitea_vk_conn_str }}?prefix=#gitea#:cache:&hset_name=#gitea#:cache:keys"
+          session-conn-str: "{{    gitea_vk_conn_str }}?prefix=#gitea#:session:"
           minio-secret-key: "{{ gitea_minio_key }}"
           smtp-password: "{{ icloud_smtp.passwords['gitea'] }}"
       ansible.builtin.include_tasks: "{{ tasks_dir }}/k8s/secrets/generic.yml"

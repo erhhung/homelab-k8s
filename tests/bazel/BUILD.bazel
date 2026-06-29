@@ -1,0 +1,41 @@
+# https://bazel.build/reference/be/platforms-and-toolchains#platform
+
+# execution platform
+platform(
+    name = "linux_x86_64",
+    constraint_values = [
+        "@platforms//os:linux",
+        "@platforms//cpu:x86_64",
+    ],
+    # forwarded thru REAPI for
+    # Buildfarm queue matching
+    exec_properties = {
+        "OSFamily": "linux",
+        "ISA": "x86-64",
+    },
+)
+
+# list available @llvm//platforms:linux_x86_64 platforms:
+# bazel query '@llvm//platforms:*' --output=label | grep linux_x86_64
+
+# target platform (dynamic binary)
+platform(
+    name = "linux_x86_64_glibc",
+    # inherit from LLVM module Linux x86-64
+    # target constraints, including default
+    # glibc/C++ standard-library selections:
+    # https://github.com/hermeticbuild/hermetic-llvm#gnu-c-library-glibc-versions
+    # https://bazel.build/reference/be/platforms-and-toolchains#platform.parents
+    parents = [
+        "@llvm//platforms:linux_x86_64_gnu.2.28",
+    ],
+)
+
+# target platform (static binary)
+platform(
+    name = "linux_x86_64_musl",
+    # https://github.com/hermeticbuild/hermetic-llvm#musl
+    parents = [
+        "@llvm//platforms:linux_x86_64_musl",
+    ],
+)

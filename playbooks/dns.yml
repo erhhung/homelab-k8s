@@ -11,6 +11,7 @@
     - vars/vclusters.yml
     - vars/policyreporter.yml
     - vars/gitlab.yml
+    - vars/buildbuddy.yml
   vars:
     api_base: "https://pfsense.{{ homelab_domain }}/api/v2"
     headers:

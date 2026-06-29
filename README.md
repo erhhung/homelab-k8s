@@ -37,47 +37,50 @@ All cluster services will be provisioned with TLS certificates from Erhhung's pr
 
 ## Service Endpoints
 
-|                         Service Endpoint | Description
-|-----------------------------------------:|:----------------------
-|        https://rancher.fourteeners.local | Rancher Server console
-|         https://harbor.fourteeners.local | Harbor OCI registry
-|         https://velero.fourteeners.local | Velero console
-|          https://minio.fourteeners.local | MinIO console
-|             https://s3.fourteeners.local | MinIO S3 API
-|        opensearch.fourteeners.local:9200 | OpenSearch _(HTTPS only)_
-|         https://kibana.fourteeners.local | OpenSearch Dashboards
-|          postgres.fourteeners.local:5432 | PostgreSQL via Pgpool _(mTLS only)_
-|            https://sso.fourteeners.local | Keycloak IAM console
-|            valkey.fourteeners.local:6379 <br/> valkey<i>{1..6}</i>.fourteeners.local:6379 | Valkey cluster _(mTLS only)_
-|        https://grafana.fourteeners.local | Grafana dashboards
-|        https://metrics.fourteeners.local | Prometheus UI _(Keycloak SSO)_
-|         https://alerts.fourteeners.local | Alertmanager UI _(Keycloak SSO)_
-|         https://thanos.fourteeners.local | Thanos Query UI
-| https://rule.thanos.fourteeners.local <br/> https://store.thanos.fourteeners.local <br/> https://bucket.thanos.fourteeners.local <br/> https://compact.thanos.fourteeners.local | Thanos components UI
-|            https://slo.fourteeners.local | Pyrra dashboard
-|              otlp.fourteeners.local:4317 _(gRPCs)_ <br/> otlp.fourteeners.local:4318 _(HTTPS)_ | OpenTelemetry collector
-|      ~~https://tracing.fourteeners.local~~ | ~~Jaeger UI _(Tempo Query)_~~
-|          https://kiali.fourteeners.local | Kiali console _(Keycloak SSO)_
-|          https://vault.fourteeners.local | Vault UI
-|         https://policy.fourteeners.local | Policy Reporter UI
-|          https://gitea.fourteeners.local | Gitea UI
-|         https://gitlab.fourteeners.local | GitLab UI
-|  ssh://git@gitlab.fourteeners.local:2222 | GitLab SSH Git access
-| https://*.pages.gitlab.fourteeners.local | GitLab Pages websites
-|        https://jenkins.fourteeners.local | Jenkins UI
-|            https://buildkite.com/erhhung | Buildkite dashboard
-|         https://argocd.fourteeners.local | Argo CD UI
-|            https://awx.fourteeners.local | Ansible AWX UI
-|         https://qdrant.fourteeners.local | Qdrant dashboard
-|         https://search.fourteeners.local | SearXNG search UI
-|       wss://playwright.fourteeners.local | Playwright server
-|         https://ollama.fourteeners.local | Ollama API server
-|        https://litellm.fourteeners.local | LiteLLM dashboard
-|      https://openwebui.fourteeners.local | Open WebUI portal
-|           https://mcpo.fourteeners.local | MCP OpenAPI proxy
-|       https://openclaw.fourteeners.local | OpenClaw control
-|         wss://openclaw.fourteeners.local | OpenClaw gateway
-|        https://flowise.fourteeners.local | Flowise designer
+|                            Service Endpoint | Description
+|--------------------------------------------:|:----------------------
+|           https://rancher.fourteeners.local | Rancher Server console
+|            https://harbor.fourteeners.local | Harbor OCI registry
+|            https://velero.fourteeners.local | Velero console
+|             https://minio.fourteeners.local | MinIO console
+|                https://s3.fourteeners.local | MinIO S3 API
+|   https://opensearch.fourteeners.local:9200 | OpenSearch
+|            https://kibana.fourteeners.local | OpenSearch Dashboards
+|             postgres.fourteeners.local:5432 | PostgreSQL via Pgpool _(mTLS only)_
+|               https://sso.fourteeners.local | Keycloak IAM console
+|               valkey.fourteeners.local:6379 <br/> valkey<i>{1..6}</i>.fourteeners.local:6379 | Valkey cluster _(mTLS only)_
+|           https://grafana.fourteeners.local | Grafana dashboards
+|           https://metrics.fourteeners.local | Prometheus UI _(Keycloak SSO)_
+|            https://alerts.fourteeners.local | Alertmanager UI _(Keycloak SSO)_
+|            https://thanos.fourteeners.local | Thanos Query UI
+|       https://rule.thanos.fourteeners.local <br/> https://store.thanos.fourteeners.local <br/> https://bucket.thanos.fourteeners.local <br/> https://compact.thanos.fourteeners.local | Thanos components UI
+|               https://slo.fourteeners.local | Pyrra dashboard
+|         grpcs://otlp.fourteeners.local:4317 <br/> https://otlp.fourteeners.local:4318 | OpenTelemetry collector
+|       ~~https://tracing.fourteeners.local~~ | ~~Jaeger UI _(Tempo Query)_~~
+|             https://kiali.fourteeners.local | Kiali console _(Keycloak SSO)_
+|             https://vault.fourteeners.local | Vault UI
+|            https://policy.fourteeners.local | Policy Reporter UI
+|             https://gitea.fourteeners.local | Gitea UI
+|            https://gitlab.fourteeners.local | GitLab UI
+|     ssh://git@gitlab.fourteeners.local:2222 | GitLab SSH Git access
+|    https://*.pages.gitlab.fourteeners.local | GitLab Pages websites
+|           https://jenkins.fourteeners.local | Jenkins UI
+|               https://buildkite.com/erhhung | Buildkite dashboard
+|         grpcs://buildfarm.fourteeners.local | Buildfarm CAS+RBE _(mTLS only)_
+| grpcs://events.buildbuddy.fourteeners.local | BuildBuddy BES _(mTLS only)_
+|        https://buildbuddy.fourteeners.local | BuildBuddy quickstart
+|            https://argocd.fourteeners.local | Argo CD UI
+|               https://awx.fourteeners.local | Ansible AWX UI
+|            https://qdrant.fourteeners.local | Qdrant dashboard
+|            https://search.fourteeners.local | SearXNG search UI
+|          wss://playwright.fourteeners.local | Playwright server
+|            https://ollama.fourteeners.local | Ollama API server
+|           https://litellm.fourteeners.local | LiteLLM dashboard
+|         https://openwebui.fourteeners.local | Open WebUI portal
+|              https://mcpo.fourteeners.local | MCP OpenAPI proxy
+|          https://openclaw.fourteeners.local | OpenClaw control
+|            wss://openclaw.fourteeners.local | OpenClaw gateway
+|           https://flowise.fourteeners.local | Flowise designer
 
 ## Installation Sources
 
@@ -151,6 +154,8 @@ All cluster services will be provisioned with TLS certificates from Erhhung's pr
     * Install on main RKE cluster using the [`jenkins`](https://github.com/jenkinsci/helm-charts/tree/main/charts/jenkins) Helm chart
 - [X] [Buildkite Self-Hosted Agent](https://buildkite.com/docs/agent/v3) — run CI/CD pipelines on `buildkite.com` locally
     * Install on main RKE cluster using the [`agent-stack-k8s`](https://buildkite.com/docs/agent/v3/agent-stack-k8s) Helm chart
+- [X] [Buildfarm](https://buildfarm.github.io/buildfarm) and [BuildBuddy](https://www.buildbuddy.io/docs/quickstart) Build Platform — Bazel remote build execution, caching, and stats
+    * Install on main RKE cluster using the [`buildfarm`](https://github.com/buildfarm/buildfarm#helm-chart) and [`buildbuddy`](https://github.com/buildbuddy-io/buildbuddy-helm/tree/master/charts/buildbuddy) Helm charts
 - [X] [Argo CD Declarative GitOps](https://argo-cd.readthedocs.io/) — manage deployment of personal projects
     * Install on main RKE cluster using the [`argo-cd`](https://github.com/erhhung/argo-helm/tree/argo-cd-redis-cluster/charts/argo-cd) Helm chart
 - [ ] [Meshery Visual GitOps Platform](https://meshery.io/) — manage infrastructure visually and collaboratively
@@ -600,42 +605,50 @@ however, all privileged operations using `sudo` will require the password stored
     ```
 </details>
 
-31. <details><summary>Install <strong>Argo CD</strong> GitOps delivery in <em><strong>HA</strong></em> mode</summary><br/>
+31. <details><summary>Install <strong>Buildfarm</strong> build execution service<br/>
+    &nbsp; &nbsp; Install <strong>BuildBuddy</strong> FOSS events viewer</summary><br/>
 
-    31.1. Configure Argo CD to use **Valkey** for caching  
-    31.2. Configure **GitLab** as an allowed SCM provider  
+    ```bash
+    make buildfarm buildbuddy
+    ```
+</details>
+
+32. <details><summary>Install <strong>Argo CD</strong> GitOps delivery in <em><strong>HA</strong></em> mode</summary><br/>
+
+    32.1. Configure Argo CD to use **Valkey** for caching  
+    32.2. Configure **GitLab** as an allowed SCM provider  
 
     ```bash
     make argocd
     ```
 </details>
 
-32. <details><summary>Install <strong>Ansible AWX</strong> automation platform</summary><br/>
+33. <details><summary>Install <strong>Ansible AWX</strong> automation platform</summary><br/>
 
-    32.1. Create organization and custom execution environments based on [`al2023-devops`](https://github.com/erhhung/al2023-devops)  
-    32.2. Create credentials for all homelab hosts and access tokens for GitHub and GitLab  
-    32.3. Import this project and [`homelab-xcp`](https://github.com/erhhung/homelab-xcp), and inventories from their `hosts.ini` files  
+    33.1. Create organization and custom execution environments based on [`al2023-devops`](https://github.com/erhhung/al2023-devops)  
+    33.2. Create credentials for all homelab hosts and access tokens for GitHub and GitLab  
+    33.3. Import this project and [`homelab-xcp`](https://github.com/erhhung/homelab-xcp), and inventories from their `hosts.ini` files  
 
     ```bash
     make awx
     ```
 </details>
 
-33. <details><summary>Install <strong>Metacontroller</strong> to create Operators</summary><br/>
+34. <details><summary>Install <strong>Metacontroller</strong> to create Operators</summary><br/>
 
     ```bash
     make metacontroller
     ```
 </details>
 
-34. <details><summary>Install <strong>Qdrant</strong> vector database in <em><strong>HA</strong></em> mode</summary><br/>
+35. <details><summary>Install <strong>Qdrant</strong> vector database in <em><strong>HA</strong></em> mode</summary><br/>
 
     ```bash
     make qdrant
     ```
 </details>
 
-35. <details><summary>Install <strong>SearXNG</strong> metasearch engine<br/>
+36. <details><summary>Install <strong>SearXNG</strong> metasearch engine<br/>
     &nbsp; &nbsp; Install <strong>Playwright</strong> WebSocket server</summary><br/>
 
     ```bash
@@ -643,57 +656,57 @@ however, all privileged operations using `sudo` will require the password stored
     ```
 </details>
 
-36. <details><summary>Install <strong>LiteLLM</strong> AI gateway with vendor models</summary><br/>
+37. <details><summary>Install <strong>LiteLLM</strong> AI gateway with vendor models</summary><br/>
 
-    36.1. Proxy `gpt-5.x` models through both ChatGPT subscription _("free")_ and API _(metered)_  
-    36.2. Proxy Anthropic and Groq models through API _(metered)_  
-    36.3. Proxy web search through local SearXNG instance  
-    36.4. Send Slack alerts about LLM issues and spending reports  
+    37.1. Proxy `gpt-5.x` models through both ChatGPT subscription _("free")_ and API _(metered)_  
+    37.2. Proxy Anthropic and Groq models through API _(metered)_  
+    37.3. Proxy web search through local SearXNG instance  
+    37.4. Send Slack alerts about LLM issues and spending reports  
 
     ```bash
     make litellm
     ```
 </details>
 
-37. <details><summary>Install <strong>Ollama</strong> LLM server with modest models<br/>
+38. <details><summary>Install <strong>Ollama</strong> LLM server with modest models<br/>
     &nbsp; &nbsp; Install <strong>Open WebUI</strong> AI platform with <strong>Pipelines</strong><br/>
     &nbsp; &nbsp; Install <strong>MCP OpenAPI</strong> proxy with MCP servers</summary><br/>
 
-    37.1. Add LiteLLM connection in Open WebUI to proxy OpenAI, Anthropic, and Groq models  
-    37.2. Create `Accounts` knowledge base and `Accounts` custom model that embeds that KB  
-    37.3. **NOTE**: Populate `Accounts` KB by running `make openwebui -t knowledge` separately  
-    37.4. Deploy MCP tool servers, including `time`, `memory`, `browser`, `weather`, and `lights`  
-    37.5. Define **SLOs** for HTTP success rates + latency for server, LiteLLM, Ollama, and MCPO  
+    38.1. Add LiteLLM connection in Open WebUI to proxy OpenAI, Anthropic, and Groq models  
+    38.2. Create `Accounts` knowledge base and `Accounts` custom model that embeds that KB  
+    38.3. **NOTE**: Populate `Accounts` KB by running `make openwebui -t knowledge` separately  
+    38.4. Deploy MCP tool servers, including `time`, `memory`, `browser`, `weather`, and `lights`  
+    38.5. Define **SLOs** for HTTP success rates + latency for server, LiteLLM, Ollama, and MCPO  
 
     ```bash
     make ollama openwebui
     ```
 </details>
 
-38. <details><summary>Install <strong>OpenClaw</strong> AI agent gateway and skills</summary><br/>
+39. <details><summary>Install <strong>OpenClaw</strong> AI agent gateway and skills</summary><br/>
 
-    38.1. Proxy access to primary and fallback models, as well as web search, through LiteLLM  
-    38.2. Install skills, such as `gog` and `github`, from ClawHub to enhance agent capabilities  
-    38.3. Define user and agent identities through `USER.md`, `IDENTITY.md` and `SOUL.md`  
-    38.4. Configure **Slack** messaging _(requires manual creation of `OpenClaw` Slack app)_  
-    38.5. Automatically pair pending devices (clients)  
+    39.1. Proxy access to primary and fallback models, as well as web search, through LiteLLM  
+    39.2. Install skills, such as `gog` and `github`, from ClawHub to enhance agent capabilities  
+    39.3. Define user and agent identities through `USER.md`, `IDENTITY.md` and `SOUL.md`  
+    39.4. Configure **Slack** messaging _(requires manual creation of `OpenClaw` Slack app)_  
+    39.5. Automatically pair pending devices (clients)  
 
     ```bash
     make openclaw
     ```
 </details>
 
-39. <details><summary>Install <strong>Flowise</strong> AI platform with integrations</summary><br/>
+40. <details><summary>Install <strong>Flowise</strong> AI platform with integrations</summary><br/>
 
     Current deployment uses local images in Harbor registry that were built by GitLab CI.  
-    39.1. **NOTE**: Populate documents by running `make flowise -t documents` separately  
+    40.1. **NOTE**: Populate documents by running `make flowise -t documents` separately  
 
     ```bash
     make flowise
     ```
 </details>
 
-40. <details><summary>Install <strong>BentoPDF</strong> PDF tools</summary><br/>
+41. <details><summary>Install <strong>BentoPDF</strong> PDF tools</summary><br/>
 
     ```bash
     make bentopdf

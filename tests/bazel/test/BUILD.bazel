@@ -1,0 +1,13 @@
+# https://bazel.build/tutorials/cpp-use-cases#run-c-tests
+load("@rules_cc//cc:defs.bzl", "cc_test")
+
+cc_test(
+    name = "hello-test",
+    srcs = ["hello-test.cc"],
+    deps = [
+        "@googletest//:gtest",
+        "@googletest//:gtest_main",
+        "//main:hello-greet",
+    ],
+    size = "small",
+)

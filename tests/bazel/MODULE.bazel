@@ -1,0 +1,31 @@
+module(name = "rbe_hello_cpp")
+
+bazel_dep(name = "platforms", version = "1.1.0")
+bazel_dep(name = "rules_cc", version = "0.2.20")
+
+# fully hermetic LLVM C/C++ cross-toolchain
+# https://github.com/hermeticbuild/hermetic-llvm
+# https://registry.bazel.build/modules/llvm
+bazel_dep(name = "llvm", version = "0.8.11")
+
+# generate only Linux x86-64 execution/target
+# combo instead of registering every platform
+llvm_toolchains = use_extension(
+    "@llvm//extensions:toolchain.bzl",
+    "toolchain",
+)
+llvm_toolchains.exec(
+    arch = "x86_64",
+    os = "linux",
+)
+llvm_toolchains.target(
+    arch = "x86_64",
+    os = "linux",
+)
+use_repo(llvm_toolchains, "llvm_toolchains")
+
+register_toolchains("@llvm_toolchains//:all")
+
+# https://google.github.io/googletest
+# https://registry.bazel.build/modules/googletest
+bazel_dep(name = "googletest", version = "1.17.0.bcr.2")

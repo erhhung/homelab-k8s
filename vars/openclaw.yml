@@ -115,7 +115,7 @@ openclaw_chart_values:
         replicas: 1
 
         initContainers:
-          1-init-deps:
+          init-deps:
             image: &openclaw-image
               repository: ghcr.io/openclaw/openclaw
               tag: "{% raw %}{{ .Values.openclawVersion }}{% endraw %}"
@@ -142,7 +142,9 @@ openclaw_chart_values:
                 [ -f $DEST_BIN/xz ]             || packages+=(xz-utils) # required by tar xJ
                 [ -f $DEST_BIN/less ]           || packages+=(less)
 
-                if [ "$packages" ]; then
+                if [ ! "$packages" ]; then
+                  log "Dependencies are already installed"
+                else
                   log "Installing packages: ${packages[*]}"
                   apt-get update && apt-get install -y "${packages[@]}"
 
@@ -151,11 +153,11 @@ openclaw_chart_values:
                   [ -f $DEST_BIN/less ]           || cp -a $SRC_BIN/less           $DEST_BIN
 
                   echo; find $DEST_BIN $DEST_LIB | sort
-                else
-                  log "Dependencies already installed ✓"
                 fi
+                log -n "Dependencies installation completed ✓"
 
-          2-ca-bundle:
+          ca-bundle:
+            dependsOn: init-deps
             image: *openclaw-image
             securityContext:
               runAsUser: 0
@@ -163,7 +165,7 @@ openclaw_chart_values:
             args:
               - -c
               - |-
-                # path created by 1-init-deps container
+                # path created by init-deps container
                 CERTS_DIR={{ openclaw_data_dir }}/certs
 
                 # ca.crt is already mounted
@@ -212,7 +214,8 @@ openclaw_chart_values:
                 find {{ openclaw_data_dir }} -maxdepth 2 -exec chown node:node {} \;
                 log -n "Trust store setup completed ✓"
 
-          3-init-config:
+          init-config:
+            dependsOn: ca-bundle
             image: *openclaw-image
             env: "{{ openclaw_common_env }}"
             command: ["bash"]
@@ -274,7 +277,8 @@ openclaw_chart_values:
                 log -n "Configuration update completed ✓"
 
           # https://docs.openclaw.ai/tools/plugin
-          4-init-plugins:
+          init-plugins:
+            dependsOn: init-config
             image: *openclaw-image
             envFrom: &env-from
               - secretRef:
@@ -343,7 +347,8 @@ openclaw_chart_values:
 
           # install ClawHub (https://clawhub.com)
           # skills and their runtime dependencies
-          5-init-skills:
+          init-skills:
+            dependsOn: init-plugins
             image: *openclaw-image
             env: "{{ openclaw_common_env }}"
             envFrom: *env-from
@@ -457,7 +462,7 @@ openclaw_chart_values:
         defaultMode: 420 # "0644"
         advancedMounts:
           main:
-            2-ca-bundle:
+            ca-bundle:
               - path: /usr/local/share/ca-certificates/ca.crt
                 subPath: ca.crt
                 readOnly: true
@@ -471,7 +476,7 @@ openclaw_chart_values:
         identifier: config
         advancedMounts:
           main:
-            3-init-config:
+            init-config:
               - path: /conf
 
       # PVC for /home/node/.openclaw
@@ -481,12 +486,12 @@ openclaw_chart_values:
         path: "{{ homelab_nfs.base_path }}/openclaw"
         advancedMounts:
           main:
-            1-init-deps: &data-dir
+            init-deps: &data-dir
               - path: "{{ openclaw_data_dir }}"
-            2-ca-bundle: *data-dir
-            3-init-config: *data-dir
-            4-init-plugins: *data-dir
-            5-init-skills: *data-dir
+            ca-bundle: *data-dir
+            init-config: *data-dir
+            init-plugins: *data-dir
+            init-skills: *data-dir
             main:
               - path: "{{ openclaw_data_dir }}"
               - path: /etc/ssl/certs/ca-certificates.crt
@@ -507,7 +512,7 @@ openclaw_chart_values:
         defaultMode: 420 # "0644"
         advancedMounts:
           main:
-            5-init-skills:
+            init-skills:
               - path: /conf/skills
 
     ingress:
@@ -521,9 +526,9 @@ openclaw_chart_values:
           nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
           nginx.ingress.kubernetes.io/backend-protocol: HTTP
 
-          # https://websocket.org/guides/infrastructure/kubernetes#quick-start-nginx-ingress
           # https://kubernetes.github.io/ingress-nginx/user-guide/nginx-configuration/annotations#custom-timeouts
-          nginx.ingress.kubernetes.io/proxy-connect-timeout: "3600"
+          # https://kubernetes.github.io/ingress-nginx/user-guide/nginx-configuration/configmap#proxy-connect-timeout
+          nginx.ingress.kubernetes.io/proxy-connect-timeout: "60"
           nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
           nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
 

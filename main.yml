@@ -181,6 +181,16 @@
   ansible.builtin.import_playbook: playbooks/buildkite.yml
   tags: buildkite
 
+# Buildfarm depends on Valkey
+- name: Include Buildfarm build service playbook
+  ansible.builtin.import_playbook: playbooks/buildfarm.yml
+  tags: buildfarm
+
+# BuildBuddy depends on PostgreSQL, MinIO, Buildfarm
+- name: Include BuildBuddy event viewer playbook
+  ansible.builtin.import_playbook: playbooks/buildbuddy.yml
+  tags: buildbuddy
+
 # Argo CD depends on Valkey, GitLab, vClusters
 - name: Include Argo CD GitOps tool playbook
   ansible.builtin.import_playbook: playbooks/argocd.yml

@@ -1,0 +1,19 @@
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: buildbuddy
+  # required by serviceMonitorSelector!
+  labels: {{ monitoring_selector_labels }}
+spec:
+  jobLabel: buildbuddy
+  namespaceSelector:
+    matchNames:
+      - {{ buildbuddy_namespace }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: buildbuddy
+  endpoints:
+    - port: metrics
+      path: /metrics
+      interval: 60s

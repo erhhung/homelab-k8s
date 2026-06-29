@@ -345,6 +345,7 @@ openwebui_chart_values:
     - name: REDIS_CLUSTER
       value: "true"
     - name: REDIS_KEY_PREFIX
+      # https://redis.io/docs/latest/operate/oss_and_stack/reference/cluster-spec#hash-tags
       value: "{open-webui}"
     # https://docs.openwebui.com/reference/env-configuration#vector-database
     - name: VECTOR_DB
@@ -603,6 +604,7 @@ openwebui_chart_values:
 
       # https://websocket.org/guides/infrastructure/kubernetes#quick-start-nginx-ingress
       # https://kubernetes.github.io/ingress-nginx/user-guide/nginx-configuration/annotations#custom-timeouts
+      # https://kubernetes.github.io/ingress-nginx/user-guide/nginx-configuration/configmap#proxy-connect-timeout
       nginx.ingress.kubernetes.io/proxy-connect-timeout: "3600"
       nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
       nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"

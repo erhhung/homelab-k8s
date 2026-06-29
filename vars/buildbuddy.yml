@@ -1,0 +1,258 @@
+# buildbuddy_pg_pass:   {vault.yml}
+# buildbuddy_minio_key: {vault.yml}
+
+buildbuddy_namespace: buildbuddy
+buildbuddy_subdomain: buildbuddy.{{ homelab_domain }}
+
+# aliases of "ingress"
+buildbuddy_host_names:
+  - buildbuddy # UI/REST (HTTP)
+  - events.buildbuddy # BES (gRPC)
+
+# https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_filters.html#products
+buildbuddy_fqdns: "{{ buildbuddy_host_names | product(search_domains) | map('join','.') }}"
+
+buildbuddy_secrets:
+  ingress: buildbuddy-ingress-tls
+  database: buildbuddy-database-tls
+  # PostgreSQL & MinIO credentials
+  config: buildbuddy-config-secrets
+
+buildbuddy_db_user: buildbuddy
+buildbuddy_db_name: buildbuddy
+# {{ buildbuddy_pg_pass }}
+
+# https://www.postgresql.org/docs/current/libpq-connect.html#LIBPQ-CONNSTRING-URIS
+# https://docs.ansible.com/ansible/latest/collections/ansible/builtin/dict2items_filter.html
+# https://docs.ansible.com/ansible/latest/collections/ansible/builtin/zip_filter.html
+# (references "pgpool_service_url" var from vars/postgresql.yml)
+buildbuddy_postgresql_url: >-
+  {% set params = {
+       'sslmode':     'verify-full',
+       'sslcert':     '/tls/database/tls.crt',
+       'sslkey':      '/tls/database/tls.key',
+       'sslrootcert': '/tls/database/ca.crt',
+     } -%}
+  {% set  items = params | dict2items -%}
+  {% set params =  items | map(attribute='key') |
+               zip(items | map(attribute='value')) |
+                     map('join','=') -%}
+  {% set  query = params | join('&') -%}
+  {{ pgpool_service_url  | replace('//', '//'~
+     buildbuddy_db_user ~':${PGPASSWORD}@') }}/{{
+     buildbuddy_db_name ~'?'~ query }}
+
+# https://github.com/buildbuddy-io/buildbuddy-helm/tree/master/charts/buildbuddy
+buildbuddy_chart_repo_url: https://helm.buildbuddy.io
+buildbuddy_chart_version: "0.0.419"
+buildbuddy_release_name: buildbuddy
+
+# comment out `buildbuddy_app_version` below
+# to let the playbook get chart `appVersion`
+# https://github.com/buildbuddy-io/buildbuddy/releases
+buildbuddy_app_version: "2.281.0"
+
+buildbuddy_image: buildbuddy.bbcr.io/public/buildbuddy-app-onprem:v{{
+  buildbuddy_app_version }}
+
+# https://github.com/buildbuddy-io/buildbuddy-helm/tree/master/charts/buildbuddy/values.yaml
+buildbuddy_chart_values:
+  replicas: 1
+
+  disk:
+    data:
+      # use PostgreSQL for BuildBuddy metadata
+      # and MinIO for build event blobs instead
+      enabled: false
+
+  # https://www.buildbuddy.io/docs/config-all-options#buildbuddy-server-foss
+  config:
+    # https://www.buildbuddy.io/docs/config-app
+    app:
+      log_level: debug # fatal|error|warn|info|debug
+      default_to_dense_mode: false
+
+      build_buddy_url: https://{{ buildbuddy_fqdns | first }}
+      events_api_url: grpcs://{{  buildbuddy_fqdns |  last }}
+      cache_api_url: grpcs://{{             buildfarm_fqdn }}
+      remote_execution_api_url: grpcs://{{  buildfarm_fqdn }}
+
+    auth:
+      trust_xforwardedfor_header: true
+
+    # https://www.buildbuddy.io/docs/config-database
+    database:
+      # connection string containing `${PGPASSWORD}`
+      data_source: "{{ buildbuddy_postgresql_url }}"
+
+    # https://www.buildbuddy.io/docs/config-storage
+    storage:
+      disk: null
+      ttl_seconds: "{{ 30 * 24*3600 }}" # 30 days
+      chunk_file_size_bytes: "{{ 5 * 2**20 }}" # 5 MiB
+
+      aws_s3:
+        endpoint: "{{ minio_service_url }}"
+        region: "{{ minio_region }}"
+        s3_force_path_style: true
+        static_credentials_id: buildbuddy
+        # BuildBuddy expands environment variables in config!
+        # (secret value cannot contain literal '$' character)
+        # https://www.buildbuddy.io/docs/config#environment-variables
+        static_credentials_secret: ${AWS_SECRET_ACCESS_KEY}
+        bucket: buildbuddy
+
+    # cache functionality not needed, so allocate
+    # a tiny in-memory cache to avoid disk writes
+    cache:
+      disk: null
+      in_memory: true
+      max_size_bytes: "{{ 2**20 }}" # 1 MiB
+
+  extraEnvVars:
+    - name: PGPASSWORD
+      valueFrom:
+        secretKeyRef:
+          name: "{{ buildbuddy_secrets['config'] }}"
+          key: postgresql-password
+    - name: AWS_SECRET_ACCESS_KEY
+      valueFrom:
+        secretKeyRef:
+          name: "{{ buildbuddy_secrets['config'] }}"
+          key: minio-secret-key
+    # MinIO TLS certificate validation:
+    # https://docs.aws.amazon.com/sdkref/latest/guide/feature-gen-config.html
+    - name: AWS_CA_BUNDLE
+      value: /tls/database/ca.crt
+
+  extraVolumes:
+    - name: database-tls
+      secret:
+        secretName: "{{ buildbuddy_secrets['database'] }}"
+        defaultMode: 416 # "0640"
+    # init container stores updated CA bundle
+    - name: ca-bundle
+      emptyDir: {}
+
+  extraVolumeMounts:
+    - name: database-tls
+      mountPath: /tls/database
+      readOnly: true
+    # replace system trust store with updated
+    # CA bundle created by the init container
+    - name: ca-bundle
+      mountPath: /etc/ssl/certs/ca-certificates.crt
+      subPath: ca-bundle.crt
+
+  extraInitContainers:
+    # create PostgreSQL database
+    # buildbuddy if doesn't exist
+    - name: create-database
+      image: "{{ postgresql_image }}"
+      imagePullPolicy: IfNotPresent
+      command: ["bash"]
+      args:
+        - -c
+        - |-
+          # uses connection params added
+          # by PG* environment variables
+          db_found=$(psql -d postgres -tAc "
+            SELECT COUNT(*) FROM pg_catalog.pg_database WHERE datname = '$PGDATABASE'
+          ") || exit $?
+          echo "db_found=$db_found"
+
+          [ "$db_found" -eq 1 ] || {
+            echo -e "\nCreating '$PGDATABASE' database..."
+            psql -d postgres <<EOT
+
+          -- https://www.postgresql.org/docs/current/sql-createdatabase.html
+          CREATE DATABASE $PGDATABASE WITH OWNER $PGUSER;
+          REVOKE ALL ON DATABASE $PGDATABASE FROM PUBLIC;
+          GRANT  ALL ON DATABASE $PGDATABASE  TO $PGUSER;
+          EOT
+          }
+          echo -e "\nDatabase initialization completed ✓"
+      env:
+        # https://www.postgresql.org/docs/current/libpq-envars.html
+        - name: PGHOST
+          value: "{{ pgpool_service_host }}"
+        - name: PGUSER
+          value: "{{ buildbuddy_db_user }}"
+        - name: PGDATABASE
+          value: "{{ buildbuddy_db_name }}"
+        - name: PGSSLMODE
+          value: verify-full
+        - name: PGSSLCERT
+          value: /tls/tls.crt
+        - name: PGSSLKEY
+          value: /tls/tls.key
+        - name: PGSSLROOTCERT
+          value: /tls/ca.crt
+
+      volumeMounts:
+        - name: database-tls
+          mountPath: /tls
+          readOnly: true
+
+    - name: install-busybox
+      image: docker.io/busybox:1.38.0
+      imagePullPolicy: IfNotPresent
+      command: ["sh"]
+      args:
+        - -c
+        - |-
+          set -eux
+          cp -a /bin/busybox /certs/busybox
+          chmod 755          /certs/busybox
+
+      volumeMounts:
+        - name: ca-bundle
+          mountPath: /certs
+
+    # add our private CA cert
+    # into system trust store
+    - name: update-ca-bundle
+      image: "{{ buildbuddy_image }}"
+      imagePullPolicy: IfNotPresent
+      command: ["busybox"]
+      args:
+        - sh
+        - -c
+        - |-
+          CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt
+          busybox cat  $CA_BUNDLE <(echo) \
+                       /ca.crt    <(echo) \
+                           > /certs/ca-bundle.crt
+          busybox tail -n 11 /certs/ca-bundle.crt
+      env:
+        - name: PATH
+          value: /certs
+
+      volumeMounts:
+        - name: database-tls
+          mountPath: /ca.crt
+          subPath: ca.crt
+          readOnly: true
+        - name: ca-bundle
+          mountPath: /certs
+
+  service:
+    type: ClusterIP
+
+    # expose non-TLS HTTP/gRPC/metrics ports only
+    internalHTTPPort: 8080
+    externalHTTPPort: 80
+    internalHTTPSPort: ~
+    externalHTTPSPort: ~
+    internalGRPCPort: 1985
+    externalGRPCPort: 1985
+    internalGRPCSPort: ~
+    externalGRPCSPort: ~
+    internalMetricsPort: 9090
+    externalMetricsPort: 9090
+
+  ingress:
+    # this chart's ingress configs require
+    # using cert-manager for TLS, so create
+    # via Helmfile extra resources instead
+    enabled: false

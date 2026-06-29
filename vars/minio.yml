@@ -1,9 +1,10 @@
-# minio_root_pass:     {vault.yml}
-# minio_admin_pass:    {vault.yml}
-# minio_client_pass:   {vault.yml}
-#     gitea_minio_key: {vault.yml}
-#    gitlab_minio_key: {vault.yml}
-# openwebui_minio_key: {vault.yml}
+# minio_root_pass:      {vault.yml}
+# minio_admin_pass:     {vault.yml}
+# minio_client_pass:    {vault.yml}
+#      gitea_minio_key: {vault.yml}
+#     gitlab_minio_key: {vault.yml}
+# buildbuddy_minio_key: {vault.yml}
+#  openwebui_minio_key: {vault.yml}
 
 minio_region: homelab
 
@@ -19,6 +20,7 @@ minio_buckets:
   # GitLab LFS/uploads/packages/artifacts/backups/cache (all individual buckets)
   # https://docs.ansible.com/ansible/latest/collections/community/general/dict_kv_filter.html
   - "{{ gitlab_buckets.values() | map('community.general.dict_kv', 'name')}}"
+  - name: buildbuddy
   # Open WebUI uploads
   - name: openwebui
 
@@ -31,11 +33,12 @@ minio_buckets:
 # https://github.com/vmware-tanzu/velero-plugin-for-aws#option-1-set-permissions-with-an-iam-user
 minio_policies: |
   {{ {
-      'backups-rw': lookup('one_bucket_iam_policy', 'backups'),
-    'telemetry-rw': lookup('one_bucket_iam_policy', 'telemetry'),
-        'gitea-rw': lookup('one_bucket_iam_policy', 'gitea'),
-       'gitlab-rw': lookup('one_bucket_iam_policy', 'gitlab-*'),
-    'openwebui-rw': lookup('one_bucket_iam_policy', 'openwebui'),
+       'backups-rw': lookup('one_bucket_iam_policy', 'backups'),
+     'telemetry-rw': lookup('one_bucket_iam_policy', 'telemetry'),
+         'gitea-rw': lookup('one_bucket_iam_policy', 'gitea'),
+        'gitlab-rw': lookup('one_bucket_iam_policy', 'gitlab-*'),
+    'buildbuddy-rw': lookup('one_bucket_iam_policy', 'buildbuddy'),
+     'openwebui-rw': lookup('one_bucket_iam_policy', 'openwebui'),
   } }}
 
 minio_users: # non-root
@@ -68,6 +71,9 @@ minio_users: # non-root
   gitlab:
     secret_key: "{{ gitlab_minio_key }}"
     policies: ["gitlab-rw"]
+  buildbuddy:
+    secret_key: "{{ buildbuddy_minio_key }}"
+    policies: ["buildbuddy-rw"]
   openwebui:
     secret_key: "{{ openwebui_minio_key }}"
     policies: ["openwebui-rw"]

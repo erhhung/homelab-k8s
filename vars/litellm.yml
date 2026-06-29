@@ -62,6 +62,11 @@ litellm_chart_values:
   replicaCount: 1
   # numWorkers: 2
 
+  # use Recreate deployment strategy to avoid
+  # multi-attach error on ReadWriteOnce PVCs
+  strategy:
+    type: Recreate
+
   image:
     repository: ghcr.io/berriai/litellm-database
     # skopeo list-tags docker://ghcr.io/berriai/litellm-database | \
@@ -167,7 +172,7 @@ litellm_chart_values:
         ssl_certfile: /tls/database/tls.crt
         ssl_keyfile: /tls/database/tls.key
         password: os.environ/REDIS_PASSWORD
-        namespace: "{litellm}"
+        namespace: "#litellm#"
         ttl: 600
 
       # enable /metrics endpoint for ServiceMonitor:

@@ -2,24 +2,38 @@
 # pgpool_sr_pass:  {vault.yml}
 # pgpool_pass:     {vault.yml}
 
+postgresql_superuser: erhhung
+
 # in order to log in using client TLS cert, generate
 # a cert at pki.fourteeners.local using CN=<db_user>
 # IMPORTANT: users (roles) are only created when the
 # cluster is initially deployed--new users will have
 # to be created manually afterwards
 postgresql_users:
-  - "{{ user_erhhung.username }}"
-  - "{{ scraper_user.username }}"
-  - "{{  keycloak_db_user }}"
-  - "{{    policy_db_user }}"
-  - "{{     gitea_db_user }}"
-  - "{{    gitlab_db_user }}"
-  - "{{       awx_db_user }}"
-  - "{{   litellm_db_user }}"
-  - "{{ openwebui_db_user }}"
-  - "{{   flowise_db_user }}"
+  - "{{  user_erhhung.username }}"
+  - "{{  scraper_user.username }}"
+  - "{{   keycloak_db_user }}"
+  - "{{     policy_db_user }}"
+  - "{{      gitea_db_user }}"
+  - "{{     gitlab_db_user }}"
+  - "{{ buildbuddy_db_user }}"
+  - "{{        awx_db_user }}"
+  - "{{    litellm_db_user }}"
+  - "{{  openwebui_db_user }}"
+  - "{{    flowise_db_user }}"
 
-postgresql_superuser: erhhung
+# for affected databases, always read from primary
+# node to avoid read-after-write inconsistency due
+# to replication lag:
+# https://www.pgpool.net/docs/latest/en/html/runtime-config-load-balancing.html#GUC-DATABASE-REDIRECT-PREFERENCE-LIST
+postgresql_use_primary:
+  - "{{     policy_db_name }}"
+  - "{{      gitea_db_name }}"
+  - "{{     gitlab_db_name }}"
+  - "{{        awx_db_name }}"
+  - "{{    litellm_db_name }}"
+  - "{{ buildbuddy_db_name }}"
+  - "{{  openwebui_db_name }}"
 
 postgresql_namespace: postgresql
 postgresql_host_names: # 192.168.4.225
@@ -146,7 +160,8 @@ postgresql_chart_values:
     # https://github.com/bitnami/charts/tree/main/bitnami/postgresql-ha#initialize-a-fresh-instance
     initdbScripts:
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/template_lookup.html
-      init.sql: "{{ lookup('ansible.builtin.template', templates_dir ~ '/postgresql/init.sql.j2') }}"
+      init.sql: "{{ lookup('ansible.builtin.template',
+        templates_dir ~ '/postgresql/init.sql.j2') }}"
 
   pgpool:
     replicaCount: 2
@@ -205,17 +220,9 @@ postgresql_chart_values:
       # for affected databases, always read from the primary node to
       # avoid read-after-write inconsistency due to replication lag:
       # https://www.pgpool.net/docs/latest/en/html/runtime-config-load-balancing.html#GUC-DATABASE-REDIRECT-PREFERENCE-LIST
-      {% set use_primary = [
-                  'postgres',
-              policy_db_name,
-               gitea_db_name,
-              gitlab_db_name,
-                 awx_db_name,
-             litellm_db_name,
-           openwebui_db_name,
-         ] -%}
-      {% set db_redirects = use_primary | product(['primary']) | map('join',':') -%}
-      database_redirect_preference_list = '{{ db_redirects | join(',') }}'
+      {% set use_primary  = ['postgres'] + postgresql_use_primary -%}
+      {% set db_redirects = use_primary  | product(['primary']) | map('join',':') -%}
+      database_redirect_preference_list  = '{{ db_redirects | join(',') }}'
 
     # num_init_children = number of preforked Pgpool server
     # processes, or the concurrent client connections limit

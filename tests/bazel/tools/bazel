@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+
+# https://github.com/bazelbuild/bazelisk#toolsbazel
+
+# run from project root
+cd "$(dirname "$0")/.."
+set -eo pipefail
+
+BAZELRC=$(mktemp "${TMPDIR:-/tmp}/bazelrc.XXXXXXXXXX")
+trap 'rm -f "$BAZELRC"' EXIT
+
+envsubst < ./.bazelrc > "$BAZELRC"
+"$BAZEL_REAL" --bazelrc "$BAZELRC" --noworkspace_rc "$@"

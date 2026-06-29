@@ -1,0 +1,89 @@
+# this BuildBuddy deployment exists only to ingest Bazel
+# build events (BES) and to provide a web UI for viewing
+# those events/logs. CAS and RBE aren't deployed or used
+# as they're provided by Buildfarm (RBE in BuildBuddy is
+# an enterprise-only feature):
+# https://www.buildbuddy.io/docs/quickstart
+---
+- name: Install BuildBuddy event viewer
+  tags: install
+  hosts: "{{ rke_control_plane_host }}"
+  vars_files:
+    - vars/kubernetes.yml
+    - vars/monitoring.yml
+    - vars/postgresql.yml
+    - vars/minio.yml
+    - vars/buildfarm.yml
+    - vars/buildbuddy.yml
+  vars:
+    # required kubernetes>=24.2 package only in user virtualenv
+    ansible_python_interpreter: "{{ venv_python_interpreter }}"
+    kubeconfig: "{{ rke_kubeconfig }}"
+    secret_ns: "{{ buildbuddy_namespace }}"
+    create_ns: false
+    chart_ver: "{{ buildbuddy_chart_version }}"
+  pre_tasks:
+    # used in init container image tag
+    - name: Get BuildBuddy chart appVersion
+      vars:
+        repo_url: "{{ buildbuddy_chart_repo_url }}"
+        chart_ref: buildbuddy
+        fact_name: buildbuddy_app_version
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/helm/appversion.yml"
+      when: buildbuddy_app_version is undefined
+
+    - name: Get the PostgreSQL image used
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/postgresql/image.yml"
+      when: postgresql_image is undefined
+  tasks:
+    - name: Create BuildBuddy ingress secret
+      vars:
+        secret_name: "{{ buildbuddy_secrets['ingress'] }}"
+        create_ns: true
+        cert_name: buildbuddy-ingress
+        sans: "{{  buildbuddy_fqdns }}"
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/k8s/secrets/tls.step.yml"
+
+    - name: Create BuildBuddy database secret
+      vars:
+        secret_name: "{{ buildbuddy_secrets['database'] }}"
+        cert_name: buildbuddy-database
+        days: 365
+        sans:
+          - "{{ buildbuddy_db_user }}"
+          - "{{ buildbuddy_db_user }}@{{ homelab_domain }}"
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/k8s/secrets/tls.step.yml"
+
+    - name: Create BuildBuddy config secrets
+      vars:
+        secret_name: "{{ buildbuddy_secrets['config'] }}"
+        secret_data:
+          postgresql-password: "{{ buildbuddy_pg_pass }}"
+          minio-secret-key: "{{ buildbuddy_minio_key  }}"
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/k8s/secrets/generic.yml"
+
+    - name: Install BuildBuddy Helm chart
+      vars:
+        # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/template_lookup.html
+        ingress_manifests: "{{ lookup('ansible.builtin.template',
+          templates_dir ~ '/buildbuddy/ingresses.yaml.j2') }}"
+        smon_manifest: "{{ lookup('ansible.builtin.template',
+          templates_dir ~ '/monitoring/smons/buildbuddy.yaml.j2') }}"
+
+        # === Inputs ===
+        repo_name: buildbuddy
+        repo_url: "{{ buildbuddy_chart_repo_url }}"
+        chart_ref: buildbuddy
+        release: "{{ buildbuddy_release_name }}"
+        release_ns: "{{ buildbuddy_namespace }}"
+        values: "{{ buildbuddy_chart_values }}"
+
+        extras: # adopt extra resources into Helm release
+          - cert-manager.io/v1 Certificate {{ buildbuddy_secrets['ingress']  }}
+          - cert-manager.io/v1 Certificate {{ buildbuddy_secrets['database'] }}
+          - v1 Secret {{ buildbuddy_secrets['config'] }}
+          # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/from_yaml_all_filter.html
+          - "{{ ingress_manifests | from_yaml_all  }}"
+          - "{{    smon_manifest  | from_yaml      }}"
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/helm/helmfile.yml"

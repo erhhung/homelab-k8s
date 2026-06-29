@@ -214,6 +214,16 @@
                {{ root_user.accessKey }} \
               '{{ root_user.secretKey }}'
 
+        # https://min.io/docs/minio/linux/reference/minio-mc-admin/mc-admin-config.html
+        site=$(mc admin config get local site)
+
+        # https://docs.min.io/aistor/reference/aistor-server/settings/site#minio-server-envvar-site
+        if [ "${site% *}" == 'site name= region=' ]; then
+          # THIS CONFIG SETTING REQUIRES RESTART!
+          mc admin config set local site \
+               name={{ minio_tenant_name }} \
+             region={{ minio_region }}
+        fi
         # https://min.io/docs/minio/linux/reference/minio-mc-admin/mc-admin-user-list.html
         mc admin user list local --json | jq -r .accessKey | \
           grep -q scraper || exit 0 # skip if no scraper user
@@ -226,6 +236,17 @@
       register: config_mc
       changed_when: config_mc.rc == 0
       failed_when: config_mc.rc not in [0,9]
+      notify: Restart MinIO tenant
+  handlers:
+    - name: Restart MinIO tenant
+      run_once: true
+      vars:
+        kubeconfig: "{{ rke_kubeconfig }}"
+        res_kind: StatefulSet
+        res_name: "{{ minio_tenant_name }}-{{ minio_pool_name }}"
+        res_ns: "{{ minio_tenant_namespace }}"
+        max_wait: 300
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/k8s/restart.yml"
 
 # https://min.io/docs/minio/linux/operations/monitoring/collect-minio-metrics-using-prometheus.html
 - name: Create MinIO scrape configs

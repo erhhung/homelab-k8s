@@ -1,0 +1,362 @@
+# buildfarm_vk_pass: {vault.yml}
+
+buildfarm_namespace: buildfarm
+buildfarm_host_name: buildfarm # alias of "ingress"
+
+# https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_filters.html#products
+buildfarm_fqdn: "{{ [buildfarm_host_name] | product(search_domains) | map('join','.') | first }}"
+
+buildfarm_secrets:
+  ingress: buildfarm-ingress-tls
+  valkey: buildfarm-valkey-creds
+
+# https://buildfarm.github.io/buildfarm/docs/configuration/configuration#redis-backplane
+# https://github.com/buildfarm/buildfarm/tree/main/src/main/java/build/buildfarm/common/config/Backplane.java
+buildfarm_redis_keys:
+  workersHashName: Workers
+  workerChannel: WorkerChannel
+  casPrefix: ContentAddressableStorage
+  actionsPrefix: Action
+  actionCachePrefix: ActionCache
+  actionBlocklistPrefix: ActionBlocklist
+  invocationBlocklistPrefix: InvocationBlocklist
+  operationPrefix: Operation
+  operationChannelPrefix: OperationChannel
+  processingPrefix: Processing
+  dispatchingPrefix: Dispatching
+  dispatchedOperationsHashName: DispatchedOperations
+  correlatedInvocationsIndexPrefix: CorrelatedInvocationsIndex
+  correlatedInvocationsPrefix: CorrelatedInvocations
+  toolInvocationsPrefix: ToolInvocations
+  # https://redis.io/docs/latest/operate/oss_and_stack/reference/cluster-spec#hash-tags
+  preQueuedOperationsListName: "{Arrival}:PreQueuedOperations"
+  queuedOperationsListName: "{Execution}:QueuedOperations"
+  processingListName: "{Arrival}:ProcessingOperations"
+
+buildfarm_exec_queues:
+  - name: linux-x86-64
+    allowUnmatched: true
+    properties:
+      # https://github.com/bazelbuild/remote-apis/tree/main/build/bazel/remote/execution/v2/platform.md
+      - name: OSFamily
+        value: linux
+      - name: ISA
+        value: x86-64
+      # https://buildfarm.github.io/buildfarm/docs/execution/execution_properties
+      - name: min-cores
+        value: "*"
+      - name: max-cores
+        value: "*"
+
+# add namespace prefix to all Redis keys
+# (NOTE: `redisPasswordFile` in docs has
+# been renamed to `redisCredentialFile`)
+buildfarm_backplane_config: |
+  {% set config = {
+       'type':                          'SHARD',
+       'redisNodes':                     redis_cluster_urls,
+       'redisCertificateAuthorityFile': '/etc/redis/ca.crt',
+       'redisCredentialFile':           '/etc/redis/password',
+       'queues':                         buildfarm_exec_queues,
+     } %}
+  {% for k,v in buildfarm_redis_keys.items() %}
+  {%   set _ = config.update({k: '#buildfarm#:'~v}) %}
+  {% endfor %}
+  {{ config }}
+
+# https://github.com/buildfarm/buildfarm#helm-chart
+buildfarm_chart_oci_url: oci://ghcr.io/buildfarm/buildfarm
+# skopeo list-tags docker://ghcr.io/buildfarm/buildfarm
+buildfarm_chart_version: "0.5.0"
+buildfarm_release_name: buildfarm
+
+# comment out `buildfarm_app_version` below
+# to let playbook get the chart `appVersion`
+# https://hub.docker.com/r/bazelbuild/buildfarm-server/tags
+buildfarm_app_version: "2.17.0"
+
+# https://github.com/buildfarm/buildfarm/tree/main/kubernetes/helm-charts/buildfarm/values.yaml
+buildfarm_chart_values:
+  # don't install as we already have a
+  # multi-node Valkey cluster deployed
+  redis:
+    enabled: false
+
+  # Buildfarm uses the Redis
+  # URI to detect TLS scheme
+  externalRedis:
+    uri: "{{ redis_service_url }}"
+
+  config:
+    backplane: "{{ buildfarm_backplane_config }}"
+
+    # https://buildfarm.github.io/buildfarm/docs/configuration/configuration#common
+    defaultActionTimeout: 600
+    maximumActionTimeout: 3600
+    maxEntrySizeBytes: "{{ '%d' | format(2 * 2**30) }}" # 2 GiB
+
+  server:
+    image: &image
+      tag: "{{ buildfarm_app_version }}"
+      pullPolicy: IfNotPresent
+
+    # https://buildfarm.github.io/buildfarm/docs/configuration/configuration#server
+    config:
+      name: buildfarm
+      recordBesEvents: true
+
+    replicaCount: 1
+
+    resources:
+      requests:
+        cpu: 25m
+        memory: 256Mi
+
+    readinessProbe: &probe
+      periodSeconds: 10
+      timeoutSeconds: 5
+      successThreshold: 1
+      failureThreshold: 3
+    livenessProbe: *probe
+
+    extraVolumes:
+      - &valkey-tls-volume
+        name: valkey-tls
+        secret:
+          secretName: "{{ buildfarm_secrets['ingress'] }}"
+          items:
+            - key: ca.crt
+              path: ca.crt
+          defaultMode: 420 # "0644"
+      - &valkey-pwd-volume
+        name: valkey-pwd
+        secret:
+          secretName: "{{ buildfarm_secrets['valkey'] }}"
+          defaultMode: 416 # "0640"
+
+    extraVolumeMounts:
+      - &valkey-tls-mount
+        name: valkey-tls
+        mountPath: /etc/redis/ca.crt
+        subPath: ca.crt
+        readOnly: true
+      - &valkey-pwd-mount
+        name: valkey-pwd
+        mountPath: /etc/redis/password
+        subPath: password
+        readOnly: true
+
+    ingress:
+      enabled: true
+      tls:
+        - secretName: "{{ buildfarm_secrets['ingress'] }}"
+          hosts: "{{ [buildfarm_fqdn]  }}"
+      className: "{{ rke_ingress_class }}"
+      annotations:
+        nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+        nginx.ingress.kubernetes.io/backend-protocol: GRPC
+
+        # since Buildfarm has no auth mechanism,
+        # require mTLS on all external requests:
+        # https://kubernetes.github.io/ingress-nginx/user-guide/nginx-configuration/annotations#client-certificate-authentication
+        nginx.ingress.kubernetes.io/auth-tls-secret: "{{
+          buildfarm_namespace ~'/'~ buildfarm_secrets['ingress'] }}"
+        nginx.ingress.kubernetes.io/auth-tls-verify-client: "on"
+        # verify depth is number of intermediate CAs in chain
+        nginx.ingress.kubernetes.io/auth-tls-verify-depth: "1"
+
+        # CAS transfers and RBE executions can be long-lived:
+        # https://kubernetes.github.io/ingress-nginx/user-guide/nginx-configuration/annotations#custom-timeouts
+        # https://kubernetes.github.io/ingress-nginx/user-guide/nginx-configuration/configmap#proxy-connect-timeout
+        nginx.ingress.kubernetes.io/proxy-connect-timeout: "60"
+        nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+        nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+
+        # allow uploading large files and prevent 413 (Entity
+        # Too Large) errors; set to "0" to disable size limit:
+        # https://kubernetes.github.io/ingress-nginx/user-guide/nginx-configuration/annotations#custom-max-body-size
+        # this matches `config.maxEntrySizeBytes` above
+        nginx.ingress.kubernetes.io/proxy-body-size: 2g
+      hosts:
+        - host: "{{ buildfarm_fqdn }}"
+          paths:
+            - path: /
+              pathType: Prefix
+
+    serviceMonitor:
+      enabled: true
+      additionalLabels: "{{ monitoring_selector_labels }}"
+      interval: 1m
+      scheme: http
+
+  # StatefulSet
+  shardWorker:
+    image: *image
+
+    # https://buildfarm.github.io/buildfarm/docs/configuration/configuration#worker
+    config:
+      # https://buildfarm.github.io/buildfarm/docs/configuration/configuration#capabilities
+      capabilities:
+        cas: true
+        # disable execution on CAS workers
+        # enable only on dedicated workers
+        execution: false
+
+    replicaCount: 1
+    autoscaling:
+      enabled: false
+
+    resources:
+      requests:
+        cpu: 25m
+        memory: 256Mi
+
+    readinessProbe: *probe
+    livenessProbe: *probe
+
+    storage:
+      enabled: true
+      class: "{{ storage_classes['default'] }}"
+      size: 5Gi
+
+    persistentVolumeClaimRetentionPolicy:
+      whenDeleted: Delete
+      whenScaled: Retain
+
+    extraVolumes:
+      - *valkey-tls-volume
+      - *valkey-pwd-volume
+    extraVolumeMounts:
+      - *valkey-tls-mount
+      - *valkey-pwd-mount
+
+  # Deployment
+  execWorker:
+    enabled: true
+    image: *image
+
+    # https://buildfarm.github.io/buildfarm/docs/configuration/configuration#worker
+    config:
+      # https://buildfarm.github.io/buildfarm/docs/configuration/configuration#capabilities
+      capabilities:
+        cas: false
+        execution: true
+
+      # https://buildfarm.github.io/buildfarm/docs/configuration/configuration#dequeue-match
+      dequeueMatchSettings:
+        allowUnmatched: true
+        properties:
+          # https://github.com/bazelbuild/remote-apis/tree/main/build/bazel/remote/execution/v2/platform.md
+          - name: OSFamily
+            value: linux
+          - name: ISA
+            value: x86-64
+
+      # worker-data mount
+      root: /opt/worker
+
+      linkExecFileSystem: true
+      # disable linking of input dirs due to pre-2.18.0 bug that
+      # causes Buildfarm to treat  Bazel-created placeholder dir
+      # in the output path as an input dir, where the LLVM build
+      # action then tries to hardlink the remounted input dir to
+      # another output path, causing "Invalid cross-device link"
+      # https://github.com/buildfarm/buildfarm/issues/2562
+      linkInputDirectories: false
+
+      # https://buildfarm.github.io/buildfarm/docs/configuration/configuration#sandbox-settings
+      sandboxSettings:
+        alwaysUseSandbox: true
+        alwaysUseAsNobody: false
+        # https://github.com/buildfarm/buildfarm/issues/2460
+        alwaysUseCgroups: false
+        alwaysUseTmpFs: true
+        selectForTmpFs: false
+        tmpFsPaths: ["/tmp"]
+        additionalWritePaths: []
+        selectForBlockNetwork: false
+
+      # contrary to docs saying this must be true for sandboxing,
+      # enabling this causes conflict with Kubernetes' container
+      # runtime by trying to enforce CPU limits via cgroups, and
+      # causing "FileSystemException: /sys/fs/cgroup/evacuation:
+      # Read-only file system". Let Kubernetes manage CPU limits,
+      # while Buildfarm can still use Linux sandboxing and tmpfs
+      limitGlobalExecution: false
+
+    securityContext:
+      appArmorProfile:
+        type: Unconfined
+
+    replicaCount: 1
+    autoscaling:
+      enabled: true
+      minReplicas: 1
+      maxReplicas: 3
+      metrics:
+        - type: Resource
+          resource:
+            name: cpu
+            target:
+              type: Utilization
+              averageUtilization: 60
+
+    # these node selectors match
+    # dequeueMatchSettings above
+    nodeSelector:
+      kubernetes.io/os: linux
+      kubernetes.io/arch: amd64
+
+    affinity:
+      # actions should execute on non-control-plane nodes
+      nodeAffinity:
+        preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 40
+            preference:
+              matchExpressions:
+                - key: node-role.kubernetes.io/control-plane
+                  operator: DoesNotExist
+          # schedule on the node that has
+          # the most CPU cores and memory
+          - weight: 60
+            preference:
+              matchExpressions:
+                # label defined in vars/kubernetes.yml
+                - key: node-role.kubernetes.io/runner
+                  operator: Exists
+
+      # execute concurrent actions on different nodes
+      podAntiAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          - topologyKey: kubernetes.io/hostname
+            labelSelector:
+              matchLabels:
+                app.kubernetes.io/instance: "{{ buildfarm_release_name }}"
+                app.kubernetes.io/component: exec-worker
+
+    resources:
+      requests:
+        cpu: 250m
+        memory: 512Mi
+      limits:
+        cpu: 1000m
+        memory: 4Gi
+
+    readinessProbe: *probe
+    livenessProbe: *probe
+
+    # execWorker.storage in values file
+    # isn't used by template, so create
+    # emptyDir to store action inputs
+    extraVolumes:
+      - name: worker-data
+        emptyDir:
+          sizeLimit: 10Gi
+      - *valkey-tls-volume
+      - *valkey-pwd-volume
+
+    extraVolumeMounts:
+      - name: worker-data
+        mountPath: /opt/worker
+      - *valkey-tls-mount
+      - *valkey-pwd-mount

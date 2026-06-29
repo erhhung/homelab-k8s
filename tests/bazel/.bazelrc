@@ -1,0 +1,44 @@
+# common BuildBuddy BES configuration
+common --bes_results_url=https://buildbuddy.fourteeners.local/invocation/
+common --bes_backend=grpcs://events.buildbuddy.fourteeners.local
+
+# common Buildfarm RBE configuration
+common --remote_executor=grpcs://buildfarm.fourteeners.local
+common --remote_cache=grpcs://buildfarm.fourteeners.local
+# bytestream:// URI exposed to BES consumers like BuildBuddy
+common --remote_bytestream_uri_prefix=buildfarm-server.buildfarm.svc.cluster.local:8980/buildfarm
+
+# env vars substitution requires "tools/bazel" wrapper script
+common --tls_certificate=$HOME/certs/fourteeners_root_ca.crt
+# provide client certificate for mTLS auth
+common --tls_client_certificate=$HOME/certs/erhhung.pem
+# private key must be in PKCS#8 PEM format
+common --tls_client_key=$HOME/certs/erhhung.key
+
+# --remote_instance_name = `server.name`
+common --remote_instance_name=buildfarm
+
+# build statically linked binary on linux-x86-64
+build --platforms=//:linux_x86_64_musl
+test  --platforms=//:linux_x86_64_glibc
+common --extra_execution_platforms=//:linux_x86_64
+common --experimental_platform_in_output_dir
+
+# don't create host-detected macOS C++ toolchain:
+# https://github.com/bazelbuild/rules_cc#default-autoconfigured-toolchain
+common --repo_env=BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=1
+
+# don't silently execute failed remote actions locally
+common --spawn_strategy=remote
+common --noremote_local_fallback
+test --strategy=TestRunner=remote
+
+# materialize generated output locally
+common --remote_download_outputs=all
+common --remote_timeout=300s
+common --verbose_failures
+
+# build --remote_grpc_log=/tmp/buildfarm/hello.grpc.log
+# build --subcommands=pretty_print
+# build --curses=no
+# build --color=no

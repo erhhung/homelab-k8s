@@ -60,7 +60,7 @@
       ansible.builtin.include_tasks: "{{ tasks_dir }}/helm/helmfile.yml"
 
     # add Wave annotations so pod restarts
-    # when "searxng-config" secret changes
+    # when `searxng-config` Secret changes
     - name: Add Wave annotations to Deployment
       vars:
         res_kind: Deployment

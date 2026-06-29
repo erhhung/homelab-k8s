@@ -1,0 +1,81 @@
+# https://buildfarm.github.io/buildfarm
+---
+- name: Install Buildfarm build service
+  tags: install
+  hosts: "{{ rke_control_plane_host }}"
+  vars_files:
+    - vars/kubernetes.yml
+    - vars/monitoring.yml
+    - vars/valkey.yml
+    - vars/storage.yml
+    - vars/buildfarm.yml
+  vars:
+    # required kubernetes>=24.2 package only in user virtualenv
+    ansible_python_interpreter: "{{ venv_python_interpreter }}"
+    kubeconfig: "{{ rke_kubeconfig }}"
+    secret_ns: "{{ buildfarm_namespace }}"
+    create_ns: false
+    chart_ver: "{{ buildfarm_chart_version }}"
+  pre_tasks:
+    - name: Get Buildfarm chart appVersion
+      vars:
+        chart_ref: "{{ buildfarm_chart_oci_url }}"
+        fact_name: buildfarm_app_version
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/helm/appversion.yml"
+      when: buildfarm_app_version is undefined
+  tasks:
+    - name: Create Buildfarm ingress secret
+      vars:
+        secret_name: "{{ buildfarm_secrets['ingress'] }}"
+        create_ns: true
+        cert_name: buildfarm-ingress
+        sans: "{{ [buildfarm_fqdn] }}"
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/k8s/secrets/tls.step.yml"
+
+    - name: Create Buildfarm Valkey secret
+      vars:
+        secret_name: "{{ buildfarm_secrets['valkey'] }}"
+        secret_data:
+          password: "{{ buildfarm_vk_pass }}"
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/k8s/secrets/generic.yml"
+
+    - name: Install Buildfarm Helm chart
+      vars:
+        chart_ref: "{{ buildfarm_chart_oci_url }}"
+        release: "{{ buildfarm_release_name }}"
+        release_ns: "{{ buildfarm_namespace }}"
+        values: "{{ buildfarm_chart_values }}"
+
+        patches:
+          merge_patches:
+            # chart only allows setting
+            # pod-level securityContext
+            - apiVersion: apps/v1
+              kind: Deployment
+              metadata:
+                name: "{{ buildfarm_release_name }}-exec-worker"
+              spec:
+                template:
+                  spec:
+                    # https://kubernetes.io/docs/tasks/configure-pod-container/user-namespaces
+                    hostUsers: false
+                    containers:
+                      - name: buildfarm-worker
+                        # allow worker to create sandbox by
+                        # remounting filesystems (execution
+                        # root, read-only paths, and tmpfs)
+                        securityContext:
+                          runAsUser: 0
+                          allowPrivilegeEscalation: true
+                          capabilities:
+                            add:
+                              - SYS_ADMIN
+                          seccompProfile:
+                            type: Unconfined
+                          procMount: Unmasked
+
+        extras: # adopt extra resources into Helm release
+          - cert-manager.io/v1 Certificate {{ buildfarm_secrets['ingress'] }}
+          - v1 Secret {{ buildfarm_secrets['valkey'] }}
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/helm/helmfile.yml"
