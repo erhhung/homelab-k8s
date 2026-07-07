@@ -16,9 +16,6 @@ otlp_http_endpoint: "{{ otlp_service_host }}:{{ otlp_http_port }}"
 observability_secrets:
   service: otel-collector-service-tls
 
-observability_configmaps:
-  rbac-proxy: otel-operator-kube-rbac-proxy-config
-
 otel_collector_name: otel-gateway-collector
 # define common labels applied to external
 # LoadBalancer service and ServiceMonitors
@@ -35,13 +32,13 @@ otel_collector_labels:
 # the same tag as OTel Operator (recommended), which is the
 # chart's .appVersion set as otel_operator_app_version fact
 # https://github.com/open-telemetry/opentelemetry-collector-releases/pkgs/container/opentelemetry-collector-releases%2Fopentelemetry-collector-contrib/versions?filters%5Bversion_type%5D=tagged
-otel_collector_image_tag: "0.147.0"
+otel_collector_image_tag: "0.156.0"
 
 # https://opentelemetry.io/docs/platforms/kubernetes/helm/operator
 otel_operator_namespace: otel-operator
 # https://github.com/open-telemetry/opentelemetry-helm-charts/tree/main/charts/opentelemetry-operator
 otel_operator_chart_repo_url: https://open-telemetry.github.io/opentelemetry-helm-charts
-otel_operator_chart_version: "0.106.0"
+otel_operator_chart_version: "0.118.0"
 otel_operator_release_name: otel-operator
 
 # https://github.com/open-telemetry/opentelemetry-helm-charts/tree/main/charts/opentelemetry-operator/values.yaml
@@ -75,39 +72,25 @@ otel_operator_chart_values:
         cpu: 5m
         memory: 64Mi
 
+    ports: # defaults
+      healthzPort: 8081
+      webhookPort: 9443
+      metricsPort: 8443
+
+    metrics:
+      # replaces deprecated kube-rbac-proxy container
+      secure: true
+
     serviceMonitor:
       enabled: true
       extraLabels: "{{ monitoring_selector_labels }}"
       metricsEndpoints:
-        - port: https # kube-rbac-proxy port
+        - port: metrics
           scheme: https
           path: /metrics
           interval: 60s
           tlsConfig: "{{ metric_scraper_tls_config }}"
-
-  # https://github.com/brancz/kube-rbac-proxy#usage
-  kubeRBACProxy:
-    enabled: true
-
-    image:
-      repository: quay.io/brancz/kube-rbac-proxy
-      tag: v0.21.0
-
-    extraArgs:
-      - --tls-cert-file=/tls/proxy/tls.crt
-      - --tls-private-key-file=/tls/proxy/tls.key
-      - --client-ca-file=/tls/proxy/ca.crt
-      - --config-file=/etc/kube-rbac-proxy/config.yaml
-
-    # not actually supported chart value
-    # (will be patched by Helmfile task)
-    extraVolumeMounts:
-      - name: proxy-tls
-        mountPath: /tls/proxy
-        readOnly: true
-      - name: proxy-config
-        mountPath: /etc/kube-rbac-proxy
-        readOnly: true
+          bearerTokenFile: /var/run/secrets/kubernetes.io/serviceaccount/token
 
   # admission webhooks make sure only
   # requests with correctly formatted
@@ -119,39 +102,6 @@ otel_operator_chart_values:
       # template doesn't support enough spec
       # fields required by StepClusterIssuer
       enabled: true
-
-  # not actually supported chart value
-  # (will be patched by Helmfile task)
-  extraVolumes:
-    # volume to be mounted in
-    # kube-rbac-proxy sidecar
-    - name: proxy-tls
-      secret:
-        secretName: "{{ monitoring_secrets['scraper'] }}"
-        defaultMode: 416 # "0640"
-    - name: proxy-config
-      configMap: # created by attached extraDeploy manifest
-        name: "{{ observability_configmaps['rbac-proxy'] }}"
-        defaultMode: 416 # "0640"
-
-  # not actually supported chart value
-  # (will be adopted into Helm release)
-  extraDeploy:
-    # create kube-rbac-proxy auth "config.yaml"
-    # so Prometheus can scrape Operator metrics
-    - apiVersion: v1
-      kind: ConfigMap
-      metadata:
-        name: "{{ observability_configmaps['rbac-proxy'] }}"
-      data:
-        config.yaml: |
-          authorization:
-            static:
-              - user: # cert CN
-                  name: {{ scraper_user.username }}
-                verb: get
-                resourceRequest: false
-                path: /metrics
 
 # https://opentelemetry.io/docs/platforms/kubernetes/operator
 # https://github.com/open-telemetry/opentelemetry-operator/tree/main/docs/api/opentelemetrycollectors.md#opentelemetryiov1beta1
@@ -304,32 +254,73 @@ otel_collector_cr:
         disablePrometheusAnnotations: true
         extraLabels: "{{ monitoring_selector_labels }}"
 
-# OpenTelemetry Operator's OpenTelemetryCollector
-# CR `spec.ingress` makes it hard to support both
-# OTLP HTTP + gRPC endpoints, so use LoadBalancer
-otlp_lb_service:
-  apiVersion: v1
-  kind: Service
-  metadata:
-    name: "{{ otel_collector_name }}-external"
-    labels: "{{ otel_collector_labels }}"
-    annotations:
-      # replaces to-be-deprecated .spec.loadBalancerIP field
-      metallb.io/loadBalancerIPs: "{{ metallb_vips['otlp'] }}"
-  spec:
-    type: LoadBalancer
-    selector: "{{ otel_collector_labels }}"
-    ports:
-      - name: otlp-grpc # convention
-        port: "{{ otlp_grpc_port }}"
-        protocol: TCP
-        targetPort: "{{ otlp_grpc_port }}"
-        appProtocol: grpcs
-      - name: otlp-http # convention
-        port: "{{ otlp_http_port }}"
-        protocol: TCP
-        targetPort: "{{ otlp_http_port }}"
-        appProtocol: https
+otel_collector_extras:
+  # OpenTelemetry Operator creates a ServiceAccount for the
+  # collector, but it doesn't create any roles or bindings,
+  # thereby causing errors like "Failed to watch *v1.Pod":
+  # https://github.com/open-telemetry/opentelemetry-operator/issues/3875
+  - apiVersion: rbac.authorization.k8s.io/v1
+    kind: ClusterRole
+    metadata:
+      name: "{{ otel_collector_name }}"
+    # https://opentelemetry.io/docs/platforms/kubernetes/collector/components#kubernetes-attributes-processor
+    rules:
+      - apiGroups:
+          - ""
+        resources:
+          - namespaces
+          - pods
+        verbs:
+          - watch
+          - list
+          - get
+      - apiGroups:
+          - apps
+        resources:
+          - replicasets
+        verbs:
+          - watch
+          - list
+          - get
+
+  - apiVersion: rbac.authorization.k8s.io/v1
+    kind: ClusterRoleBinding
+    metadata:
+      name: "{{ otel_collector_name }}"
+    subjects:
+      - kind: ServiceAccount
+        name: "{{ otel_collector_name }}"
+        namespace: "{{ observability_namespace }}"
+    roleRef:
+      apiGroup: rbac.authorization.k8s.io
+      kind: ClusterRole
+      name: "{{ otel_collector_name }}"
+
+  # OpenTelemetry Operator's OpenTelemetryCollector
+  # CR `spec.ingress` makes it hard to support both
+  # OTLP HTTP + gRPC endpoints, so use LoadBalancer
+  - apiVersion: v1
+    kind: Service
+    metadata:
+      name: "{{ otel_collector_name }}-external"
+      labels: "{{ otel_collector_labels }}"
+      annotations:
+        # replaces to-be-deprecated .spec.loadBalancerIP field
+        metallb.io/loadBalancerIPs: "{{ metallb_vips['otlp'] }}"
+    spec:
+      type: LoadBalancer
+      selector: "{{ otel_collector_labels }}"
+      ports:
+        - name: otlp-grpc # convention
+          port: "{{ otlp_grpc_port }}"
+          protocol: TCP
+          targetPort: "{{ otlp_grpc_port }}"
+          appProtocol: grpcs
+        - name: otlp-http # convention
+          port: "{{ otlp_http_port }}"
+          protocol: TCP
+          targetPort: "{{ otlp_http_port }}"
+          appProtocol: https
 
 # https://grafana.com/grafana/dashboards/?search=OpenTelemetry&dataSource=prometheus
 observability_grafana_dashboards:

@@ -34,7 +34,7 @@ awx_db_user: awx
 # {{ awx_pg_pass }}
 
 # https://github.com/ansible-community/awx-operator-helm
-awx_operator_chart_version: "3.2.0"
+awx_operator_chart_version: "3.2.1"
 awx_operator_release_name: awx-operator
 
 # https://github.com/ansible-community/awx-operator-helm/tree/main/charts/awx-operator/values.yaml

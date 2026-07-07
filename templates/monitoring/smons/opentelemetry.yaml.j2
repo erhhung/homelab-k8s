@@ -1,3 +1,9 @@
+# the first ServiceMonitor, matching `collector-service-type: base`
+# and scraping the `prometheus` port, gathers metrics collected by
+# the OpenTelemetry Collector from other applications; the second
+# ServiceMonitor,  matching `collector-service-type: monitoring`
+# and scraping the `monitoring` port, gathers metrics about the
+# collector itself
 ---
 {% set smon_labels = otel_collector_labels | combine(monitoring_selector_labels) %}
 {# https://docs.ansible.com/ansible/latest/collections/community/general/keep_keys_filter.html #}

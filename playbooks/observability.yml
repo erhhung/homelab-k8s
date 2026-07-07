@@ -45,25 +45,7 @@
         release_ns: "{{ otel_operator_namespace }}"
         values: "{{ otel_operator_chart_values }}"
 
-        patches:
-          # chart doesn't currently support extra
-          # volumes and mounts, so add as patches
-          merge_patches:
-            - apiVersion: apps/v1
-              kind: Deployment
-              metadata:
-                name: "{{ otel_operator_release_name }}"
-                namespace: "{{ otel_operator_namespace }}"
-              spec:
-                template:
-                  spec:
-                    containers:
-                      - name: kube-rbac-proxy
-                        volumeMounts: "{{ values.kubeRBACProxy.extraVolumeMounts }}"
-                    volumes: "{{ values.extraVolumes }}"
-
         extras: # adopt extra resources into Helm release
-          - "{{ values.extraDeploy }}"
           - cert-manager.io/v1 Certificate {{ monitoring_secrets['scraper'] }}
       ansible.builtin.include_tasks: "{{ tasks_dir }}/helm/helmfile.yml"
 
@@ -91,7 +73,7 @@
         kubeconfig: "{{ kubeconfig }}"
         # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/from_yaml_all_filter.html
         definition: |
-          {{ [otel_collector_cr, otlp_lb_service]
+          {{ [otel_collector_cr] + otel_collector_extras
               + smon_manifests | from_yaml_all }}
         namespace: "{{ observability_namespace }}"
         state: present
