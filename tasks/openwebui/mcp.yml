@@ -1,13 +1,14 @@
 # configure MCP tool server connection
 #
 # pass the following vars:
-#   auth_token <required> user auth token
-#   mcp_server <required> connection spec
+#   auth_token  <required> user auth token
+#   tool_server <required> connection spec
 # sets the following facts:
-#   mcp_servers  current connections list
+#   webui_tool_servers  current connections
 ---
 - name: Configure MCP tool server
   vars:
+    # https://openwebui.fourteeners.local/docs#/configs/get_tool_servers_config_api_v1_configs_tool_servers_get
     api_url: https://{{ openwebui_fqdns[0] }}/api/v1/configs/tool_servers
     headers:
       Authorization: Bearer {{ auth_token }}
@@ -19,27 +20,31 @@
         headers: "{{ headers }}"
         return_content: true
       register: tool_servers
-      when: mcp_servers is undefined
+      when: webui_tool_servers is undefined
 
-    - name: Configure MCP {{ mcp_server.info.name }}
+    - name: Configure MCP {{ tool_server.info.name }}
       vars:
-        servers: "{{ mcp_servers | default(tool_servers.json['TOOL_SERVER_CONNECTIONS']) }}"
-        server: "{{ servers | selectattr('info.id', '==', mcp_server.info.id) }}"
+        servers: "{{ webui_tool_servers | default(tool_servers.json['TOOL_SERVER_CONNECTIONS']) }}"
+        others: "{{ servers | rejectattr('info.id', '==', tool_server.info.id) }}"
+        # https://docs.ansible.com/ansible/latest/collections/community/general/keep_keys_filter.html
+        existing: |
+          {{ servers | selectattr('info.id', '==', tool_server.info.id) |
+             community.general.keep_keys(target=tool_server.keys()) }}
       ansible.builtin.uri:
         method: POST
         url: "{{ api_url }}"
         headers: "{{ headers }}"
         body_format: json
         body:
-          TOOL_SERVER_CONNECTIONS: "{{ servers | list + [mcp_server] }}"
+          TOOL_SERVER_CONNECTIONS: "{{ others | list + [tool_server] }}"
       register: config_server
-      when: server is falsy
+      when: existing is falsy or existing | first != tool_server
       changed_when: true
 
-    - name: Set mcp_servers fact
+    - name: Set webui_tool_servers fact
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/set_fact_module.html
       ansible.builtin.set_fact:
-        mcp_servers: |
+        webui_tool_servers: |
           {{  config_server.json['TOOL_SERVER_CONNECTIONS'] if config_server.json is defined
           else tool_servers.json['TOOL_SERVER_CONNECTIONS'] if  tool_servers.json is defined
-          else  mcp_servers }}
+          else webui_tool_servers }}

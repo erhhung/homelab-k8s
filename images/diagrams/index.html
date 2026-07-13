@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Kubernetes Cluster Diagrams</title>
+    <style>
+      :root {
+        color-scheme: dark;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        background: #000;
+        color: #fff;
+        font-family: Helvetica, Arial, sans-serif;
+      }
+
+      main {
+        width: min(100%, 1400px);
+        margin: 0 auto;
+        padding: 48px 24px 72px;
+      }
+
+      section {
+        margin: 0 0 72px;
+        text-align: center;
+      }
+
+      section:last-child {
+        margin-bottom: 0;
+      }
+
+      h1 {
+        margin: 0 0 28px;
+        font-size: clamp(1.5rem, 3vw, 2.5rem);
+        line-height: 1.05;
+        font-weight: 700;
+        letter-spacing: 0.02em;
+      }
+
+      img {
+        display: block;
+        width: 100%;
+        max-width: 100%;
+        height: auto;
+        margin: 0 auto;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <section id="cluster-topology">
+        <h1>Cluster Topology</h1>
+        <img src="topology.drawio.svg" alt="Cluster Topology diagram" />
+      </section>
+
+      <section id="platform-services">
+        <h1>Platform Services</h1>
+        <img
+          src="services.platform.drawio.svg"
+          alt="Platform Services diagram"
+        />
+      </section>
+
+      <section id="ai-services">
+        <h1>AI Services</h1>
+        <img src="services.ai.drawio.svg" alt="AI Services diagram" />
+      </section>
+    </main>
+  </body>
+</html>

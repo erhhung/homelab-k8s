@@ -446,16 +446,20 @@ litellm_job_init_container:
 litellm_models:
   # https://platform.openai.com/docs/models/gpt-5-nano ($.05 • $0.40)
   - model_name: gpt-5-nano
+    # https://docs.litellm.ai/docs/providers/openai
     litellm_params: &openai
       model: openai/gpt-5-nano
       api_base: https://api.openai.com/v1
       api_key: os.environ/OPENAI_API_KEY
+      # https://docs.litellm.ai/docs/providers/openai#advanced-using-reasoning_effort-with-summary-field
+      reasoning_effort: none # none|low|medium|high
 
   # https://platform.openai.com/docs/models/gpt-5.2 ($1.75 • $14)
   - model_name: gpt-5.2
     litellm_params:
       <<: *openai
       model: openai/gpt-5.2-2025-12-11
+      reasoning_effort: low # none|low|medium|high|xhigh
 
   # https://platform.openai.com/docs/models/gpt-5.4 ($2.50 • $15)
   - model_name: gpt-5.4
@@ -467,6 +471,7 @@ litellm_models:
       # use ChatGPT subscription (no API usage costs):
       # https://docs.litellm.ai/docs/providers/chatgpt
       model: chatgpt/gpt-5.4
+      reasoning_effort: medium # none|low|medium|high|xhigh
 
   # https://platform.openai.com/docs/models/gpt-5.5 ($5 • $30)
   - model_name: gpt-5.5
@@ -476,31 +481,40 @@ litellm_models:
       # <<: *openai
       # model: openai/gpt-5.5-2026-04-23
       model: chatgpt/gpt-5.5
+      reasoning_effort: high # none|minimal|low|medium|high|xhigh
 
   # https://www.anthropic.com/claude/sonnet ($3 • $15)
   - model_name: claude-sonnet-4-5
-    litellm_params: &anthropic # don't prepend anthropic/ to name
+    # https://docs.litellm.ai/docs/providers/anthropic
+    litellm_params: &anthropic
+      # don't prepend anthropic/ to name
       model: claude-sonnet-4-5-20250929
       # don't append /v1 to Anthropic URL
       api_base: https://api.anthropic.com
       api_key: os.environ/ANTHROPIC_API_KEY
+      # https://docs.litellm.ai/docs/providers/anthropic#usage---thinking--reasoning_content
+      reasoning_effort: medium # low|medium|high
+      max_tokens: 8192
 
   - model_name: claude-sonnet-4-6
     litellm_params:
       <<: *anthropic
       model: claude-sonnet-4-6
+      reasoning_effort: medium
 
   # https://www.anthropic.com/claude/haiku ($1 • $5)
   - model_name: claude-haiku-4-5
     litellm_params:
       <<: *anthropic
       model: claude-haiku-4-5-20251001
+      reasoning_effort: low # low|medium|high
 
   # https://www.anthropic.com/claude/opus ($5 • $25)
   - model_name: claude-opus-4-6
     litellm_params:
       <<: *anthropic
       model: claude-opus-4-6-20260205
+      reasoning_effort: high # low|medium|high
 
   # https://console.groq.com/docs/model/llama-3.3-70b-versatile
   - model_name: llama-3.3-70b-versatile

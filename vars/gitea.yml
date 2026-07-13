@@ -393,7 +393,7 @@ gitea_chart_values:
         port: http
         scheme: HTTPS
       failureThreshold: 10
-      timeoutSeconds: 3
+      timeoutSeconds: 5
     livenessProbe:
       <<: *probe
       initialDelaySeconds: 180

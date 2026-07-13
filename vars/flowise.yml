@@ -254,9 +254,9 @@ flowise_chart_values:
         - -c
         - |-
           echo "Creating .env file for Flowise..."
-          cert="$(base64 -w0 < /tls/tls.crt)"
-           key="$(base64 -w0 < /tls/tls.key)"
-            ca="$(base64 -w0 < /tls/ca.crt)"
+          cert="$(base64 -w0 /tls/tls.crt)"
+           key="$(base64 -w0 /tls/tls.key)"
+            ca="$(base64 -w0 /tls/ca.crt)"
 
           cat <<EOF > /env/.env
           # https://docs.flowiseai.com/configuration/databases#postgresql

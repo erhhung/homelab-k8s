@@ -1,0 +1,69 @@
+# get server certificate from pki.fourteeners.local,
+# creating it by executing the ~/cert.sh script (see
+# "pki/cert.sh") if it doesn't exist or has expired.
+#
+# pass the following vars:
+#   bare_name   <required> output files bare name
+#   script_args <required> single string args to ~/cert.sh
+#                          (must generate out_bare_name.*)
+# sets the following facts:
+#   tls_certificate_pem     contents of .pem file
+#   tls_certificate_key     contents of .key file
+#   tls_certificate_p12_b64 base64-encoded contents of
+#                           .p12 file (iff --p12 used)
+---
+- name: Get server cert from PKI
+  block:
+    - name: Get server cert from PKI
+      delegate_to: pki
+      vars:
+        ansible_python_interpreter: "{{ default_python_interpreter }}"
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/shell_module.html
+      ansible.builtin.shell: |
+        set -o pipefail
+        rc=9 # no change
+
+        bare_name={{ bare_name }}
+        cert="certs/$bare_name.pem"
+
+        if [[ "$cert_sh_args" == *--p12* ]]; then
+          pkcs12=yes cert=${cert/%.pem/.p12}
+          args=(-passin pass:$bare_name)
+        fi
+
+        if [ -f $cert ]; then
+          args+=(-in $cert -noout -enddate)
+          expiry=$(openssl x509 "${args[@]}" | sed 's/^notAfter=//')
+          exp_ts=$(date -u +%s -d "$expiry")
+          now_ts=$(date -u +%s)
+        fi
+
+        if [ 0$exp_ts -le 0$now_ts ]; then
+          # cert missing or expired, so create it
+          ./cert.sh {{ script_args }} >&2 || exit
+          rc=0
+        fi
+
+        if [ "$pkcs12" ]; then
+          jo tls_certificate_p12_b64=$(base64 -w0 $cert)
+        else
+          jo tls_certificate_pem="$(< $cert)" \
+             tls_certificate_key="$(< ${cert/%.pem/.key})"
+        fi
+        exit $rc
+      args:
+        executable: /bin/bash
+      register: cert_json
+      changed_when: cert_json.rc == 0
+      failed_when: cert_json.rc not in [0,9]
+
+    - name: Set tls_certificate_* facts
+      vars:
+        cert_facts: "{{ cert_json.stdout | from_json }}"
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/set_fact_module.html
+      ansible.builtin.set_fact:
+        "{{ _item.key }}": "{{ _item.value }}"
+      loop: "{{ cert_facts | dict2items }}"
+      loop_control:
+        loop_var: _item
+        label: "{{ _item.key }}"

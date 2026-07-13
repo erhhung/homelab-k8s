@@ -264,6 +264,24 @@
           template: rm -f $CHART_DIR/.helmignore
       ansible.builtin.include_tasks: "{{ tasks_dir }}/helm/helmfile.yml"
 
+# https://docs.openwebui.com/features/open-terminal/setup/installation
+- name: Install Open Terminal API servers
+  tags: terminals
+  hosts: localhost
+  vars_files:
+    - vars/openwebui.configure.yml
+  tasks:
+    - name: Install Open Terminal API server
+      vars:
+        fqdn: "{{       item.fqdn }}"
+        local_port: "{{ item.local_port }}"
+        proxy_port: "{{ item.proxy_port }}"
+        config: "{{     item.config }}"
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/openwebui/terminal/install.yml"
+      loop: "{{ open_terminal_hosts }}"
+      loop_control:
+        label: "{{ item.id }}"
+
 # https://openwebui.fourteeners.local/docs
 - name: Configure Open WebUI installation
   tags:
@@ -274,6 +292,7 @@
     - vars/kubernetes.yml
     - vars/openwebui.yml
     - vars/openwebui.mcpo.yml
+    - vars/openwebui.configure.yml
     - vars/ollama.yml
     - vars/litellm.yml
     - vars/searxng.yml
@@ -437,13 +456,66 @@
 
     - name: Configure MCP tool server
       vars:
+        info:
+          id: "{{          item.id   }}"
+          name: "{{        item.name }}"
+          description: "{{ item.description }}"
+        config:
+          enable: true
+          access_grants:
+            - principal_type: group
+              principal_id: "{{ family_group_id }}"
+              permission: read
+          function_name_filter_list: ""
+
+        # === Inputs ===
         auth_token: "{{ admin_token }}"
-        mcp_server: "{{ item }}"
+        # https://openwebui.fourteeners.local/docs#/configs/set_tool_servers_config_api_v1_configs_tool_servers_post
+        tool_server:
+          info: "{{ info }}"
+          type: openapi
+          spec_type: url
+          auth_type: bearer
+          key: "{{ openwebui_mcpo_api_key }}"
+          url: "{{ mcpo_service_url ~'/'~ item.id }}"
+          path: openapi.json
+          config: "{{ config }}"
+          headers: null
+          spec: null
       ansible.builtin.include_tasks: "{{ tasks_dir }}/openwebui/mcp.yml"
       loop: "{{ mcp_tool_servers }}"
       loop_control:
-        label: "{{ item.info.id }}"
-      # sets fact: mcp_servers
+        label: "{{ item.id }}"
+      # sets fact: webui_tool_servers
+
+    - name: Configure terminal server
+      vars:
+        config:
+          access_grants:
+            - principal_type: user
+              principal_id: "{{ admin_user.id }}"
+              permission: read
+
+        # === Inputs ===
+        auth_token: "{{ admin_token }}"
+        # https://openwebui.fourteeners.local/docs#/configs/set_terminal_servers_config_api_v1_configs_terminal_servers_post
+        term_server:
+          enabled: true
+          id: "{{   item.id   }}"
+          name: "{{ item.name }}"
+          server_type: terminal
+          auth_type: bearer
+          key: "{{ open_terminal_api_key }}"
+          url: https://{{ item.fqdn ~':'~ item.proxy_port }}
+          path: /openapi.json
+          config: "{{ config }}"
+          policy_id: ""
+          policy: null
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/openwebui/terminal/config.yml"
+      loop: "{{ open_terminal_hosts }}"
+      loop_control:
+        label: "{{ item.id }}"
+      # sets fact: webui_term_servers
 
     - name: Disable prompt suggestions
       vars:

@@ -6,19 +6,19 @@
 #   knowledge: <required> knowledge object
 #     {id,files}          from API response
 #   file_info: <required> file  to upload
-#     total:    number of files to upload
-#     index:    current index in the list
-#     abs_path: absolute path to file
-#     rel_path: relative path to file
-#     sha1:     40-digit SHA1 hash
-#     size:     file size in bytes
-#     mtime:    "%Y-%m-%d %H:%M:%S"
+#     total     number of files to upload
+#     index     current index in the list
+#     abs_path  absolute path to file
+#     rel_path  relative path to file
+#     sha1      40-digit SHA1 hash
+#     size      file size in bytes
+#     mtime     "%Y-%m-%d %H:%M:%S"
 ---
 - name: 'Upload "{{ file_info.rel_path | basename }}"'
   vars:
-    counter: "{{ file_info.index }}/{{ file_info.total }}"
+    counter: "{{  file_info.index }}/{{ file_info.total }}"
     filename: "{{ file_info.abs_path | basename }}"
-    know_id: "{{ knowledge.id }}"
+    know_id: "{{  knowledge.id }}"
     files: |
       {{ knowledge.files if knowledge.files is defined and
                             knowledge.files is truthy else [] }}

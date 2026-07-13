@@ -1,0 +1,50 @@
+# configure terminal server connection
+#
+# pass the following vars:
+#   auth_token  <required> user auth token
+#   term_server <required> connection spec
+# sets the following facts:
+#   webui_term_servers  current connections
+---
+- name: Configure terminal server
+  vars:
+    # https://openwebui.fourteeners.local/docs#/configs/get_terminal_servers_config_api_v1_configs_terminal_servers_get
+    api_url: https://{{ openwebui_fqdns[0] }}/api/v1/configs/terminal_servers
+    headers:
+      Authorization: Bearer {{ auth_token }}
+  block:
+    - name: Get Open WebUI terminal servers
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/uri_module.html
+      ansible.builtin.uri:
+        url: "{{ api_url }}"
+        headers: "{{ headers }}"
+        return_content: true
+      register: term_servers
+      when: webui_term_servers is undefined
+
+    - name: Configure {{ term_server.name }}
+      vars:
+        servers: "{{ webui_term_servers | default(term_servers.json['TERMINAL_SERVER_CONNECTIONS']) }}"
+        others: "{{ servers | rejectattr('id', '==', term_server.id) }}"
+        # https://docs.ansible.com/ansible/latest/collections/community/general/keep_keys_filter.html
+        existing: |
+          {{ servers | selectattr('id', '==', term_server.id) |
+             community.general.keep_keys(target=term_server.keys()) }}
+      ansible.builtin.uri:
+        method: POST
+        url: "{{ api_url }}"
+        headers: "{{ headers }}"
+        body_format: json
+        body:
+          TERMINAL_SERVER_CONNECTIONS: "{{ others | list + [term_server] }}"
+      register: config_server
+      when: existing is falsy or existing | first != term_server
+      changed_when: true
+
+    - name: Set webui_term_servers fact
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/set_fact_module.html
+      ansible.builtin.set_fact:
+        webui_term_servers: |
+          {{  config_server.json['TERMINAL_SERVER_CONNECTIONS'] if config_server.json is defined
+          else term_servers.json['TERMINAL_SERVER_CONNECTIONS'] if  term_servers.json is defined
+          else webui_term_servers }}

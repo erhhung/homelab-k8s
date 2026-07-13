@@ -22,7 +22,7 @@ playwright_secrets:
 # kubectl -n open-webui exec deploy/open-webui -c open-webui -- \
 #   pip --no-cache-dir show playwright | sed -n 's/^Version: //p'
 # https://github.com/open-webui/open-webui/tree/main/docker-compose.playwright.yaml
-openwebui_playwright_version: "1.58.0"
+openwebui_playwright_version: "1.60.0"
 
 # https://mcr.microsoft.com/artifact/mar/playwright
 playwright_image:

@@ -39,9 +39,16 @@ mcpo_chart_values:
     tag: git-788ff92
 
   env:
+    HOME: /tmp/home
+    # writable $XDG_* directories:
+    # https://docs.astral.sh/uv/reference/environment
+    XDG_RUNTIME_DIR: /tmp/run
+    XDG_CACHE_HOME: /tmp/cache
+    XDG_DATA_HOME: /tmp/data
     # /.npm is on read-only filesystem:
     # use writable cache volume instead
-    NPM_CONFIG_CACHE: /.cache/npm
+    NPM_CONFIG_CACHE: /tmp/cache/npm
+
   envSecrets:
     MCPO_API_KEY: # referenced by container args
       secretName: "{{ mcpo_secrets['api-key'] }}"
@@ -59,7 +66,7 @@ mcpo_chart_values:
   resources:
     requests:
       cpu: 10m
-      memory: 256Mi
+      memory: 512Mi
 
   # NOT CURRENTLY USED BY CHART--rendered as patches instead:
   # https://github.com/first-it-consulting/helm-mcpo/issues/3
@@ -113,7 +120,7 @@ mcpo_chart_values:
           mountPath: /pipes
         # use as `output_dir` for
         # `scrape`/`crawl*` tools
-        - name: data
+        - name: tmp
           mountPath: /out
 
   # NOT CURRENTLY USED BY CHART
@@ -122,15 +129,14 @@ mcpo_chart_values:
     - name: tls
       mountPath: /tls/ca.crt
       subPath: ca.crt
+      readOnly: true
     - name: mcp
       mountPath: /opt/mcp
       readOnly: true
+    - name: tmp
+      mountPath: /tmp
     - name: pipes
       mountPath: /pipes
-    - name: cache
-      mountPath: /.cache
-    - name: data
-      mountPath: /.local/share
 
   # NOT CURRENTLY USED BY CHART
   # rendered as patches instead
@@ -143,15 +149,11 @@ mcpo_chart_values:
       nfs:
         server: "{{ homelab_nfs.server }}"
         path: "{{ homelab_nfs.base_path }}/mcp"
+    - name: tmp
+      emptyDir: {}
     - name: pipes
       emptyDir:
         medium: Memory
-    # writable $XDG_CACHE_HOME and $XDG_DATA_HOME:
-    # https://docs.astral.sh/uv/reference/environment
-    - name: cache
-      emptyDir: {}
-    - name: data
-      emptyDir: {}
 
   ingress:
     enabled: true
@@ -228,71 +230,14 @@ mcpo_chart_values:
           # /tls/ca.crt from volume mount
           NODE_EXTRA_CA_CERTS: /tls/ca.crt
 
-# each tool server corresponds to an MCP
-# server, even if a single MCPO instance
-# hosts multiple MCP servers
-mcp_tool_servers:
-  # https://github.com/modelcontextprotocol/servers/tree/main/src/time
-  - &tool
-    info:
-      id: time
-      name: Time Tool
-      description: >-
-        Provides time and timezone conversion capabilities
-        by allowing models to get current time information
-        and perform conversions using IANA timezone names,
-        with automatic system timezone detection.
-    type: openapi
-    spec_type: url
-    url: "{{ mcpo_service_url }}/time"
-    path: openapi.json
-    auth_type: bearer
-    key: "{{ openwebui_mcpo_api_key }}"
-    config:
-      enable: true
-      access_control:
-        read:
-          group_ids:
-            # fact set by earlier task
-            - "{{ family_group_id }}"
-
-  # https://github.com/modelcontextprotocol/servers/tree/main/src/memory
-  - <<: *tool
-    info:
-      id: memory
-      name: Memory Tool
-      description: >-
-        Implements persistent memory using local knowledge
-        graph, allowing Open WebUI to remember information
-        about the user across chats.
-    url: "{{ mcpo_service_url }}/memory"
-
-  # https://github.com/erhhung/mcp-crawl4ai
-  - <<: *tool
-    info:
-      id: browser
-      name: Browser Tool
-      description: >-
-        Provides web browsing capabilities by scraping
-        and crawling websites.
-    url: "{{ mcpo_service_url }}/browser"
-
-  # https://github.com/erhhung/mcp-weather
-  - <<: *tool
-    info:
-      id: weather
-      name: Weather Tool
-      description: >-
-        Get the current weather for a city
-        (condition, temperature, humidity).
-    url: "{{ mcpo_service_url }}/weather"
-
-  # https://github.com/Koneisto/HomeAssistant-Light-MCP
-  - <<: *tool
-    info:
-      id: lights
-      name: Light Tool
-      description: >-
-        Control Home Assistant-connected lights and manage
-        scenes (turn on/off, set brightness, change color).
-    url: "{{ mcpo_service_url }}/lights"
+      # https://awslabs.github.io/mcp/servers/aws-api-mcp-server
+      aws-api:
+        command: uvx
+        args:
+          - awslabs.aws-api-mcp-server@latest
+        # https://awslabs.github.io/mcp/servers/aws-api-mcp-server#%EF%B8%8F-configuration-options
+        env:
+          AWS_REGION: "{{            aws_profiles['homelab'].region     }}"
+          AWS_ACCESS_KEY_ID: "{{     aws_profiles['homelab'].access_key }}"
+          AWS_SECRET_ACCESS_KEY: "{{ aws_profiles['homelab'].secret_key }}"
+          READ_OPERATIONS_ONLY: "true" # also enforced by user IAM policy

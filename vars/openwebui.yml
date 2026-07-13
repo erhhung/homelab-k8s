@@ -185,13 +185,13 @@ openwebui_extras:
 # Open WebUI so that both Playwright server and client versions
 # match. See openwebui_playwright_version in vars/playwright.yml
 openwebui_chart_repo_url: https://helm.openwebui.com
-openwebui_chart_version: "14.8.0"
+openwebui_chart_version: "15.2.0"
 openwebui_release_name: open-webui
 
 # comment out `openwebui_app_version` below
 # to let playbook get  chart's `appVersion`
 # https://github.com/open-webui/open-webui/pkgs/container/open-webui/versions?filters%5Bversion_type%5D=tagged
-openwebui_app_version: "0.9.6"
+openwebui_app_version: "0.10.2"
 
 openwebui_image:
   repository: ghcr.io/open-webui/open-webui
@@ -307,7 +307,9 @@ openwebui_chart_values:
     # MinIO TLS certificate validation:
     # https://docs.aws.amazon.com/sdkref/latest/guide/feature-gen-config.html
     - name: AWS_CA_BUNDLE
-      value: /tls/database/ca.crt
+      value: /etc/ssl/certs/ca-certificates.crt
+    - name: SSL_CERT_FILE
+      value: /etc/ssl/certs/ca-certificates.crt
     # Open WebUI uses NLTK (Natural Language Toolkit) via `unstructured`
     # to parse and extract text from web pages loaded by Playwright, but
     # NLTK requires data directory to download tokenizers and chunkers:
@@ -617,39 +619,3 @@ openwebui_chart_values:
     additionalHosts: "{{ openwebui_fqdns[1:] }}"
 
   extraResources: "{{ openwebui_extras | flatten }}"
-
-# user Settings > General > System prompt
-# https://docs.openwebui.com/features/ai-knowledge/prompts#prompt-variables
-openwebui_system_prompt: >-
-  {% raw -%}
-  Today is {{CURRENT_DATE}}, and the current time is
-  {{CURRENT_TIME}}. User's full name is {{USER_NAME}},
-  but address the user by first name.
-  {%- endraw %}
-
-# admin Settings > Web Search > General
-# POST /api/v1/retrieval/config/update
-openwebui_retrieval_config:
-  # ===== WEB SEARCH =====
-  ENABLE_WEB_SEARCH: true
-  WEB_SEARCH_TRUST_ENV: false
-  WEB_SEARCH_CONCURRENT_REQUESTS: 1
-  WEB_SEARCH_DOMAIN_FILTER_LIST: []
-  WEB_SEARCH_RESULT_COUNT: 10
-  # use LiteLLM's Perplexity-compatible API to proxy
-  # search queries to backing providers like SearXNG:
-  # https://docs.openwebui.com/features/chat-conversations/web-search/providers/perplexity_search#using-litellm-for-search
-  # https://docs.litellm.ai/docs/search
-  WEB_SEARCH_ENGINE: perplexity_search
-  PERPLEXITY_SEARCH_API_URL: "{{ litellm_service_url }}/search/{{
-    litellm_search_tools[0].search_tool_name }}"
-  # litellm_api_key is fact set by task
-  PERPLEXITY_API_KEY: "{{ litellm_api_key }}"
-  BYPASS_WEB_SEARCH_EMBEDDING_AND_RETRIEVAL: false
-  BYPASS_WEB_SEARCH_WEB_LOADER: false
-
-  # ===== WEB LOADER =====
-  WEB_LOADER_ENGINE: playwright
-  WEB_LOADER_CONCURRENT_REQUESTS: 1
-  PLAYWRIGHT_WS_URL: "{{ playwright_websocket_url }}"
-  PLAYWRIGHT_TIMEOUT: 60000 # ms

@@ -1,0 +1,107 @@
+# user Settings > General > System prompt
+# https://docs.openwebui.com/features/ai-knowledge/prompts#prompt-variables
+openwebui_system_prompt: >-
+  {% raw -%}
+  Today is {{CURRENT_DATE}}, and the current time is
+  {{CURRENT_TIME}}. User's full name is {{USER_NAME}},
+  but address the user by first name.
+  {%- endraw %}
+
+# admin Settings > Web Search > General
+# POST /api/v1/retrieval/config/update
+openwebui_retrieval_config:
+  # ===== WEB SEARCH =====
+  ENABLE_WEB_SEARCH: true
+  WEB_SEARCH_TRUST_ENV: false
+  WEB_SEARCH_CONCURRENT_REQUESTS: 1
+  WEB_SEARCH_DOMAIN_FILTER_LIST: []
+  WEB_SEARCH_RESULT_COUNT: 10
+  # use LiteLLM's Perplexity-compatible API to proxy
+  # search queries to backing providers like SearXNG:
+  # https://docs.openwebui.com/features/chat-conversations/web-search/providers/perplexity_search#using-litellm-for-search
+  # https://docs.litellm.ai/docs/search
+  WEB_SEARCH_ENGINE: perplexity_search
+  PERPLEXITY_SEARCH_API_URL: "{{ litellm_service_url }}/search/{{
+    litellm_search_tools[0].search_tool_name }}"
+  # litellm_api_key is fact set by task
+  PERPLEXITY_API_KEY: "{{ litellm_api_key }}"
+  BYPASS_WEB_SEARCH_EMBEDDING_AND_RETRIEVAL: false
+  BYPASS_WEB_SEARCH_WEB_LOADER: false
+
+  # ===== WEB LOADER =====
+  WEB_LOADER_ENGINE: playwright
+  WEB_LOADER_CONCURRENT_REQUESTS: 1
+  PLAYWRIGHT_WS_URL: "{{ playwright_websocket_url }}"
+  PLAYWRIGHT_TIMEOUT: 60000 # ms
+
+# each tool server corresponds to an MCP
+# server, even if a single MCPO instance
+# hosts multiple MCP servers
+mcp_tool_servers:
+  # https://github.com/modelcontextprotocol/servers/tree/main/src/time
+  - id: time
+    name: Time Tool
+    description: >-
+      Provides time and timezone conversion capabilities
+      by allowing models to get current time information
+      and perform conversions using IANA timezone names,
+      with automatic system timezone detection.
+
+  # https://github.com/modelcontextprotocol/servers/tree/main/src/memory
+  - id: memory
+    name: Memory Tool
+    description: >-
+      Implements persistent memory using local knowledge
+      graph, allowing Open WebUI to remember information
+      about the user across chats.
+
+  # https://github.com/erhhung/mcp-crawl4ai
+  - id: browser
+    name: Browser Tool
+    description: >-
+      Provides web browsing capabilities by scraping
+      and crawling websites.
+
+  # https://github.com/erhhung/mcp-weather
+  - id: weather
+    name: Weather Tool
+    description: >-
+      Gets the current weather for a city
+      (condition, temperature, humidity).
+
+  # https://github.com/Koneisto/HomeAssistant-Light-MCP
+  - id: lights
+    name: Light Tool
+    description: >-
+      Controls Home Assistant-managed lights and scenes
+      (turn on/off, set brightness, change color).
+
+  # https://awslabs.github.io/mcp/servers/aws-api-mcp-server
+  - id: aws-api
+    name: AWS API Tool
+    description: >-
+      Provides read-only access to AWS services and
+      resources and billing using AWS CLI commands.
+
+open_terminal_hosts:
+  - &terminal
+    id: i9mbp
+    name: i9 MBP Terminal
+    fqdn: i9mbp.{{ homelab_domain }}
+    local_port: 18000 # HTTP on 127.0.0.1
+    proxy_port: 8443 # HTTPS on 0.0.0.0
+    # https://docs.openwebui.com/features/open-terminal/advanced/configuration#config-file
+    config: &terminal-config
+      enable_terminal: true # enable interactive terminal sessions?
+      enable_notebooks: true # enable Jupyter notebook executions?
+      file_browser_root: filesystem # home|filesystem|/custom/path
+      max_terminal_sessions: 10
+
+  - <<: *terminal
+    id: cosmos
+    name: Cosmos Terminal
+    fqdn: cosmos.{{ homelab_domain }}
+    config:
+      <<: *terminal-config
+      enable_notebooks: false
+      file_browser_root: home

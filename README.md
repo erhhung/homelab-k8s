@@ -20,19 +20,25 @@ All cluster services will be provisioned with TLS certificates from Erhhung's pr
 ## Cluster Topology
 
 <p align="center">
+<a href="images/diagrams/index.html#cluster-topology">
 <img src="images/diagrams/topology.drawio.svg" alt="topology.drawio.svg" />
+</a>
 </p>
 
 ## Platform Services
 
 <p align="center">
+<a href="images/diagrams/index.html#platform-services">
 <img src="images/diagrams/services.platform.drawio.svg" alt="services.platform.drawio.svg" />
+</a>
 </p>
 
 ## AI Services
 
 <p align="center">
+<a href="images/diagrams/index.html#ai-services">
 <img src="images/diagrams/services.ai.drawio.svg" alt="services.ai.drawio.svg" />
+</a>
 </p>
 
 ## Service Endpoints
@@ -228,22 +234,23 @@ ansible-vault view   $VAULTFILE
 |:---------------------------------:|:-------------------:
 | `sudo_pass.*`                     | `rancher_admin_pass`
 | `icloud_smtp.*`                   | `minio_root_pass`
-| `slack_webhook_urls.*`            | `minio_admin_pass`
-| `docker_access_token`             | `velero_admin_pass`
-| `github_access_token`             | `harbor_admin_pass`
-| `age_secret_key`                  | `opensearch_admin_pass`
-| `sops_encryption_key`             | `keycloak_admin_pass`
-| `yubikey_unlock_pin`              | `thanos_admin_pass`
-| `pfsense_api_key`                 | `grafana_admin_pass`
-| `metallb_secret`                  | `vault_admin_pass`
-| `step_ca_provisioner_pass`        | `gitlab_root_pass`
-| `minio_client_pass`               | `gitlab_user_pass`
-| `velero_repo_pass`                | `jenkins_admin_pass`
-| `velero_passphrase`               | `argocd_admin_pass`
-| `harbor_secret`                   | `awx_admin_pass`
-| `dashboards_os_pass`              | `litellm_admin_pass`
-| `fluent_os_pass`                  | `openwebui_admin_pass`
-| `postgresql_pass`                 | `flowise_admin_pass`
+| `aws_profiles.*`                  | `minio_admin_pass`
+| `slack_webhook_urls.*`            | `velero_admin_pass`
+| `docker_access_token`             | `harbor_admin_pass`
+| `github_access_token`             | `opensearch_admin_pass`
+| `age_secret_key`                  | `keycloak_admin_pass`
+| `sops_encryption_key`             | `thanos_admin_pass`
+| `yubikey_unlock_pin`              | `grafana_admin_pass`
+| `pfsense_api_key`                 | `vault_admin_pass`
+| `metallb_secret`                  | `gitlab_root_pass`
+| `step_ca_provisioner_pass`        | `gitlab_user_pass`
+| `minio_client_pass`               | `jenkins_admin_pass`
+| `velero_repo_pass`                | `argocd_admin_pass`
+| `velero_passphrase`               | `awx_admin_pass`
+| `harbor_secret`                   | `litellm_admin_pass`
+| `dashboards_os_pass`              | `openwebui_admin_pass`
+| `fluent_os_pass`                  | `flowise_admin_pass`
+| `postgresql_pass`                 |
 | `valkey_pass`                     |
 | `oidc_client_secrets.*`           |
 | `oauth2_proxy_cookie_secret`      |
@@ -264,6 +271,7 @@ ansible-vault view   $VAULTFILE
 | `openwebui_secret_key`            |
 | `openwebui_pipelines_api_key`     |
 | `openwebui_mcpo_api_key`          |
+| `open_terminal_api_key`           |
 | `gogcli_keyring_pass`             |
 | `openclaw_gateway_token`          |
 | `openclaw_channel_secrets.*`      |
@@ -675,8 +683,9 @@ however, all privileged operations using `sudo` will require the password stored
     38.1. Add LiteLLM connection in Open WebUI to proxy OpenAI, Anthropic, and Groq models  
     38.2. Create `Accounts` knowledge base and `Accounts` custom model that embeds that KB  
     38.3. **NOTE**: Populate `Accounts` KB by running `make openwebui -t knowledge` separately  
-    38.4. Deploy MCP tool servers, including `time`, `memory`, `browser`, `weather`, and `lights`  
-    38.5. Define **SLOs** for HTTP success rates + latency for server, LiteLLM, Ollama, and MCPO  
+    38.4. Deploy MCP tool servers, including `time`, `browser`, `weather`, `lights` and `aws-api`  
+    38.5. Deploy Open Terminal on Mac & Linux hosts, then configure Open WebUI integrations  
+    38.6. Define **SLOs** for HTTP success rates + latency for server, LiteLLM, Ollama, and MCPO  
 
     ```bash
     make ollama openwebui

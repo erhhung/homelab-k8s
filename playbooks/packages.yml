@@ -118,7 +118,9 @@
       loop: "{{ helm_plugins }}"
 
 - name: Install apps from GitHub releases
-  tags: github
+  tags:
+    - apps
+    - github
   hosts: k8s_hosts
   become: true
   tasks:

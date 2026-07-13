@@ -1,0 +1,293 @@
+# install Open Terminal on the specified host
+# (Homebrew must already be installed on host
+# Platypus CLI must also be installed on Mac)
+#
+# pass the following vars:
+#   fqdn       <required> terminal server FQDN
+#   local_port <required> 127.0.0.1 HTTP port
+#   proxy_port <required> 0.0.0.0  HTTPS port
+#   config     [optional] config file dict
+---
+- name: Install Open Terminal server
+  delegate_to: "{{ host }}"
+  vars:
+    host: "{{ fqdn | split('.') | first }}"
+    PATH:
+      - /bin
+      - /sbin
+      - /usr/bin
+      - /usr/sbin
+      - /usr/local/bin
+      - /usr/local/sbin
+      - /opt/homebrew/bin
+      - /home/linuxbrew/.linuxbrew/bin
+      - $HOME/.pyenv/shims
+      - $HOME/.local/bin
+  block:
+    - name: Install Homebrew formulas
+      # https://docs.ansible.com/ansible/latest/collections/community/general/homebrew_module.html
+      community.general.homebrew:
+        name:
+          - jo
+          - jq
+          - uv
+          - caddy
+        update_homebrew: true
+        state: latest
+
+    - name: Create server certificate
+      vars:
+        bare_name: "{{ host }}"
+        script_args: --exp=365 {{ fqdn }}
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/pki/getcert.yml"
+      # sets facts: tls_certificate_*
+
+    # https://docs.openwebui.com/features/open-terminal/advanced/configuration
+    - name: Gather configuration info
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/shell_module.html
+      ansible.builtin.shell: |
+        export PATH="{{ PATH | join(':') }}"
+        set -eu
+
+        etc_dir=$(brew --prefix)/etc
+        mac_app="$HOME/Applications/Open Terminal.app"
+
+        jo home="$HOME"   \
+          shell="$SHELL"  \
+          os=$(uname -s)  \
+          server_tls=$(jo \
+            pem_file="$etc_dir/server.pem" \
+            key_file="$etc_dir/server.key" \
+          ) \
+          caddyfile="$etc_dir/Caddyfile" \
+          config_toml="${XDG_CONFIG_HOME:-$HOME/.config}/open-terminal/config.toml" \
+          app_created=$([ -d "$mac_app" ] && echo true || echo false) \
+          runtime_dir="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+      args:
+        executable: /bin/bash
+      register: config_json
+      changed_when: false
+
+    # https://caddy.guide/docs/caddyfile
+    - name: Create Caddy service config file
+      vars:
+        config_info: "{{ config_json.stdout | from_json }}"
+        server_tls: "{{  config_info.server_tls }}"
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/copy_module.html
+      ansible.builtin.copy:
+        dest: "{{    file.dest    }}"
+        mode: "{{    file.mode    }}"
+        content: "{{ file.content }}"
+      loop:
+        - dest: "{{ server_tls.pem_file }}"
+          mode: "0644"
+          content: "{{ tls_certificate_pem }}"
+        - dest: "{{ server_tls.key_file }}"
+          mode: "0600"
+          content: "{{ tls_certificate_key }}"
+        - dest: "{{ config_info.caddyfile }}"
+          mode: "0644"
+          content: |
+            # This file was created by Ansible. DO NOT EDIT!
+            {
+            {{ TB }}auto_https disable_redirects
+            }
+            {{ fqdn }}:{{ proxy_port }} {
+            {{ TB }}tls {{ server_tls.pem_file
+                     ~' '~ server_tls.key_file   }}
+            {{ TB }}reverse_proxy :{{ local_port }}
+            }
+      loop_control:
+        loop_var: file
+        label: "{{ file.dest | basename }}"
+
+    - name: Create Open Terminal config files
+      vars:
+        config_info: "{{ config_json.stdout | from_json }}"
+        local_bin: "{{   config_info.home }}/.local/bin"
+        config_toml: "{{ config_info.config_toml }}"
+      block:
+        - name: Create Open Terminal config dirs
+          # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/file_module.html
+          ansible.builtin.file:
+            state: directory
+            path: "{{ dir.path }}"
+            mode: "{{ dir.mode }}"
+          loop:
+            - path: "{{ local_bin }}"
+              mode: "0755"
+            - path: "{{ config_toml | dirname }}"
+              mode: "0700"
+          loop_control:
+            loop_var: dir
+            label: "{{ dir.path }}"
+
+        - name: Create Open Terminal config file
+          vars:
+            # https://docs.openwebui.com/features/open-terminal/advanced/configuration#config-file
+            required:
+              host: 127.0.0.1
+              port: "{{ local_port }}"
+              api_key: "{{ open_terminal_api_key }}"
+            # `required` is combined twice so its
+            # settings appear at top of TOML file
+            combined: "{{ required |
+              ansible.builtin.combine(config | default({})) |
+              ansible.builtin.combine(required) }}"
+          ansible.builtin.copy:
+            content: "{{ file.content | default(omit) }}"
+            src: "{{     file.src     | default(omit) }}"
+            dest: "{{    file.dest }}"
+            mode: "{{    file.mode }}"
+          loop:
+            # create shell script for Platypus to execute
+            - src: "{{  files_dir }}/openwebui/terminal.sh"
+              dest: "{{ local_bin }}/open-terminal-start"
+              mode: "0755"
+            # create helper script so Open Terminal launches
+            # Bash as login shell and sources expected files
+            - dest: "{{ local_bin }}/open-terminal-shell"
+              mode: "0755"
+              content: |
+                #!/bin/sh
+                exec {{ config_info.shell }} --login
+            - dest: "{{ config_toml }}"
+              mode: "0600"
+              # https://docs.ansible.com/ansible/latest/collections/community/general/to_toml_filter.html
+              content: "{{ combined | community.general.to_toml }}"
+          loop_control:
+            loop_var: file
+            label: "{{ file.dest | basename }}"
+
+    # requires Platypus CLI to already exist:
+    # https://github.com/sveinbjornt/Platypus#installing-command-line-tool-in-ci-environment
+    - name: Create "Open Terminal.app" on Mac
+      when:
+        - config_info.os == 'Darwin'
+        - not config_info.app_created
+      vars: &vars
+        config_info: "{{ config_json.stdout | from_json }}"
+        user_apps: "{{   config_info.home }}/Applications"
+        local_bin: "{{   config_info.home }}/.local/bin"
+      block:
+        - name: Copy "open-webui.icns" to temp dir
+          ansible.builtin.copy:
+            src: "{{ icons_dir }}/open-webui.icns"
+            dest: /tmp/open-webui.icns
+            mode: "0644"
+
+        - name: Create "Open Terminal.app" on Mac
+          vars:
+            rev_dns: "{{ homelab_domain | split('.') | reverse | join('.') }}"
+          ansible.builtin.shell: |
+            export PATH="{{ PATH | join(':') }}"
+            set -eu
+
+            app_name="Open Terminal"
+            app_path="{{ user_apps }}/${app_name}.app"
+            app_icon=/tmp/open-webui.icns
+            bundle_id="{{ rev_dns }}.open-terminal"
+            app_script="{{ local_bin }}/open-terminal-start"
+
+            # https://sveinbjorn.org/files/manpages/platypus.man.html
+            platypus --name "$app_name" \
+              --app-icon    "$app_icon" \
+              --bundle-identifier "$bundle_id" \
+              --interface-type None \
+              --interpreter /bin/sh \
+              "$app_script" "$app_path"
+
+            # https://developer.apple.com/documentation/technotes/tn3179-understanding-local-network-privacy#Essentials
+            usage_desc="$app_name needs local network access for shell commands like ssh and curl."
+            /usr/libexec/PlistBuddy -c "Add :NSLocalNetworkUsageDescription string '$usage_desc'" \
+              "$app_path/Contents/Info.plist"
+
+            # https://www.unix.com/man_page/osx/1/codesign
+            codesign --force --deep --sign - "$app_path"
+          args:
+            executable: /bin/bash
+          changed_when: true
+
+    - name: Start Open Terminal as a service
+      vars:
+        <<: *vars
+        env_vars:
+          - USER
+          - LOGNAME
+          - HOME
+          - PATH
+          - LANG
+          - LC_COLLATE
+          - SHELL
+          - EDITOR
+          - XDG_RUNTIME_DIR
+          - XDG_CONFIG_HOME
+          - XDG_CACHE_HOME
+          - XDG_STATE_HOME
+          - XDG_DATA_HOME
+        env_args: |-
+          {{ env_vars | map('regex_replace', '^(.+)$', '\1="$\1"') | join(' ') }}
+      ansible.builtin.shell: |
+        set -o pipefail
+
+        export PATH="{{ PATH | join(':') }}"
+        [ -f /etc/bash.bashrc ] && {
+              PS1='\u@\h:\w\$ '
+           . /etc/bash.bashrc
+        }
+        rc=9 # no change
+
+        json="$(uvx macpmd info --all --json)"
+        if [[ "$json" =~ ^\{ ]]; then
+          # wrap object in a list
+          json="$(jo -a "$json")"
+        elif [[ ! "$json" =~ ^\[ ]]; then
+          # "No processes registered."
+          json='[]'
+        fi
+
+        status=$(jq -r '.[] | select(.name == "open-terminal")
+                            | .status' <<< "$json")
+        if [ ! "$status" ]; then
+          # use `env -i` to reduce the set of env vars to inherit
+          # so that plistlib.dumps() won`t fail with "ValueError:
+          # strings can`t contain control characters"
+
+          # use helper to start Bash as login shell
+          SHELL={{ local_bin }}/open-terminal-shell
+
+          if [ $(uname -s) == Darwin ]; then
+            app_name="Open Terminal"
+            app_path="{{ user_apps }}/${app_name}.app"
+            app_bin="'$app_path/Contents/MacOS/$app_name'"
+          else # assume Linux
+            app_bin=open-terminal-start
+          fi
+          ( set -x; env -i {{ env_args }} \
+            uvx macpmd add --name open-terminal "exec $app_bin"
+          )
+          rc=0
+        elif [ "$status" != running ]; then
+          uvx macpmd start open-terminal
+          rc=0
+        fi
+        exit $rc
+      args:
+        executable: /bin/bash
+      register: start_svc
+      changed_when: start_svc.rc == 0
+      failed_when: start_svc.rc not in [0,9]
+
+    - name: Start Caddy reverse proxy server
+      vars:
+        config_info: "{{ config_json.stdout | from_json }}"
+        runtime_dir: "{{ config_info.runtime_dir }}"
+      environment:
+        # required by systemd to
+        # communicate with D-Bus
+        XDG_RUNTIME_DIR: "{{ runtime_dir }}"
+      # https://docs.ansible.com/ansible/latest/collections/community/general/homebrew_services_module.html
+      community.general.homebrew_services:
+        name: caddy
+        state: present

@@ -352,6 +352,11 @@ cd "$HOME"
        chat.fourteeners.local
 
 ./cert.sh --exp=365 \
+  i9mbp.fourteeners.local
+./cert.sh --exp=365 \
+  cosmos.fourteeners.local
+
+./cert.sh --exp=365 \
   flowise.fourteeners.local
 
 ./cert.sh --exp=365 \
