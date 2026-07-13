@@ -1,0 +1,49 @@
+name: Publish Diagrams to GitHub Pages
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - images/diagrams/**
+      - .github/workflows/pages.yml
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+  pages: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+
+    runs-on: ubuntu-latest
+    steps:
+      # https://github.com/actions/checkout
+      - name: Check out Code
+        id: checkout
+        uses: actions/checkout@v6
+
+      # https://github.com/actions/configure-pages
+      - name: Configure Pages
+        id: configure
+        uses: actions/configure-pages@v6
+
+      # https://github.com/actions/upload-pages-artifact
+      - name: Upload Diagrams
+        id: upload
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: images/diagrams
+
+      # https://github.com/actions/deploy-pages
+      - name: Deploy to Pages
+        id: deploy
+        uses: actions/deploy-pages@v5

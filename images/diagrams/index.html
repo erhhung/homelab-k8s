@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Kubernetes Cluster Diagrams</title>
+    <title>Erhhung's Home Kubernetes Cluster</title>
     <style>
       :root {
         color-scheme: dark;
@@ -21,9 +21,9 @@
       }
 
       main {
-        width: min(100%, 1400px);
+        width: min(100%, 840px);
         margin: 0 auto;
-        padding: 48px 24px 72px;
+        padding: 28px 14px 44px;
       }
 
       section {
@@ -35,12 +35,20 @@
         margin-bottom: 0;
       }
 
-      h1 {
+      h1,
+      h2 {
         margin: 0 0 28px;
-        font-size: clamp(1.5rem, 3vw, 2.5rem);
         line-height: 1.05;
-        font-weight: 700;
         letter-spacing: 0.02em;
+      }
+      h1 {
+        font-size: clamp(1rem, 1.5vw, 2rem);
+        font-weight: 750;
+        text-align: center;
+      }
+      h2 {
+        font-size: clamp(1.5rem, 1vw, 3rem);
+        font-weight: 500;
       }
 
       img {
@@ -54,13 +62,15 @@
   </head>
   <body>
     <main>
+      <h1>Erhhung's Home Kubernetes Cluster</h1>
+
       <section id="cluster-topology">
-        <h1>Cluster Topology</h1>
+        <h2>Cluster Topology</h2>
         <img src="topology.drawio.svg" alt="Cluster Topology diagram" />
       </section>
 
       <section id="platform-services">
-        <h1>Platform Services</h1>
+        <h2>Platform Services</h2>
         <img
           src="services.platform.drawio.svg"
           alt="Platform Services diagram"
@@ -68,7 +78,7 @@
       </section>
 
       <section id="ai-services">
-        <h1>AI Services</h1>
+        <h2>AI Services</h2>
         <img src="services.ai.drawio.svg" alt="AI Services diagram" />
       </section>
     </main>

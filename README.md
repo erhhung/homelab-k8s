@@ -20,24 +20,24 @@ All cluster services will be provisioned with TLS certificates from Erhhung's pr
 ## Cluster Topology
 
 <p align="center">
-<a href="images/diagrams/index.html#cluster-topology">
-<img src="images/diagrams/topology.drawio.svg" alt="topology.drawio.svg" />
+<a href="https://erhhung.github.io/homelab-k8s#cluster-topology" target="homelab-k8s">
+<img src="images/diagrams/topology.drawio.svg" alt="topology.drawio.svg"/>
 </a>
 </p>
 
 ## Platform Services
 
 <p align="center">
-<a href="images/diagrams/index.html#platform-services">
-<img src="images/diagrams/services.platform.drawio.svg" alt="services.platform.drawio.svg" />
+<a href="https://erhhung.github.io/homelab-k8s#platform-services" target="homelab-k8s">
+<img src="images/diagrams/services.platform.drawio.svg" alt="services.platform.drawio.svg"/>
 </a>
 </p>
 
 ## AI Services
 
 <p align="center">
-<a href="images/diagrams/index.html#ai-services">
-<img src="images/diagrams/services.ai.drawio.svg" alt="services.ai.drawio.svg" />
+<a href="https://erhhung.github.io/homelab-k8s#ai-services" target="homelab-k8s">
+<img src="images/diagrams/services.ai.drawio.svg" alt="services.ai.drawio.svg"/>
 </a>
 </p>
 
