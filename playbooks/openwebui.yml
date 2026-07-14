@@ -335,46 +335,26 @@
         return_content: true
       register: admin_signin
 
+    # first user created has admin rights:
+    # https://docs.openwebui.com/features/access-security/rbac/roles#initial-setup
     - name: Create Open WebUI admin user
+      vars:
+        image_url: "{{ openwebui_admin_user.profile_image_url }}"
+        # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/url_lookup.html
+        image_raw: "{{ lookup('ansible.builtin.url', image_url, split_lines=false) }}"
+        image_uri: data:image/png;base64,{{ image_raw | b64encode }}
+      ansible.builtin.uri:
+        method: POST
+        url: "{{ api_base }}/v1/auths/signup"
+        body_format: json
+        body: |
+          {{ openwebui_admin_user | ansible.builtin.combine({
+                'profile_image_url': image_uri,
+             }) }}
+        return_content: true
       when: admin_signin.status != 200
-      block:
-        # first user created has admin rights:
-        # https://docs.openwebui.com/features/access-security/rbac/roles#initial-setup
-        - name: Create Open WebUI admin user
-          vars:
-            image_url: "{{ openwebui_admin_user.profile_image_url }}"
-            # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/url_lookup.html
-            image_raw: "{{ lookup('ansible.builtin.url', image_url, split_lines=false) }}"
-            image_uri: data:image/png;base64,{{ image_raw | b64encode }}
-          ansible.builtin.uri:
-            method: POST
-            url: "{{ api_base }}/v1/auths/signup"
-            body_format: json
-            body: |
-              {{ openwebui_admin_user | combine({
-                   'profile_image_url': image_uri,
-                 }) }}
-            return_content: true
-          register: admin_signup
-          changed_when: true
-
-        - name: Set user default chat model
-          vars:
-            token: "{{ admin_signup.json.token }}"
-          ansible.builtin.uri:
-            method: POST
-            url: "{{ api_base }}/v1/users/user/settings/update"
-            headers:
-              Authorization: Bearer {{ token }}
-            body_format: json
-            body:
-              ui:
-                version: "{{ openwebui_version.json.version }}"
-                system: "{{ openwebui_system_prompt }}"
-                models: "{{ litellm_default_model }}"
-                params: {}
-          retries: 3
-          delay: 3
+      register: admin_signup
+      changed_when: true
 
     - name: Set admin auth_headers fact
       vars:
@@ -398,12 +378,32 @@
         # at the play level
         API_BASE: "{{ api_base }}"
 
-    - name: Get Open WebUI configuration
+    - name: Get Open WebUI user settings
       ansible.builtin.uri:
-        url: "{{ api_base }}/config"
+        url: "{{ api_base }}/v1/users/user/settings"
         headers: "{{ auth_headers }}"
         return_content: true
-      register: openwebui_config
+      register: user_settings
+
+    - name: Set Open WebUI user settings
+      vars:
+        desired:
+          version: "{{ openwebui_version.json.version }}"
+          system: "{{  openwebui_system_prompt }}"
+          models: "{{  litellm_default_model }}"
+          params: {}
+        # https://docs.ansible.com/ansible/latest/collections/community/general/keep_keys_filter.html
+        existing: "{{ [user_settings.json.ui] |
+          community.general.keep_keys(target=desired.keys()) | first }}"
+      ansible.builtin.uri:
+        method: POST
+        url: "{{ api_base }}/v1/users/user/settings/update"
+        headers: "{{ auth_headers }}"
+        body_format: json
+        body: |
+          {{ user_settings.json | ansible.builtin.combine({'ui': desired}) }}
+      when: existing != desired
+      changed_when: true
 
     - name: Get Open WebUI user groups
       ansible.builtin.uri:
@@ -517,6 +517,13 @@
         label: "{{ item.id }}"
       # sets fact: webui_term_servers
 
+    - name: Get Open WebUI configuration
+      ansible.builtin.uri:
+        url: "{{ api_base }}/config"
+        headers: "{{ auth_headers }}"
+        return_content: true
+      register: openwebui_config
+
     - name: Disable prompt suggestions
       vars:
         suggestions: "{{ openwebui_config.json.default_prompt_suggestions }}"
@@ -618,9 +625,10 @@
     - name: Set accounts_knowledge fact
       ansible.builtin.set_fact:
         accounts_knowledge: |
-          {{ get_knowledge.json | ansible.builtin.combine(
-               {'files': knowledge_files | default([]) })
-          if get_knowledge.json is defined else create_knowledge.json }}
+          {{ get_knowledge.json | ansible.builtin.combine({
+               'files': knowledge_files | default([])
+             }) if  get_knowledge.json is defined else
+                 create_knowledge.json }}
 
     - name: Get Open WebUI custom models
       ansible.builtin.uri:

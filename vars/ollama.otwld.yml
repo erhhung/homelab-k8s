@@ -1,6 +1,6 @@
 # https://github.com/otwld/ollama-helm
 ollama_chart_repo_url: https://helm.otwld.com
-ollama_chart_version: "1.60.0"
+ollama_chart_version: "1.66.0"
 
 # https://github.com/otwld/ollama-helm/tree/main/values.yaml
 ollama_chart_values:
@@ -11,7 +11,7 @@ ollama_chart_values:
     repository: docker.io/ollama/ollama
     # empty tag = appVersion
     # https://hub.docker.com/r/ollama/ollama/tags
-    tag: "0.20.3"
+    tag: "0.32.0"
 
   ollama:
     port: "{{ ollama_service_port }}"

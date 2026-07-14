@@ -5,9 +5,9 @@
 **/.ansible/facts/
 **/.env
 **/*.log
+**/*.lock
 **/.venv/
 .python-version
-uv.lock
 temp.yml
 NOTES
 cloc/

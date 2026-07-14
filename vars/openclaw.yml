@@ -58,7 +58,7 @@ openclaw_release_name: openclaw
 # comment out `openclaw_app_version` below
 # to let playbook get chart's `appVersion`
 # https://github.com/openclaw/openclaw/pkgs/container/openclaw/versions?filters%5Bversion_type%5D=tagged
-openclaw_app_version: "2026.6.6"
+openclaw_app_version: "2026.7.1"
 
 # https://github.com/serhanekicii/openclaw-helm/tree/main/charts/openclaw/values.yaml
 openclaw_chart_values:

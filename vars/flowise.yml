@@ -473,7 +473,7 @@ flowise_custom_chatflows:
       openai_cred_id: "{{ external_credentials |
         selectattr('credentialName', '==', 'openAIApi') | map(attribute='id') | first }}"
       openai_model:
-        name: gpt-5.2
+        name: gpt-5.5
         temperature: 0.4
         top_p: 0.5
       memory_window: 5

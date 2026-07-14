@@ -27,12 +27,12 @@
     - name: Install Homebrew formulas
       # https://docs.ansible.com/ansible/latest/collections/community/general/homebrew_module.html
       community.general.homebrew:
+        update_homebrew: false
         name:
           - jo
           - jq
           - uv
           - caddy
-        update_homebrew: true
         state: latest
 
     - name: Create server certificate

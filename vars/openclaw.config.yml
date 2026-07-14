@@ -153,12 +153,11 @@ openclaw_config:
       # https://docs.openclaw.ai/gateway/configuration-reference#agents-defaults-model
       model:
         # prefer ChatGPT subscription
-        primary: openai-codex/gpt-5.5
+        primary: litellm/gpt-5.6-sol
         fallbacks:
-          - litellm/gpt-5.5
-          - litellm/gpt-5.4
-          - litellm/claude-sonnet-4-5
-          - litellm/claude-sonnet-4-6
+          - litellm/gpt-5.6-terra
+          - litellm/claude-opus-4-8
+          - litellm/claude-sonnet-5
       maxConcurrent: 1
       timeoutSeconds: 600
 
@@ -315,15 +314,15 @@ openclaw_config:
         # in vars/litellm.yml
         models:
           # https://platform.openai.com/docs/models
-          - id: gpt-5.5
-            name: GPT-5.5 ⟺ LiteLLM
-          - id: gpt-5.4
-            name: GPT-5.4 ⟺ LiteLLM
+          - id: gpt-5.6-sol
+            name: GPT-5.6 Sol ⟺ LiteLLM
+          - id: gpt-5.6-terra
+            name: GPT-5.6 Terra ⟺ LiteLLM
           # https://www.anthropic.com/claude/sonnet
-          - id: claude-sonnet-4-6
-            name: Claude Sonnet 4.6 ⟺ LiteLLM
-          - id: claude-sonnet-4-5
-            name: Claude Sonnet 4.5 ⟺ LiteLLM
+          - id: claude-opus-4-8
+            name: Claude Opus 4.8 ⟺ LiteLLM
+          - id: claude-sonnet-5
+            name: Claude Sonnet 5 ⟺ LiteLLM
 
   # https://docs.openclaw.ai/gateway/configuration-reference#tools
   tools:
