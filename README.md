@@ -43,50 +43,52 @@ All cluster services will be provisioned with TLS certificates from Erhhung's pr
 
 ## Service Endpoints
 
-|                            Service Endpoint | Description
-|--------------------------------------------:|:----------------------
-|           https://rancher.fourteeners.local | Rancher Server console
-|            https://harbor.fourteeners.local | Harbor OCI registry
-|            https://velero.fourteeners.local | Velero console
-|             https://minio.fourteeners.local | MinIO console
-|                https://s3.fourteeners.local | MinIO S3 API
-|   https://opensearch.fourteeners.local:9200 | OpenSearch
-|            https://kibana.fourteeners.local | OpenSearch Dashboards
-|             postgres.fourteeners.local:5432 | PostgreSQL via Pgpool _(mTLS only)_
-|               https://sso.fourteeners.local | Keycloak IAM console
-|               valkey.fourteeners.local:6379 <br/> valkey<i>{1..6}</i>.fourteeners.local:6379 | Valkey cluster _(mTLS only)_
-|           https://grafana.fourteeners.local | Grafana dashboards
-|           https://metrics.fourteeners.local | Prometheus UI _(Keycloak SSO)_
-|            https://alerts.fourteeners.local | Alertmanager UI _(Keycloak SSO)_
-|            https://thanos.fourteeners.local | Thanos Query UI
-|       https://rule.thanos.fourteeners.local <br/> https://store.thanos.fourteeners.local <br/> https://bucket.thanos.fourteeners.local <br/> https://compact.thanos.fourteeners.local | Thanos components UI
+|                             Service Endpoint | Description
+|---------------------------------------------:|:----------------------
+|            https://rancher.fourteeners.local | Rancher Server console
+|             https://harbor.fourteeners.local | Harbor OCI registry
+|             https://velero.fourteeners.local | Velero console
+|              https://minio.fourteeners.local | MinIO console
+|                 https://s3.fourteeners.local | MinIO S3 API
+|    https://opensearch.fourteeners.local:9200 | OpenSearch
+|             https://kibana.fourteeners.local | OpenSearch Dashboards
+|              postgres.fourteeners.local:5432 | PostgreSQL via Pgpool _(mTLS only)_
+|                https://sso.fourteeners.local | Keycloak IAM console
+|                valkey.fourteeners.local:6379 <br/> valkey<i>{1..6}</i>.fourteeners.local:6379 | Valkey cluster _(mTLS only)_
+|            https://grafana.fourteeners.local | Grafana dashboards
+|            https://metrics.fourteeners.local | Prometheus UI _(Keycloak SSO)_
+|             https://alerts.fourteeners.local | Alertmanager UI _(Keycloak SSO)_
+|             https://thanos.fourteeners.local | Thanos Query UI
+|        https://rule.thanos.fourteeners.local <br/> https://store.thanos.fourteeners.local <br/> https://bucket.thanos.fourteeners.local <br/> https://compact.thanos.fourteeners.local | Thanos components UI
 |               https://slo.fourteeners.local | Pyrra dashboard
-|         grpcs://otlp.fourteeners.local:4317 <br/> https://otlp.fourteeners.local:4318 | OpenTelemetry collector
-|       ~~https://tracing.fourteeners.local~~ | ~~Jaeger UI _(Tempo Query)_~~
-|             https://kiali.fourteeners.local | Kiali console _(Keycloak SSO)_
-|             https://vault.fourteeners.local | Vault UI
-|            https://policy.fourteeners.local | Policy Reporter UI
-|             https://gitea.fourteeners.local | Gitea UI
-|            https://gitlab.fourteeners.local | GitLab UI
-|     ssh://git@gitlab.fourteeners.local:2222 | GitLab SSH Git access
-|    https://*.pages.gitlab.fourteeners.local | GitLab Pages websites
-|           https://jenkins.fourteeners.local | Jenkins UI
-|               https://buildkite.com/erhhung | Buildkite dashboard
-|         grpcs://buildfarm.fourteeners.local | Buildfarm CAS+RBE _(mTLS only)_
-| grpcs://events.buildbuddy.fourteeners.local | BuildBuddy BES _(mTLS only)_
-|        https://buildbuddy.fourteeners.local | BuildBuddy quickstart
-|            https://argocd.fourteeners.local | Argo CD UI
-|               https://awx.fourteeners.local | Ansible AWX UI
-|            https://qdrant.fourteeners.local | Qdrant dashboard
-|            https://search.fourteeners.local | SearXNG search UI
-|          wss://playwright.fourteeners.local | Playwright server
-|            https://ollama.fourteeners.local | Ollama API server
-|           https://litellm.fourteeners.local | LiteLLM dashboard
-|         https://openwebui.fourteeners.local | Open WebUI portal
-|              https://mcpo.fourteeners.local | MCP OpenAPI proxy
-|          https://openclaw.fourteeners.local | OpenClaw control
-|            wss://openclaw.fourteeners.local | OpenClaw gateway
-|           https://flowise.fourteeners.local | Flowise designer
+|          grpcs://otlp.fourteeners.local:4317 <br/> https://otlp.fourteeners.local:4318 | OpenTelemetry collector
+|        ~~https://tracing.fourteeners.local~~ | ~~Jaeger UI _(Tempo Query)_~~
+|              https://kiali.fourteeners.local | Kiali console _(Keycloak SSO)_
+|              https://vault.fourteeners.local | Vault UI
+|             https://policy.fourteeners.local | Policy Reporter UI
+|              https://gitea.fourteeners.local | Gitea UI
+|       ssh://git@gitea.fourteeners.local:2222 | Gitea SSH Git
+|             https://gitlab.fourteeners.local | GitLab UI
+|      ssh://git@gitlab.fourteeners.local:2022 | GitLab SSH Git
+|     https://*.pages.gitlab.fourteeners.local | GitLab Pages
+|            https://jenkins.fourteeners.local | Jenkins UI
+|                https://buildkite.com/erhhung | Buildkite dashboard
+|          grpcs://buildfarm.fourteeners.local | Buildfarm CAS+RBE _(mTLS only)_
+|  grpcs://events.buildbuddy.fourteeners.local | BuildBuddy BES _(mTLS only)_
+|         https://buildbuddy.fourteeners.local | BuildBuddy quickstart
+|             https://argocd.fourteeners.local | Argo CD UI
+|                https://awx.fourteeners.local | Ansible AWX UI
+|             https://qdrant.fourteeners.local | Qdrant dashboard
+|             https://search.fourteeners.local | SearXNG search UI
+|           wss://playwright.fourteeners.local | Playwright server
+|             https://ollama.fourteeners.local | Ollama API server
+|            https://litellm.fourteeners.local | LiteLLM dashboard
+|          https://openwebui.fourteeners.local | Open WebUI portal
+|               https://mcpo.fourteeners.local | MCP OpenAPI proxy
+|           https://openclaw.fourteeners.local | OpenClaw control
+|             wss://openclaw.fourteeners.local | OpenClaw gateway
+|            https://flowise.fourteeners.local | Flowise designer
+| ssh://_user_@opencode.fourteeners.local:1222 | VSCode remote SSH
 
 ## Installation Sources
 
@@ -715,7 +717,17 @@ however, all privileged operations using `sudo` will require the password stored
     ```
 </details>
 
-41. <details><summary>Install <strong>BentoPDF</strong> PDF tools</summary><br/>
+41. <details><summary>Deploy dev container with <strong>OpenCode</strong> agent</summary><br/>
+
+    41.1. Install OpenSSH server for VSCode remote development  
+    41.2. Proxy model access from OpenCode through LiteLLM  
+
+    ```bash
+    make opencode
+    ```
+</details>
+
+42. <details><summary>Install <strong>BentoPDF</strong> PDF tools</summary><br/>
 
     ```bash
     make bentopdf

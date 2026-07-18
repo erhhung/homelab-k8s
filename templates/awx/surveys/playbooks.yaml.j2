@@ -9,4 +9,4 @@ spec:
     variable: PLAYBOOKS
     required: false
     choices: {{ choices | to_json }}
-    default: {{ [defaults] | flatten | join('\n') | to_json }}
+    default: {{ [defaults] | flatten | join(LF) | to_json }}

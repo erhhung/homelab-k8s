@@ -222,7 +222,7 @@ awx_operator_chart_values:
     # spec.bundle_cacert_secret
     bundleCacert:
       enabled: true
-      crt: "{{ ca_certificates | join('\n') }}"
+      crt: "{{ ca_certificates | join(LF) }}"
     # spec.ee_pull_credentials_secret
     eePullCredentials:
       enabled: true

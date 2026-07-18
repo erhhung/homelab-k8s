@@ -244,6 +244,10 @@
   ansible.builtin.import_playbook: playbooks/flowise.yml
   tags: flowise
 
+- name: Include OpenCode dev env playbook
+  ansible.builtin.import_playbook: playbooks/opencode.yml
+  tags: opencode
+
 - name: Include BentoPDF toolkit playbook
   ansible.builtin.import_playbook: playbooks/bentopdf.yml
   tags: bentopdf

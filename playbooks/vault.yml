@@ -370,7 +370,7 @@
       delegate_to: pki
       vars:
         ansible_python_interpreter: "{{ default_python_interpreter }}"
-        txt_data: "{{ unseal_keys | join('\n') ~'\n' }}"
+        txt_data: "{{ unseal_keys | join(LF) ~ LF }}"
         txt_file: /opt/vault-unseal/unseal-keys.txt
         asc_file: /opt/vault-unseal/unseal-keys.asc
       block:

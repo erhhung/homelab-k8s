@@ -205,7 +205,7 @@
           metadata:
             name: kiali-cabundle # expected
           data: # .pem key name is expected
-            additional-ca-bundle.pem: "{{ ca_certificates | join('\n') }}"
+            additional-ca-bundle.pem: "{{ ca_certificates | join(LF) }}"
             openid-server-ca.crt: "" # suppress warning as .pem is enough
         validate:
           fail_on_error: true

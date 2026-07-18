@@ -86,7 +86,7 @@
           - "{{ gitlab_fqdns['gitlab'] }}"
           - "{{ gitlab_service_host    }}"
           - "{{ gitlab_service_host | replace('.'~ cluster_domain, '') }}"
-        bundle: "{{ ca_certificates | join('\n') }}"
+        bundle: "{{ ca_certificates | join(LF)   }}"
         secret_name: "{{ gitlab_secrets['certs'] }}"
         secret_data: |
           {% set files = {'ca.crt': ca_certificates[1]} %}

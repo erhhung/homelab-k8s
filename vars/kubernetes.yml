@@ -91,8 +91,9 @@ nginx_tls_secret: rke2-ingress-nginx-default-tls
 
 nginx_tcp_services:
   # https://kubernetes.github.io/ingress-nginx/user-guide/exposing-tcp-udp-services
-  2022: gitlab/gitlab-gitlab-shell:2022
   2222: gitea/gitea-ssh:2222
+  2022: gitlab/gitlab-gitlab-shell:2022
+  1222: opencode/opencode-dev-container-ssh:1222
 nginx_udp_services: {}
 
 # make sure names match those defined

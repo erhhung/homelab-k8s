@@ -1,0 +1,338 @@
+opencode_namespace: opencode
+opencode_host_name: opencode # alias of "ingress"
+
+# https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_filters.html#products
+opencode_fqdn: "{{ [opencode_host_name] | product(search_domains) | map('join','.') | first }}"
+
+opencode_secrets:
+  secrets: opencode-secrets
+  kubeconfig: opencode-kubeconfig
+
+opencode_configmaps:
+  ca-certs: opencode-ca-certificates
+  ssh-keys: opencode-ssh-public-keys
+  config: opencode-global-config
+
+opencode_dev_container:
+  image: dev-container
+  dev_user: erhhung
+  dev_uid: 1000
+  dev_group: erhhung
+  dev_gid: 1000
+  # make sure SSH port matches value defined by
+  # `nginx_tcp_services` in vars/kubernetes.yml
+  ssh_port: 1222
+
+# use a generic app template chart to host the dev container pod:
+# https://github.com/bjw-s-labs/helm-charts/tree/main/charts/other/app-template
+opencode_chart_repo_url: https://bjw-s-labs.github.io/helm-charts
+opencode_chart_version: "5.0.1"
+opencode_release_name: opencode
+
+# https://github.com/bjw-s-labs/helm-charts/tree/main/charts/library/common/values.yaml
+opencode_chart_values:
+  global:
+    nameOverride: dev-container
+    createDefaultServiceAccount: false
+
+  # https://bjw-s-labs.github.io/helm-charts/docs/app-template/reference/controllers
+  controllers:
+    main:
+      enabled: true
+      type: statefulset
+      revisionHistoryLimit: "{{ k8s_max_revisions }}"
+      replicas: 1
+
+      # while this field isn't documented, the schema does define it and it is rendered:
+      # https://github.com/bjw-s-labs/helm-charts/tree/common-5.0.1/charts/library/common/schemas/controllers.json
+      statefulset:
+        podManagementPolicy: OrderedReady
+        persistentVolumeClaimRetentionPolicy:
+          whenScaled: Retain
+          whenDeleted: Delete
+
+        volumeClaimTemplates:
+          - name: data
+            enabled: true
+            accessMode: ReadWriteOnce
+            storageClass: "{{ storage_classes['default'] }}"
+            size: 2Gi
+
+            advancedMounts:
+              init:
+                - path: /data
+              main:
+                - path: /etc/pki/ca-trust/extracted
+                  subPath: ca-trust
+                  readOnly: true
+                - path: /etc/ssh/host_keys
+                  subPath: host_keys
+                  readOnly: true
+                - path: /home/{{ opencode_dev_container.dev_user }}/.vscode-server
+                  subPath: .vscode-server
+                - path: /home/{{ opencode_dev_container.dev_user }}/workspace
+                  subPath: workspace
+
+      # https://bjw-s-labs.github.io/helm-charts/docs/app-template/reference/controllers/pod
+      pod:
+        terminationGracePeriodSeconds: 10
+
+      # https://bjw-s-labs.github.io/helm-charts/docs/app-template/reference/controllers/initcontainers
+      initContainers:
+        init:
+          enabled: true
+          image: &dev-image
+            pullPolicy: IfNotPresent
+            repository: "{{ harbor_container_registry }}/library/{{ opencode_dev_container.image }}"
+            tag: latest
+          command: ["sh"]
+          args:
+            - -c
+            - |-
+              mkdir -p /data/{ca-trust,host_keys,.vscode-server,workspace}
+              chown {{ opencode_dev_container.dev_user  }}:{{
+                       opencode_dev_container.dev_group }} /data/{.vscode-server,workspace}
+
+              [ -f /data/ca-trust/pem/tls-ca-bundle.pem ] || {
+                echo "Adding certs to ca-trust..."
+                # /etc/pki/ca-trust/source/anchors already mounted
+                update-ca-trust extract
+                cp -a /etc/pki/ca-trust/extracted/* /data/ca-trust
+                echo
+              }
+              head -n 27 /data/ca-trust/pem/tls-ca-bundle.pem
+
+              [ -f /data/host_keys/ssh_host_ed25519_key ] || {
+                echo "Generating SSH host keys..."
+                ssh-keygen -A
+                cp -a /etc/ssh/ssh_host_* /data/host_keys
+                echo
+              }
+              cat /data/host_keys/ssh_host_*_key.pub | sort
+
+      # https://bjw-s-labs.github.io/helm-charts/docs/app-template/reference/controllers/containers
+      containers:
+        main:
+          image:
+            <<: *dev-image
+            pullPolicy: Always
+          env:
+            TZ: "{{ system_time_zone }}"
+          ports:
+            - name: ssh
+              containerPort: "{{ opencode_dev_container.ssh_port }}"
+              protocol: TCP
+
+          # sshd must run as root to perform privilege separation
+          # and to switch authenticated sessions to the dev user;
+          # passwordless sudo requires `allowPrivilegeEscalation`
+          securityContext:
+            runAsUser: 0
+            runAsGroup: 0
+            allowPrivilegeEscalation: true
+            readOnlyRootFilesystem: false
+
+          resources:
+            requests:
+              cpu: 250m
+              memory: 1Gi
+            limits:
+              cpu: 1000m
+              memory: 8Gi
+
+          # liveness probe is unnecessary because sshd runs
+          # as PID 1 and container will restart if it exits
+          probes:
+            readiness:
+              enabled: true
+              custom: true
+              spec:
+                # use `exec` probe instead of `tcpSocket` to prevent
+                # sshd from repeatedly logging premature disconnects
+                exec:
+                  command:
+                    - /bin/sh
+                    - -c
+                    - ss -Hltn 'sport = :{{ opencode_dev_container.ssh_port }}' | grep -q .
+                periodSeconds: 10
+                timeoutSeconds: 5
+                failureThreshold: 3
+
+  # https://bjw-s-labs.github.io/helm-charts/docs/app-template/reference/persistence#type-variants
+  persistence:
+    ca-certs:
+      enabled: true
+      type: configMap
+      name: "{{ opencode_configmaps['ca-certs'] }}"
+      defaultMode: 420 # "0644"
+      advancedMounts:
+        main:
+          init:
+            - path: /etc/pki/ca-trust/source/anchors
+              readOnly: true
+
+    ssh-keys:
+      enabled: true
+      type: configMap
+      name: "{{ opencode_configmaps['ssh-keys'] }}"
+      defaultMode: 292 # "0444"
+      advancedMounts:
+        main:
+          main:
+            # mount individual *.pub files instead of the entire /etc/ssh/authorized_keys
+            # directory because Kubernetes would then give that directory 777 permissions,
+            # and with `StrictModes` being default, sshd would reject all containing keys:
+            # https://www.man7.org/linux/man-pages/man5/sshd_config.5.html
+            - path: /etc/ssh/authorized_keys/{{ opencode_dev_container.dev_user }}.pub
+              subPath: "{{ opencode_dev_container.dev_user }}.pub"
+              readOnly: true
+
+    secrets:
+      enabled: true
+      type: secret
+      name: "{{ opencode_secrets['secrets'] }}"
+      defaultMode: 292 # "0444"
+      advancedMounts:
+        main:
+          main:
+            - path: /run/secrets
+              readOnly: true
+
+    config:
+      enabled: true
+      type: configMap
+      name: "{{ opencode_configmaps['config'] }}"
+      defaultMode: 420 # "0644"
+      advancedMounts:
+        main:
+          main:
+            # https://opencode.ai/docs/config#global
+            - path: /home/{{ opencode_dev_container.dev_user }}/.config/opencode/opencode.json
+              subPath: opencode.json
+              readOnly: true
+
+    kubeconfig:
+      enabled: "{{ vcluster_kubeconfig is truthy }}"
+      type: secret
+      name: "{{ opencode_secrets['kubeconfig'] }}"
+      defaultMode: 420 # "0644"
+      advancedMounts:
+        main:
+          main:
+            - path: /home/{{ opencode_dev_container.dev_user }}/.kube/config
+              subPath: config
+
+    # NFS mount for file sharing between local desktop and
+    # the dev container (this is separate from ~/workspace,
+    # which support FS events when OpenCode makes changes)
+    nfs-share:
+      enabled: true
+      type: nfs
+      server: "{{ homelab_nfs.server }}"
+      path: "{{   homelab_nfs.base_path }}/opencode"
+      advancedMounts:
+        main:
+          main:
+            - path: /home/{{ opencode_dev_container.dev_user }}/nfs-share
+
+  service:
+    main:
+      suffix: ssh
+      enabled: true
+      primary: true
+      controller: main
+      type: ClusterIP
+      ports:
+        # TCP traffic will be forwarded by Nginx ingress controller
+        # as defined by `nginx_tcp_services` in vars/kubernetes.yml
+        ssh:
+          primary: true
+          protocol: TCP
+          port: "{{ opencode_dev_container.ssh_port }}"
+
+# config will be rendered as JSON and mounted
+# at "$XDG_CONFIG_HOME/opencode/opencode.json"
+# https://opencode.ai/docs/config
+opencode_config:
+  # OpenCode is baked into the Docker image,
+  # so a pod restart will lose any updates:
+  # https://opencode.ai/docs/config#autoupdate
+  autoupdate: false
+
+  # https://opencode.ai/docs/providers#custom-provider
+  provider:
+    litellm:
+      npm: "@ai-sdk/openai" # /responses API
+      name: LiteLLM
+      options:
+        baseURL: "{{ litellm_service_url }}/v1"
+        # https://opencode.ai/docs/config#files
+        apiKey: "{file:/run/secrets/LITELLM_API_KEY}"
+
+        # overall request timeout in ms
+        timeout: 600000 # 10m
+        # timeout between streamed response chunks
+        chunkTimeout: 60000 # 1m
+
+      # model auto-discovery hasn't been implemented
+      # yet, so manually list models to pass through:
+      # https://github.com/anomalyco/opencode/issues/6231
+      models: |
+        {% set models = {} %}
+        {% for model in litellm_models %}
+        {%   if model.litellm_params['model'] is match('^chatgpt') %}
+        {%     set _ = models.update({model.model_name: {}}) %}
+        {%   endif %}
+        {% endfor  %}
+        {{ models  }}
+
+  # only allow models proxied via LiteLLM:
+  # https://opencode.ai/docs/config#enabled-providers
+  enabled_providers:
+    - litellm
+
+  # https://opencode.ai/docs/config#models
+  model: litellm/gpt-5.6-sol
+  small_model: litellm/gpt-5.6-luna
+
+  # https://opencode.ai/docs/config#shell
+  shell: bash
+
+  # never share conversations
+  # on OpenCode cloud servers:
+  # https://opencode.ai/docs/share
+  # https://opencode.ai/docs/config#sharing
+  share: disabled
+
+  # https://opencode.ai/docs/config#watcher
+  watcher:
+    ignore:
+      - .git/**
+      - .venv/**
+      - node_modules/**
+      - build/**
+      - dist/**
+      - bazel-*
+
+  # preserve context automatically
+  # while removing old tool output:
+  # https://opencode.ai/docs/config#compaction
+  compaction:
+    auto: true
+    prune: true
+
+  # https://opencode.ai/docs/permissions
+  # https://opencode.ai/docs/config#permissions
+  permission:
+    # https://opencode.ai/docs/permissions#external-directories
+    external_directory:
+      ~/workspace/**: allow
+      ~/nfs-share/**: allow
+
+    bash:
+      "*": allow
+      "sudo*": ask
+      "rm -rf*": ask
+      "git push*": ask
+      "git clean*": ask
+      "git reset --hard*": ask

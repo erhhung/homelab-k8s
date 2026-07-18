@@ -208,8 +208,8 @@
         create_ns: false
         secret_data:
           # pem_chain fact set by tasks/k8s/secrets/tls.pki.yml
-          # above contains both intermediate and root CA certs
-          cacerts.pem: "{{ pem_chain[1:] | join('\n') }}"
+          # contains both intermediate and root CA certs
+          cacerts.pem: "{{ pem_chain[1:] | join(LF) }}"
       ansible.builtin.include_tasks: "{{ tasks_dir }}/k8s/secrets/generic.yml"
 
     # https://ranchermanager.docs.rancher.com/getting-started/installation-and-upgrade/install-upgrade-on-a-kubernetes-cluster#install-the-rancher-helm-chart

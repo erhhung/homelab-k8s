@@ -17,6 +17,8 @@
             context_dir: "{{ files_dir }}/awx/ee/tiny"
           - image_name: awx-ee-xcp
             context_dir: "{{ files_dir }}/awx/ee/xcp"
+
+        # === Inputs ===
         image_name: "{{  item.image_name  }}"
         dockerfile: "{{  item.dockerfile  }}"
         context_dir: "{{ item.context_dir }}"

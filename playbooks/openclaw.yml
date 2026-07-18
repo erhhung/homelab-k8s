@@ -100,7 +100,7 @@
         set -o pipefail
 
         npm view "{{ item.package }}@{{ item.version }}" \
-          dist.integrity dist.shasum --json | jq '{
+          dist.integrity dist.shasum --json | jq '.[0] | {
             plugin:     "{{ item.id }}",
             integrity: ."dist.integrity",
             shasum:    ."dist.shasum",

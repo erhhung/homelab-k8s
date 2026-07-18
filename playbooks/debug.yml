@@ -187,8 +187,8 @@
              multiline=true) }}
         secret:
           # tls.crt: host and intermediate CA certs
-          tls.crt: "{{ chain[:-1] | join('\n') }}"
-          ca.crt: "{{  chain[-1:] | join('\n') }}"
+          tls.crt: "{{ chain[:-1] | join(LF) }}"
+          ca.crt: "{{  chain[-1:] | join(LF) }}"
       ansible.builtin.debug:
         var: secret
 

@@ -47,7 +47,7 @@
     - name: Show pods deployed in namespace
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/debug_module.html
       ansible.builtin.debug:
-        msg: "{{ user_pods | join('\n') }}"
+        msg: "{{ user_pods | join(LF) }}"
       when: user_pods is truthy
 
     - name: Prompt for confirmation

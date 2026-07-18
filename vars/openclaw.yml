@@ -483,7 +483,7 @@ openclaw_chart_values:
       data:
         type: nfs
         server: "{{ homelab_nfs.server }}"
-        path: "{{ homelab_nfs.base_path }}/openclaw"
+        path: "{{   homelab_nfs.base_path }}/openclaw"
         advancedMounts:
           main:
             init-deps: &data-dir

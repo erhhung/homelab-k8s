@@ -174,12 +174,14 @@ pfsense_dns_records:
         desc: MCP OpenAPI Proxy
       - host: mcp
         desc: MCP OpenAPI Proxy
-      - host: flowise
-        desc: Flowise Designer
       - host: openclaw
         desc: OpenClaw Control UI
       - host: agents
         desc: OpenClaw Control UI
+      - host: flowise
+        desc: Flowise Designer
+      - host: opencode
+        desc: OpenCode Dev Env
       - host: bentopdf
         desc: BentoPDF Toolkit
       - host: pdf
@@ -193,12 +195,12 @@ pfsense_dns_records:
     aliases:
       - host: nginxpt
         desc: RKE Nginx Ingress (SSL Passthrough)
-      - host: testing
+      - host: dev
         domain: "{{ vcluster_subdomain }}"
-        desc: vCluster "testing"
-      - host: staging
+        desc: vCluster "dev"
+      - host: test
         domain: "{{ vcluster_subdomain }}"
-        desc: vCluster "staging"
+        desc: vCluster "test"
 
   - ip: 192.168.4.224
     host: opensearch

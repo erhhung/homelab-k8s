@@ -59,7 +59,7 @@
 
     - name: Create MinIO CA certs secret
       vars:
-        ca_chain: "{{ ca_certificates | join('\n') }}"
+        ca_chain: "{{ ca_certificates | join(LF) }}"
         secret_name: "{{ item.name }}"
         secret_data:
           # must use name "public.crt"
