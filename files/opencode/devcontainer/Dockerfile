@@ -23,6 +23,12 @@ RUN --mount=type=bind,source=profile.sh,target=/tmp/profile.sh \
   && dnf clean all \
   && rm -rf /var/log/* /var/cache/dnf \
   \
+  # restore binary login-accounting files:
+  # https://linuxhandbook.com/utmp-wtmp-btmp
+  && touch /var/log/{btmp,wtmp,lastlog} \
+  && chmod  664 /var/log/{wtmp,lastlog} \
+  && chmod  600 /var/log/btmp \
+  \
   # https://opencode.ai/docs#install
   && pnpm --config.updateNotifier=false install \
        -g --allow-build=opencode-ai opencode-ai \

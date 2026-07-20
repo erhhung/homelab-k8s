@@ -28,6 +28,21 @@ pam_limits:
     domain: "*"
     value: 1048576
 
+# add /etc/apparmor.d/local/<profile>
+# files to override AppArmor profiles
+apparmor_overrides:
+  # when AppArmor profile `buildah` is applied to container running sshd, SSH
+  # login fails due to PAM (pam_unix.so) failing to run /usr/sbin/unix_chkpwd
+  # because `unix-chkpwd` profile denies CAP_DAC_OVERRIDE:
+  # sudo journalctl -k --since "10 minutes ago" | grep -E 'apparmor="DENIED"'
+  # apparmor="DENIED" operation="capable" class="cap" profile="unix-chkpwd"
+  #      pid=2235742 comm="unix_chkpwd" capability=1 capname="dac_override"
+  # workaround is to add `dac_override` capability:
+  # https://github.com/roddhjav/apparmor.d/issues/958
+  # https://github.com/moby/moby/issues/48734
+  - profile: unix-chkpwd
+    content: capability dac_override,
+
 # only necessary if hosts are not rebooted after
 # drivers get installed by packages.yml playbook
 # run "lsmod | grep <driver>" to check if driver

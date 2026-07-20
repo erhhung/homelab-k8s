@@ -699,6 +699,8 @@ actions_chart_values:
     replicas: 1
     timezone: "{{ system_time_zone }}"
 
+    # schedule on the node that has the
+    # most memory and ephemeral storage
     affinity:
       nodeAffinity:
         # preferredDuringSchedulingIgnoredDuringExecution:

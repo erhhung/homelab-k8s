@@ -27,12 +27,15 @@
     - vars/kubernetes.yml
     - vars/storage.yml
     - vars/litellm.yml
+    - vars/gitea.yml
+    - vars/gitlab.yml
     - vars/opencode.yml
   vars:
     # required kubernetes>=24.2 package only in user virtualenv
     ansible_python_interpreter: "{{ venv_python_interpreter }}"
     kubeconfig: "{{ rke_kubeconfig }}"
     secret_ns: "{{ opencode_namespace }}"
+    home_dir: /home/{{ opencode_dev_container.dev_user }}
   pre_tasks:
     - name: Get CA certificates from PKI
       ansible.builtin.include_tasks: "{{ tasks_dir }}/pki/cacerts.yml"
@@ -71,10 +74,20 @@
   tasks:
     - name: Create OpenCode secrets secret
       vars:
+        ssh_keys: |
+          {% set keys = {} %}
+          {% for file in ['erhhung.pem', 'id_ed25519_auth'] %}
+          {#   https://docs.ansible.com/ansible/latest/collections/ansible/builtin/unvault_lookup.html #}
+          {%   set _ = keys.update({file: lookup('ansible.builtin.unvault', files_dir ~'/erhhung/'~ file)}) %}
+          {% endfor %}
+          {{ keys   }}
         secret_name: "{{ opencode_secrets['secrets'] }}"
         secret_data:
-          gnupg.tar: "{{ gnupg_tar_b64.stdout | b64decode }}"
-          AGE_SECRET_KEY: "{{ age_secret_key }}"
+          ssh_config: "{{ opencode_ssh_config }}"
+          erhhung.pem: "{{     ssh_keys['erhhung.pem']     }}"
+          id_ed25519_auth: "{{ ssh_keys['id_ed25519_auth'] }}"
+          gnupg.tar: "{{ gnupg_tar_b64.stdout | b64decode  }}"
+          AGE_SECRET_KEY: "{{   age_secret_key }}"
           LITELLM_API_KEY: "{{ litellm_api_key }}"
           GITHUB_ACCESS_TOKEN: "{{ github_access_token }}"
       ansible.builtin.include_tasks: "{{ tasks_dir }}/k8s/secrets/generic.yml"

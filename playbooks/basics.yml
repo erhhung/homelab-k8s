@@ -86,7 +86,7 @@
       changed_when: update_grub.rc == 0
       failed_when: update_grub.rc not in [0,9]
 
-    - name: Adjust Linux kernel parameters
+    - name: Adjust Linux kernel parameter
       # https://docs.ansible.com/ansible/latest/collections/ansible/posix/sysctl_module.html
       ansible.posix.sysctl:
         name: "{{ item.key }}"
@@ -100,7 +100,7 @@
         extended: true
         label: "{{ item.key }}"
 
-    - name: Adjust process resource limits
+    - name: Adjust process resource limit
       vars:
         # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/dict2items_filter.html
         items: "{{ pam_limits | ansible.builtin.dict2items(key_name='item', value_name='spec') }}"
@@ -116,14 +116,36 @@
       loop_control:
         label: "{{ item.item }}"
 
+    - name: Add AppArmor profile override
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/copy_module.html
+      ansible.builtin.copy:
+        dest: /etc/apparmor.d/local/{{ item.profile }}
+        content: "{{ item.content }}"
+        mode: "0644"
+      loop: "{{ apparmor_overrides }}"
+      loop_control:
+        label: "{{ item.profile }}"
+      register: apparmor_d_local
+      notify: Reload local AppArmor profile
+
     # only necessary if hosts are not rebooted after
     # drivers get installed by packages.yml playbook
-    - name: Load installed kernel modules
+    - name: Load installed kernel module
       # https://docs.ansible.com/ansible/latest/collections/community/general/modprobe_module.html
       community.general.modprobe:
         name: "{{ item }}"
         state: present
       loop: "{{ modprobe }}"
+  handlers:
+    - name: Reload local AppArmor profile
+      vars:
+        changes: "{{ apparmor_d_local.results | selectattr('changed') }}"
+        profile: "{{ item | replace('/local/', '/') }}"
+      ansible.builtin.command: apparmor_parser -r {{ profile }}
+      loop: "{{ changes | map(attribute='dest') }}"
+      loop_control:
+        label: "{{ item | basename }}"
+      changed_when: true
 
 - name: Configure network settings
   tags: network
@@ -271,12 +293,11 @@
         - /etc/update-motd.d/60-unminimize
 
     - name: Skip a line after all MOTDs
-      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/copy_module.html
       ansible.builtin.copy:
+        dest: /etc/update-motd.d/99-skip-line
         content: |
           #!/bin/sh
           echo
-        dest: /etc/update-motd.d/99-skip-line
         mode: "0755"
 
 - name: Manage Linux users and groups
@@ -322,8 +343,8 @@
   tasks:
     - name: Add certs to trust store
       ansible.builtin.copy:
-        content: "{{ ca_certificates[i] ~'\n' }}"
         dest: /usr/local/share/ca-certificates/fourteeners_{{ item }}.crt
+        content: "{{ ca_certificates[i] ~ LF }}"
         mode: "0644"
       loop:
         - intermediate_ca

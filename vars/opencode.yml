@@ -68,16 +68,33 @@ opencode_chart_values:
                 - path: /etc/ssh/host_keys
                   subPath: host_keys
                   readOnly: true
-                - path: /home/{{ opencode_dev_container.dev_user }}/.gnupg
+                - path: "{{ home_dir }}/.gnupg"
                   subPath: .gnupg
-                - path: /home/{{ opencode_dev_container.dev_user }}/.vscode-server
+                - path: "{{ home_dir }}/.vscode-server"
                   subPath: .vscode-server
-                - path: /home/{{ opencode_dev_container.dev_user }}/workspace
+                - path: "{{ home_dir }}/workspace"
                   subPath: workspace
 
       # https://bjw-s-labs.github.io/helm-charts/docs/app-template/reference/controllers/pod
       pod:
         terminationGracePeriodSeconds: 10
+
+        # schedule on the node that has the
+        # most memory and ephemeral storage
+        affinity:
+          nodeAffinity:
+            # preferredDuringSchedulingIgnoredDuringExecution:
+            #   - weight: 100
+            #     preference:
+            #       matchExpressions:
+            #         - key: node-role.kubernetes.io/runner
+            #           operator: Exists
+            requiredDuringSchedulingIgnoredDuringExecution:
+              nodeSelectorTerms:
+                - matchExpressions:
+                    # label defined in vars/kubernetes.yml
+                    - key: node-role.kubernetes.io/runner
+                      operator: Exists
 
       # https://bjw-s-labs.github.io/helm-charts/docs/app-template/reference/controllers/initcontainers
       initContainers:
@@ -130,6 +147,13 @@ opencode_chart_values:
           image:
             <<: *dev-image
             pullPolicy: Always
+          command: ["sh"]
+          args:
+            - -c
+            - |-
+              # FIX syslogin_perform_logout logout returned an error
+              install -o root -g utmp -m 664 /dev/null /var/run/utmp
+              exec /usr/sbin/sshd -D -e
           env:
             TZ: "{{ system_time_zone }}"
           ports:
@@ -145,14 +169,20 @@ opencode_chart_values:
             runAsGroup: 0
             allowPrivilegeEscalation: true
             readOnlyRootFilesystem: false
+            # allow building OCI images using Buildah
+            appArmorProfile:
+              type: Localhost
+              localhostProfile: buildah
 
           resources:
             requests:
-              cpu: 250m
-              memory: 1Gi
+              cpu: 500m
+              memory: 2Gi
+              ephemeral-storage: 40Gi
             limits:
-              cpu: 1000m
-              memory: 8Gi
+              cpu: 2000m
+              memory: 10Gi
+              ephemeral-storage: 40Gi
 
           # liveness probe is unnecessary because sshd runs
           # as PID 1 and container will restart if it exits
@@ -201,7 +231,7 @@ opencode_chart_values:
               subPath: "{{ opencode_dev_container.dev_user }}.pub"
               readOnly: true
 
-    secrets:
+    secrets1: &secrets
       enabled: true
       type: secret
       name: "{{ opencode_secrets['secrets'] }}"
@@ -212,6 +242,28 @@ opencode_chart_values:
             - path: /run/secrets/gnupg.tar
               subPath: gnupg.tar
               readOnly: true
+          main:
+            - path: "{{ home_dir }}/.ssh/config"
+              subPath: ssh_config
+              readOnly: true
+            - path: "{{ home_dir }}/.ssh/erhhung.pem"
+              subPath: erhhung.pem
+              readOnly: true
+            - path: "{{ home_dir }}/.ssh/id_ed25519_auth"
+              subPath: id_ed25519_auth
+              readOnly: true
+
+    secrets2:
+      <<: *secrets
+      items:
+        - key: AGE_SECRET_KEY
+          path: AGE_SECRET_KEY
+        - key: LITELLM_API_KEY
+          path: LITELLM_API_KEY
+        - key: GITHUB_ACCESS_TOKEN
+          path: GITHUB_ACCESS_TOKEN
+      advancedMounts:
+        main:
           main:
             - path: /run/secrets
               readOnly: true
@@ -225,7 +277,7 @@ opencode_chart_values:
         main:
           main:
             # https://opencode.ai/docs/config#global
-            - path: /home/{{ opencode_dev_container.dev_user }}/.config/opencode/opencode.json
+            - path: "{{ home_dir }}/.config/opencode/opencode.json"
               subPath: opencode.json
               readOnly: true
 
@@ -237,7 +289,7 @@ opencode_chart_values:
       advancedMounts:
         main:
           main:
-            - path: /home/{{ opencode_dev_container.dev_user }}/.kube/config-vclusters
+            - path: "{{ home_dir }}/.kube/config-vclusters"
               subPath: config
               readOnly: true
 
@@ -252,7 +304,7 @@ opencode_chart_values:
       advancedMounts:
         main:
           main:
-            - path: /home/{{ opencode_dev_container.dev_user }}/nfs-share
+            - path: "{{ home_dir }}/nfs-share"
 
   service:
     main:
@@ -268,6 +320,35 @@ opencode_chart_values:
           primary: true
           protocol: TCP
           port: "{{ opencode_dev_container.ssh_port }}"
+
+opencode_ssh_config: |
+  Host *
+    LogLevel error
+    AddressFamily inet
+    ServerAliveInterval 30
+    ServerAliveCountMax 2
+    StrictHostKeyChecking no
+    GSSAPIAuthentication no
+    IdentitiesOnly yes
+    ForwardAgent yes
+    TCPKeepAlive yes
+    IPQoS throughput
+
+  Host rancher k8s? i?mbp cosmos
+    HostName %h.fourteeners.local
+    User erhhung
+    # Ansible expects "$USER.pem"
+    IdentityFile ~/.ssh/erhhung.pem
+
+  Host {{ gitea_fqdns | first }}
+    Port {{ gitea_ssh_port }}
+    User git
+    IdentityFile ~/.ssh/id_ed25519_auth
+
+  Host {{ gitlab_fqdns['gitlab'] }}
+    Port {{ gitlab_shell_port }}
+    User git
+    IdentityFile ~/.ssh/id_ed25519_auth
 
 # config will be rendered as JSON and mounted
 # at "$XDG_CONFIG_HOME/opencode/opencode.json"

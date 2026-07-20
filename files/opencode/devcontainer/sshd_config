@@ -11,6 +11,7 @@ HostKey /etc/ssh/host_keys/ssh_host_ed25519_key
 PubkeyAuthentication yes
 PasswordAuthentication no
 KbdInteractiveAuthentication no
+UsePAM yes # required on Fedora
 
 PermitRootLogin no
 AllowUsers ${DEV_USER}
