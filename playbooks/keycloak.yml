@@ -57,7 +57,7 @@
         "{{ scripts_dir }}/gzage.sh" "$tmp_file"
 
         # --no-name ignores timestamp!
-        gzip -9ncq "$sql_file" | base64
+        gzip -9ncq "$sql_file" | base64 -w0
         rm   -f    "$sql_file"
       args:
         executable: "{{ local_bash_interpreter }}"

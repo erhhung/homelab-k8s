@@ -81,7 +81,7 @@
         "{{ scripts_dir }}/gzage.sh" "$tmp_file"
 
         # --no-name ignores timestamp!
-        jo name="{{ filename }}" data="$(gzip -9ncq "$src_file" | base64)"
+        jo name="{{ filename }}" data="$(gzip -9ncq "$src_file" | base64 -w0)"
         rm -f "$src_file"
       args: &local-shell-args
         executable: "{{ local_bash_interpreter }}"

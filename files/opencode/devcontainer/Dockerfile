@@ -13,17 +13,28 @@ ARG SSH_PORT="22"
 USER root
 
 RUN --mount=type=bind,source=profile.sh,target=/tmp/profile.sh \
-  dnf install -y sudo openssh-server \
+    --mount=type=bind,source=.bash_profile,target=/tmp/.bash_profile \
+    --mount=type=bind,source=.dircolors,target=/tmp/.dircolors \
+    --mount=type=bind,source=.lessopen,target=/tmp/.lessopen   \
+    --mount=type=bind,source=.gitconfig,target=/tmp/.gitconfig \
+  \
+  dnf install --allowerasing -y \
+     openssh-server sudo gnupg2 \
   && dnf clean all \
   && rm -rf /var/log/* /var/cache/dnf \
   \
   # https://opencode.ai/docs#install
   && pnpm --config.updateNotifier=false install \
        -g --allow-build=opencode-ai opencode-ai \
+       gitmoji-cli \
   \
-  # create non-root user for remote SSH
-  && groupadd --gid "${DEV_GID}" "${DEV_GROUP}" \
-  &&  useradd --uid "${DEV_UID}" --gid "${DEV_GID}" \
+  # copy dot files into /root to be inherited by dev user
+  && tail -n+2 /tmp/.bash_profile >> /root/.bash_profile \
+  && cp /tmp/.dircolors /tmp/.lessopen /root \
+  \
+  # create non-root user for SSH, using /root as template
+  && groupadd --gid "${DEV_GID}"       "${DEV_GROUP}" \
+  &&  useradd --uid "${DEV_UID}" --gid "${DEV_GID}"   \
       --create-home --skel /root --shell /bin/bash "${DEV_USER}" \
   \
   # enable passwordless sudo for dev user
@@ -37,7 +48,10 @@ RUN --mount=type=bind,source=profile.sh,target=/tmp/profile.sh \
          <(grep -vE '^#' /tmp/profile.sh   \
                | sed  '/^[[:space:]]*$/d') \
                | sort | sed 's/^/export /' \
-   > /etc/profile.d/user.sh
+   > /etc/profile.d/user.sh \
+  \
+  # copy dot files directly into dev user's home directory
+  && tail -n+2 /tmp/.gitconfig >> /home/${DEV_USER}/.gitconfig
 
 # install custom sshd_config file
 RUN --mount=type=bind,source=sshd_config,target=/tmp/sshd_config \

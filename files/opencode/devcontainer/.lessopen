@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+#
+# custom $LESSOPEN filter that colorizes file/stdin using pygmentize
+#
+# see ~/.bash_profile for relevant LESS* variables
+# as well as l() function that provides $LESSLEXER
+
+file=$(basename "$1")
+# use file extension if lexer
+# is not explicitly specified
+lexer="${LESSLEXER:-${file##*.}}"
+style="${PYGMENT_STYLE:-one-dark}"
+
+case "$lexer" in
+  yaml|yml)
+    style='native'
+    ;;
+esac
+
+_pygmentize() {
+  pygmentize -f 256 "$@" -O style="$style" 2> /dev/null
+}
+bash_shebang() {
+  head -1 "$1" | grep -Eq '^#!.*\b(ba)?sh' 2> /dev/null
+}
+
+if [ "$1" == '-' ]; then
+  # stdin: guess lexer ("-g") unless explicitly specified
+  [ "$lexer" ] && _pygmentize -l $lexer || _pygmentize -g
+
+elif [ -r "$1" ]; then
+  # file is readable
+  case "$lexer" in
+    *json)
+      jq -C . "$1"
+      ;;
+    *sh|bash*)
+      _pygmentize -l sh "$1"
+      ;;
+    *)
+      bash_shebang "$1" && _pygmentize -l sh "$1" \
+                        || _pygmentize       "$1"
+  esac
+else
+  exit 1
+fi

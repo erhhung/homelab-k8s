@@ -244,6 +244,7 @@
   ansible.builtin.import_playbook: playbooks/flowise.yml
   tags: flowise
 
+# OpenCode depends on LiteLLM
 - name: Include OpenCode dev env playbook
   ansible.builtin.import_playbook: playbooks/opencode.yml
   tags: opencode

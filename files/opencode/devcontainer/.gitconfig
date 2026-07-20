@@ -1,0 +1,6 @@
+# this file is APPENDED to $HOME/.gitconfig from the base image
+
+[user]
+name = Erhhung Yuan
+email = erhhung@gmail.com
+signingkey = B9C45C9F62942408

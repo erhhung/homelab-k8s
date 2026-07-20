@@ -56,7 +56,7 @@ opencode_chart_values:
             enabled: true
             accessMode: ReadWriteOnce
             storageClass: "{{ storage_classes['default'] }}"
-            size: 2Gi
+            size: 5Gi
 
             advancedMounts:
               init:
@@ -68,6 +68,8 @@ opencode_chart_values:
                 - path: /etc/ssh/host_keys
                   subPath: host_keys
                   readOnly: true
+                - path: /home/{{ opencode_dev_container.dev_user }}/.gnupg
+                  subPath: .gnupg
                 - path: /home/{{ opencode_dev_container.dev_user }}/.vscode-server
                   subPath: .vscode-server
                 - path: /home/{{ opencode_dev_container.dev_user }}/workspace
@@ -109,6 +111,18 @@ opencode_chart_values:
                 echo
               }
               cat /data/host_keys/ssh_host_*_key.pub | sort
+              echo
+
+              [ -d /data/.gnupg ] || {
+                echo "Installing GnuPG keyring..."
+                tar -xf /run/secrets/gnupg.tar -C /data
+                chown -R {{ opencode_dev_container.dev_user  }}:{{
+                            opencode_dev_container.dev_group }} /data/.gnupg
+                find /data/.gnupg -type d -exec chmod 0700 {} \;
+                find /data/.gnupg -type f -exec chmod 0600 {} \;
+                echo
+              }
+              ls -l /data/.gnupg
 
       # https://bjw-s-labs.github.io/helm-charts/docs/app-template/reference/controllers/containers
       containers:
@@ -194,6 +208,10 @@ opencode_chart_values:
       defaultMode: 292 # "0444"
       advancedMounts:
         main:
+          init:
+            - path: /run/secrets/gnupg.tar
+              subPath: gnupg.tar
+              readOnly: true
           main:
             - path: /run/secrets
               readOnly: true
@@ -219,8 +237,9 @@ opencode_chart_values:
       advancedMounts:
         main:
           main:
-            - path: /home/{{ opencode_dev_container.dev_user }}/.kube/config
+            - path: /home/{{ opencode_dev_container.dev_user }}/.kube/config-vclusters
               subPath: config
+              readOnly: true
 
     # NFS mount for file sharing between local desktop and
     # the dev container (this is separate from ~/workspace,

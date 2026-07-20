@@ -47,11 +47,33 @@
     - name: Get vCluster kubeconfig data
       ansible.builtin.include_tasks: "{{ tasks_dir }}/vcluster/kubeconfig.yml"
       # sets fact: vcluster_kubeconfig
+
+    - name: Read Erhhung's GnuPG keyring
+      delegate_to: localhost
+      vars:
+        age_file: "{{ files_dir }}/erhhung/gnupg.tar.gz.age"
+        # use the default Python interpreter on Ansible controller
+        ansible_python_interpreter: "{{ default_python_interpreter }}"
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/shell_module.html
+      ansible.builtin.shell: |
+        age_file="{{ age_file }}"
+        tmp_file="/tmp/$(basename "$age_file")"
+        tar_file="${tmp_file%.gz.age}"
+
+        cp -f "$age_file"            "$tmp_file"
+        "{{ scripts_dir }}/gzage.sh" "$tmp_file"
+        base64 -i "$tar_file" -w0
+        rm     -f "$tar_file"
+      args:
+        executable: "{{ local_bash_interpreter }}"
+      register: gnupg_tar_b64
+      changed_when: false
   tasks:
     - name: Create OpenCode secrets secret
       vars:
         secret_name: "{{ opencode_secrets['secrets'] }}"
         secret_data:
+          gnupg.tar: "{{ gnupg_tar_b64.stdout | b64decode }}"
           AGE_SECRET_KEY: "{{ age_secret_key }}"
           LITELLM_API_KEY: "{{ litellm_api_key }}"
           GITHUB_ACCESS_TOKEN: "{{ github_access_token }}"
