@@ -1,6 +1,3 @@
-# VS Code thinks "buildkite.yml" is Buildkite configuration,
-# so explicitly set schema from https://www.schemastore.org:
-# yaml-language-server: $schema=https://raw.githubusercontent.com/ansible/ansible-lint/main/src/ansiblelint/schemas/vars.json
 ---
 # buildkite_access_token: {vault.yml}
 # buildkite_agent_token:  {vault.yml}

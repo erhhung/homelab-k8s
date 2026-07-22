@@ -5,7 +5,7 @@
 # shellcheck disable=SC2206 # Quote to avoid word splitting
 # shellcheck disable=SC2015 # A && B || C isn't if-then-else
 # shellcheck disable=SC2012 # find is better at non-alphanum
-# shellcheck disable=SC2034 # Variable appears unused
+# shellcheck disable=SC2034 # The variable appears unused
 
 # show root path of current (super) project
 git_root() {

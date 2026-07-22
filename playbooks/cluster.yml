@@ -1,6 +1,3 @@
-# VS Code thinks "cluster.yml" is RKE cluster configuration,
-# so explicitly set schema from https://www.schemastore.org:
-# yaml-language-server: $schema=https://raw.githubusercontent.com/ansible/ansible-lint/main/src/ansiblelint/schemas/ansible.json
 ---
 # https://docs.rke2.io/install/quickstart
 - name: Install RKE2 using role
@@ -67,7 +64,7 @@
     - name: Merge kubeconfig into local
       run_once: true
       vars:
-        kubeconfig: "{{ rke_kubeconfig }}"
+        kubeconfig_in: "{{ rke_kubeconfig }}"
         context: "{{ rke_cluster_name }}"
         server: https://{{ rke_fqdns | first }}:6443
       ansible.builtin.include_tasks: "{{ tasks_dir }}/k8s/kubeconfig.yml"

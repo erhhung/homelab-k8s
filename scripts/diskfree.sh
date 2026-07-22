@@ -48,6 +48,11 @@ printf -v header "${COL_FMT}" NODE DISK CAPACITY \
   ALLOCATABLE AVAILABLE SCHEDULABLE SCHEDULED RESERVED
 echo; title "${YELLOW}${header}${NOCLR}"
 
+kubectl() {
+  ssh k8s1 -- /var/lib/rancher/rke2/bin/kubectl \
+     --kubeconfig /etc/rancher/rke2/rke2.yaml "$@"
+}
+
 kubectl get nodes.longhorn.io -n longhorn-system -o json | \
   jq -r '.items[] as $node
   |  $node.metadata.name            as $name

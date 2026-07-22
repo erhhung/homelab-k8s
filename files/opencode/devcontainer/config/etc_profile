@@ -1,0 +1,32 @@
+# shellcheck disable=SC2148 # Tips depend on target shell
+# shellcheck disable=SC2034 # The variable appears unused
+
+PS1="\[\033[1;36m\]$USER\[\033[1;31m\]@\[\033[1;32m\]\h:\[\033[1;35m\]\w\[\033[1;31m\]$\[\033[0m\] "
+
+# only works once VSCode remote SSH server
+# is dynamically installed upon connection
+EDITOR="code --wait"
+VISUAL="$EDITOR"
+
+LESS="-RFKMi -x4 -z-4"
+LESS_ADVANCED_PREPROCESSOR=1
+# LESSOPEN="|-$HOME/.lessopen %s"
+# LESSCOLORIZER=pygmentize
+LESSCHARSET=utf-8
+LESSQUIET=1
+
+DELTA_PAGER="less -RFKLMin"
+BAT_PAGER="less -RFKLMin"
+BAT_THEME="Visual Studio Dark+"
+BAT_STYLE=grid,numbers
+
+MISE_ENV_FILE=.env
+GREP_OPTIONS="--color=auto"
+
+# secret key from Secret-mounted volume
+AGE_KEY_FILE=/run/secrets/AGE_SECRET_KEY
+GPG_TTY="$(tty)"
+
+# $XDG_CACHE_HOME is on different filesystem than /workspace,
+# so suppress warning about failing to create hardlink files
+UV_LINK_MODE=copy

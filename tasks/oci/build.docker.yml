@@ -15,6 +15,7 @@
         # no idempotency
         rebuild: always
         pull: true
+      timeout: 1200
 
     - name: Tag image "{{ local_image }}" for Habor
       # https://docs.ansible.com/ansible/latest/collections/community/docker/docker_image_tag_module.html
@@ -58,7 +59,7 @@
       # https://docs.ansible.com/ansible/latest/collections/community/docker/docker_image_push_module.html
       community.docker.docker_image_push:
         name: "{{ remote_name }}"
-      timeout: 600
+      timeout: 900
       retries: 3
       delay: 10
 

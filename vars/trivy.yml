@@ -295,7 +295,7 @@ trivy_adapter_chart_values:
       enabled: false
     configAuditReports:
       enabled: true
-      timeout: 5
+      timeout: 10
     complianceReports:
       enabled: false
 

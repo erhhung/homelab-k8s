@@ -1,7 +1,3 @@
-# VS Code thinks "pipeline.yml" is Erda pipeline definition,
-# so explicitly set schema from https://www.schemastore.org:
-# yaml-language-server: $schema=https://raw.githubusercontent.com/ansible/ansible-lint/main/src/ansiblelint/schemas/ansible.json
-
 # create or update Buildkite pipeline
 #
 # pass the following vars:

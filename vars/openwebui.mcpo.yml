@@ -237,7 +237,7 @@ mcpo_chart_values:
           - awslabs.aws-api-mcp-server@latest
         # https://awslabs.github.io/mcp/servers/aws-api-mcp-server#%EF%B8%8F-configuration-options
         env:
-          AWS_REGION: "{{            aws_profiles['homelab'].region     }}"
-          AWS_ACCESS_KEY_ID: "{{     aws_profiles['homelab'].access_key }}"
-          AWS_SECRET_ACCESS_KEY: "{{ aws_profiles['homelab'].secret_key }}"
+          AWS_REGION: "{{            aws_profiles['personal'].region     }}"
+          AWS_ACCESS_KEY_ID: "{{     aws_profiles['personal'].access_key }}"
+          AWS_SECRET_ACCESS_KEY: "{{ aws_profiles['personal'].secret_key }}"
           READ_OPERATIONS_ONLY: "true" # also enforced by user IAM policy

@@ -40,7 +40,9 @@ __av() (
   }
   file=$(realpath "$file")
   cd "$(git_root)" || exit
-  export EDITOR=$(which emacs)
+  [ "$EDITOR" ] || \
+    export EDITOR=$(command -v emacs) || \
+    export EDITOR=$(command -v vi)
   ansible-vault "$cmd" "$file"
 )
 ev() { __av edit    "${1:-$(git_root)/$VAULTFILE}"; }

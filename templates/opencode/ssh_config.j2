@@ -1,0 +1,27 @@
+Host *
+  LogLevel error
+  AddressFamily inet
+  ServerAliveInterval 30
+  ServerAliveCountMax 2
+  StrictHostKeyChecking no
+  GSSAPIAuthentication no
+  IdentitiesOnly yes
+  ForwardAgent yes
+  TCPKeepAlive yes
+  IPQoS throughput
+
+Host rancher k8s? i?mbp cosmos
+  HostName %h.fourteeners.local
+  User erhhung
+  # Ansible expects "$USER.pem"
+  IdentityFile ~/.ssh/erhhung.pem
+
+Host {{ gitea_fqdns | first }}
+  Port {{ gitea_ssh_port }}
+  User git
+  IdentityFile ~/.ssh/id_ed25519_auth
+
+Host {{ gitlab_fqdns['gitlab'] }}
+  Port {{ gitlab_shell_port }}
+  User git
+  IdentityFile ~/.ssh/id_ed25519_auth
