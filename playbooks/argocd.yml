@@ -189,20 +189,20 @@
     # https://git-scm.com/docs/git-credential-store
     - name: Create Git creds secret for CMP
       vars:
-        github_creds: erhhung:{{ github_access_token }}
         gitea_creds: erhhung:{{ gitea_tokens['erhhung-repos'] }}
         gitlab_creds: erhhung:{{ gitlab_pats['repos'] }}
+        github_creds: erhhung:{{ github_access_token  }}
 
         # === Inputs ===
         secret_name: "{{ argocd_secrets['git-creds'] }}"
         secret_data:
           # https://git-scm.com/docs/git-credential-store#_storage_format
           .git-credentials: |
-            https://{{ github_creds }}@github.com/erhhung/
-            https://{{  gitea_creds }}@{{ gitea_fqdns[0] }}
-            https://{{  gitea_creds }}@{{ gitea_service_host }}:{{ gitea_service_port }}
+            https://{{  gitea_creds }}@{{ gitea_fqdns | first }}
+            https://{{  gitea_creds }}@{{ gitea_service_host  }}:{{ gitea_service_port }}
             https://{{ gitlab_creds }}@{{ gitlab_fqdns['gitlab'] }}
             https://{{ gitlab_creds }}@{{ gitlab_service_host }}:{{ gitlab_service_port }}
+            https://{{ github_creds }}@github.com/erhhung/
       ansible.builtin.include_tasks: "{{ tasks_dir }}/k8s/secrets/generic.yml"
 
     # https://github.com/getsops/sops#encrypting-using-age

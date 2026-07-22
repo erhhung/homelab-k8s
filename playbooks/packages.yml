@@ -35,7 +35,8 @@
           # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/apt_module.html
           ansible.builtin.apt:
             name: "{{ item.packages }}"
-            state: present
+            # noqa package-latest
+            state: latest
             update_cache: true
             force_apt_get: true
             install_recommends: false
@@ -112,9 +113,10 @@
     - name: Install useful Helm plugins
       # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/helm_plugin_module.html
       kubernetes.core.helm_plugin:
-        plugin_name: "{{ item.name | default(omit) }}"
-        plugin_path: "{{ item.path | default(omit) }}"
-        state: "{{ item.state | default('present') }}"
+        plugin_name: "{{ item.name   | default(omit) }}"
+        plugin_path: "{{ item.path   | default(omit) }}"
+        verify: "{{      item.verify | default(true) }}"
+        state: "{{       item.state  | default('present') }}"
       loop: "{{ helm_plugins }}"
 
 - name: Install apps from GitHub releases

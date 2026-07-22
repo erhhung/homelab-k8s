@@ -1,0 +1,34 @@
+[default]
+# MinIO: {{ minio_s3api_fqdn }}
+cli_auto_prompt = on-partial
+ca_bundle = /etc/pki/tls/cert.pem
+region = {{ minio_region }}
+services = minio
+
+[services minio]
+s3 =
+  endpoint_url = {{ minio_public_url }}
+  addressing_style = path
+  signature_version = s3v4
+  # CLI file transfer concurrency
+  max_concurrent_requests = 50
+  max_queue_size = 5000
+  # use multipart above threshold
+  multipart_threshold = 10MB
+  multipart_chunksize = 10MB
+  # disable for local environment
+  use_accelerate_endpoint = false
+
+[profile personal]
+# {{ aws_profiles['personal'].account_id }}: erhhung-personal
+cli_auto_prompt = on-partial
+region = {{ aws_profiles['personal'].region }}
+s3 =
+  # CLI file transfer concurrency
+  max_concurrent_requests = 100
+  max_queue_size = 5000
+  # use multipart above threshold
+  multipart_threshold = 1GB
+  multipart_chunksize = 32MB
+  # disable for local environment
+  use_accelerate_endpoint = false

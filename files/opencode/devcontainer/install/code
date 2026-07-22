@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+
+# this script launches the VSCode executable in the dev container, if available.
+# it is intended to be run from the remote VSCode session's integrated terminal.
+
+code="${VSCODE_GIT_ASKPASS_NODE%/node}/bin/remote-cli/code"
+if [ -x "$code" ]; then exec $code --reuse-window "$@"; fi
+echo >&2 "Cannot find remote VSCode executable!"; exit 1

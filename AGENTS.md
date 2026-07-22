@@ -1,4 +1,4 @@
-# Repository Guide
+# Repository Guidance
 
 ## Safety
 
@@ -8,7 +8,7 @@
 
 ## Execution Model
 
-- `main.yml` is the dependency-ordered deployment graph. Keep its initial localhost play and `# ======= DO NOT REMOVE =======`; it establishes `project_dir` for all later imports.
+- `main.yml` is the dependency-ordered deployment graph. Keep its first localhost play, including the `DO NOT REMOVE` marker, because it establishes `project_dir` for imported playbooks and shared paths.
 - `make <tag> [<tag>...]` selects top-level tags from `main.yml`, always runs them in `main.yml` order, and does not add their dependencies. Check the dependency comments in `main.yml` before selecting a subset.
 - A lone `tag-` runs from that tag to the end; a lone `-tag` runs from the beginning through that tag. Pass Ansible options after `--`, for example `make monitoring -- --check` or `make openwebui -- -t knowledge`. Range selectors cannot be combined with other tags.
 - Running every playbook requires a second pass from `certmanager` after `monitoring` has installed Prometheus Operator CRDs; otherwise earlier services cannot create their `ServiceMonitor` resources.

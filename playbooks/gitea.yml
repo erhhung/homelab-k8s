@@ -166,7 +166,9 @@
         label: "{{ item.key }}"
 
 - name: Build Actions runner image
-  tags: build
+  tags:
+    - actions
+    - build
   hosts: localhost
   vars_files:
     - vars/gitea.yml
@@ -181,7 +183,9 @@
       ansible.builtin.include_tasks: "{{ tasks_dir }}/oci/build.yml"
 
 - name: Configure Gitea Actions runner
-  tags: runner
+  tags:
+    - actions
+    - runner
   hosts: "{{ rke_control_plane_host }}"
   vars_files:
     - vars/kubernetes.yml

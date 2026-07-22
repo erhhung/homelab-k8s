@@ -12,65 +12,65 @@ ARG SSH_PORT="22"
 
 USER root
 
-RUN --mount=type=bind,source=profile.sh,target=/tmp/profile.sh \
-    --mount=type=bind,source=.bash_profile,target=/tmp/.bash_profile \
-    --mount=type=bind,source=.dircolors,target=/tmp/.dircolors \
-    --mount=type=bind,source=.lessopen,target=/tmp/.lessopen   \
-    --mount=type=bind,source=.gitconfig,target=/tmp/.gitconfig \
-  \
-  dnf install --allowerasing -y \
-     openssh-server sudo gnupg2 \
-  && dnf clean all \
-  && rm -rf /var/log/* /var/cache/dnf \
-  \
-  # restore binary login-accounting files:
-  # https://linuxhandbook.com/utmp-wtmp-btmp
-  && touch /var/log/{btmp,wtmp,lastlog} \
-  && chmod  664 /var/log/{wtmp,lastlog} \
-  && chmod  600 /var/log/btmp \
-  \
-  # https://opencode.ai/docs#install
-  && pnpm --config.updateNotifier=false install \
-       -g --allow-build=opencode-ai opencode-ai \
-       gitmoji-cli \
-  \
-  # copy dot files into /root to be inherited by dev user
-  && tail -n+2 /tmp/.bash_profile >> /root/.bash_profile \
-  && cp /tmp/.dircolors /tmp/.lessopen /root \
-  \
-  # create non-root user for SSH, using /root as template
-  && groupadd --gid "${DEV_GID}"       "${DEV_GROUP}" \
-  &&  useradd --uid "${DEV_UID}" --gid "${DEV_GID}"   \
-      --create-home --skel /root --shell /bin/bash "${DEV_USER}" \
-  \
-  # enable passwordless sudo for dev user
-  && echo "${DEV_USER} ALL=(ALL) NOPASSWD:ALL" \
-             > /etc/sudoers.d/${DEV_USER} \
-  && chmod 440 /etc/sudoers.d/${DEV_USER} \
-  \
-  # propagate environment vars to dev user
-  && cat <(env | grep -vE '^(USER|HOME|PWD|OLDPWD|SHLVL|_)' \
-               | sed 's|/root/|$HOME/|g')  \
-         <(grep -vE '^#' /tmp/profile.sh   \
-               | sed  '/^[[:space:]]*$/d') \
-               | sort | sed 's/^/export /' \
-   > /etc/profile.d/user.sh \
-  \
-  # copy dot files directly into dev user's home directory
-  && tail -n+2 /tmp/.gitconfig >> /home/${DEV_USER}/.gitconfig
+RUN --mount=type=bind,readonly,source=install,target=/install \
+    --mount=type=bind,readonly,source=config,target=/config \
+<<EOF
+dnf install -y --allowerasing sudo gnupg2 openssh-server
+dnf clean all
+rm -rf /var/log/* /var/cache/dnf
+
+# restore binary login-accounting files:
+# https://linuxhandbook.com/utmp-wtmp-btmp
+touch /var/log/{btmp,wtmp,lastlog}
+chmod  664 /var/log/{wtmp,lastlog}
+chmod  600 /var/log/btmp
+
+# install VSCode wrapper script
+cp /install/code /usr/local/bin
+# install helpful dev utilities
+for install in /install/*.sh; do $install; done
+
+# https://opencode.ai/docs#install
+# https://github.com/carloscuesta/gitmoji-cli
+pnpm --config.updateNotifier=false install \
+  -g --allow-build=opencode-ai gitmoji-cli \
+                   opencode-ai
+
+# copy dot files into /root to be inherited by dev user
+tail -n+2 /config/.bash_profile >> /root/.bash_profile
+cp /config/{.dircolors,.lessopen}  /root
+
+# create dev user using /root as template
+groupadd --gid "${DEV_GID}" "${DEV_GROUP}"
+ useradd --uid "${DEV_UID}" --gid "${DEV_GID}" "${DEV_USER}" \
+         --create-home --skel /root --shell /bin/bash
+
+# enable passwordless sudo for dev user
+echo "${DEV_USER} ALL=(ALL) NOPASSWD:ALL" \
+        > /etc/sudoers.d/${DEV_USER}
+chmod 440 /etc/sudoers.d/${DEV_USER}
+
+# propagate environment vars to dev user
+cat <(env | grep -vE '^(USER|HOME|PWD|OLDPWD|SHLVL|_)' \
+          | sed  's|/root/|$HOME/|g')   \
+    <(grep -vE '^#' /config/etc_profile \
+          | sed  '/^[[:space:]]*$/d') \
+          | sort | sed 's/^/export /' \
+    > /etc/profile.d/user.sh
+
+# copy dot files directly into dev user`s home directory
+tail -n+2 /config/.gitconfig >> /home/${DEV_USER}/.gitconfig
+
+# suppress login banner by masking /usr/lib/motd.d/30-banner with
+# empty /etc/motd.d/30-banner  because pam_motd (/etc/pam.d/sshd)
+# gives /etc/motd.d precedence over /usr/lib/motd.d
+ln -sf /dev/null /etc/motd.d/30-banner
 
 # install custom sshd_config file
-RUN --mount=type=bind,source=sshd_config,target=/tmp/sshd_config \
-  SSH_PORT="${SSH_PORT}" \
-  DEV_USER="${DEV_USER}" \
-  envsubst < /tmp/sshd_config > /etc/ssh/sshd_config.d/10-devcontainer.conf \
-  \
-  && mkdir -p /etc/ssh/host_keys /etc/ssh/authorized_keys \
-  \
-  # suppress login banner by masking /usr/lib/motd.d/30-banner with
-  # empty /etc/motd.d/30-banner  because pam_motd (/etc/pam.d/sshd)
-  # gives /etc/motd.d precedence over /usr/lib/motd.d
-  && ln -sf /dev/null /etc/motd.d/30-banner
+mkdir -p /etc/ssh/{host_keys,authorized_keys}
+SSH_PORT="${SSH_PORT}" DEV_USER="${DEV_USER}"
+envsubst < /config/sshd_config > /etc/ssh/sshd_config.d/10-devcontainer.conf
+EOF
 
 EXPOSE ${SSH_PORT}
 

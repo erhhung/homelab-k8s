@@ -720,7 +720,8 @@ however, all privileged operations using `sudo` will require the password stored
 41. <details><summary>Deploy dev container with <strong>OpenCode</strong> agent</summary><br/>
 
     41.1. Install OpenSSH server for VSCode remote development  
-    41.2. Proxy model access from OpenCode through LiteLLM  
+    41.2. Customize remote terminal UX to match local desktop  
+    41.3. Proxy model access from OpenCode through LiteLLM  
 
     ```bash
     make opencode

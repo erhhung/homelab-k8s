@@ -75,6 +75,22 @@ opencode_chart_values:
                 - path: "{{ home_dir }}/workspace"
                   subPath: workspace
 
+          - name: containers
+            enabled: true
+            accessMode: ReadWriteOnce
+            storageClass: "{{ storage_classes['single'] }}"
+            size: 25Gi
+
+            advancedMounts:
+              init:
+                - path: /containers
+              main:
+                # storage for Buildah-created images/containers
+                - path: "{{ home_dir }}/.local/share/containers"
+                  subPath: "{{ opencode_dev_container.dev_user }}"
+                - path: /var/lib/containers
+                  subPath: root
+
       # https://bjw-s-labs.github.io/helm-charts/docs/app-template/reference/controllers/pod
       pod:
         terminationGracePeriodSeconds: 10
@@ -108,9 +124,13 @@ opencode_chart_values:
           args:
             - -c
             - |-
-              mkdir -p /data/{ca-trust,host_keys,.vscode-server,workspace}
-              chown {{ opencode_dev_container.dev_user  }}:{{
-                       opencode_dev_container.dev_group }} /data/{.vscode-server,workspace}
+              U={{ opencode_dev_container.dev_user  }}
+              G={{ opencode_dev_container.dev_group }}
+
+              [ -d /data/ca-trust  ] || \
+                mkdir -p /data/{ca-trust,host_keys}
+              [ -d /data/workspace ] || \
+                install -o $U -g $G -m 700 -d /data/{workspace,.vscode-server}
 
               [ -f /data/ca-trust/pem/tls-ca-bundle.pem ] || {
                 echo "Adding certs to ca-trust..."
@@ -131,15 +151,19 @@ opencode_chart_values:
               echo
 
               [ -d /data/.gnupg ] || {
-                echo "Installing GnuPG keyring..."
-                tar -xf /run/secrets/gnupg.tar -C /data
-                chown -R {{ opencode_dev_container.dev_user  }}:{{
-                            opencode_dev_container.dev_group }} /data/.gnupg
+                echo "Restoring GnuPG keyring..."
+                tar  -xf /run/secrets/gnupg.tar -C /data
+                chown -R $U:$G /data/.gnupg
                 find /data/.gnupg -type d -exec chmod 0700 {} \;
                 find /data/.gnupg -type f -exec chmod 0600 {} \;
                 echo
               }
               ls -l /data/.gnupg
+
+              [ -d /containers/$U   ] || \
+                install -o $U -g $G -m 700 -d /containers/$U
+              [ -d /containers/root ] || \
+                mkdir -p /containers/root
 
       # https://bjw-s-labs.github.io/helm-charts/docs/app-template/reference/controllers/containers
       containers:
@@ -153,6 +177,9 @@ opencode_chart_values:
             - |-
               # FIX syslogin_perform_logout logout returned an error
               install -o root -g utmp -m 664 /dev/null /var/run/utmp
+
+              # -D: run in foreground for monitoring
+              # -e: output error messages to stderr
               exec /usr/sbin/sshd -D -e
           env:
             TZ: "{{ system_time_zone }}"
@@ -252,6 +279,15 @@ opencode_chart_values:
             - path: "{{ home_dir }}/.ssh/id_ed25519_auth"
               subPath: id_ed25519_auth
               readOnly: true
+            - path: "{{ home_dir }}/.git-credentials"
+              subPath: .git-credentials
+              readOnly: true
+            - path: "{{ home_dir }}/.aws/config"
+              subPath: aws_config
+              readOnly: true
+            - path: "{{ home_dir }}/.aws/credentials"
+              subPath: aws_credentials
+              readOnly: true
 
     secrets2:
       <<: *secrets
@@ -305,6 +341,15 @@ opencode_chart_values:
         main:
           main:
             - path: "{{ home_dir }}/nfs-share"
+            # these dot folders were created manually on the
+            # NFS server so conversational history and other
+            # state can be preserved across pod restarts
+            - path: "{{ home_dir }}/.config/opencode"
+              subPath: .config
+            - path: "{{ home_dir }}/.local/share/opencode"
+              subPath: .share
+            - path: "{{ home_dir }}/.local/state/opencode"
+              subPath: .state
 
   service:
     main:
@@ -320,35 +365,6 @@ opencode_chart_values:
           primary: true
           protocol: TCP
           port: "{{ opencode_dev_container.ssh_port }}"
-
-opencode_ssh_config: |
-  Host *
-    LogLevel error
-    AddressFamily inet
-    ServerAliveInterval 30
-    ServerAliveCountMax 2
-    StrictHostKeyChecking no
-    GSSAPIAuthentication no
-    IdentitiesOnly yes
-    ForwardAgent yes
-    TCPKeepAlive yes
-    IPQoS throughput
-
-  Host rancher k8s? i?mbp cosmos
-    HostName %h.fourteeners.local
-    User erhhung
-    # Ansible expects "$USER.pem"
-    IdentityFile ~/.ssh/erhhung.pem
-
-  Host {{ gitea_fqdns | first }}
-    Port {{ gitea_ssh_port }}
-    User git
-    IdentityFile ~/.ssh/id_ed25519_auth
-
-  Host {{ gitlab_fqdns['gitlab'] }}
-    Port {{ gitlab_shell_port }}
-    User git
-    IdentityFile ~/.ssh/id_ed25519_auth
 
 # config will be rendered as JSON and mounted
 # at "$XDG_CONFIG_HOME/opencode/opencode.json"

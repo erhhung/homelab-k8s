@@ -27,6 +27,7 @@
     - vars/kubernetes.yml
     - vars/storage.yml
     - vars/litellm.yml
+    - vars/minio.yml
     - vars/gitea.yml
     - vars/gitlab.yml
     - vars/opencode.yml
@@ -46,6 +47,14 @@
         secret_key: "{{ opencode_dev_container.dev_user }}"
       ansible.builtin.include_tasks: "{{ tasks_dir }}/litellm/apikey.yml"
       # sets fact: litellm_api_key
+
+    - name: Get tokens from Gitea secret
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/gitea/tokens.yml"
+      # sets fact: gitea_tokens
+
+    - name: Get PATs from GitLab secret
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/gitlab/tokens/pats.yml"
+      # sets fact: gitlab_pats
 
     - name: Get vCluster kubeconfig data
       ansible.builtin.include_tasks: "{{ tasks_dir }}/vcluster/kubeconfig.yml"
@@ -81,12 +90,30 @@
           {%   set _ = keys.update({file: lookup('ansible.builtin.unvault', files_dir ~'/erhhung/'~ file)}) %}
           {% endfor %}
           {{ keys   }}
+        # https://git-scm.com/docs/git-credential-store
+        gitea_creds: erhhung:{{ gitea_tokens['erhhung-repos'] }}
+        gitlab_creds: erhhung:{{ gitlab_pats['repos'] }}
+        github_creds: erhhung:{{ github_access_token  }}
+
+        # === Inputs ===
         secret_name: "{{ opencode_secrets['secrets'] }}"
         secret_data:
-          ssh_config: "{{ opencode_ssh_config }}"
+          # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/template_lookup.html
+          ssh_config: "{{ lookup('ansible.builtin.template', templates_dir ~ '/opencode/ssh_config.j2') }}"
+
           erhhung.pem: "{{     ssh_keys['erhhung.pem']     }}"
           id_ed25519_auth: "{{ ssh_keys['id_ed25519_auth'] }}"
           gnupg.tar: "{{ gnupg_tar_b64.stdout | b64decode  }}"
+
+          # https://git-scm.com/docs/git-credential-store#_storage_format
+          .git-credentials: |
+            https://{{  gitea_creds }}@{{ gitea_fqdns | first }}
+            https://{{ gitlab_creds }}@{{ gitlab_fqdns['gitlab'] }}
+            https://{{ github_creds }}@github.com/erhhung/
+
+          aws_config: "{{      lookup('ansible.builtin.template', templates_dir ~ '/aws/config.j2')      }}"
+          aws_credentials: "{{ lookup('ansible.builtin.template', templates_dir ~ '/aws/credentials.j2') }}"
+
           AGE_SECRET_KEY: "{{   age_secret_key }}"
           LITELLM_API_KEY: "{{ litellm_api_key }}"
           GITHUB_ACCESS_TOKEN: "{{ github_access_token }}"

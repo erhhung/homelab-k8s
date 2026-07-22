@@ -38,6 +38,7 @@
       ansible.builtin.command:
         argv: "{{ argv | flatten }}"
       changed_when: true
+      timeout: 1200
 
     - name: Tag image "{{ local_image }}" for Habor
       ansible.builtin.command:
@@ -91,7 +92,7 @@
           - push
           - "{{ remote_name }}"
       changed_when: true
-      timeout: 600
+      timeout: 900
       retries: 3
       delay: 10
 
