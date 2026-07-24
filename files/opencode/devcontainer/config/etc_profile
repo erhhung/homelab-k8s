@@ -20,8 +20,10 @@ BAT_PAGER="less -RFKLMin"
 BAT_THEME="Visual Studio Dark+"
 BAT_STYLE=grid,numbers
 
-MISE_ENV_FILE=.env
 GREP_OPTIONS="--color=auto"
+# load .env in any dir:
+# https://mise.jdx.dev/environments#env-file
+MISE_ENV_FILE=.env
 
 # secret key from Secret-mounted volume
 AGE_KEY_FILE=/run/secrets/AGE_SECRET_KEY

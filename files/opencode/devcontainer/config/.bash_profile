@@ -11,6 +11,9 @@ stty -ixon
 
 . <(dircolors -b "$HOME/.dircolors")
 
+# https://mise.jdx.dev/cli/activate.html#mise-activate
+. <(mise activate bash)
+
 # clear terminal buffer and screen
 c() { printf '\e[2J\e[3J\e[H'; }
 
