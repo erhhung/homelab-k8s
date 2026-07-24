@@ -280,7 +280,11 @@
               strategicMergePatches: "{{ patchsets['merge_patches'] }}"
               jsonPatches: "{{           patchsets[ 'json_patches'] }}"
               transformers: "{{          patchsets[ 'transformers'] }}"
-              postRenderer: "{{ post_renderer if post_renderers is truthy else '' }}"
+
+              # "helm-post" is Helm v4 wrapper plugin installed by the
+              # "packages.yml" playbook (see "plugins/helm/helm-post")
+              postRenderer: "{{        'helm-post'  if post_renderers is truthy else '' }}"
+              postRendererArgs: "{{ [post_renderer] if post_renderers is truthy else [] }}"
 
               # related: see `--suppress` added to diffArgs
               suppressOutputLineRegex: "{{ ignore_lines }}"

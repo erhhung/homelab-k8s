@@ -1,0 +1,16 @@
+# this plugin serves as a Helm v3 bridge for executing an arbitrary
+# post-renderer script. since the --post-renderer option in Helm v4
+# identifies a plugin name instead of an executable path, plugin.sh
+# will simply invoke the actual post-renderer script path specified
+# by the --post-renderer-args option.
+#
+# https://helm.sh/docs/plugins/overview#postrenderer-plugins
+---
+apiVersion: v1
+type: postrenderer/v1
+name: helm-post
+version: 0.1.0
+runtime: subprocess
+runtimeConfig:
+  platformCommand:
+    - command: ${HELM_PLUGIN_DIR}/plugin.sh

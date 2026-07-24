@@ -61,7 +61,7 @@
       register: cat_kubeconfig
       changed_when: false
 
-    - name: Merge kubeconfig into local
+    - name: Merge into local kubeconfig
       run_once: true
       vars:
         kubeconfig_in: "{{ rke_kubeconfig }}"

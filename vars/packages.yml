@@ -109,10 +109,12 @@ pip_packages:
   - kubernetes # required by kubernetes.core.k8s
   - kubernetes-validate
 
-# {name, path, verify, state} all fields optional:
+# {name, path, state, verify} all fields optional:
 # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/helm_plugin_module.html
 helm_plugins:
   - path: https://github.com/databus23/helm-diff
     verify: false
   - path: https://github.com/aslafy-z/helm-git
     verify: false
+  # Helm v4-to-v3 bridge for post-renderers
+  - path: "{{ plugins_dir }}/helm/helm-post"

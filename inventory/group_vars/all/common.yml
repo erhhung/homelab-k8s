@@ -36,6 +36,7 @@ manifests_dir: "{{ project_dir }}/manifests"
 files_dir: "{{ project_dir }}/files"
 icons_dir: "{{ project_dir }}/images/icons"
 scripts_dir: "{{ project_dir }}/scripts"
+plugins_dir: "{{ project_dir }}/plugins"
 
 # standard IETF BCP 47 notation
 system_locale: en-US

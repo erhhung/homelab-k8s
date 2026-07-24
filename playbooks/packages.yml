@@ -108,16 +108,85 @@
           export PATH="$HOME/.venv/bin:$PATH"
         mode: "0644"
 
-    # plugins are installed in the user's home
+    # plugins are installed in the user's $HOME
     # directory under .local/share/helm/plugins
-    - name: Install useful Helm plugins
-      # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/helm_plugin_module.html
-      kubernetes.core.helm_plugin:
-        plugin_name: "{{ item.name   | default(omit) }}"
-        plugin_path: "{{ item.path   | default(omit) }}"
-        verify: "{{      item.verify | default(true) }}"
-        state: "{{       item.state  | default('present') }}"
-      loop: "{{ helm_plugins }}"
+    - name: Install helpful Helm plugins
+      become: false
+      vars:
+        needs_tar: "{{ helm_plugins | selectattr('path', 'search', '^/') }}"
+        staging_dir: /tmp/plugins
+      block:
+        - name: Create local plugin tarballs
+          when: needs_tar is truthy
+          delegate_to: localhost
+          run_once: true
+          block:
+            - name: Create tarballs staging dir
+              # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/file_module.html
+              ansible.builtin.file:
+                path: "{{ staging_dir }}"
+                state: directory
+              changed_when: false
+
+            - name: Create local plugin tarball
+              vars:
+                plugin: "{{ item.path | basename }}"
+                tar_gz: "{{ plugin }}.tar.gz"
+              ansible.builtin.shell:
+                # Helm expects plugin tarball to contain top-level folder
+                cmd: tar -czf {{ staging_dir }}/{{ tar_gz }} {{ plugin }}
+                chdir: "{{ item.path | dirname }}"
+              loop: "{{ needs_tar }}"
+              loop_control:
+                label: "{{ tar_gz }}"
+              changed_when: false
+
+        - name: Stage tarballs in remote dir
+          ansible.builtin.copy:
+            src: "{{  staging_dir }}/"
+            dest: "{{ staging_dir }}/"
+          when: needs_tar is truthy
+          changed_when: false
+
+        - name: Install helpful Helm plugins
+          vars:
+            plugins: |
+              {% set plugins = [] %}
+              {% for p in helm_plugins  %}
+              {%   set plugin = {}      %}
+              {%   if p.path is defined %}
+              {%     set p_name  = p.path | basename %}
+              {%     if  p.path is search('^/') %}
+              {%       set p_path = staging_dir ~'/'~ p_name ~'.tar.gz' %}
+              {%       set _ = plugin.update({
+                         'name': p_name,
+                         'path': p_path,
+                       })  %}
+              {%     else  %}
+              {%       set _ = plugin.update({
+                         'external': true,
+                         'name':   p_name,
+                         'path':   p.path,
+                       })  %}
+              {%     endif %}
+              {%   endif   %}
+              {%   set _ = plugins.append(plugin | combine({
+                     'state':  p.state  | default('present'),
+                     'verify': p.verify | default(plugin.external is defined),
+                   }))   %}
+              {% endfor  %}
+              {{ plugins }}
+            plugin: "{{ plugins[i] }}"
+          # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/helm_plugin_module.html
+          kubernetes.core.helm_plugin:
+            plugin_name: "{{   item.name | default(omit) }}"
+            plugin_path: "{{ plugin.path | default(omit) }}"
+            state: "{{       plugin.state  }}"
+            verify: "{{      plugin.verify }}"
+          loop: "{{ helm_plugins }}"
+          loop_control:
+            index_var: i
+            label: "{{ item.name | default(plugin.name) }}"
 
 - name: Install apps from GitHub releases
   tags:

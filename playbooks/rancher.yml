@@ -60,7 +60,7 @@
         - path: "{{ containerd_socket }}"
           mode: "0666"
 
-    - name: Merge kubeconfig into local
+    - name: Merge into local kubeconfig
       vars:
         kubeconfig_in: "{{ k3s_kubeconfig }}"
         context: "{{ k3s_cluster_name }}"
