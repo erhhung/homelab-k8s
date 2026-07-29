@@ -12,6 +12,8 @@ ARG SSH_PORT="22"
 
 USER root
 
+SHELL ["/bin/bash", "-e", "-o", "pipefail", "-c"]
+
 RUN --mount=type=bind,readonly,source=install,target=/install \
     --mount=type=bind,readonly,source=config,target=/config \
 <<EOF

@@ -1,3 +1,5 @@
+# IMPORTANT! all variable assignments must be on one line
+
 # shellcheck disable=SC2148 # Tips depend on target shell
 # shellcheck disable=SC2034 # The variable appears unused
 
@@ -24,6 +26,17 @@ GREP_OPTIONS="--color=auto"
 # load .env in any dir:
 # https://mise.jdx.dev/environments#env-file
 MISE_ENV_FILE=.env
+
+# https://github.com/junegunn/fzf#environment-variables
+FZF_DEFAULT_OPTS="--multi --pointer=▶ --marker=• --height=33% --layout=reverse --border=rounded --info=inline-right --color=prompt:bright-cyan:bold,header:bright-green,pointer:bright-red:bold,marker:yellow:bold"
+# https://github.com/junegunn/fzf#key-bindings-for-command-line
+FZF_CTRL_R_OPTS="--header 'Ctrl-/ to toggle PREVIEW' --preview 'echo {}' --preview-window up:3:hidden:wrap --bind 'ctrl-/:toggle-preview'"
+# https://github.com/lincheney/fzf-tab-completion#autocomplete-common-prefix
+FZF_COMPLETION_AUTO_COMMON_PREFIX=true
+FZF_COMPLETION_AUTO_COMMON_PREFIX_PART=true
+
+# https://github.com/ajeetdsouza/zoxide#environment-variables
+_ZO_DATA_DIR="$XDG_DATA_HOME/zoxide"
 
 # secret key from Secret-mounted volume
 AGE_KEY_FILE=/run/secrets/AGE_SECRET_KEY

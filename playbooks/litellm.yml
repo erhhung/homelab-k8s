@@ -80,6 +80,15 @@
           auth.json: "{{ lookup('ansible.builtin.unvault', files_dir ~ '/litellm/chatgpt/auth.json') }}"
       ansible.builtin.include_tasks: "{{ tasks_dir }}/k8s/secrets/generic.yml"
 
+    # NOTE: this Helm install is not 100% unattended because the
+    # server may prompt for ChatGPT sign-in via device code flow
+    # on startup if the provisioned "auth.json" contains expired
+    # tokens. watch server logs for the prompt if install fails,
+    # then update "files/litellm/chatgpt/auth.json":
+    #
+    # Sign in with ChatGPT using device code:
+    # 1) Visit https://auth.openai.com/codex/device
+    # 2) Enter code: XXXX-YYYYY
     - name: Install LiteLLM Helm chart
       vars:
         tmpdir_name: litellm

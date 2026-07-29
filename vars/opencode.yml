@@ -343,7 +343,7 @@ opencode_chart_values:
             - path: "{{ home_dir }}/nfs-share"
             # these dot folders were created manually on the
             # NFS server so conversational history and other
-            # state can be preserved across pod restarts
+            # state can be preserved across chart reinstalls
             - path: "{{ home_dir }}/.config/opencode"
               subPath: .config
             - path: "{{ home_dir }}/.local/share/opencode"

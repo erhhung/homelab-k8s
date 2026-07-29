@@ -2,6 +2,7 @@
 
 # shellcheck disable=SC2148 # Tips depend on target shell
 # shellcheck disable=SC1090 # Can't follow non-const source
+# shellcheck disable=SC1091 # Not following: not input file
 # shellcheck disable=SC2155 # Declare and assign separately
 # shellcheck disable=SC2086 # Double quote prevent globbing
 # shellcheck disable=SC2015 # A && B || C isn't if-then-else
@@ -9,10 +10,39 @@
 # disable C-s/C-q flow control!
 stty -ixon
 
+[[ "$TERM_PROGRAM" == "vscode" ]] && \
+  . "$(code --locate-shell-integration-path bash)"
+
+# https://github.com/trapd00r/LS_COLORS#installation
 . <(dircolors -b "$HOME/.dircolors")
 
 # https://mise.jdx.dev/cli/activate.html#mise-activate
 . <(mise activate bash)
+
+# https://github.com/junegunn/fzf#setting-up-shell-integration
+. <(fzf --bash)
+
+# https://github.com/lincheney/fzf-tab-completion#bash
+[ -f "$XDG_CONFIG_HOME/fzf/fzf-bash-completion.sh" ] && \
+   . "$XDG_CONFIG_HOME/fzf/fzf-bash-completion.sh"
+bind -x '"\t": fzf_bash_completion'
+
+_fzf_bash_completion_loading_msg() {
+  printf '\033[38;5;42m╍╍╍╍╍ LOADING MATCHES ╍╍╍╍╍\033[0m'
+}
+
+# https://github.com/ajeetdsouza/zoxide#installation
+. <(zoxide init --cmd cd bash)
+
+alias omp &> /dev/null || {
+  alias omp='oh-my-posh'
+
+  OMP_THEME="$XDG_CONFIG_HOME/oh-my-posh/theme.yaml"
+  ompinit() {
+    . <(oh-my-posh init bash --config $OMP_THEME)
+  }
+  ompinit
+}
 
 # clear terminal buffer and screen
 c() { printf '\e[2J\e[3J\e[H'; }
