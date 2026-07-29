@@ -58,6 +58,8 @@ postgresql_secrets:
   # that require superuser privileges
   superuser: database-superuser-tls
 
+# keep `harbor_mirror_images` (vars/harbor.configure.yml)
+# in sync with specified PostgreSQL chart version:
 # https://github.com/bitnami/charts/tree/main/bitnami/postgresql-ha
 postgresql_chart_version: "16.3.2"
 postgresql_release_name: postgresql

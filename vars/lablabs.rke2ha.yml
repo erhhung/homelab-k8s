@@ -18,17 +18,15 @@ rke2_kubevip_cloud_provider_image: ghcr.io/kube-vip/kube-vip-cloud-provider:v0.0
 # conflicts with MetalLB annotation
 rke2_kubevip_cloud_provider_enable: false
 
-# NOTE: quoted boolean strings templated
-# as literal environment variable values
-rke2_kubevip_ipvs_lb_enable: "true" # HA control plane
-rke2_kubevip_service_election_enable: "true"
+rke2_kubevip_ipvs_lb_enable: true # HA control plane
+rke2_kubevip_service_election_enable: true
 
 # don't use kube-vip to watch LoadBalancer Services
 # as MetalLB will take over that role; kube-vip will
 # only provide virtual IP, mapping to active/standby
 # control plane nodes, for Kubernetes API access:
 # https://kube-vip.io/docs/usage/kubernetes-services
-rke2_kubevip_svc_enable: "false" # watch LoadBalancer?
+rke2_kubevip_svc_enable: false # watch LoadBalancer?
 
 rke2_api_ip: "{{ hostvars[rke_cluster_name].ansible_host }}"
 rke2_api_cidr: 32

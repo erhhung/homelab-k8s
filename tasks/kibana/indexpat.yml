@@ -54,19 +54,42 @@
         existing_pattern_id: "{{ existing[0].id if existing is truthy else '' }}"
 
     - name: Create index pattern
-      ansible.builtin.uri:
-        <<: [*uri-params, *post-params]
-        url: "{{ saved_objs_url }}/index-pattern"
-        body:
-          attributes:
-            title: "{{ pattern }}"
-            timeFieldName: "{{ time_field | default('@timestamp') }}"
-          workspaces: "{{ [osd_workspace_id] if osd_workspace_id is defined else omit }}"
-      register: create_pattern
       when: existing_pattern_id is falsy
-      changed_when: true
-      retries: 5
-      delay: 2
+      block:
+        # wait until at least one index in the pattern
+        # exists in order to dynamically determine all
+        # index fields
+        - name: Wait until index exists
+          ansible.builtin.uri:
+            <<: *uri-params
+            # https://docs.opensearch.org/latest/api-reference/search-apis/field-caps
+            url: "{{ opensearch_url }}/{{ pattern }}/_field_caps?fields=@timestamp"
+          register: field_caps
+          retries: 60
+          delay: 5
+          until: >-
+            field_caps.status != 200 or
+            field_caps.json.fields['@timestamp'] is defined
+          failed_when: field_caps.status != 200
+
+        - name: Determine index fields
+          ansible.builtin.uri:
+            <<: *uri-params
+            url: "{{ kibana_api_url }}/index_patterns/_fields_for_wildcard?pattern={{ pattern }}"
+          register: index_fields
+
+        - name: Create index pattern
+          ansible.builtin.uri:
+            <<: [*uri-params, *post-params]
+            url: "{{ saved_objs_url }}/index-pattern"
+            body:
+              attributes:
+                title: "{{ pattern }}"
+                fields: "{{ index_fields.json.fields | to_json }}"
+                timeFieldName: "{{ time_field | default('@timestamp') }}"
+              workspaces: "{{ [osd_workspace_id] if osd_workspace_id is defined else omit }}"
+          register: create_pattern
+          changed_when: true
 
     - name: Set index_pattern_id
       ansible.builtin.set_fact:

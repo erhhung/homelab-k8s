@@ -17,7 +17,7 @@ dashboards_workspace_enabled: true
 dashboards_explore_enabled: true
 
 # https://github.com/opensearch-project/helm-charts/tree/main/charts/opensearch-dashboards
-dashboards_chart_version: "3.5.0"
+dashboards_chart_version: "3.7.0"
 dashboards_release_name: opensearch-dashboards
 
 # https://github.com/opensearch-project/helm-charts/tree/main/charts/opensearch-dashboards/values.yaml

@@ -24,6 +24,9 @@ cat <<'EOF' > $SCRIPT
 #!/usr/bin/env bash
 set -eo pipefail
 
+get_operation() {
+  [[ "$1" =~ ^(template|install|upgrade)$ ]] && echo "$1"
+}
 get_chart_dir() {
   while [ "$1" ]; do
     [[ "$1" != -* && -d "$1" ]] && {
@@ -32,16 +35,22 @@ get_chart_dir() {
     } || shift
   done
 }
-
+      args=()
 extra_args=()
 
-if [[ "$1" =~ ^(template|install|upgrade)$ ]]; then
+# Helmfile invokes this script with --kubeconfig
+# /path/to/config.yaml as first 2 args, followed
+# by the operation
+op=$(get_operation "$3" || \
+     get_operation "$1" || true)
+
+if [ "$op" ]; then
   # run custom commands if hook
   # provided as environment var
-  hook_env="HELM_${1^^}_HOOK"
+  hook_env="HELM_${op^^}_HOOK"
 
   if [ "${!hook_env}" ]; then
-    chart_dir=$(get_chart_dir "${@:2}")
+    chart_dir=$(get_chart_dir "$@")
     [ "$chart_dir" ] || {
       echo >&2 -e "Unable to determine chart directory from Helm command:\n$0 $*"
       exit 1
@@ -51,12 +60,24 @@ if [[ "$1" =~ ^(template|install|upgrade)$ ]]; then
     (eval "${!hook_env}") >&2
   fi
 
-  args_env="HELM_${1^^}_ARGS"
+  args_env="HELM_${op^^}_ARGS"
   if [ "${!args_env}" ]; then
     extra_args+=(${!args_env})
   fi
 fi
 
-exec helm "$@" "${extra_args[@]}"
+while [ "$1" ]; do
+  arg="$1"; shift
+  case "$arg" in
+    --atomic)
+      # Helm v4 deprecated `--atomic` in
+      # favor of `--rollback-on-failure`
+      arg=--rollback-on-failure
+      ;;
+  esac
+  args+=("$arg")
+done
+
+exec helm "${args[@]}" "${extra_args[@]}"
 EOF
 chmod +x $SCRIPT

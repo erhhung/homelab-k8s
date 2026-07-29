@@ -294,7 +294,10 @@
               # `--skip-diff-on-install` specified below)
               disableValidation: true
 
-              # restore to last good state if failed
+              # roll back to last successful release on failure (Helmfile
+              # does not support Helm v4's `--rollback-on-failure` option
+              # yet to replace the deprecated `--atomic` option:
+              # https://github.com/helmfile/helmfile/issues/2712
               atomic: "{{ atomic | default(true) }}"
 
       ansible.builtin.shell: |

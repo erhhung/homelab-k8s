@@ -77,13 +77,16 @@ gitea_chart_repo_url: git+https://gitea.com/erhhung/helm-gitea?ref=fix-env-ini-e
 # gitea_chart_repo_url: https://dl.gitea.com/charts
 
 # https://gitea.com/gitea/helm-gitea
-gitea_chart_version: "12.6.0"
+gitea_chart_version: "12.7.0"
 gitea_release_name: gitea
 
 # comment out `gitea_app_version` below
 # to let playbook get chart `appVersion`
 # https://github.com/go-gitea/gitea/pkgs/container/gitea/versions?filters%5Bversion_type%5D=tagged
-gitea_app_version: "1.26.1"
+# IMPORTANT! do not upgrade to 1.27.x
+# until workflow parser bug is fixed:
+# https://github.com/go-gitea/gitea/issues/38596
+gitea_app_version: "1.26.2"
 
 # chart `image.rootless` is true by default
 gitea_image: docker.gitea.com/gitea:{{ gitea_app_version }}-rootless
@@ -664,7 +667,7 @@ gitea_chart_values:
 actions_chart_repo_url: https://dl.gitea.com/charts
 
 # https://gitea.com/gitea/helm-actions
-actions_chart_version: "0.1.1"
+actions_chart_version: "0.1.2"
 actions_release_name: actions
 
 actions_app_name: "{{ actions_release_name }}-runner"
@@ -675,7 +678,7 @@ actions_runner_image:
   repository: library/gitea-runner
   # build custom image using this `gitea-runner` image:
   # `skopeo list-tags docker://docker.gitea.com/runner`
-  tag: "1.0.6"
+  tag: "2.3.0"
 
 # https://gitea.com/gitea/helm-actions/src/branch/main/values.yaml
 actions_chart_values:

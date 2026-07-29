@@ -37,7 +37,8 @@ apt_repositories:
 
 apt_packages:
   - packages:
-      - linux-modules-extra-{{ ansible_kernel }} # GPU drivers
+      # there is no linux-modules-extra package for kernel 7.x+
+      # - linux-modules-extra-{{ ansible_kernel }} # GPU drivers
       - apt-transport-https
       - locales # required by community.general.locale_gen
       - bash-completion # required by crictl/kubectl completion

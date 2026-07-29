@@ -26,11 +26,16 @@ longhorn_secrets:
   minio: minio-credentials
 
 # https://github.com/longhorn/charts/tree/master/charts/longhorn
+# IMPORTANT! Longhorn does not allow minor version upgrades that
+# skip an intermediate minor version (e.g. 1.9.x to 1.12.x), and
+# downgrades are NOT supported; due to risk of CRD deletions and
+# thus PVC deletions and data loss, upgrade only when recreating
+# the cluster
 longhorn_chart_version: "1.9.1"
 longhorn_release_name: longhorn
 
 # https://github.com/longhorn/charts/tree/v1.9.x/charts/longhorn/values.yaml
-# https://longhorn.io/docs/1.9.0/references/settings
+# https://longhorn.io/docs/1.9.1/references/settings
 longhorn_chart_values:
   longhornUI:
     replicas: 1

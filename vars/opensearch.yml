@@ -36,17 +36,24 @@ opensearch_secrets:
   passwords: opensearch-passwords
   security: opensearch-security
 
-opensearch_version: "3.5.0"
+# keep `harbor_mirror_images` (vars/harbor.configure.yml) in sync
+# with `opensearch_version`
+opensearch_version: "3.7.0"
 # IMPORTANT! keep opensearch_version and opensearch_chart_version
 # in sync: helm show chart opensearch/opensearch --version 3.xx.x
 # opensearch_version will be used to select proper plugin version
 # https://github.com/opensearch-project/helm-charts/tree/main/charts/opensearch
-opensearch_chart_version: "3.5.0"
+opensearch_chart_version: "3.7.0"
 opensearch_release_name: opensearch
 
 # https://github.com/opensearch-project/helm-charts/tree/main/charts/opensearch/values.yaml
 opensearch_chart_values:
   replicas: 3
+
+  image: # use mirrored image in Harbor
+    pullPolicy: IfNotPresent
+    repository: "{{ harbor_container_registry }}/opensearch/opensearch"
+    tag: "{{ opensearch_version }}"
 
   clusterName: "{{ opensearch_cluster_name }}"
   masterService: "{{ opensearch_master_service }}"
@@ -72,6 +79,10 @@ opensearch_chart_values:
                                                                        indent(4) }}
 
   persistence:
+    # `fsgroup-volume` init container image
+    image: docker.io/busybox
+    imageTag: 1.38.0
+
     # StatefulSet persistentVolumeClaimRetentionPolicy
     # whenDeleted=Delete will be patched by Helmfile
     storageClass: "{{ storage_classes['default'] }}"

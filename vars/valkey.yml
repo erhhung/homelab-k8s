@@ -66,7 +66,7 @@ valkey_secrets:
   password: valkey-password
 
 # https://github.com/bitnami/charts/tree/main/bitnami/valkey-cluster
-valkey_chart_version: "3.0.18"
+valkey_chart_version: "3.0.24"
 valkey_release_name: valkey
 
 # https://github.com/bitnami/charts/tree/main/bitnami/valkey-cluster/values.yaml
