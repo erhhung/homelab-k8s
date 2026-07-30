@@ -30,7 +30,10 @@ chmod  600 /var/log/btmp
 # install VSCode wrapper script
 cp /install/code /usr/local/bin
 # install helpful dev utilities
-for install in /install/*.sh; do $install; done
+for install in /install/*.sh; do
+  echo "Installing $(basename ${install%.sh})..."
+  $install
+done
 
 # https://opencode.ai/docs#install
 # https://github.com/carloscuesta/gitmoji-cli
@@ -39,8 +42,13 @@ pnpm --config.updateNotifier=false install \
                    opencode-ai
 
 # copy dot files into /root to be inherited by dev user
+cp /config/{.bash_completion,.dircolors,.lessopen} /root
 tail -n+2 /config/.bash_profile >> /root/.bash_profile
-cp /config/{.dircolors,.lessopen}  /root
+
+# enable automatic completion of aliases:
+# https://github.com/cykerway/complete-alias
+# wget -qO- https://raw.githubusercontent.com/cykerway/complete-alias/refs/heads/master/complete_alias | \
+#   sed '/BASH_ALIASES/s/^#//; $d' | tail -n+2 >> /root/.bash_completion
 
 # create dev user using /root as template
 groupadd --gid "${DEV_GID}" "${DEV_GROUP}"

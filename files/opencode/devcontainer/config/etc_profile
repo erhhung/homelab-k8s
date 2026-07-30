@@ -45,3 +45,6 @@ GPG_TTY="$(tty)"
 # $XDG_CACHE_HOME is on different filesystem than /workspace,
 # so suppress warning about failing to create hardlink files
 UV_LINK_MODE=copy
+
+# https://kubecolor.github.io/reference/environment-variables
+KUBECOLOR_OBJ_FRESH=1h

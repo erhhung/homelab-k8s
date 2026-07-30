@@ -3,15 +3,18 @@
 # shellcheck disable=SC2148 # Tips depend on target shell
 # shellcheck disable=SC1090 # Can't follow non-const source
 # shellcheck disable=SC1091 # Not following: not input file
+# shellcheck disable=SC2128 # Expanding array without index
 # shellcheck disable=SC2155 # Declare and assign separately
 # shellcheck disable=SC2086 # Double quote prevent globbing
+# shellcheck disable=SC2206 # Quote to avoid word splitting
+# shellcheck disable=SC2207 # Prefer mapfile to split output
 # shellcheck disable=SC2015 # A && B || C isn't if-then-else
 
 # disable C-s/C-q flow control!
 stty -ixon
 
-[[ "$TERM_PROGRAM" == "vscode" ]] && \
-  . "$(code --locate-shell-integration-path bash)"
+[ "$TERM_PROGRAM" == vscode ] && \
+  . <(code --locate-shell-integration-path bash)
 
 # https://github.com/trapd00r/LS_COLORS#installation
 . <(dircolors -b "$HOME/.dircolors")
@@ -49,11 +52,11 @@ c() { printf '\e[2J\e[3J\e[H'; }
 
 alias l=bat
 alias f=joshuto
+alias p3=python3
+alias dt='code --wait --diff'
 alias b='buildah '
 alias bi='b images'
 alias bp='b rmi --prune'
-alias dt='code --wait --diff'
-alias p3=python3
 
 # show disk usage (du0/du1 aliases)
 _diskusage() {
@@ -154,5 +157,116 @@ KUBECONFIG=$kubecfg \
 KUBECONFIG=$kubecfg:$kubecfg_vc \
   kubectl config view --merge --flatten | sponge $kubecfg
 )
+alias k='kubecolor'
 alias kcx='kubectx'
 alias kns='kubens'
+
+complete -o default -F __start_kubectl kubecolor
+complete -o default -F __start_kubectl k
+
+# shellcheck disable=SC2120
+__container_shell_init_script() {
+  # do NOT use any single quotes!
+  cat <<"EOT"
+# use /tmp if $HOME is read-only
+[ -w $HOME ] || export HOME=/tmp
+cd $HOME
+touch .hushlogin
+cat <<"EOF" > .profile
+# get user name via "id" in case uid has no name
+PS1="\[\033[1;36m\]\$(id -un 2> /dev/null)\[\033[1;31m\]@\[\033[1;32m\]\h:\[\033[1;35m\]\w\[\033[1;31m\]\$\[\033[0m\] "
+alias cdd="cd \$OLDPWD"
+alias  ls="ls --color=auto "
+alias  ll="ls -alF "
+alias  lt="ll -tr "
+alias   l="less"
+# load Bash dot files if provided by container
+[ -f $HOME/.bash_profile ] && . $HOME/.bash_profile
+[ -f $HOME/.bash_aliases ] && . $HOME/.bash_aliases
+EOF
+EOT
+  cat <<EOT
+$@ # run any additional commands
+(hash bash 2> /dev/null) && exec bash --rcfile ~/.profile || exec sh -l
+EOT
+}
+
+# kubectl run -it --rm bash/sh
+# ksh [image] [@host] [opts...]
+# image: use Harbor if prefixed ./
+#  host: use nodeSelector hostname
+# default image is ./al2023-devops
+ksh() {
+  local args=() opts=() image pod
+
+  image=${1:-.}   # use default DevOps image on Harbor
+  [[ "$image" =~ ^\.$|^@.+ ]] && image=./al2023-devops
+  [[ "$image" == ./*       ]] && \
+    image="harbor.fourteeners.local/library/${image:2}"
+
+  [[ "$2" == @* ]] && shift
+  [[ "$1" == @* ]] && {
+    opts+=( # run pod on host
+      --overrides="$(cat <<EOT
+{
+  "apiVersion": "v1",
+  "spec": {
+    "nodeSelector": {
+      "kubernetes.io/hostname": "${1:1}"
+    }
+  }
+}
+EOT
+      )"
+    )
+    shift
+  }
+  # decorate pod name with random chars
+  # to avoid collision with similar pod
+  printf -v pod "%s-temp-admin-%04d" $USER $((RANDOM % 10000))
+  args=(
+    # --namespace=default
+    --labels="app=temp-admin"
+    --pod-running-timeout=5m
+    --rm -it "${@:2}"
+    --restart=Never
+    --image=$image
+    "${opts[@]}"
+    --command
+    --quiet
+  )
+  kubectl run $pod "${args[@]}" -- \
+    sh -c "$(__container_shell_init_script)"
+}
+
+# kexec <pod>[:container] [opts] [-- command]
+# (completion is defined
+# in ~/.bash_completion)
+kexec() {
+  # ensure kubectl installed
+  _reqcmds kubectl || return
+
+  local pod=$1; shift
+
+  local o opts=()
+  while [ "$1" ]; do
+    o=$1; shift
+    # extra args for docker command
+    [ "$o" != -- ] && opts+=($o) || break
+  done
+
+  if [[ "$pod" =~ ^[^:]+:[^:]+$ ]]; then
+    # pod:container => pod -c container
+    opts=(-c "${pod/*:/}" "${opts[@]}")
+    pod=${pod/:*/}
+  else
+    # if there's more than 1 container, choose first one to avoid warning
+    o=($(kubectl get pod "$pod" -o jsonpath='{.spec.containers[*].name}'))
+    opts=(-c $o "${opts[@]}")
+  fi
+
+  if [[ -z ${1+x} ]]; then # run shell if no command
+    set -- sh -c "$(__container_shell_init_script)"
+  fi
+  kubectl exec -it "${opts[@]}" "$pod" -- "$@"
+}

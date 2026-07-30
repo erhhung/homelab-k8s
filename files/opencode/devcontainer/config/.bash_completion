@@ -1,0 +1,35 @@
+# shellcheck disable=SC2148 # Tips depend on target shell
+# shellcheck disable=SC1090 # Can't follow non-const source
+# shellcheck disable=SC2086 # Double quote prevent globbing
+# shellcheck disable=SC2207 # Prefer mapfile to split output
+
+. <(buildah  completion bash)
+. <(vcluster completion bash)
+
+# $@ = words array
+__complete__word1() {
+  [ $COMP_CWORD -eq 1 ] && __complete__words "$@"
+}
+# $@ = words array
+__complete__words() {
+  local words=("$@") cur="${COMP_WORDS[COMP_CWORD]}"
+  COMPREPLY=($(compgen -W "${words[*]}" -- "$cur"))
+}
+
+# get Docker images
+_complete_dimgs() {
+  local words=($(buildah images --format '{{.Name}}:{{.Tag}}' | \
+                      grep  -v '<none>'  | sed 's/:latest$//' | \
+                      xargs -L1 basename | sort | uniq))
+  __complete__word1 "${words[@]}"
+}
+complete -F _complete_dimgs dive
+complete -F _complete_dimgs ksh
+
+# get pod names
+_complete_kexec() {
+  local words=($(kubectl get pods -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}'))
+  __complete__word1 "${words[@]}"
+}
+# kexec() defined in .bash_profile
+complete -F _complete_kexec kexec

@@ -126,16 +126,23 @@
               ansible.builtin.file:
                 path: "{{ staging_dir }}"
                 state: directory
+                mode: "0755"
               changed_when: false
 
             - name: Create local plugin tarball
               vars:
                 plugin: "{{ item.path | basename }}"
                 tar_gz: "{{ plugin }}.tar.gz"
-              ansible.builtin.shell:
-                # Helm expects plugin tarball to contain top-level folder
-                cmd: tar -czf {{ staging_dir }}/{{ tar_gz }} {{ plugin }}
+              # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/command_module.html
+              ansible.builtin.command:
                 chdir: "{{ item.path | dirname }}"
+                # Helm expects plugin tarball
+                # to contain top-level folder
+                argv:
+                  - tar
+                  - -czf
+                  - "{{ staging_dir }}/{{ tar_gz }}"
+                  - "{{ plugin    }}"
               loop: "{{ needs_tar }}"
               loop_control:
                 label: "{{ tar_gz }}"
@@ -145,6 +152,7 @@
           ansible.builtin.copy:
             src: "{{  staging_dir }}/"
             dest: "{{ staging_dir }}/"
+            mode: "0644"
           when: needs_tar is truthy
           changed_when: false
 
@@ -228,7 +236,6 @@
           ghcr.io:
             username: erhhung
             password: "{{ github_access_token }}"
-      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/command_module.html
       ansible.builtin.command:
         argv:
           - helm
