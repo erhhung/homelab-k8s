@@ -72,6 +72,12 @@ ln -sf /dev/null /etc/motd.d/30-banner
 mkdir -p /etc/ssh/{host_keys,authorized_keys}
 SSH_PORT="${SSH_PORT}" DEV_USER="${DEV_USER}"
 envsubst < /config/sshd_config > /etc/ssh/sshd_config.d/10-devcontainer.conf
+
+# load session vars from envFrom
+cat <<'EOT' >> /etc/pam.d/sshd
+# "session.env" will be created by main container startup script
+session    required     pam_env.so envfile=/run/sshd/session.env
+EOT
 EOF
 
 EXPOSE ${SSH_PORT}

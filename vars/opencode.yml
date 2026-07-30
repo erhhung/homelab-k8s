@@ -6,6 +6,7 @@ opencode_fqdn: "{{ [opencode_host_name] | product(search_domains) | map('join','
 
 opencode_secrets:
   secrets: opencode-secrets
+  env-vars: opencode-env-variables
   kubeconfig: opencode-kubeconfig
 
 opencode_configmaps:
@@ -68,12 +69,21 @@ opencode_chart_values:
                 - path: /etc/ssh/host_keys
                   subPath: host_keys
                   readOnly: true
-                - path: "{{ home_dir }}/.gnupg"
-                  subPath: .gnupg
-                - path: "{{ home_dir }}/.vscode-server"
-                  subPath: .vscode-server
                 - path: "{{ home_dir }}/workspace"
                   subPath: workspace
+
+          - name: home
+            enabled: true
+            accessMode: ReadWriteOnce
+            storageClass: "{{ storage_classes['default'] }}"
+            size: 10Gi
+
+            advancedMounts:
+              init:
+                - path: /home-rw
+              main:
+                - path: "{{ home_dir }}"
+                  subPath: "{{ opencode_dev_container.dev_user }}"
 
           - name: containers
             enabled: true
@@ -130,7 +140,7 @@ opencode_chart_values:
               [ -d /data/ca-trust  ] || \
                 mkdir -p /data/{ca-trust,host_keys}
               [ -d /data/workspace ] || \
-                install -o $U -g $G -m 700 -d /data/{workspace,.vscode-server}
+                install -o $U -g $G -m 700 -d /data/workspace
 
               [ -f /data/ca-trust/pem/tls-ca-bundle.pem ] || {
                 echo "Adding certs to ca-trust..."
@@ -150,15 +160,18 @@ opencode_chart_values:
               cat /data/host_keys/ssh_host_*_key.pub | sort
               echo
 
-              [ -d /data/.gnupg ] || {
-                echo "Restoring GnuPG keyring..."
-                tar  -xf /run/secrets/gnupg.tar -C /data
-                chown -R $U:$G /data/.gnupg
-                find /data/.gnupg -type d -exec chmod 0700 {} \;
-                find /data/.gnupg -type f -exec chmod 0600 {} \;
+              HOME_RW=/home-rw/$U
+              [ -d $HOME_RW ] || {
+                echo "Setting up /home/$U..."
+                cp -a   /home/$U $HOME_RW
+
+                tar  -xf /run/secrets/gnupg.tar -C $HOME_RW
+                chown -R $U:$G $HOME_RW/.gnupg
+                find $HOME_RW/.gnupg -type d -exec chmod 0700 {} \;
+                find $HOME_RW/.gnupg -type f -exec chmod 0600 {} \;
                 echo
               }
-              ls -l /data/.gnupg
+              ls -al $HOME_RW/
 
               [ -d /containers/$U   ] || \
                 install -o $U -g $G -m 700 -d /containers/$U
@@ -171,18 +184,38 @@ opencode_chart_values:
           image:
             <<: *dev-image
             pullPolicy: Always
-          command: ["sh"]
+          command: ["bash"]
           args:
             - -c
             - |-
               # FIX syslogin_perform_logout logout returned an error
               install -o root -g utmp -m 664 /dev/null /var/run/utmp
 
+              # create file containing envFrom vars that pam_env.so
+              # (/etc/pam.d/sshd) will load when SSH session starts
+              ENV_FROM=(
+                CI_REGISTRY
+                CI_REGISTRY_PATH
+                CI_REGISTRY_USER
+                CI_REGISTRY_PASSWORD
+                GITHUB_ACCESS_TOKEN
+              )
+              mkdir  -p /run/sshd
+              umask 077
+              {
+                for var in "${ENV_FROM[@]}"; do
+                  printf "%s=%s\n" $var "${!var}"
+                done
+              } > /run/sshd/session.env
+
               # -D: run in foreground for monitoring
               # -e: output error messages to stderr
               exec /usr/sbin/sshd -D -e
           env:
             TZ: "{{ system_time_zone }}"
+          envFrom:
+            - secretRef:
+                name: "{{ opencode_secrets['env-vars'] }}"
           ports:
             - name: ssh
               containerPort: "{{ opencode_dev_container.ssh_port }}"
@@ -296,8 +329,6 @@ opencode_chart_values:
           path: AGE_SECRET_KEY
         - key: LITELLM_API_KEY
           path: LITELLM_API_KEY
-        - key: GITHUB_ACCESS_TOKEN
-          path: GITHUB_ACCESS_TOKEN
       advancedMounts:
         main:
           main:
@@ -382,8 +413,9 @@ opencode_config:
       name: LiteLLM
       options:
         baseURL: "{{ litellm_service_url }}/v1"
-        # https://opencode.ai/docs/config#files
+        # https://opencode.ai/docs/config#variables
         apiKey: "{file:/run/secrets/LITELLM_API_KEY}"
+        # apiKey: "{env:LITELLM_API_KEY}"
 
         # overall request timeout in ms
         timeout: 600000 # 10m
