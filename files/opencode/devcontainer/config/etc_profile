@@ -3,7 +3,10 @@
 # shellcheck disable=SC2148 # Tips depend on target shell
 # shellcheck disable=SC2034 # The variable appears unused
 
-PS1="\[\033[1;36m\]$USER\[\033[1;31m\]@\[\033[1;32m\]\h:\[\033[1;35m\]\w\[\033[1;31m\]$\[\033[0m\] "
+umask 0022
+
+# this has been superseded by Oh My Posh themed prompt
+# PS1="\[\033[1;36m\]$USER\[\033[1;31m\]@\[\033[1;32m\]\h:\[\033[1;35m\]\w\[\033[1;31m\]$\[\033[0m\] "
 
 # only works once VSCode remote SSH server
 # is dynamically installed upon connection

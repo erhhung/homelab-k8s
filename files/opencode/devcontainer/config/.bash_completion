@@ -16,6 +16,20 @@ __complete__words() {
   COMPREPLY=($(compgen -W "${words[*]}" -- "$cur"))
 }
 
+# https://github.com/ahmetb/kubectx/tree/master/completion/kubectx.bash
+_complete_kubectx() {
+  local words=($(kubectl config get-contexts --output='name'))
+  __complete__word1 "${words[@]}"
+}
+complete -F _complete_kubectx kubectx kcx
+
+# https://github.com/ahmetb/kubectx/tree/master/completion/kubens.bash
+_complete_kubens() {
+  local words=($(kubectl get namespaces --no-headers -o custom-columns=":metadata.name"))
+  __complete__word1 "${words[@]}"
+}
+complete -F _complete_kubens kubens kns
+
 # get Docker images
 _complete_dimgs() {
   local words=($(buildah images --format '{{.Name}}:{{.Tag}}' | \

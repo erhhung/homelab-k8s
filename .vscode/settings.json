@@ -1,4 +1,5 @@
 {
+  "terminal.integrated.scrollback": 5000,
   "terminal.integrated.defaultProfile.linux": "bash",
   "terminal.integrated.defaultProfile.osx": "bash",
   "terminal.integrated.profiles.linux": {
@@ -44,6 +45,6 @@
     "*.py.j2": "python",
     "*.groovy.j2": "groovy"
   },
-  "makefile.configureOnOpen": false,
-  "terminal.integrated.scrollback": 5000
+  "python-envs.defaultEnvManager": "ms-python.python:system",
+  "makefile.configureOnOpen": false
 }

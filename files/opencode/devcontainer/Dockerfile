@@ -17,7 +17,7 @@ SHELL ["/bin/bash", "-e", "-o", "pipefail", "-c"]
 RUN --mount=type=bind,readonly,source=install,target=/install \
     --mount=type=bind,readonly,source=config,target=/config \
 <<EOF
-dnf install -y --allowerasing sudo gnupg2 openssh-server
+dnf install -y --allowerasing sudo htop gnupg2 openssh-server
 dnf clean all
 rm -rf /var/log/* /var/cache/dnf
 
@@ -41,19 +41,23 @@ pnpm --config.updateNotifier=false install \
   -g --allow-build=opencode-ai gitmoji-cli \
                    opencode-ai
 
-# copy dot files into /root to be inherited by dev user
-cp /config/{.bash_completion,.dircolors,.lessopen} /root
-tail -n+2 /config/.bash_profile >> /root/.bash_profile
+# copy dot files into $HOME to be inherited by dev user
+cp /config/{.bash_completion,.dircolors,.lessopen} $HOME
+tail -n+2 /config/.bash_profile >> $HOME/.bash_profile
+touch $HOME/.hushlogin
+
+# copy config  files to $XDG_CONFIG_HOME
+cp -r /config/.config/* $XDG_CONFIG_HOME
 
 # enable automatic completion of aliases:
 # https://github.com/cykerway/complete-alias
 # wget -qO- https://raw.githubusercontent.com/cykerway/complete-alias/refs/heads/master/complete_alias | \
-#   sed '/BASH_ALIASES/s/^#//; $d' | tail -n+2 >> /root/.bash_completion
+#   sed '1d; /BASH_ALIASES/s/^#//; $d' >> $HOME/.bash_completion
 
-# create dev user using /root as template
+# create dev user using $HOME as template
 groupadd --gid "${DEV_GID}" "${DEV_GROUP}"
  useradd --uid "${DEV_UID}" --gid "${DEV_GID}" "${DEV_USER}" \
-         --create-home --skel /root --shell /bin/bash
+         --create-home --skel $HOME --shell /bin/bash
 
 # enable passwordless sudo for dev user
 echo "${DEV_USER} ALL=(ALL) NOPASSWD:ALL" \
@@ -61,12 +65,12 @@ echo "${DEV_USER} ALL=(ALL) NOPASSWD:ALL" \
 chmod 440 /etc/sudoers.d/${DEV_USER}
 
 # propagate environment vars to dev user
-cat <(env | grep -vE '^(USER|HOME|PWD|OLDPWD|SHLVL|_)' \
-          | sed  's|/root/|$HOME/|g')   \
+cat <(env | grep -vE '^(HOSTNAME|USER|HOME|PWD|OLDPWD|SHLVL|DEV_.+|_)' \
+          | sed  "s|$HOME/|\$HOME/|g")  \
     <(grep -vE '^#' /config/etc_profile \
-          | sed  '/^[[:space:]]*$/d') \
-          | sort | sed 's/^/export /' \
-    > /etc/profile.d/user.sh
+          | sed  '/^[[:space:]]*$/d') | \
+    sed -E 's/^([[:alnum:]_]+=)/export \1/' | \
+    sort > /etc/profile.d/user.sh
 
 # copy dot files directly into dev user`s home directory
 tail -n+2 /config/.gitconfig >> /home/${DEV_USER}/.gitconfig

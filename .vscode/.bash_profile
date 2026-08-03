@@ -84,6 +84,20 @@ command -v gmake &> /dev/null && {
   alias make='gmake'
 }
 
+_fzf_bash_completion_complete make &> /dev/null
+if ! declare -F __make > /dev/null && \
+     declare -F  _make > /dev/null; then
+
+  # copy original `_make` completion function to `__make`
+  # in order to redefine `_make` to add playbook targets
+  eval "$(declare -f _make | sed '1s/^_make /__make /')"
+
+  _make() {
+    local cur=${COMP_WORDS[COMP_CWORD]}; __make "$@"
+    COMPREPLY=($(compgen -W "${COMPREPLY[*]} $(plays)" -- "$cur" | sort))
+  }
+fi
+
 # enable completions if yq is installed
 command -v yq &> /dev/null && {
   _complete_play()  { _complete_tags main;  }
