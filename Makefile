@@ -51,13 +51,19 @@ endif
 
 # this target is run implicitly if the
 # first goal is not an explicit target
+# make <playbook> [playbook]... \
+#      [tags=tag1,tag2,tag3,...] \
+#      [vars='{"var1":"val1",...}']
 play:
-	@scripts/play.sh $(play_args)
+	@args=($(play_args))
+	[ "$(tags)" ] && args+=(-t "$(tags)")
+	[ '$(vars)' ] && args+=(-e '$(vars)')
+	scripts/play.sh "$${args[@]}"
 
-# run the debugging playbook (usually invoked by
-# `make debug -- -t <tag>` to run specific play)
+# run the debugging playbook (usually invoked
+# by `make debug <tag>` to run specific play)
 debug:
-	@ansible-playbook $(rest_goals) playbooks/debug.yml
+	@ansible-playbook playbooks/debug.yml -t $(rest_goals)
 
 # perform syntax checking on all playbooks
 check:
@@ -66,6 +72,7 @@ check:
 
 # run ansible-lint on all/specific playbooks
 # and suppress informational noise in stderr
+# `make lint [playbook1] [playbook2]...`
 lint:
 	@ansible-lint $(addprefix playbooks/, \
 								$(addsuffix .yml, $(rest_goals))) \

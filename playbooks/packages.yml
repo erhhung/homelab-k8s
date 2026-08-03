@@ -153,6 +153,7 @@
             src: "{{  staging_dir }}/"
             dest: "{{ staging_dir }}/"
             mode: "0644"
+            directory_mode: "0755"
           when: needs_tar is truthy
           changed_when: false
 

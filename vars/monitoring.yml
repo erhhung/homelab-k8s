@@ -106,6 +106,7 @@ thanos_config_secret_data:
   # in addition to the Thanos sidecar, this secret
   # will be reused many times by the bitnami/thanos
   # Helm chart, which expects this exact file name
+  # to_indented_yaml: plugins/filter/filters.py
   http-config.yml: |-
     tls_server_config:
       cert_file:       /tls/thanos/tls.crt
@@ -115,10 +116,7 @@ thanos_config_secret_data:
     http_server_config:
       http2: true
     basic_auth_users:
-      {# https://docs.ansible.com/ansible/latest/collections/ansible/builtin/to_nice_yaml_filter.html -#}
-      {# https://jinja.palletsprojects.com/en/stable/templates#jinja-filters.indent -#}
-      {{ monitoring_passwords_hashed | ansible.builtin.to_nice_yaml(indent=2, sort_keys=false) |
-                                                                    indent(2) }}
+      {{ monitoring_passwords_hashed | to_indented_yaml | indent(2) }}
 
 # `basicAuth` config for ServiceMonitors that
 # scrape Thanos components (necessary because

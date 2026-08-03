@@ -25,11 +25,11 @@
 
     - name: Copy dot files into home directory
       ansible.builtin.copy:
-        src: "{{ files_dir }}/{{ item }}"
+        src: "{{ files_dir }}/home/{{ item }}"
         dest: "{{ ansible_user_dir }}/{{ item }}"
         mode: "0644"
         directory_mode: "0755"
-      loop: "{{ copy_files }}"
+      loop: "{{ copy_home_files }}"
       notify: Touch copied files
 
     - name: Upload Rancher API Bash functions
@@ -63,7 +63,7 @@
         # zeros out file time MM:ss
         _touch -t 00 . .sudo_as_* .rancher_*
         # now do the same again but recursively
-        touchall -t 00 {{ copy_files | map('quote') | join(' ') }}
+        touchall -t 00 {{ copy_home_files | map('quote') | join(' ') }}
         EOT
       changed_when: true
 

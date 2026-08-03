@@ -105,9 +105,8 @@
         redis_fullname: "{{ values['redis-cache'].fullnameOverride }}"
         redis_address: "{{ redis_fullname }}-master.{{
           policy_reporter_namespace }}.svc.{{ cluster_domain }}:6379"
-        # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/to_nice_yaml_filter.html
-        init_containers: "{{ values.initContainers |
-          ansible.builtin.to_nice_yaml(indent=2, sort_keys=false) }}"
+        # to_indented_yaml: plugins/filter/filters.py
+        init_containers: "{{ values.initContainers | to_indented_yaml }}"
 
         # === Inputs ===
         repo_name: policy-reporter

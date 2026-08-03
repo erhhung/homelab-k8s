@@ -149,13 +149,13 @@ jenkins_chart_values:
       configScripts: "{{ jenkins_jcasc_configs }}"
 
       # https://github.com/jenkinsci/configuration-as-code-plugin/tree/master/demos/embedded-userdatabase
-      securityRealm: |
+      # to_indented_yaml: plugins/filter/filters.py
+      securityRealm: |-
         local:
           allowsSignup: false
           enableCaptcha: false
           users:
-            {{ jenkins_users | to_nice_yaml(indent=2, sort_keys=false)
-                             | indent(4) }}
+            {{ jenkins_users | to_indented_yaml | indent(4) }}
 
     sidecars:
       configAutoReload:

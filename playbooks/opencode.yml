@@ -137,14 +137,14 @@
           GITHUB_ACCESS_TOKEN: "{{ github_access_token }}"
       ansible.builtin.include_tasks: "{{ tasks_dir }}/k8s/secrets/generic.yml"
 
-    # provide dev container access
-    # to sandboxed vClusters only!
+    # dev container can only access
+    # virtual clusters (by default)
     - name: Create dev container kubeconfig
       vars:
         secret_name: "{{ opencode_secrets['kubeconfig'] }}"
         secret_data:
-          # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/to_nice_yaml_filter.html
-          config: "{{ vcluster_kubeconfig | ansible.builtin.to_nice_yaml(indent=2, sort_keys=false) }}"
+          # to_indented_yaml: plugins/filter/filters.py
+          config: "{{ vcluster_kubeconfig | to_indented_yaml }}"
       ansible.builtin.include_tasks: "{{ tasks_dir }}/k8s/secrets/generic.yml"
       when: vcluster_kubeconfig is truthy
 

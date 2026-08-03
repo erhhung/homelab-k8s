@@ -102,9 +102,8 @@
         secret_data:
           # `connection` is used as consolidated object storage config
           # and referenced by global.appConfig.object_store.connection
-          # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/to_nice_yaml_filter.html
-          connection: "{{ gitlab_minio_config |
-            ansible.builtin.to_nice_yaml(indent=2, sort_keys=false) }}"
+          # to_indented_yaml: plugins/filter/filters.py
+          connection: "{{ gitlab_minio_config | to_indented_yaml }}"
           # `accesskey` and `secretkey` are used as Runner cache
           # config and referenced by gitlab-runner.runners.cache:
           # https://docs.gitlab.com/runner/install/kubernetes_helm_chart_configuration#amazon-s3
@@ -250,8 +249,7 @@
                            {'name': 'zoekt-webserver'},
                            {'name': 'zoekt-internal-gateway'},
                          ] | map('ansible.builtin.combine', probes)
-                           | to_nice_yaml(indent=2, sort_keys=false)
-                           | indent(8) }}
+                           | to_indented_yaml | indent(8) }}
               ---
               apiVersion: apps/v1
               kind: Deployment
@@ -264,8 +262,7 @@
                     containers:
                       {{ [ {'name': 'zoekt-external-gateway'},
                          ] | map('ansible.builtin.combine', probes)
-                           | to_nice_yaml(indent=2, sort_keys=false)
-                           | indent(8) }}
+                           | to_indented_yaml | indent(8) }}
               {% endif %}
 
         extras: # adopt extra resources into Helm release

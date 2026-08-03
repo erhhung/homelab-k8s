@@ -88,19 +88,20 @@
       vars:
         post_headers: *html-headers
       ansible.builtin.debug:
+        # to_indented_yaml: plugins/filter/filters.py
         msg: |-
           Current Settings
           ----------------
-          {{ app_settings | ansible.builtin.to_nice_yaml(indent=2, sort_keys=false) }}
+          {{ app_settings | to_indented_yaml }}
           Desired Settings
           ----------------
-          {{ set_settings | ansible.builtin.to_nice_yaml(indent=2, sort_keys=false) }}
+          {{ set_settings | to_indented_yaml }}
           Form to POST
           ------------
-          {{ form_to_post | ansible.builtin.to_nice_yaml(indent=2, sort_keys=false) }}
+          {{ form_to_post | to_indented_yaml }}
           POST Headers
           ------------
-          {{ post_headers | ansible.builtin.to_nice_yaml(indent=2, sort_keys=false) }}
+          {{ post_headers | to_indented_yaml }}
 
     - name: Set application settings
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/uri_module.html

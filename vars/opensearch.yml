@@ -67,16 +67,14 @@ opensearch_chart_values:
           key: admin
 
   config:
-    opensearch.yml: |
+    # to_indented_yaml: plugins/filter/filters.py
+    opensearch.yml: |-
       cluster.name: {{ opensearch_cluster_name }}
       network.host: "0.0.0.0"
       plugins:
         # https://docs.opensearch.org/latest/install-and-configure/configuring-opensearch/security-settings
         security:
-          {# https://docs.ansible.com/ansible/latest/collections/ansible/builtin/to_nice_yaml_filter.html -#}
-          {# https://jinja.palletsprojects.com/en/stable/templates#jinja-filters.indent -#}
-          {{ opensearch_security_plugin | ansible.builtin.to_nice_yaml(indent=2, sort_keys=false) |
-                                                                       indent(4) }}
+          {{ opensearch_security_plugin | to_indented_yaml | indent(4) }}
 
   persistence:
     # `fsgroup-volume` init container image

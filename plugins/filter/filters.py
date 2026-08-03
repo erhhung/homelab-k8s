@@ -1,11 +1,20 @@
-from ansible.utils.display import Display
 from typing import TypeVar, overload
+
+import yaml
+from ansible.plugins.filter.core import to_json
+from ansible.utils.display import Display
 
 log = Display()
 U = TypeVar("U")
 
 
-class FilterModule(object):
+class IndentedSequenceDumper(yaml.SafeDumper):
+    def increase_indent(self, flow: bool = False, indentless: bool = False) -> None:
+        # force indentless=False so list items are indented
+        return super().increase_indent(flow, False)
+
+
+class FilterModule:
     def filters(self):
         return {
             "substr": self.substr,
@@ -13,13 +22,14 @@ class FilterModule(object):
             "prepend": self.prepend,
             "to_case": self.to_case,
             "omit_keys": self.omit_keys,
+            "to_indented_yaml": self.to_indented_yaml,
             "local_iso_to_utc_iso": self.local_iso_to_utc_iso,
             "b64_decode_k8s_secret": self.b64_decode_k8s_secret,
         }
 
     # Jinja's `slice` filter isn't Python string
     # slicing, and there isn't a `substr` filter
-    def substr(self, str: str, start: int, end: int = None) -> str:
+    def substr(self, str: str, start: int, end: int | None = None) -> str:
         "Python string slicing"
         return str[start:end]
 
@@ -128,6 +138,29 @@ class FilterModule(object):
 
         return result
 
+    def to_indented_yaml(self, value: any, **kwargs) -> str:
+        "serialize value to YAML with indented list items"
+        import json
+
+        # yaml.SafeDumper cannot convert Ansible wrapper
+        # types, so convert to native Python types first
+        safe_value = json.loads(
+            to_json(
+                value,
+                vault_to_text=True,
+                preprocess_unsafe=False,
+            )
+        )
+        return yaml.dump(
+            safe_value,
+            Dumper=IndentedSequenceDumper,
+            default_flow_style=False,
+            allow_unicode=True,
+            sort_keys=False,
+            indent=2,
+            **kwargs,
+        )
+
     def local_iso_to_utc_iso(
         self, iso: str, tz: str, precision: str = "seconds"
     ) -> str:
@@ -137,12 +170,12 @@ class FilterModule(object):
         tz: IANA name (America/Los_Angeles)
         precision: seconds|s|milliseconds|ms
         """
-        from datetime import datetime, UTC
-        from zoneinfo import ZoneInfo
+        from datetime import UTC, datetime
+        from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
         try:
             tz = ZoneInfo(tz)
-        except Exception:
+        except (TypeError, ZoneInfoNotFoundError):
             raise ValueError(f"Invalid time zone: {tz}")
         dt = datetime.fromisoformat(iso).replace(tzinfo=tz)
 

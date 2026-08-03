@@ -2,8 +2,9 @@ nopasswd_sudo:
   - /usr/bin/rsync
   - /usr/bin/lsof
 
-copy_files:
+copy_home_files:
   - .bash_aliases
+  - .hushlogin
   - .emacs
   - .emacs.d/
   - .config/

@@ -67,5 +67,9 @@ no_color() {
   sed -E 's/(\x1B|\\x1B|\033|\\033)\[([0-9]{1,3}(;[0-9]{1,2})?)?[mGK]//g'
 }
 
+# prevent invisible prompts from `pause` module:
+# https://github.com/ansible/ansible/issues/81155
+export PYTHONUNBUFFERED=1
+
 ansible-playbook "$@" -e "$extra_vars" \
   2>&1 | tee >(no_color > ansible.log)

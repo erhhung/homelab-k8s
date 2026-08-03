@@ -13,6 +13,7 @@ harbor_default_project: library
 
 harbor_secrets:
   ingress: harbor-ingress-tls
+  password: harbor-admin-password
 
 # https://goharbor.io/docs/latest/install-config/harbor-ha-helm
 # https://github.com/goharbor/harbor-helm/tree/main
@@ -21,8 +22,10 @@ harbor_release_name: harbor
 
 # https://github.com/goharbor/harbor-helm/tree/main/values.yaml
 harbor_chart_values:
-  harborAdminPassword: "{{ harbor_admin_pass }}"
   logLevel: info # debug|info|warning|error|fatal
+
+  existingSecretAdminPassword: "{{ harbor_secrets['password'] }}"
+  existingSecretAdminPasswordKey: password
 
   ipFamily:
     ipv6:

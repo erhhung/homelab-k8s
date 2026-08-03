@@ -60,6 +60,8 @@
     - name: Create MinIO CA certs secret
       vars:
         ca_chain: "{{ ca_certificates | join(LF) }}"
+
+        # === Inputs ===
         secret_name: "{{ item.name }}"
         secret_data:
           # must use name "public.crt"
@@ -324,7 +326,7 @@
             # replace MinIO scrape configs with fixed ones
             cat <<'EOF' | yq -PM '.scrape_configs |= map(select(.job_name | test("minio-") | not))
                                 + load("/dev/stdin")' /tmp/prometheus.yaml~ > /tmp/prometheus.yaml
-            {{ jobs | ansible.builtin.to_nice_yaml(indent=2, sort_keys=false) | trim }}
+            {{ jobs | to_indented_yaml -}}
             EOF
 
             # do nothing if secret has already been fixed

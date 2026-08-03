@@ -10,7 +10,7 @@
 
 - `main.yml` is the dependency-ordered deployment graph. Keep its first localhost play, including the `DO NOT REMOVE` marker, because it establishes `project_dir` for imported playbooks and shared paths.
 - `make <tag> [<tag>...]` selects top-level tags from `main.yml`, always runs them in `main.yml` order, and does not add their dependencies. Check the dependency comments in `main.yml` before selecting a subset.
-- A lone `tag-` runs from that tag to the end; a lone `-tag` runs from the beginning through that tag. Pass Ansible options after `--`, for example `make monitoring -- --check` or `make openwebui -- -t knowledge`. Range selectors cannot be combined with other tags.
+- A lone `tag-` runs from that tag to the end; a lone `-tag` runs from the beginning through that tag. Pass Ansible options after `--` or use Make variables `tags` and `vars`, for example `make vclusters tags=tenants vars='{"vcluster_tenants":[]}'`. Range selectors cannot be combined with other tags.
 - Running every playbook requires a second pass from `certmanager` after `monitoring` has installed Prometheus Operator CRDs; otherwise earlier services cannot create their `ServiceMonitor` resources.
 - `scripts/play.sh` exports the repository Ansible config and `$HOME/.ssh/$USER.pem`, writes colorless output to `ansible.log`, and clears cached facts only for a full run. It installs Galaxy dependencies automatically only when `cluster` is selected.
 

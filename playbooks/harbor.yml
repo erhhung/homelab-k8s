@@ -12,14 +12,24 @@
     # required kubernetes>=24.2 package only in user virtualenv
     ansible_python_interpreter: "{{ venv_python_interpreter }}"
     kubeconfig: "{{ k3s_kubeconfig }}"
+    secret_ns: "{{ harbor_namespace }}"
+    create_ns: false
   tasks:
     - name: Create Harbor ingress secret
       vars:
         secret_name: "{{ harbor_secrets['ingress'] }}"
-        secret_ns: "{{ harbor_namespace }}"
+        create_ns: true
         cert_name: harbor-ingress
         sans: "{{ [harbor_fqdn] }}"
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
       ansible.builtin.include_tasks: "{{ tasks_dir }}/k8s/secrets/tls.step.yml"
+
+    - name: Create Harbor password secret
+      vars:
+        secret_name: "{{ harbor_secrets['password'] }}"
+        secret_data:
+          password: "{{ harbor_admin_pass }}"
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/k8s/secrets/generic.yml"
 
     - name: Install Harbor Helm chart
       vars:
@@ -33,6 +43,7 @@
 
         extras: # adopt extra resources into Helm release
           - cert-manager.io/v1 Certificate {{ harbor_secrets['ingress'] }}
+          - v1 Secret {{ harbor_secrets['password'] }}
       ansible.builtin.include_tasks: "{{ tasks_dir }}/helm/helmfile.yml"
 
 # https://github.com/goharbor/harbor-cli#installation
