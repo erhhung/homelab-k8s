@@ -142,10 +142,6 @@
   ansible.builtin.import_playbook: playbooks/istio.yml
   tags: istio
 
-- name: Include virtual clusters playbook
-  ansible.builtin.import_playbook: playbooks/vclusters.yml
-  tags: vclusters
-
 - name: Include HashiCorp Vault playbook
   ansible.builtin.import_playbook: playbooks/vault.yml
   tags: vault
@@ -190,6 +186,10 @@
 - name: Include BuildBuddy event viewer playbook
   ansible.builtin.import_playbook: playbooks/buildbuddy.yml
   tags: buildbuddy
+
+- name: Include vCluster Platform playbook
+  ansible.builtin.import_playbook: playbooks/vclusters.yml
+  tags: vclusters
 
 # Argo CD depends on Valkey, GitLab, vClusters
 - name: Include Argo CD GitOps tool playbook

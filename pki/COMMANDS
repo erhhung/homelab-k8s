@@ -301,6 +301,9 @@ cd "$HOME"
   events.buildbuddy.fourteeners.local
 
 ./cert.sh --exp=365 \
+  vcluster.fourteeners.local
+
+./cert.sh --exp=365 \
      argocd \
      argocd.fourteeners.local \
   \*.argocd.svc.cluster.local \

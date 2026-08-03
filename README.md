@@ -76,6 +76,7 @@ All cluster services will be provisioned with TLS certificates from Erhhung's pr
 |          grpcs://buildfarm.fourteeners.local | Buildfarm CAS+RBE _(mTLS only)_
 |  grpcs://events.buildbuddy.fourteeners.local | BuildBuddy BES _(mTLS only)_
 |         https://buildbuddy.fourteeners.local | BuildBuddy quickstart
+|           https://vcluster.fourteeners.local | vCluster Platform UI
 |             https://argocd.fourteeners.local | Argo CD UI
 |                https://awx.fourteeners.local | Ansible AWX UI
 |             https://qdrant.fourteeners.local | Qdrant dashboard
@@ -164,6 +165,8 @@ All cluster services will be provisioned with TLS certificates from Erhhung's pr
     * Install on main RKE cluster using the [`agent-stack-k8s`](https://buildkite.com/docs/agent/v3/agent-stack-k8s) Helm chart
 - [X] [Buildfarm](https://buildfarm.github.io/buildfarm) and [BuildBuddy](https://www.buildbuddy.io/docs/quickstart) Build Platform — Bazel remote build execution, caching, and stats
     * Install on main RKE cluster using the [`buildfarm`](https://github.com/buildfarm/buildfarm#helm-chart) and [`buildbuddy`](https://github.com/buildbuddy-io/buildbuddy-helm/tree/master/charts/buildbuddy) Helm charts
+- [X] [vCluster Platform](https://www.vcluster.com/docs/platform) and [Tenant Clusters](https://www.vcluster.com/docs/vcluster/introduction/what-are-virtual-clusters) — virtual Kubernetes clusters for development testing
+    * Install on main RKE cluster using the [`vcluster-platform`](https://github.com/loft-sh/loft#helm-charts) and [`vcluster`](https://github.com/loft-sh/vcluster/tree/main/chart) Helm charts
 - [X] [Argo CD Declarative GitOps](https://argo-cd.readthedocs.io/) — manage deployment of personal projects
     * Install on main RKE cluster using the [`argo-cd`](https://github.com/erhhung/argo-helm/tree/argo-cd-redis-cluster/charts/argo-cd) Helm chart
 - [ ] [Meshery Visual GitOps Platform](https://meshery.io/) — manage infrastructure visually and collaboratively
@@ -247,12 +250,12 @@ ansible-vault view   $VAULTFILE
 | `metallb_secret`                  | `gitlab_root_pass`
 | `step_ca_provisioner_pass`        | `gitlab_user_pass`
 | `minio_client_pass`               | `jenkins_admin_pass`
-| `velero_repo_pass`                | `argocd_admin_pass`
-| `velero_passphrase`               | `awx_admin_pass`
-| `harbor_secret`                   | `litellm_admin_pass`
-| `dashboards_os_pass`              | `openwebui_admin_pass`
-| `fluent_os_pass`                  | `flowise_admin_pass`
-| `postgresql_pass`                 |
+| `velero_repo_pass`                | `vcluster_admin_pass`
+| `velero_passphrase`               | `argocd_admin_pass`
+| `harbor_secret`                   | `awx_admin_pass`
+| `dashboards_os_pass`              | `litellm_admin_pass`
+| `fluent_os_pass`                  | `openwebui_admin_pass`
+| `postgresql_pass`                 | `flowise_admin_pass`
 | `valkey_pass`                     |
 | `oidc_client_secrets.*`           |
 | `oauth2_proxy_cookie_secret`      |
@@ -545,81 +548,87 @@ however, all privileged operations using `sudo` will require the password stored
     ```
 </details>
 
-25. <details><summary>Create <strong>virtual Kubernetes clusters</strong> in RKE</summary><br/>
-
-    ```bash
-    make vclusters
-    ```
-</details>
-
-26. <details><summary>Install <strong>HashiCorp Vault</strong> in <em><strong>HA</strong></em> mode<br/>
+25. <details><summary>Install <strong>HashiCorp Vault</strong> in <em><strong>HA</strong></em> mode<br/>
     &nbsp; &nbsp; Install <strong>External Secrets Operator</strong></summary><br/>
 
-    26.1. Initialize Vault cluster and unseal cluster pods  
-    26.2. Create policies, `Userpass` accounts, k8s roles  
-    26.3. Create `KV` mounts and populate secrets data  
-    26.4. Create ESO's `ClusterSecretStore` for Vault  
+    25.1. Initialize Vault cluster and unseal cluster pods  
+    25.2. Create policies, `Userpass` accounts, k8s roles  
+    25.3. Create `KV` mounts and populate secrets data  
+    25.4. Create ESO's `ClusterSecretStore` for Vault  
 
     ```bash
     make vault externalsecrets
     ```
 </details>
 
-27. <details><summary>Install <strong>Gitea</strong> DevOps platform to deploy local projects</summary><br/>
+26. <details><summary>Install <strong>Gitea</strong> DevOps platform to deploy local projects</summary><br/>
 
-    27.1. Create the `Homelab` organization, and import Erhhung's SSH and GPG keys  
-    27.2. Configure and deploy **Gitea Actions runner** with two types of job containers  
+    26.1. Create the `Homelab` organization, and import Erhhung's SSH and GPG keys  
+    26.2. Configure and deploy **Gitea Actions runner** with two types of job containers  
     &nbsp; &nbsp; &nbsp; a. "host" mode for building images using `buildah`  
     &nbsp; &nbsp; &nbsp; b. `DinD` mode to use `ubuntu-latest` container  
-    27.3. Use [`al2023-devops`](https://github.com/erhhung/al2023-devops) as the runner container and load common "step init" script  
-    27.4. Migrate projects from GitHub and run workflows to build images for later installs  
+    26.3. Use [`al2023-devops`](https://github.com/erhhung/al2023-devops) as the runner container and load common "step init" script  
+    26.4. Migrate projects from GitHub and run workflows to build images for later installs  
 
     ```bash
     make gitea
     ```
 
-28. <details><summary>Install <strong>GitLab</strong> EE CI/CD platform to deploy local projects</summary><br/>
+27. <details><summary>Install <strong>GitLab</strong> EE CI/CD platform to deploy local projects</summary><br/>
 
-    28.1. Import Erhhung's SSH and GPG public keys, and create the `Homelab` group  
-    28.2. Configure **Harbor** and **Slack** integrations; connect to GitHub using OmniAuth  
-    28.3. Configure and deploy **Kubernetes runner** for building images using `buildah`  
-    28.4. Use [`al2023-devops`](https://github.com/erhhung/al2023-devops) as the build container and load common pre-build script  
-    28.5. Import projects from GitHub and run pipelines to build images for later installs  
-    28.6. Deploy **CI Pipelines Exporter** to export metrics and visualize them in Grafana  
+    27.1. Import Erhhung's SSH and GPG public keys, and create the `Homelab` group  
+    27.2. Configure **Harbor** and **Slack** integrations; connect to GitHub using OmniAuth  
+    27.3. Configure and deploy **Kubernetes runner** for building images using `buildah`  
+    27.4. Use [`al2023-devops`](https://github.com/erhhung/al2023-devops) as the build container and load common pre-build script  
+    27.5. Import projects from GitHub and run pipelines to build images for later installs  
+    27.6. Deploy **CI Pipelines Exporter** to export metrics and visualize them in Grafana  
 
     ```bash
     make gitlab
     ```
 </details>
 
-29. <details><summary>Install <strong>Jenkins</strong> CI/CD platform to deploy local projects</summary><br/>
+28. <details><summary>Install <strong>Jenkins</strong> CI/CD platform to deploy local projects</summary><br/>
 
-    29.1. Configure and provision **Jenkins agent** for building images using `buildah`  
-    29.2. Install and configure popular plugins for pipeline and job output visualization  
-    29.3. Implicitly load shared library with Bash functions from Harbor in all pipelines  
-    29.4. Create pipelines from GitHub repositories  
+    28.1. Configure and provision **Jenkins agent** for building images using `buildah`  
+    28.2. Install and configure popular plugins for pipeline and job output visualization  
+    28.3. Implicitly load shared library with Bash functions from Harbor in all pipelines  
+    28.4. Create pipelines from GitHub repositories  
 
     ```bash
     make jenkins
     ```
 </details>
 
-30. <details><summary>Install <strong>Buildkite</strong> agent connected to <code>buildkite.com</code></summary><br/>
+29. <details><summary>Install <strong>Buildkite</strong> agent connected to <code>buildkite.com</code></summary><br/>
 
-    30.1. Configure agent pod spec with [`al2023-devops`](https://github.com/erhhung/al2023-devops) to build images using `buildah`  
-    30.2. Mount Git, SSH, and Harbor credentials in `checkout` and `command` containers  
-    30.3. Create YAML pipelines from GitHub repositories  
+    29.1. Configure agent pod spec with [`al2023-devops`](https://github.com/erhhung/al2023-devops) to build images using `buildah`  
+    29.2. Mount Git, SSH, and Harbor credentials in `checkout` and `command` containers  
+    29.3. Create YAML pipelines from GitHub repositories  
 
     ```bash
     make buildkite
     ```
 </details>
 
-31. <details><summary>Install <strong>Buildfarm</strong> build execution service<br/>
+30. <details><summary>Install <strong>Buildfarm</strong> build execution service<br/>
     &nbsp; &nbsp; Install <strong>BuildBuddy</strong> FOSS events viewer</summary><br/>
 
     ```bash
     make buildfarm buildbuddy
+    ```
+</details>
+
+31. <details><summary>Install <strong>vCluster Platform</strong> management plane<br/>
+    &nbsp; &nbsp; Create <strong>vCluster tenant cluster fleet</strong> in RKE</summary><br/>
+
+    31.1. Install vCluster Platform with Free Tier license  
+    31.2. Create tenant clusters with syncing of storage & ingress classes,  
+          persistent volumes & ingresses, and cert-manager certificates to host   
+    ~~31.3. Expose Kyverno mutating webhooks from host in tenant clusters~~  
+
+    ```bash
+    make vclusters
     ```
 </details>
 

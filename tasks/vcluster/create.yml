@@ -1,36 +1,33 @@
 # pass the following vars:
 #   vcluster <required> object {name,node}
+#   webhooks [optional] MutatingWebhookConfiguration.webhooks[]
 ---
-# https://www.vcluster.com/install
 - name: Create vCluster "{{ vcluster.name }}"
   become: false
   vars:
-    # required kubernetes>=24.2 package only in user virtualenv
-    ansible_python_interpreter: "{{ venv_python_interpreter }}"
-    kubeconfig: "{{ rke_kubeconfig }}"
+    vcluster_ns: vcluster-{{ vcluster.name }}
   block:
-    # https://www.vcluster.com/docs/vcluster/introduction/architecture
-    - name: Create vCluster storage
+    - name: Create vCluster persistent volumes
       vars:
         pv_list:
-          # - name: vcluster-{{ vcluster.name }}-etcd-pv
+          # - name: "{{ vcluster_ns }}-etcd-pv"
           #   role: etcd # controlPlane.backingStore.etcd.deploy.statefulSet.persistence
           #   size: "{{ vcluster_pv_sizes['etcd'] }}"
-          - name: vcluster-{{ vcluster.name }}-data-pv
+          - name: "{{ vcluster_ns }}-data-pv"
             role: data # controlPlane.statefulSet.persistence
             size: "{{ vcluster_pv_sizes['data'] }}"
       block:
-        - name: Create PV path on node data LV
+        - name: Create node-local file system path
           delegate_to: "{{ vcluster.node }}"
           become: true
           # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/file_module.html
           ansible.builtin.file:
-            path: "{{ data_lv.mount }}/{{ item.name }}"
+            path: "{{ data_lv.mount ~'/'~ item.name }}"
             state: directory
             mode: "0755"
           loop: "{{ pv_list }}"
           loop_control:
-            label: "{{ vcluster.node }}|{{ item.name }}"
+            label: "{{ vcluster.node ~'|'~ item.name }}"
 
         - name: Create vCluster persistent volume
           # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_module.html
@@ -45,8 +42,8 @@
                 labels:
                   app: vcluster
                   release: "{{ vcluster.name }}"
-                  role: "{{ item.role }}"
-                  node: "{{ vcluster.node }}"
+                  node: "{{    vcluster.node }}"
+                  role: "{{        item.role }}"
               spec:
                 storageClassName: "{{ storage_classes['local'] }}"
                 capacity:
@@ -70,17 +67,80 @@
             wait: true
           loop: "{{ pv_list }}"
           loop_control:
-            label: "{{ item.name }}|{{ item.size }}"
+            label: "{{ item.name ~'|'~ item.size }}"
 
-    - name: Install vCluster Helm chart
-      vars:
-        vcluster_fqdn: "{{ vcluster.name }}.{{ vcluster_subdomain }}"
-        vcluster_ns: vcluster-{{ vcluster.name }}
+    # https://www.vcluster.com/docs/platform/use-platform/virtual-clusters/add-virtual-clusters
+    - name: Create externally managed vCluster
       block:
-        - name: Install vCluster Helm chart
+        - name: Create VirtualClusterInstance resource
+          kubernetes.core.k8s:
+            kubeconfig: "{{ kubeconfig }}"
+            # https://www.vcluster.com/docs/platform/api/resources/virtualclusterinstance
+            definition:
+              apiVersion: management.loft.sh/v1
+              kind: VirtualClusterInstance
+              metadata:
+                name: "{{ vcluster.name }}"
+                namespace: "{{ vcluster_project_namespace }}"
+              spec:
+                displayName: vCluster "{{ vcluster.name }}"
+                networkPeer: true
+                external: true
+                template:
+                  helmRelease:
+                    chart:
+                      version: "{{ vcluster_chart_version }}"
+            state: present
+            apply: true
+            wait: true
+
+        - name: Get VirtualClusterAccessKey subresource
+          # use kubectl because k8s_info does
+          # not support fetching subresources
+          # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/shell_module.html
+          ansible.builtin.shell: |
+            # run Bash and source /etc/profile.d
+            # scripts so that kubectl is in PATH
+            exec /bin/bash -l <<'EOT'
+
+            kubectl get -n {{ vcluster_project_namespace }} \
+              virtualclusterinstance.management.loft.sh {{ vcluster.name }} \
+              --subresource accesskey -o json
+            EOT
+          register: vc_access_key
+          changed_when: false
+
+        # create Secret referenced by tenant config `platform.apiKey.secretName`
+        # https://www.vcluster.com/docs/platform/install/air-gapped#deploy-vcluster-using-helm
+        # https://github.com/loft-sh/vcluster/tree/main/pkg/platform/secret.go#L93
+        - name: Create vCluster Platform API key secret
+          vars:
+            access_key: "{{ (vc_access_key.stdout | from_json).accessKey }}"
+
+            # === Inputs ===
+            secret_ns: "{{ vcluster_ns }}"
+            secret_name: "{{ vcluster_platform_secrets['api-key'] }}"
+            secret_data:
+              accessKey: "{{ access_key }}"
+              host: "{{ vcluster_platform_fqdn }}"
+              certificateAuthorityData: "{{ ca_certificates[1] }}"
+              insecure: "false"
+              project: default
+              # `name` is required, or else the vCluster syncer will fail with "error
+              # registering vCluster: seems like virtual cluster instance got deleted"
+              name: "{{ vcluster.name }}"
+          # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
+          ansible.builtin.include_tasks: "{{ tasks_dir }}/k8s/secrets/generic.yml"
+
+    - name: Install vCluster tenant Helm chart
+      vars:
+        # var referenced in templates/vcluster/tenant.yaml.j2
+        vcluster_fqdn: "{{ vcluster_domains[vcluster.name] }}"
+      block:
+        - name: Install vCluster tenant Helm chart
           vars:
             # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/template_lookup.html
-            values_: "{{ lookup('ansible.builtin.template', templates_dir ~ '/vcluster.yaml.j2') }}"
+            values_: "{{ lookup('ansible.builtin.template', templates_dir ~ '/vcluster/tenant.yaml.j2') }}"
 
             # === Inputs ===
             tmpdir_name: vcluster-{{ vcluster.name }}
@@ -96,7 +156,7 @@
               # vCluster Helm chart creates a config Secret with "config.yaml"
               # key and value {{ .Values | toYaml }}, but since we adopt extra
               # resources using bedag/raw subchart, .exxtraas gets included in
-              # the config.yaml, which the controller cannot unmarshal. So use
+              # the config.yaml, which the controller cannot unmarshal, so use
               # a post-renderer to remove .exxtraas from the Secret
               post_renderers:
                 - |
@@ -124,7 +184,8 @@
                   else
                     echo "$yaml"
                   fi
-          # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
+            extras: # adopt extra resources into Helm release
+              - v1 Secret {{ vcluster_platform_secrets['api-key'] }}
           ansible.builtin.include_tasks: "{{ tasks_dir }}/helm/helmfile.yml"
 
         - name: Fetch vCluster kubeconfig
@@ -136,11 +197,14 @@
             name: vc-{{ vcluster.name }}
             namespace: "{{ vcluster_ns }}"
           register: vc_secret
+          until: vc_secret.resources is truthy
+          retries: 12
+          delay: 5
 
         - name: Merge into local kubeconfig
           vars:
-            # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/b64decode_filter.html
-            kubeconfig_in: "{{ vc_secret.resources[0].data.config | b64decode }}"
+            # b64_decode_k8s_secret: plugins/filter/filters.py
+            kubeconfig_in: "{{ (vc_secret.resources[0] | b64_decode_k8s_secret).config }}"
             context: x{{ vcluster.name }}
             server: https://{{ vcluster_fqdn }}
           ansible.builtin.include_tasks: "{{ tasks_dir }}/k8s/kubeconfig.yml"

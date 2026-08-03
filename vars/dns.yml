@@ -148,6 +148,8 @@ pfsense_dns_records:
       - host: events
         domain: "{{ buildbuddy_subdomain }}"
         desc: BuildBuddy BES
+      - host: vcluster
+        desc: vCluster Platform
       - host: argocd
         desc: Argo CD GitOps
       - host: ollama
@@ -188,6 +190,9 @@ pfsense_dns_records:
         desc: BentoPDF Toolkit
       - host: void
         desc: No Such Host
+      - host: workouts
+        domain: "{{ vcluster_domains['dev'] }}"
+        desc: Workouts Explorer
 
   - ip: 192.168.4.223
     host: ingresspt
@@ -195,11 +200,9 @@ pfsense_dns_records:
     aliases:
       - host: nginxpt
         desc: RKE Nginx Ingress (SSL Passthrough)
-      - host: dev
-        domain: "{{ vcluster_subdomain }}"
+      - host: xdev
         desc: vCluster "dev"
-      - host: test
-        domain: "{{ vcluster_subdomain }}"
+      - host: xtest
         desc: vCluster "test"
 
   - ip: 192.168.4.224

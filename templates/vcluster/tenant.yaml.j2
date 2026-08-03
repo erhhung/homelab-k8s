@@ -10,12 +10,13 @@ sync:
       enabled: true
       selector:
         all: true
-    # https://www.vcluster.com/docs/vcluster/configure/vcluster-yaml/sync/from-host/ingress-classes
-    ingressClasses:
-      enabled: true
     # https://www.vcluster.com/docs/vcluster/configure/vcluster-yaml/sync/from-host/storage-classes
     storageClasses:
       enabled: true
+    # https://www.vcluster.com/docs/vcluster/configure/vcluster-yaml/sync/from-host/ingress-classes
+    ingressClasses:
+      enabled: true
+
   toHost:
     # https://www.vcluster.com/docs/vcluster/configure/vcluster-yaml/sync/to-host/storage/persistent-volumes
     persistentVolumes:
@@ -23,6 +24,39 @@ sync:
     # https://www.vcluster.com/docs/vcluster/configure/vcluster-yaml/sync/from-host/ingress-classes#how-syncing-works
     ingresses:
       enabled: true
+    # CRD syncing requires deployment of vCluster Platform with Free Tier license:
+    # https://www.vcluster.com/docs/vcluster/troubleshoot/pro-feature-license-error
+    # https://www.vcluster.com/docs/vcluster/configure/vcluster-yaml/sync/from-host/custom-resources
+    customResources:
+      certificates.cert-manager.io/v1:
+        enabled: true
+
+policies:
+  # unfortunately, Central Admission Control is a
+  # Pro-only feature (enterprise "Scale" license):
+  # https://www.vcluster.com/pro/docs/features/centralized_admission_control
+  centralAdmission:
+    {%- if webhooks | default([]) is truthy +%}
+    mutatingWebhooks:
+      - apiVersion: admissionregistration.k8s.io/v1
+        kind: MutatingWebhookConfiguration
+        metadata:
+          name: kyverno-resource-mutating-webhook-cfg
+          labels:
+            webhook.kyverno.io/managed-by: kyverno
+        webhooks:
+          # to_indented_yaml: plugins/filter/filters.py
+          {{ webhooks | to_indented_yaml | indent(10) }}
+    {%- endif %}
+
+# https://www.vcluster.com/docs/platform/install/air-gapped#deploy-vcluster-using-helm
+platform:
+  project: default
+  apiKey:
+    # this is NOT the API key Secret in the vcluster-platform namespace, but a Secret
+    # of the same name in the tenant's control plane namespace (e.g. vcluster-<name>)
+    secretName: {{ vcluster_platform_secrets['api-key'] }}
+    createRBAC: true
 
 # https://www.vcluster.com/docs/vcluster/category/components
 controlPlane:
@@ -32,6 +66,12 @@ controlPlane:
     # as K0s is deprecated and no longer supported
     k8s:
       enabled: true
+      # https://ghcr.io/loft-sh/kubernetes
+      image:
+        registry: ghcr.io
+        repository: loft-sh/kubernetes
+        # match the Kubernetes version on host
+        tag: v{{ kubernetes_version.with_patch }}
 
   # backingStore:
   #   etcd:
@@ -47,8 +87,7 @@ controlPlane:
   #                 name: etcd
   #               spec:
   #                 storageClassName: {{ storage_classes['local'] }}
-  #                 accessModes:
-  #                   - ReadWriteOnce
+  #                 accessModes: ["ReadWriteOnce"]
   #                 resources:
   #                   requests:
   #                     storage: {{ vcluster_pv_sizes['etcd'] }}
@@ -60,6 +99,16 @@ controlPlane:
 
   # https://www.vcluster.com/docs/vcluster/configure/vcluster-yaml/control-plane/deployment/statefulset
   statefulSet:
+    image:
+      registry: ghcr.io
+      repository: loft-sh/vcluster-pro
+      # tag: use chart-defined version
+
+    resources:
+      requests:
+        cpu: 100m
+        memory: 512Mi
+
     persistence:
       volumeClaim:
         enabled: false
@@ -68,8 +117,7 @@ controlPlane:
             name: data
           spec:
             storageClassName: {{ storage_classes['local'] }}
-            accessModes:
-              - ReadWriteOnce
+            accessModes: ["ReadWriteOnce"]
             resources:
               requests:
                 storage: {{ vcluster_pv_sizes['data'] }}
@@ -78,23 +126,19 @@ controlPlane:
                 app: vcluster
                 release: {{ vcluster.name }}
                 role: data
-    resources:
-      requests:
-        cpu: 100m
-        memory: 384Mi
 
   proxy:
     # https://www.vcluster.com/docs/vcluster/manage/accessing-vcluster#access-vcluster-externally
     extraSANs:
       - {{ vcluster_fqdn }}
-      - {{ vcluster.name }}.vcluster-{{ vcluster.name }}.svc.{{ cluster_domain }}
-      - {{ vcluster.name }}.vcluster-{{ vcluster.name }}.svc
+      - {{ vcluster.name }}.{{ vcluster_ns }}.svc.{{ cluster_domain }}
+      - {{ vcluster.name }}.{{ vcluster_ns }}.svc
 
   # https://www.vcluster.com/docs/vcluster/manage/accessing-vcluster?x1=1#expose-vcluster
   ingress:
     enabled: true
-    # this domain (e.g. dev.vcluster.fourteeners.local)
-    # will be the API server endpoint in the kubeconfig
+    # this host (e.g. xtest.fourteeners.local) will be
+    # the Kubernetes API server endpoint in kubeconfig
     host: {{ vcluster_fqdn }}
     pathType: Prefix
     spec:

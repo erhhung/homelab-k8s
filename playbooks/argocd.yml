@@ -124,7 +124,7 @@
 
     - name: Get vCluster kubeconfig data
       vars:
-        vc_names: "{{ vclusters | map(attribute='name') }}"
+        vc_names: "{{ vcluster_tenants | map(attribute='name') }}"
       # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_info_module.html
       kubernetes.core.k8s_info:
         kubeconfig: "{{ kubeconfig }}"
@@ -158,7 +158,7 @@
     # https://argo-cd.readthedocs.io/en/stable/operator-manual/declarative-setup#clusters
     - name: Create managed cluster secret
       vars:
-        vc_names: "{{ vclusters | map(attribute='name') }}"
+        vc_names: "{{ vcluster_tenants | map(attribute='name') }}"
         vc_secret_data: "{{ vc_kubeconfigs.results[i].resources[0].data }}"
         vc_kubeconfig: "{{ vc_secret_data.config | b64decode | from_yaml }}"
         cluster: "{{ vc_kubeconfig.clusters[0].cluster }}"
@@ -230,7 +230,7 @@
           - v1 Secret {{ argocd_secrets['git-creds'] }}
           - v1 Secret {{ argocd_secrets['age-keys']  }}
           - |
-            {% for vc in vclusters %}
+            {% for vc in vcluster_tenants %}
             v1 Secret argocd-cluster-creds-{{ vc.name }}
             {% endfor %}
           - |

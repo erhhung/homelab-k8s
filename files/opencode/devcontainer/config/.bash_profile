@@ -243,9 +243,6 @@ EOT
 # (completion is defined
 # in ~/.bash_completion)
 kexec() {
-  # ensure kubectl installed
-  _reqcmds kubectl || return
-
   local pod=$1; shift
 
   local o opts=()

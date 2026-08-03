@@ -1,14 +1,92 @@
+# vcluster_admin_pass: {vault.yml}
+
+vcluster_platform_namespace: vcluster-platform
+vcluster_platform_host_name: vcluster # alias of "ingress"
+
+# https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_filters.html#products
+vcluster_platform_fqdn: >-
+  {{ [vcluster_platform_host_name] | product(search_domains) |
+      map('join','.') | first }}
+
+vcluster_platform_secrets:
+  ingress: vcluster-platform-ingress-tls
+  password: vcluster-platform-admin-password
+  api-key: vcluster-platform-api-key
+
+# https://github.com/loft-sh/loft/tree/master/chart
+vcluster_platform_chart_version: "4.11.0"
+vcluster_platform_release_name: vcluster-platform
+
+# https://github.com/loft-sh/loft/tree/master/chart/values.yaml
+vcluster_platform_chart_values:
+  replicaCount: 1
+
+  # https://loft.sh/docs/admin/config
+  config:
+    loftHost: "{{ vcluster_platform_fqdn }}"
+    projectNamespacePrefix: vcluster-p-
+
+  logging:
+    encoding: console # console|json
+    level: info # debug|info|error
+  additionalCA: "{{ ca_certificates[1] | b64encode }}"
+
+  env:
+    # our vCluster is not publicly accessible:
+    # https://www.vcluster.com/docs/platform/install/helm#set-recommended-values
+    DISABLE_LOFT_ROUTER: "true"
+
+  admin:
+    email: "{{    homelab_admin.email    }}"
+    username: "{{ homelab_admin.username }}"
+    passwordSecretRef:
+      name: "{{ vcluster_platform_secrets['password'] }}"
+      key: password
+
+  resources:
+    requests:
+      cpu: 50m
+      memory: 768Mi
+
+  # expose vCluster Platform service over plain HTTP
+  # because TLS terminates at the ingress controller
+  tls:
+    enabled: false
+
+  ingress:
+    enabled: true
+    tls:
+      enabled: true
+      secret: "{{ vcluster_platform_secrets['ingress'] }}"
+    ingressClass: "{{ rke_ingress_class }}"
+    annotations:
+      nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+      nginx.ingress.kubernetes.io/backend-protocol: HTTP
+    host: "{{ vcluster_platform_fqdn }}"
+    path: /
+
+  serviceMonitor:
+    enabled: true
+    labels: "{{ monitoring_selector_labels }}"
+    interval: 1m
+    scheme: http
+
+# we will only create tenant clusters within the "default" project
+# (the namespace prefix is set by `config.projectNamespacePrefix`)
+vcluster_project_namespace: vcluster-p-default
+
 # vCluster resources:
 # release:   <name>
 # namespace: vcluster-<name>
 # etcd PV:   vcluster-<name>-etcd-pv
 # data PV:   vcluster-<name>-data-pv
 
-# vclusters.node is where etcd and data PVs will be created
-# IMPORTANT: remember to create DNS record for each vCluster
-# (e.g. dev.vcluster.fourteeners.local) in pfSense as alias
-# of `ingresspt` prior to provisioning
-vclusters:
+# vcluster_tenants[].node is where etcd+data PVs will be created;
+# IMPORTANT remember to create DNS record for each vCluster (e.g.
+# xtest.fourteeners.local) in pfSense as alias of ingresspt prior
+# to provisioning; run this command to delete all vClusters:
+# make vclusters tags=tenants vars='{"vcluster_tenants":[]}'
+vcluster_tenants:
   - name: dev
     node: k8s4
   - name: test
@@ -20,36 +98,46 @@ vcluster_pv_sizes:
 
 # vCluster kube API server
 # external ingress domains
-vcluster_subdomain: vcluster.{{ homelab_domain }}
-vcluster_fqdns: |
-  {% set fqdns = {} %}
-  {% for vc in vclusters %}
-  {%   set _ = fqdns.update({
-         vc.name: vc.name ~'.'~ vcluster_subdomain,
-       })   %}
-  {% endfor %}
-  {{ fqdns  }}
+vcluster_domains: |
+  {% set domains = {} %}
+  {% for vc in vcluster_tenants %}
+  {%   set _ = domains.update({
+         vc.name: 'x'~ vc.name ~'.'~ homelab_domain,
+       })    %}
+  {% endfor  %}
+  {{ domains }}
 
 # vCluster kube API server
 # internal service domains
 vcluster_kube_urls: |
   {% set urls = {} %}
-  {% for vc in vclusters %}
-  {%   set _ = urls.update({
-         vc.name: 'https://'~ vc.name ~'.vcluster-'~ vc.name ~'.svc',
+  {% for vc in vcluster_tenants %}
+  {%   set ns = 'vcluster-'~ vc.name %}
+  {%   set _  =  urls.update({
+         vc.name: 'https://'~ vc.name ~'.'~ ns ~'.svc',
        })   %}
   {% endfor %}
   {{ urls   }}
 
-# these pods are provisioned by vCluster, and are not
-# considered when checking if there are user-deployed
-# pods in the namespace prior to vCluster deletion
-vcluster_pods: # regex matching <namespace>/<pod-name>
-  - ^kube-system/coredns-.*$
-
 # https://github.com/loft-sh/vcluster/tree/main/chart
-vcluster_chart_version: "0.35.2"
+vcluster_chart_version: "0.36.0"
 # https://github.com/loft-sh/vcluster/tree/main/chart/values.yaml
 # https://www.vcluster.com/docs/vcluster/configure/vcluster-yaml
-# vcluster_chart_values: {templates/vcluster.yaml.j2}
-# values are templated to support multiple vClusters
+# vcluster_chart_values: {templates/vcluster/tenant.yaml.j2}
+# chart values are templated for creating multiple vClusters
+
+# these pods are provisioned by vCluster, and are not
+# considered when checking if there are user-deployed
+# pods in the namespace before deleting the vCluster
+vcluster_control_plane_pods:
+  # regex matching <namespace>/<pod-name>
+  - ^kube-system/coredns-.*$
+
+# list of Kyverno `MutatingPolicy` webhooks to expose
+# in each vCluster (see "templates/kyverno/policies/")
+# uh, this feature requires enterprise "Scale" license!
+# https://www.vcluster.com/pro/docs/guides/host-kyverno
+vcluster_kyverno_policies: []
+  # - pvc-retention-policy
+  # - revision-history-limit
+  # - standard-tls-certificate

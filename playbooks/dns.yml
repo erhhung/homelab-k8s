@@ -8,10 +8,10 @@
 
     # *_subdomain vars
     - vars/thanos.yml
-    - vars/vclusters.yml
     - vars/policyreporter.yml
     - vars/gitlab.yml
     - vars/buildbuddy.yml
+    - vars/vclusters.yml
   vars:
     api_base: "https://pfsense.{{ homelab_domain }}/api/v2"
     headers:
