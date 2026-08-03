@@ -30,11 +30,11 @@ spec:
   conditions:
     # Job TTL handles owned pods
     - name: pod-not-owned-by-job
-      expression: >-
+      expression: |-
         !object.metadata.ownerReferences.exists(o, o.kind == "Job")
 
     - name: dead-pod-older-than-24h
-      expression: >-
+      expression: |-
         (
           object.status.phase == "Succeeded" &&
           object.status.containerStatuses.exists(cs,

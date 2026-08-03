@@ -99,13 +99,15 @@ kyverno_chart_values:
       # either one namespace or all namespaces
       # (wildcards and multiple not supported)
       namespace: "" # "*"=all
+
     # set Kubernetes API server behavior to Ignore
     # instead of Fail when webhook server is down:
     # https://kyverno.io/docs/policy-types/cluster-policy/policy-settings
     forceFailurePolicyIgnore:
-      # prefer availability over
-      # strict policy enforcement
-      enabled: true
+      # prefer availability over strict
+      # policy enforcement, but it's bad
+      # for debugging policy evaluations
+      enabled: false
 
     globalContext:
       maxApiCallResponseLength: 2000000 # 0=unlimited
@@ -161,6 +163,10 @@ kyverno_chart_values:
     <<: *controller
     replicas: "{{ 1 if cluster == 'k3s' else 2 }}"
 
+    rbac:
+      clusterRole:
+        extraResources: []
+
     container:
       resources: *resources
     resources: null
@@ -179,7 +185,9 @@ kyverno_chart_values:
             verbs:
               - get
               - list
+              - watch
               - patch
+              - update
 
     featuresOverride:
       logging:

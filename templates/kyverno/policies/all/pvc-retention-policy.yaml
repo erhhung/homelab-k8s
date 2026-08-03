@@ -10,6 +10,13 @@ metadata:
   labels:
     reports.kyverno.io/disabled: "true"
 spec:
+  evaluation:
+    admission:
+      enabled: true
+    mutateExisting:
+      enabled: true
+  failurePolicy: Fail
+
   matchConstraints:
     resourceRules:
       - apiGroups: ["apps"]
@@ -27,22 +34,16 @@ spec:
     # check existing value to avoid unnecessary update,
     # especially with a same-trigger-and-target policy:
     # https://kyverno.io/docs/policy-types/mutating-policy#same-trigger-and-target
-    - name: update-is-required
-      expression: >-
+    - name: mutation-required
+      expression: |-
         !has(object.spec.persistentVolumeClaimRetentionPolicy)                        ||
              object.spec.persistentVolumeClaimRetentionPolicy.whenScaled  != "Retain" ||
              object.spec.persistentVolumeClaimRetentionPolicy.whenDeleted != "Delete"
 
-  evaluation:
-    admission:
-      enabled: true
-    mutateExisting:
-      enabled: true
-
   mutations:
     - patchType: ApplyConfiguration
       applyConfiguration:
-        expression: >-
+        expression: |-
           Object{
             spec: Object.spec{
               persistentVolumeClaimRetentionPolicy: Object.spec.persistentVolumeClaimRetentionPolicy{

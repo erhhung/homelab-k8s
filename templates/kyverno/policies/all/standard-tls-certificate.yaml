@@ -1,0 +1,156 @@
+# set standard TLS certificate parameters on cert-manager
+# `Certificate` resource for the fourteeners.local domain;
+# for Ingress cert, resource spec can be as simple as the
+# following, which is technically invalid before patching:
+#
+# https://cert-manager.io/docs/usage/certificate#creating-certificate-resources
+# apiVersion: cert-manager.io/v1
+# kind: Certificate
+# metadata:
+#   name: my-app-ingress
+#   namespace: my-app
+# spec:
+#   dnsNames:
+#     - myapp.xdev.fourteeners.local
+#   secretName: my-app-ingress-tls
+#
+# https://kyverno.io/docs/policy-types/mutating-policy
+# https://kubespec.dev/kyverno/policies.kyverno.io/v1/MutatingPolicy
+# https://kubernetes.io/docs/reference/using-api/cel
+---
+apiVersion: policies.kyverno.io/v1
+kind: MutatingPolicy
+metadata:
+  name: standard-tls-certificate
+  labels:
+    reports.kyverno.io/disabled: "true"
+spec:
+  evaluation:
+    admission:
+      enabled: true
+    mutateExisting:
+      enabled: false
+  failurePolicy: Fail
+
+  matchConstraints:
+    resourceRules:
+      - apiGroups: ["cert-manager.io"]
+        apiVersions: ["v1"]
+        # https://kubernetes.io/docs/reference/kubernetes-api/definitions/named-rule-with-operations-v1-admissionregistration#NamedRuleWithOperations
+        operations:
+          - CREATE
+          - UPDATE
+        resources:
+          - certificates
+        scope: Namespaced
+
+  matchConditions:
+    - name: mutation-required
+      expression: |-
+        !object.?spec.?commonName.hasValue() ||
+        !object.?spec.?issuerRef.hasValue()  ||
+        !object.?spec.?duration.hasValue()   ||
+        !object.?spec.?subject.hasValue()
+
+  variables:
+    - name: issuerRef
+      expression: |-
+        Object.spec.issuerRef{
+          group: "certmanager.step.sm",
+          kind:  "StepClusterIssuer",
+          name:  "step-issuer"
+        }
+    - name: privateKey
+      expression: |-
+        Object.spec.privateKey{
+          algorithm:      "ECDSA",
+          encoding:       "PKCS8",
+          rotationPolicy: "Always",
+          size:            256
+        }
+    # https://cert-manager.io/docs/usage/certificate#x509-key-usages-and-extended-key-usages
+    # https://cert-manager.io/docs/reference/api-docs#cert-manager.io/v1.KeyUsage
+    - name: usages
+      expression: |-
+        [
+          "digital signature",
+          "key encipherment",
+          "server auth"
+        ]
+    - name: subject
+      # these values should match the default template
+      # defined at pki:.step/templates/x509/default.tpl
+      expression: |-
+        Object.spec.subject{
+          countries:           ["US"],
+          localities:          ["Home"],
+          organizationalUnits: ["Homelab"],
+          organizations:       ["Fourteeners"],
+          provinces:           ["California"]
+        }
+
+  mutations:
+    # https://kubernetes.io/docs/reference/kubernetes-api/admissionregistration/mutating-admission-policy-v1#ApplyConfiguration
+    - patchType: ApplyConfiguration
+      # NOTE: `usages` and `subject` are atomic values that cannot
+      # be operated on by `ApplyConfiguration`, so use `JSONPatch`
+      # on those fields instead
+      applyConfiguration:
+        expression: |-
+          Object{
+            spec: Object.spec{
+              isCA:       false,
+              issuerRef:  object.?spec.?issuerRef.orValue(variables.issuerRef),
+              duration:   object.?spec.?duration.orValue("720h"),
+              privateKey: object.?spec.?privateKey.orValue(variables.privateKey),
+              commonName: object.?spec.?commonName.orValue(
+                object.?spec.?dnsNames.orValue([object.metadata.name])[0]
+              )
+            }
+          }
+    - patchType: JSONPatch
+      jsonPatch:
+        expression: |-
+          object.?spec.?renewBeforePercentage.hasValue() ||
+          object.?spec.?renewBefore.hasValue() ? [] : [
+            JSONPatch{
+              op:    "add",
+              path:  "/spec/renewBeforePercentage",
+              value: 10
+            }
+          ]
+    - patchType: JSONPatch
+      jsonPatch:
+        expression: |-
+          object.?spec.?keystores.?pkcs12.?create.orValue(false) ? [
+            JSONPatch{
+              op:    "add",
+              path:  "/spec/keystores/pkcs12/password",
+              value: "changeit"
+            },
+            JSONPatch{
+              op:    "add",
+              path:  "/spec/keystores/pkcs12/profile",
+              value: "Modern2023"
+            }
+          ] : []
+    - patchType: JSONPatch
+      jsonPatch:
+        expression: |-
+          object.?spec.?usages.hasValue() ? [] : [
+            JSONPatch{
+              op:    "add",
+              path:  "/spec/usages",
+              value: variables.usages
+            }
+          ]
+    - patchType: JSONPatch
+      jsonPatch:
+        expression: |-
+          object.?spec.?subject.hasValue() ? [] : [
+            JSONPatch{
+              op:    "add",
+              path:  "/spec/subject",
+              value: variables.subject
+            }
+          ]

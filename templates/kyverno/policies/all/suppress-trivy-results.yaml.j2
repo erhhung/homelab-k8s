@@ -16,6 +16,13 @@ metadata:
     # https://kyverno.io/docs/guides/reports#report-internals
     reports.kyverno.io/disabled: "true"
 spec:
+  evaluation:
+    admission:
+      enabled: true
+    mutateExisting:
+      enabled: false
+  failurePolicy: Ignore
+
   matchConstraints:
     resourceRules:
       - apiGroups: ["openreports.io"]
@@ -29,32 +36,24 @@ spec:
 
   matchConditions:
     - name: created-by-adapter
-      expression: >-
+      expression: |-
         has(object.metadata.labels) && "app.kubernetes.io/created-by" in object.metadata.labels &&
             object.metadata.labels["app.kubernetes.io/created-by"] == "trivy-operator-polr-adapter"
 
-    - name: update-is-required
+    - name: mutation-required
       expression: variables.ignoredResults.size() > 0
-
-  evaluation:
-    admission:
-      enabled: true
-    mutateExisting:
-      enabled: false
-
-  failurePolicy: Ignore
 
   variables:
     # compile AVD-* policy IDs defined in
     # Trivy's ignoreFile (vars/trivy.yml)
     - name: ignoredPolicies
-      expression: >-
+      expression: |-
         {{ trivy_ignore_file      | ansible.builtin.dict2items |
            map(attribute='value') | ansible.builtin.flatten    |
            map(attribute='id')    | select('search', '^AVD-')  | to_json }}
 
     - name: ignoredSources
-      expression: >-
+      expression: |-
         {{ [
              'Trivy InfraAssessment',
              'Trivy RbacAssessment',
@@ -62,7 +61,7 @@ spec:
            ] | to_json
         }}
     - name: ignoredResults
-      expression: >-
+      expression: |-
         object.results.filter(r,
           has(r.source) &&
               r.source in variables.ignoredSources &&
@@ -72,12 +71,12 @@ spec:
           )
         )
     - name: keptResults
-      expression: >-
+      expression: |-
         object.results.filter(r,
           !(r in variables.ignoredResults)
         )
     - name: newSummary
-      expression: >-
+      expression: |-
         {
           "pass":  variables.keptResults.filter(r, has(r.result) && r.result == "pass" ).size(),
           "fail":  variables.keptResults.filter(r, has(r.result) && r.result == "fail" ).size(),
@@ -89,7 +88,7 @@ spec:
   mutations:
     - patchType: JSONPatch
       jsonPatch:
-        expression: >-
+        expression: |-
           [
             JSONPatch{
               op:    "add",
