@@ -12,6 +12,7 @@ policy_reporter_api_hosts:
   - core
   - kyverno
   - trivy
+
 # append: plugins/filter/filters.py
 policy_reporter_host_names:
   rke: # aliases of "ingress"
@@ -479,6 +480,13 @@ policy_reporter_chart_values:
       replicaCount: 1
       revisionHistoryLimit: "{{ k8s_max_revisions }}"
 
+      image: &plugin-image
+        registry: ghcr.io
+        # https://github.com/kyverno/policy-reporter-plugins/releases?q=%22kyverno-plugin%22
+        repository: kyverno/policy-reporter/kyverno-plugin
+        pullPolicy: IfNotPresent
+        tag: "0.6.2"
+
       logging: *logging
       resources: *resources
 
@@ -493,9 +501,23 @@ policy_reporter_chart_values:
 
     trivy:
       <<: *plugin
-      # disable for now due to startup crash:
-      # https://github.com/kyverno/policy-reporter-plugins/issues/354
-      enabled: false
+      enabled: true
+
+      policyReporter:
+        secretRef: "{{ policy_reporter_secrets['basic'] }}"
+
+      image:
+        <<: *plugin-image
+        # https://github.com/kyverno/policy-reporter-plugins/releases?q=%22trivy-plugin%22
+        repository: kyverno/policy-reporter/trivy-plugin
+        tag: "0.4.14"
+
+      cli:
+        image:
+          <<: *plugin-image
+          # https://github.com/aquasecurity/trivy/pkgs/container/trivy/versions?filters%5Bversion_type%5D=tagged
+          repository: aquasecurity/trivy
+          tag: "0.73.0"
 
       # allow calls to CVE AWG/MITRE API:
       # https://cveawg.mitre.org/api-docs

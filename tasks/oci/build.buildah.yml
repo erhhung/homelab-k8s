@@ -38,7 +38,7 @@
       ansible.builtin.command:
         argv: "{{ argv | flatten }}"
       changed_when: true
-      timeout: 1800
+      timeout: 3600 # 1h
 
     - name: Tag image "{{ local_image }}" for Habor
       ansible.builtin.command:
@@ -92,8 +92,8 @@
           - push
           - "{{ remote_name }}"
       changed_when: true
-      timeout: 1200
-      retries: 3
+      timeout: 3600 # 1h
+      retries: 2
       delay: 10
 
     - name: Notify handler if artifact created
