@@ -84,6 +84,18 @@
           {% endif  -%}
           {{ ns.path }}
       block:
+        - name: Note Docker build start time
+          # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/set_fact_module.html
+          ansible.builtin.set_fact:
+            docker_build_started_at: "{{ now(utc=true, fmt='%s') | int }}"
+
+        - name: Show Docker build start time
+          vars:
+            started_at: "{{ '%Y-%m-%d %H:%M:%S' | strftime(docker_build_started_at) }}"
+          # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/debug_module.html
+          ansible.builtin.debug:
+            msg: Docker build started at {{ started_at }}.
+
         - name: Build and push Docker image
           ansible.builtin.include_tasks: "{{ tasks_dir }}/oci/build.docker.yml"
           when: docker_check.rc == 0
@@ -91,3 +103,16 @@
         - name: Build and push Docker image
           ansible.builtin.include_tasks: "{{ tasks_dir }}/oci/build.buildah.yml"
           when: buildah_check.rc | default(-1) == 0
+      always:
+        - name: Show Docker build end time
+          vars:
+            ended_ts: "{{ now(utc=true, fmt='%s') | int }}"
+            ended_at: "{{ '%Y-%m-%d %H:%M:%S' | strftime(ended_ts) }}"
+            elapsed_s: "{{ ended_ts - docker_build_started_at }}"
+            elapsed_hms: >-
+              {{ '%02d:%02d:%02d' | format(
+                  elapsed_s // 3600,
+                 (elapsed_s  % 3600) // 60,
+                  elapsed_s  % 60)   }}
+          ansible.builtin.debug:
+            msg: Docker build ended at {{ ended_at }} ({{ elapsed_hms }}).

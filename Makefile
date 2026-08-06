@@ -15,7 +15,7 @@ endif
 
  PHONY := all play debug check lint cloc tags
  PHONY += vmstart vmshutdown vmsnapshot
- PHONY += diskfree volrepair unseal
+ PHONY += diskfree volrepair unseal gptauth
 .PHONY: $(PHONY)
 
 # targets are playbook names with optional dash prefix/suffix (refer to
@@ -132,3 +132,8 @@ volrepair:
 #  `make unseal [-r|--restart] [index1] [index2]...`
 unseal:
 	@scripts/unseal.sh $(rest_goals) || true
+
+# restart LiteLLM and force ChatGPT device flow
+# authentication, then update local "auth.json"
+gptauth:
+	@scripts/gptauth.sh || true

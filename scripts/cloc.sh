@@ -96,7 +96,7 @@ duplicate_files() {
   local path
   while read -r path; do
     # --parents requires GNU cp
-    $CP --parents "$path" "$TEMP"
+    $CP -r --parents "$path" "$TEMP"
   done <<< "$(project_files)"
 }
 

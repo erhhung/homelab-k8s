@@ -433,14 +433,15 @@ litellm_job_init_container:
 
 # 💡 ChatGPT Authentication OAuth Device Flow 💡
 # ---------------------------------------------
-# 1. shell into LiteLLM container and `rm /data/chatgpt/auth.json`
-# 2. restart LiteLLM pod and watch container logs for instructions
+# 1. edit Secret `litellm-chatgpt-auth` and make JSON object empty
+# 2. shell into LiteLLM container and `rm /data/chatgpt/auth.json`
+# 3. restart LiteLLM pod and watch container logs for instructions
 #    Sign in with ChatGPT using device code:
 #    1) Visit https://auth.openai.com/codex/device
 #    2) Enter code: XXXX-YYYYY
-# 3. shell into container again and `cat /data/chatgpt/auth.json`
+# 4. shell into container again and `cat /data/chatgpt/auth.json`
 #    to copy the entire JSON content to replace Ansible-encrypted
-#    file "files/litellm/chatgpt/auth.json"
+#    file "files/litellm/chatgpt/auth.json" and update the Secret
 
 # https://docs.litellm.ai/docs/routing#what-is-a-deployment
 litellm_models:

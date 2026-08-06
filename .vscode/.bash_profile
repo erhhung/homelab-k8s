@@ -1,7 +1,10 @@
-# shellcheck disable=SC1091
-# shellcheck disable=SC2148
-# shellcheck disable=SC2155
-# shellcheck disable=SC2207
+# shellcheck disable=SC2148 # Tips depend on target shell
+# shellcheck disable=SC1091 # Not following: not input file
+# shellcheck disable=SC2155 # Declare and assign separately
+# shellcheck disable=SC2086 # Double quote prevent globbing
+# shellcheck disable=SC2207 # Prefer mapfile to split output
+
+clear
 
 # load ~/.bash_profile only if not
 # done so because it takes a while
@@ -9,6 +12,13 @@ alias omp &> /dev/null || {
   source         /etc/profile
   source "$HOME/.bash_profile"
 }
+
+export ANSIBLE_CONFIG="./ansible.cfg"
+
+if [ "$OPENCODE_CALLER" == vscode ] && \
+   [ "$_EXTENSION_OPENCODE_PORT"  ]; then
+  exec opencode --port $_EXTENSION_OPENCODE_PORT
+fi
 
 git_root() {
   local root
@@ -21,12 +31,11 @@ git_root() {
   echo "$root"
 }
 
-export ANSIBLE_CONFIG="./ansible.cfg"
-VAULTFILE="inventory/group_vars/all/vault.yml"
-
 alias al='ansible-lint'
 alias ap='ansible-playbook'
 alias av='ansible-vault'
+
+VAULTFILE="inventory/group_vars/all/vault.yml"
 
 __av() (
   cmd="$1" file="$2"

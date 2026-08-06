@@ -10,8 +10,10 @@
 # kubectl delete crd nodeprofiles.storage.loft.sh \
 #    && vcluster platform destroy --non-interactive
 ---
-- name: Create vCluster Platform on RKE
-  tags: platform
+- name: Install vCluster Platform
+  tags:
+    - platform
+    - cli # login requires access key
   hosts: "{{ rke_control_plane_host }}"
   vars_files:
     - vars/kubernetes.yml
@@ -138,31 +140,82 @@
             state: present
           register: vcp_access_key
 
-    # create Secret to be referenced by tenant clusters' `platform.apiKey.secretName`
-    # (corresponding `OwnedAccessKey` CR will be created after Platform Helm install)
-    # https://www.vcluster.com/docs/platform/install/air-gapped#deploy-vcluster-using-helm
-    # https://github.com/loft-sh/vcluster/tree/main/pkg/platform/secret.go#L93
     - name: Create vCluster Platform API key secret
-      vars:
-        key_name: >-
-          {{ vcp_key_secret.resources[0].metadata.annotations['access-key-source'] | basename
-          if vcp_key_secret.resources is truthy else vcp_access_key.result.metadata.name }}
-        # b64_decode_k8s_secret: plugins/filter/filters.py
-        key_secret: |
-          {{ vcp_key_secret.resources[0] | b64_decode_k8s_secret
-          if vcp_key_secret.resources is truthy else {} }}
-        access_key: >-
-          {{ key_secret.accessKey if key_secret is truthy else
-             vcp_access_key.result.spec.key }}
+      block:
+        # fact will also be used by vCluster CLI login
+        - name: Set vcluster_platform_access_key fact
+          vars:
+            # b64_decode_k8s_secret: plugins/filter/filters.py
+            key_secret: |
+              {{ vcp_key_secret.resources[0] | b64_decode_k8s_secret
+              if vcp_key_secret.resources is truthy else {} }}
+          # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/set_fact_module.html
+          ansible.builtin.set_fact:
+            vcluster_platform_access_key: >-
+              {{ key_secret.accessKey if key_secret is truthy else
+                 vcp_access_key.result.spec.key }}
 
-        # === Inputs ===
-        secret_name: "{{ vcluster_platform_secrets['api-key'] }}"
-        secret_data:
-          accessKey: "{{ access_key }}"
-        annotations:
-          # note the generated `OwnedAccessKey` resource name
-          access-key-source: ownedaccesskey.management.loft.sh/{{ key_name }}
-      ansible.builtin.include_tasks: "{{ tasks_dir }}/k8s/secrets/generic.yml"
+        - name: Create vCluster Platform API key secret
+          vars:
+            key_name: >-
+              {{ vcp_key_secret.resources[0].metadata.annotations['access-key-source'] | basename
+              if vcp_key_secret.resources is truthy else vcp_access_key.result.metadata.name }}
+
+            # === Inputs ===
+            secret_name: "{{ vcluster_platform_secrets['api-key'] }}"
+            secret_data:
+              accessKey: "{{ vcluster_platform_access_key }}"
+            annotations:
+              # note the generated `OwnedAccessKey` resource name
+              access-key-source: ownedaccesskey.management.loft.sh/{{ key_name }}
+          ansible.builtin.include_tasks: "{{ tasks_dir }}/k8s/secrets/generic.yml"
+
+# install vCluster: https://www.vcluster.com/install
+- name: Install vCluster CLI tool
+  tags: cli
+  hosts: rke_cluster
+  vars_files:
+    - vars/kubernetes.yml
+    - vars/vclusters.yml
+  tasks:
+    - name: Install vCluster CLI tool
+      become: true
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/shell_module.html
+      ansible.builtin.shell: |
+        set -o pipefail
+
+        REL="https://github.com/loft-sh/vcluster/releases"
+        VER=$(curl -ILs "$REL/latest" | sed -En 's/^location:.+\/tag\/v(.+)\r$/\1/p')
+
+        # check if latest version already installed
+        command -v vcluster &> /dev/null && {
+          ver=$(v=(`vcluster version`); echo ${v[-1]})
+          [ "$ver" == "$VER" ] && exit 9 # no change
+        }
+        ARCH=$(uname -m | sed -e 's/aarch64/arm64/' -e 's/x86_64/amd64/')
+        curl -fsSLo vcluster "$REL/download/v${VER}/vcluster-linux-$ARCH"
+        chmod +x vcluster
+      args:
+        executable: /bin/bash
+        chdir: /usr/local/bin
+      register: install_cli
+      changed_when: install_cli.rc == 0
+      failed_when: install_cli.rc not in [0,9]
+
+    - name: Log into vCluster Platform
+      vars:
+        facts: "{{ hostvars[rke_control_plane_host] }}"
+        server_url: https://{{ vcluster_platform_fqdn }}
+        access_key: "{{ facts['vcluster_platform_access_key'] }}"
+      ansible.builtin.shell: |
+        vcluster platform access-key &> /dev/null && exit 9
+        vcluster platform  login {{ server_url }} \
+                    --access-key {{ access_key }}
+      args:
+        executable: /bin/bash
+      register: cli_login
+      changed_when: cli_login.rc == 0
+      failed_when: cli_login.rc not in [0,9]
 
 - name: Create tenant clusters on RKE
   tags:
@@ -197,7 +250,6 @@
     - name: Get tenants to be deleted
       vars:
         keep: "{{ vcluster_tenants | map(attribute='name') | to_json(separators=[',',':']) }}"
-      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/shell_module.html
       ansible.builtin.shell: |
         # run Bash and source /etc/profile.d
         # scripts so that kubectl is in PATH
