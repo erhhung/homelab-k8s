@@ -54,7 +54,7 @@ litellm_postgresql_url: >-
 # https://docs.litellm.ai/docs/proxy/deploy#helm-chart
 litellm_chart_oci_url: oci://docker.litellm.ai/berriai/litellm-helm
 # https://github.com/BerriAI/litellm/tree/main/deploy/charts/litellm-helm
-litellm_chart_version: "1.86.2"
+litellm_chart_version: "1.95.0"
 litellm_release_name: litellm
 
 # https://github.com/BerriAI/litellm/tree/main/deploy/charts/litellm-helm/values.yaml
@@ -106,6 +106,8 @@ litellm_chart_values:
 
     general_settings:
       master_key: os.environ/PROXY_MASTER_KEY
+      # hide credentials hint on login form
+      hide_default_credentials_hint: true
       # disable Prisma schema migration on
       # startup--use migration Job instead
       disable_prisma_schema_update: true

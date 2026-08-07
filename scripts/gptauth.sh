@@ -29,21 +29,30 @@ AUTH_SECRET=litellm-chatgpt-auth
 REMOTE_FILE=/data/chatgpt/auth.json
  LOCAL_FILE=files/litellm/chatgpt/auth.json
 
+YELLOW='\x1B[1;33m'
+LTCYAN='\x1B[1;36m'
+  PINK='\x1B[1;35m'
+ NOCLR='\x1B[0m'
+
+color_yellow() { echo -e "${YELLOW}$*${NOCLR}"; }
+color_ltcyan() { echo -e "${LTCYAN}$*${NOCLR}"; }
+color_pink()   { echo -e   "${PINK}$*${NOCLR}"; }
+
 # ensure kubectl works & auth Secret exists
 $KUBECTL_CMD get secret $AUTH_SECRET -o name > /dev/null
 
 # update auth Secret with empty JSON object
-echo -e '\n1. Edit Secret `litellm-chatgpt-auth` and make JSON object empty'
+color_ltcyan '\n1. Edit Secret `litellm-chatgpt-auth` and make JSON object empty'
 $KUBECTL_CMD patch secret $AUTH_SECRET --type merge \
   -p '{"data":{"auth.json":"e30K"}}'
 
 # delete "chatgpt/auth.json" from container
-echo -e '\n2. Shell into LiteLLM container and `rm /data/chatgpt/auth.json`'
+color_ltcyan '\n2. Shell into LiteLLM container and `rm /data/chatgpt/auth.json`'
 pod_name="$($KUBECTL_CMD get pod -l "$APP_SELECTOR" -o name)"
 $KUBECTL_CMD exec $pod_name -c litellm -- rm -vf $REMOTE_FILE
 
 # restart LiteLLM pod and monitor log output
-echo -e '\n3. Restart LiteLLM pod and watch container logs for instructions'
+color_ltcyan '\n3. Restart LiteLLM pod and watch container logs for instructions'
 restart_ts=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 $KUBECTL_CMD rollout restart deployment -l "$APP_SELECTOR"
 
@@ -67,15 +76,16 @@ until auth_prompt=$(
 ); [ "$auth_prompt" ]; do
   sleep 1
 done
-echo -e "\n$auth_prompt"
+color_yellow "\n$auth_prompt"
 
-# pod will become ready after user sign-in
-echo -e '\nwaiting for user to sign-in...'
+# pod should become ready after user sign-in
+color_pink '\nwaiting for user to sign-in...'
 $KUBECTL_CMD wait --for=condition=Ready pod $pod_name --timeout=5m
 
-echo -e '\n4. Shell into container again and `cat /data/chatgpt/auth.json`'
-echo '   to copy the entire JSON content to replace Ansible-encrypted'
-echo '   file "files/litellm/chatgpt/auth.json" and update the Secret'
+color_ltcyan \
+  '\n4. Shell into container again and `cat /data/chatgpt/auth.json`' \
+  '\n   to copy the entire JSON content to replace Ansible-encrypted' \
+  '\n   file "files/litellm/chatgpt/auth.json" and update the Secret'
 auth_json="$($KUBECTL_CMD exec $pod_name -c litellm -- cat $REMOTE_FILE)"
 
 # update auth Secret with "auth.json" data
