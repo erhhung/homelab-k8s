@@ -14,13 +14,16 @@
       vars:
         items:
           - image_name: awx-ee-tiny
+            reg_logins: ["docker"]
             context_dir: "{{ files_dir }}/awx/ee/tiny"
           - image_name: awx-ee-xcp
+            reg_logins: ["github"]
             context_dir: "{{ files_dir }}/awx/ee/xcp"
 
         # === Inputs ===
         image_name: "{{  item.image_name  }}"
         dockerfile: "{{  item.dockerfile  }}"
+        reg_logins: "{{  item.reg_logins  }}"
         context_dir: "{{ item.context_dir }}"
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
       ansible.builtin.include_tasks: "{{ tasks_dir }}/oci/build.yml"

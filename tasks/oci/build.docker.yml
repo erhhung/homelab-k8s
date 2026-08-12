@@ -3,6 +3,27 @@
 ---
 - name: Build and push Docker image
   block:
+    - name: Log into Docker registry as "erhhung"
+      # https://docs.ansible.com/ansible/latest/collections/community/docker/docker_login_module.html
+      community.docker.docker_login:
+        registry_url: https://docker.io
+        username: erhhung
+        password: "{{ docker_access_token }}"
+      when: "'docker' in reg_logins | default([])"
+      changed_when: false
+      retries: 2
+      delay: 5
+
+    - name: Log into GitHub Registry as "erhhung"
+      community.docker.docker_login:
+        registry_url: https://ghcr.io
+        username: erhhung
+        password: "{{ github_access_token }}"
+      when: "'github' in reg_logins | default([])"
+      changed_when: false
+      retries: 2
+      delay: 5
+
     - name: Build Docker image "{{ local_image }}"
       # https://docs.ansible.com/ansible/latest/collections/community/docker/docker_image_build_module.html
       community.docker.docker_image_build:
@@ -28,7 +49,6 @@
       changed_when: false
 
     - name: Log into Harbor registry as "{{ harbor_admin_user }}"
-      # https://docs.ansible.com/ansible/latest/collections/community/docker/docker_login_module.html
       community.docker.docker_login:
         registry_url: https://{{ harbor_container_registry }}
         username: "{{ harbor_admin_user }}"

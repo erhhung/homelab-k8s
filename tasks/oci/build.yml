@@ -8,6 +8,7 @@
 #   image_name  <required> bare image name
 #   image_tag   [optional] default=latest
 #   platforms   [optional] default=[ARCH]
+#   reg_logins  [optional] default=[] docker|github
 #   if_changed  [optional] notify handler (only if
 #                          new artifact generated)
 ---
@@ -111,8 +112,8 @@
             elapsed_s: "{{ ended_ts - docker_build_started_at }}"
             elapsed_hms: >-
               {{ '%02d:%02d:%02d' | format(
-                  elapsed_s // 3600,
-                 (elapsed_s  % 3600) // 60,
-                  elapsed_s  % 60)   }}
+                  elapsed_s | int // 3600,
+                 (elapsed_s | int  % 3600) // 60,
+                  elapsed_s | int  % 60)   }}
           ansible.builtin.debug:
             msg: Docker build ended at {{ ended_at }} ({{ elapsed_hms }}).

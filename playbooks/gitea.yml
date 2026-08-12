@@ -175,6 +175,7 @@
   tasks:
     - name: Build image and push to Harbor
       vars:
+        reg_logins: ["github"]
         image_name: gitea-runner
         image_tag: "{{ actions_runner_image.tag }}"
         build_args:

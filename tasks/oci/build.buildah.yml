@@ -3,6 +3,33 @@
 ---
 - name: Build and push Docker image
   block:
+    - name: Log into Docker registry as "erhhung"
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/command_module.html
+      ansible.builtin.command:
+        argv:
+          - buildah
+          - login
+          - https://docker.io
+          - --username=erhhung
+          - --password={{ docker_access_token }}
+      when: "'docker' in reg_logins | default([])"
+      changed_when: false
+      retries: 2
+      delay: 5
+
+    - name: Log into GitHub Registry as "erhhung"
+      ansible.builtin.command:
+        argv:
+          - buildah
+          - login
+          - https://ghcr.io
+          - --username=erhhung
+          - --password={{ github_access_token }}
+      when: "'github' in reg_logins | default([])"
+      changed_when: false
+      retries: 2
+      delay: 5
+
     - name: Build Docker image "{{ local_image }}"
       vars:
         plats: "{{ platforms | default([local_machine_arch]) |
@@ -34,7 +61,6 @@
             {% endfor %}
             {{ args   }}
           - "{{ context_path }}"
-      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/command_module.html
       ansible.builtin.command:
         argv: "{{ argv | flatten }}"
       changed_when: true

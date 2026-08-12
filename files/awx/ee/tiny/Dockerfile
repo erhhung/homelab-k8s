@@ -1,7 +1,7 @@
 # this container image is intended to run quick
 # Ansible tasks like workflow setup and teardown
 
-FROM alpine:latest
+FROM docker.io/alpine:latest
 
 ENV VIRTUAL_ENV="/runner/.venv"
 ENV PATH="$VIRTUAL_ENV/bin:$PATH"

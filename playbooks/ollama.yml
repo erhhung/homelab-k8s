@@ -21,6 +21,7 @@
 
         - name: Build image and push to Harbor
           vars:
+            reg_logins: ["docker"]
             context_dir: "{{ files_dir }}/ollama"
             image_name: "{{ ollama_chart_values.image.repository }}"
           # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html

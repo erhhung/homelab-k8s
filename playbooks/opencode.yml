@@ -9,6 +9,7 @@
   tasks:
     - name: Build image and push to Harbor
       vars:
+        reg_logins: ["github"]
         image_name: "{{  opencode_dev_container.image }}"
         build_args:
           DEV_USER: "{{  opencode_dev_container.dev_user  }}"

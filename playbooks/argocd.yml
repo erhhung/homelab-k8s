@@ -11,6 +11,7 @@
   tasks:
     - name: Build image and push to Harbor
       vars:
+        reg_logins: ["docker"]
         image_name: cmp-helmfile
         context_dir: "{{ files_dir }}/argocd/plugins/helmfile"
         if_changed: Restart argocd-repo-server pods
