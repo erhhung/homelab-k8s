@@ -134,6 +134,7 @@
           CI_REGISTRY_PATH: "{{ ci_reg_path }}"
           CI_REGISTRY_USER: "{{ opencode_dev_container.dev_user }}"
           CI_REGISTRY_PASSWORD: "{{ harbor_admin_pass }}"
+          DOCKER_ACCESS_TOKEN: "{{ docker_access_token }}"
           GITHUB_ACCESS_TOKEN: "{{ github_access_token }}"
       ansible.builtin.include_tasks: "{{ tasks_dir }}/k8s/secrets/generic.yml"
 
@@ -192,6 +193,7 @@
         release: "{{ opencode_release_name }}"
         release_ns: "{{ opencode_namespace }}"
         values: "{{ opencode_chart_values }}"
+        atomic: false
 
         extras: # adopt extra resources into Helm release
           - v1 Secret {{ opencode_secrets['secrets']  }}

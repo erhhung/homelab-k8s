@@ -51,3 +51,8 @@ UV_LINK_MODE=copy
 
 # https://kubecolor.github.io/reference/environment-variables
 KUBECOLOR_OBJ_FRESH=1h
+
+# DOCKER_ACCESS_TOKEN and GITHUB_ACCESS_TOKEN are explicitly
+# relayed by pam_env.so from envFrom Secret in dev container
+DOCKER_USER=erhhung
+GITHUB_USER=erhhung

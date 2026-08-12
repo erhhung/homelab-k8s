@@ -53,7 +53,7 @@ if [ "$RESTART" ]; then
 fi
 
 ssh_pki() {
-  ssh -i ~/.ssh/$USER -o StrictHostKeyChecking=no $PKI_HOST "$@"
+  ssh -i ~/.ssh/$USER.pem -o StrictHostKeyChecking=no $PKI_HOST "$@"
 }
 
 unlock_yubikey() {

@@ -153,9 +153,9 @@ openclaw_config:
       # https://docs.openclaw.ai/gateway/configuration-reference#agents-defaults-model
       model:
         # prefer ChatGPT subscription
-        primary: litellm/gpt-5.6-sol
+        primary: litellm/gpt-5.6-terra
         fallbacks:
-          - litellm/gpt-5.6-terra
+          - litellm/gpt-5.6-sol
           - litellm/claude-opus-4-8
           - litellm/claude-sonnet-5
       maxConcurrent: 1
@@ -395,7 +395,7 @@ openclaw_config:
     # only allow listed plugins, whether bundled or
     # custom, to load (each must still be enabled):
     allow: |
-      {{ openclaw_plugins | map(attribute='id') + [
+      {{ (openclaw_plugins | map(attribute='id') + [
            'slack',
            'browser',
            'diagnostics-otel',
@@ -403,7 +403,7 @@ openclaw_config:
            'litellm',
            'perplexity',
            'memory-core',
-         ] }}
+         ]) | unique }}
 
     # declare plugins ALREADY installed by init container
     # or else OpenClaw annoyingly outputs "loaded without

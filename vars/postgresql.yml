@@ -21,6 +21,7 @@ postgresql_users:
   - "{{    litellm_db_user }}"
   - "{{  openwebui_db_user }}"
   - "{{    flowise_db_user }}"
+  - osm # OpenStreetMap datasets
 
 # for affected databases, always read from primary
 # node to avoid read-after-write inconsistency due
@@ -86,7 +87,7 @@ postgresql_chart_values:
     defaultStorageClass: "{{ storage_classes['default'] }}"
 
   persistence:
-    size: 5Gi
+    size: 10Gi
     # don't change the mountPath because at least one
     # postgresql container volumeMount hardcodes this
     mountPath: /bitnami/postgresql

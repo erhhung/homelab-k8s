@@ -594,7 +594,7 @@ openclaw_skills:
         }
       }
       curl -fsSL "$REL/download/v${VER}/gogcli_${VER}_linux_${ARCH}.tar.gz" | \
-        tar -xz --no-same-owner gog
+        tar -xz --no-same-owner --wildcards '*gog' # could be `gog` or `./gog`
       mv -f gog gogcli
       cat <<EOF > gog
       #!/bin/sh
