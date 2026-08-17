@@ -75,13 +75,15 @@ awx_operator_chart_values:
       task_replicas: 1
 
       # https://docs.ansible.com/projects/awx-operator/en/latest/user-guide/advanced-configuration/deploying-a-specific-version-of-awx.html
-      ee_images: "{{ awx_environments.values() |
-        selectattr('image', 'defined') }}"
+      # https://docs.ansible.com/ansible/latest/collections/community/general/keep_keys_filter.html
+      ee_images: |
+        {{ awx_environments.values() | selectattr('image', 'defined') |
+             community.general.keep_keys(['name', 'image']) }}
 
       # https://docs.ansible.com/projects/awx-operator/en/latest/user-guide/advanced-configuration/persisting-projects-directory.html
       projects_persistence: true
       projects_storage_class: "{{ storage_classes['default'] }}"
-      projects_storage_size: 384Mi # min XFS volume size is 300Mi
+      projects_storage_size: 512Mi # min XFS volume size is 300Mi
       projects_storage_access_mode: ReadWriteMany
 
       # https://docs.ansible.com/projects/awx-operator/en/latest/user-guide/advanced-configuration/custom-volume-and-volume-mount-options.html

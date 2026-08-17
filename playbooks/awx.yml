@@ -104,9 +104,9 @@
           - cert-manager.io/v1 Certificate {{ monitoring_secrets['scraper']  }}
           - v1 Secret {{ awx_secrets['gitlab']  }} ? # optional (created later)
           - v1 Secret {{ awx_secrets['scraper'] }} ? # optional (created later)
-          - v1 Secret    awx-receptor-ca           ? # created by awx-operator
-          - v1 Secret    awx-receptor-work-signing ? # created by awx-operator
-          - v1 Secret    awx-broadcast-websocket   ? # created by awx-operator
+          # - v1 Secret    awx-receptor-ca           ? # created by awx-operator
+          # - v1 Secret    awx-receptor-work-signing ? # created by awx-operator
+          # - v1 Secret    awx-broadcast-websocket   ? # created by awx-operator
           # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/from_yaml_all_filter.html
           - "{{ smon_manifests | from_yaml_all }}"
       ansible.builtin.include_tasks: "{{ tasks_dir }}/helm/helmfile.yml"

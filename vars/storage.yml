@@ -25,18 +25,34 @@ longhorn_namespace: longhorn-system
 longhorn_secrets:
   minio: minio-credentials
 
+longhorn_rwx_nfs_opts:
+  - vers=4.1
+  - proto=tcp
+  - noresvport
+  - softerr
+  - softreval
+  - local_lock=none
+  - fatal_neterrors=none
+  - timeo=100 # 10 seconds
+  - retrans=5
+  - rsize=1048576
+  - wsize=1048576
+
 # https://github.com/longhorn/charts/tree/master/charts/longhorn
 # IMPORTANT! Longhorn does not allow minor version upgrades that
 # skip an intermediate minor version (e.g. 1.9.x to 1.12.x), and
 # downgrades are NOT supported; due to risk of CRD deletions and
 # thus PVC deletions and data loss, upgrade only when recreating
 # the cluster
-longhorn_chart_version: "1.9.1"
+longhorn_chart_version: "1.12.1"
 longhorn_release_name: longhorn
 
-# https://github.com/longhorn/charts/tree/v1.9.x/charts/longhorn/values.yaml
-# https://longhorn.io/docs/1.9.1/references/settings
+# https://github.com/longhorn/charts/tree/v1.12.x/charts/longhorn/values.yaml
+# https://longhorn.io/docs/1.12.1/references/settings
 longhorn_chart_values:
+  global:
+    timezone: "{{ system_time_zone }}"
+
   longhornUI:
     replicas: 1
 
@@ -44,6 +60,8 @@ longhorn_chart_values:
     defaultFsType: xfs
     # total copies of data
     defaultClassReplicaCount: 2
+    # NFS client mount options for ReadWriteMany volumes
+    nfsOptions: "{{ longhorn_rwx_nfs_opts | join(',') }}"
     # what happens when PVC is released
     reclaimPolicy: Delete
     # allow live migration of Longhorn
@@ -57,6 +75,9 @@ longhorn_chart_values:
     # on the same node should space be limited
     replicaSoftAntiAffinity: true
     defaultReplicaCount: 2
+    # https://longhorn.io/docs/1.12.1/high-availability/auto-balance-replicas
+    replicaAutoBalance: least-effort # ignored|disabled|least-effort|best-effort
+    snapshotHeavyTaskConcurrentLimit: 1
     # Velero is configured to perform daily
     # backups with volume snapshot TTL of 3
     # days, so set snapshotMaxCount to >= 3
@@ -303,8 +324,8 @@ nfs_mount_opts:
   - intr # prevents unkillable processes
   - timeo=100 # 10 seconds
   - retrans=5
-  - rsize=16384
-  - wsize=16384
+  - rsize=1048576
+  - wsize=1048576
 
 # =================================== Grafana Dashboards ===================================
 

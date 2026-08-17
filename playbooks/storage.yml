@@ -1,5 +1,5 @@
 ---
-# https://github.com/longhorn/charts/tree/v1.9.x/charts/longhorn#prerequisites
+# https://github.com/longhorn/charts/tree/v1.12.x/charts/longhorn#prerequisites
 - name: Prepare nodes for Longhorn
   tags: prepare
   hosts: k8s_hosts
@@ -62,24 +62,33 @@
     # multipathd is known to have a breakage that affects Longhorn:
     # https://longhorn.io/kb/troubleshooting-volume-with-multipath
     - name: Disable the multipath daemon
-      ansible.builtin.systemd_service:
-        name: multipathd
-        state: stopped
-        enabled: false
+      block:
+        - name: Disable "multipathd.socket"
+          ansible.builtin.systemd_service:
+            name: multipathd.socket
+            state: stopped
+            enabled: false
+            masked: true
 
-    # for some reason, multipathd service keeps getting
-    # started despite being disabled, so also add iSCSI
-    # to its blacklist to avoid Longhorn mount failures
-    - name: iSCSI in multipath blacklist
-      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/blockinfile_module.html
-      ansible.builtin.blockinfile:
-        path: /etc/multipath.conf
-        block: |
-          blacklist {
-              device {
-                  vendor "IET" # iSCSI Enterprise Target
+        - name: Disable "multipathd.service"
+          ansible.builtin.systemd_service:
+            name: multipathd.service
+            state: stopped
+            enabled: false
+            masked: true
+
+        # for good measure, also add iSCSI to multipath
+        # blacklist to prevent Longhorn mount failures
+        - name: iSCSI in multipath blacklist
+          # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/blockinfile_module.html
+          ansible.builtin.blockinfile:
+            path: /etc/multipath.conf
+            block: |
+              blacklist {
+                  device {
+                      vendor "IET" # iSCSI Enterprise Target
+                  }
               }
-          }
 
     - name: Run Longhorn environment check
       # run once in each cluster if
@@ -188,6 +197,14 @@
       ansible.builtin.include_tasks: "{{ tasks_dir }}/monitoring/stackready.yml"
       when: monitoring_stack_ready is undefined
 
+    - name: Get "longhorn" storage class
+      kubernetes.core.k8s_info: &longhorn-sc
+        kubeconfig: "{{ kubeconfig }}"
+        api_version: storage.k8s.io/v1
+        kind: StorageClass
+        name: "{{ storage_classes['default'] }}"
+      register: longhorn_sc
+
     - name: Does RecurringJob CRD exist?
       kubernetes.core.k8s_info:
         kubeconfig: "{{ kubeconfig }}"
@@ -211,19 +228,8 @@
         secret_ns: "{{ longhorn_namespace }}"
       ansible.builtin.include_tasks: "{{ tasks_dir }}/k8s/secrets/generic.yml"
 
-    # adopt new storage class into
-    # Helm release after first run
-    - name: Get Longhorn "single" storage class
-      kubernetes.core.k8s_info:
-        kubeconfig: "{{ kubeconfig }}"
-        api_version: storage.k8s.io/v1
-        kind: StorageClass
-        name: "{{ storage_classes['single'] }}"
-      register: single_sc
-
     - name: Install Longhorn Helm chart
       vars:
-        sc_ref: storage.k8s.io/v1 StorageClass {{ storage_classes['single'] }}
         jobs: |
           {% set jobs = [] %}
           {% for job in longhorn_recurring_jobs %}
@@ -251,6 +257,7 @@
             release: "{{ longhorn_release_name }}"
             release_ns: "{{ longhorn_namespace }}"
             values: "{{ longhorn_chart_values }}"
+            history_max: 10
             atomic: false
 
             patches:
@@ -271,10 +278,36 @@
                             readinessProbe:
                               timeoutSeconds: 4
 
+              post_renderers:
+                # annotate longhorn.io `CustomResourceDefinition` resources
+                # with `helm.sh/resource-policy: keep` to prevent potential
+                # loss of critical resources should a Helm upgrade go awry:
+                # https://helm.sh/docs/howto/charts_tips_and_tricks#tell-helm-not-to-uninstall-a-resource
+                - |
+                  #!/bin/sh
+
+                  yq '(select(
+                        .kind == "CustomResourceDefinition" and
+                      ( .metadata.name | test("\\.longhorn\\.io$") )
+                    ) | .metadata.annotations."helm.sh/resource-policy"
+                    ) = "keep"
+                    '
             extras: # adopt extra resources into Helm release
               - v1 Secret {{ longhorn_secrets['minio'] }}
-              - "{{ sc_ref                      if single_sc.resources is truthy else '' }}"
-              - "{{ jobs | map(attribute='def') if  crd_info.resources is truthy else [] }}"
+              - "{{ jobs | map(attribute='def') if crd_info.resources is truthy else [] }}"
+              - storage.k8s.io/v1 StorageClass {{ storage_classes['single'] }} ? # created later
+
+            # Longhorn Helm chart requires that its CRDs install as part of
+            # other templates ("templates/crds.yaml") instead of in special
+            # "crds/" directory, but if strategicMergePatches, jsonPatches,
+            # or transformers is used, Helmfile will preprocess the release
+            # through Chartify, which relocates CRDs into "crds/", and Helm
+            # will then skip in its final manifest, so we need to move CRDs
+            # back into "templates/" before Helm runs:
+            # https://github.com/roboll/helmfile/issues/1924#issuecomment-2439925428
+            helm_hooks:
+              # https://helmfile.readthedocs.io/en/latest/cli#sync
+              upgrade: mv $CHART_DIR/crds/patched_crds.yaml $CHART_DIR/templates
           ansible.builtin.include_tasks: "{{ tasks_dir }}/helm/helmfile.yml"
 
         # (job CRs can't be added to .extraObjects in chart
@@ -290,42 +323,49 @@
           loop: "{{ jobs }}"
           loop_control:
             label: "{{ item.name }}"
-          when: crd_info.resources is falsy
 
     - name: Get default "longhorn" storage class
-      kubernetes.core.k8s_info:
-        kubeconfig: "{{ kubeconfig }}"
-        api_version: storage.k8s.io/v1
-        kind: StorageClass
-        name: "{{ storage_classes['default'] }}"
+      kubernetes.core.k8s_info: *longhorn-sc
       register: default_sc
 
-    # other than a single replica, use the same settings as the default storage class;
-    # however, on Longhorn upgrade, this task may fail if the storage class parameters
-    # change because "updates to parameters are forbidden"--simply delete this storage
-    # class manually, then re-run this playbook
-    - name: Add "longhorn-single" storage class
+    - name: Create "longhorn-single" storage class
+      when: sc_changed
       vars:
-        # besides name, ignore all metadata
-        # added by  Kubernetes and Longhorn
-        definition: |
-          {% set sc = default_sc.resources[0] %}
-          {% set _  = sc.update({
-               'metadata': {
-                 'name': storage_classes['single']
-               }
-             }) %}
-          {% set _ = sc.parameters.update({
-               'numberOfReplicas': '1'
-             }) %}
-          {{ sc }}
-      kubernetes.core.k8s:
-        kubeconfig: "{{ kubeconfig }}"
-        definition: "{{ definition }}"
-        validate:
-          fail_on_error: false
-        state: present
-        apply: true
+        # omit_keys: plugins/filter/filters.py
+        sc_changed: >-
+          {{ longhorn_sc.resources is falsy or
+             longhorn_sc.resources[0] | omit_keys('metadata') !=
+              default_sc.resources[0] | omit_keys('metadata') }}
+      block:
+        - name: Delete "longhorn-single" storage class
+          kubernetes.core.k8s:
+            kubeconfig: "{{ kubeconfig }}"
+            api_version: storage.k8s.io/v1
+            kind: StorageClass
+            name: "{{ storage_classes['single'] }}"
+            state: absent
+
+        # other than a single replica, use same
+        # settings as the default storage class
+        - name: Create "longhorn-single" storage class
+          vars:
+            definition: |
+              {% set sc = default_sc.resources[0] %}
+              {% set _  = sc.update({
+                   'metadata': {
+                     'name': storage_classes['single'],
+                   }
+                 }) %}
+              {% set _ = sc.parameters.update({
+                   'numberOfReplicas': '1',
+                 }) %}
+              {{ sc }}
+          kubernetes.core.k8s:
+            kubeconfig: "{{ kubeconfig }}"
+            definition: "{{ definition }}"
+            validate:
+              fail_on_error: false
+            state: present
 
 # https://computingforgeeks.com/configure-nfs-as-kubernetes-persistent-volume-storage
 - name: Install NFS dynamic provisioner

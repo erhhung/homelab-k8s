@@ -218,7 +218,8 @@ awx_projects:
     name: homelab-xcp
     desc: >-
       Ansible playbooks to manage configuration and
-      dotfiles for Erhhung's XCP-ng cluster at home.
+      provision VMs for Erhhung's XCP-ng cluster at
+      home.
     url: https://github.com/erhhung/homelab-xcp.git
     git_cred: github-scm
     run_creds:
@@ -236,9 +237,9 @@ awx_projects:
   home-k8s:
     name: homelab-k8s
     desc: >-
-      Ansible playbooks to provision infrastructure and
-      deploy services for Erhhung's Kubernetes cluster
-      at home.
+      Ansible playbooks to provision infrastructure
+      and deploy services for Erhhung's Kubernetes
+      cluster at home.
     url: https://github.com/erhhung/homelab-k8s.git
     git_cred: github-scm
     run_creds:
