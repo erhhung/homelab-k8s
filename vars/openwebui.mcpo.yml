@@ -27,6 +27,7 @@ crawl4ai_image:
   # tag: 89f0ae3d
 
 # https://github.com/first-it-consulting/helm-mcpo
+mcpo_chart_oci_url: oci://ghcr.io/first-it-consulting/helm-mcpo/mcpo
 mcpo_chart_version: "0.2.7" # uses old mcpo image
 mcpo_release_name: mcpo
 

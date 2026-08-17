@@ -289,7 +289,7 @@ openwebui_chart_values:
   commonEnvVars:
     # https://docs.openwebui.com/reference/env-configuration#important-note-on-persistentconfig-environment-variables
     - name: ENABLE_PERSISTENT_CONFIG
-      value: "false"
+      value: "False"
     # enable API /docs
     # https://docs.openwebui.com/reference/api-endpoints#swagger-documentation-links
     # https://docs.openwebui.com/reference/env-configuration#env
@@ -320,11 +320,11 @@ openwebui_chart_values:
       value: /app/backend/data/nltk
     # https://docs.openwebui.com/reference/monitoring/otel/#%EF%B8%8F-environment-variables
     - name: ENABLE_OTEL
-      value: "true"
+      value: "True"
     - name: ENABLE_OTEL_TRACES
-      value: "true"
+      value: "True"
     - name: ENABLE_OTEL_METRICS
-      value: "true"
+      value: "True"
     # exporter expects OTLP gRPC endpoint
     - name: OTEL_EXPORTER_OTLP_ENDPOINT
       value: "{{ otlp_grpc_endpoint }}"
@@ -336,16 +336,8 @@ openwebui_chart_values:
     # https://docs.openwebui.com/reference/env-configuration#cors_allow_origin
     - name: CORS_ALLOW_ORIGIN
       value: https://{{ openwebui_fqdns | first }}
-    # the two websocket vars below would have been automatically added
-    # by the chart if .websocket.enabled is true, but that would force
-    # the inclusion of WEBSOCKET_REDIS_URL as a literal value directly
-    # in the pod template--we want to inject using a secretRef instead
-    - name: ENABLE_WEBSOCKET_SUPPORT
-      value: "true"
-    - name: WEBSOCKET_MANAGER
-      value: redis
     - name: REDIS_CLUSTER
-      value: "true"
+      value: "True"
     - name: REDIS_KEY_PREFIX
       # https://redis.io/docs/latest/operate/oss_and_stack/reference/cluster-spec#hash-tags
       value: "{open-webui}"
@@ -357,15 +349,15 @@ openwebui_chart_values:
       value: "{{ qdrant_service_url }}"
     # must also set GRPC_DEFAULT_SSL_ROOTS_FILE_PATH!
     - name: QDRANT_PREFER_GRPC
-      value: "true"
+      value: "True"
     - name: QDRANT_GRPC_PORT
       value: "{{ qdrant_grpc_port | string }}"
     # https://qdrant.tech/documentation/concepts/storage#vector-storage
     - name: QDRANT_ON_DISK
-      value: "true"
+      value: "True"
     # https://qdrant.tech/documentation/concepts/collections
     - name: ENABLE_QDRANT_MULTITENANCY_MODE
-      value: "true"
+      value: "True"
     - name: QDRANT_COLLECTION_PREFIX
       value: openwebui
 
@@ -404,16 +396,13 @@ openwebui_chart_values:
       periodSeconds: 10
 
   websocket:
-    # enable via .extraEnvVars instead so
-    # that REDIS_URL (WEBSOCKET_REDIS_URL
-    # fallback) can be defined in secret
-    enabled: false
+    enabled: true
+
     manager: redis
     redis:
       # don't install Redis as we already
       # have a multi-node Valkey cluster
       enabled: false
-    # define WEBSOCKET_REDIS_URL
     existingSecret: "{{ openwebui_secrets['env-vars'] }}"
     existingSecretKey: REDIS_URL
 

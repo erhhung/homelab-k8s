@@ -192,9 +192,7 @@
         extra_volumes: "{{ values.extraVolumes }}"
 
         # === Inputs ===
-        repo_name: mcpo-helm
-        repo_url: https://first-it-consulting.github.io/helm-mcpo
-        chart_ref: mcpo
+        chart_ref: "{{ mcpo_chart_oci_url }}"
         chart_ver: "{{ mcpo_chart_version }}"
         release: "{{ mcpo_release_name }}"
         release_ns: "{{ mcpo_namespace }}"
@@ -359,8 +357,7 @@
     - name: Set admin auth_headers fact
       vars:
         user: >-
-          {{ admin_signup.json if admin_signup      is defined and
-                                  admin_signup.json is defined else
+          {{ admin_signup.json if admin_signup.json is defined else
              admin_signin.json }}
       ansible.builtin.set_fact:
         auth_headers:
@@ -390,10 +387,13 @@
         desired:
           version: "{{ openwebui_version.json.version }}"
           system: "{{  openwebui_system_prompt }}"
-          models: "{{  litellm_default_model }}"
+          models: "{{  [litellm_default_model] }}"
+          pinnedModels: |
+            {{ litellm_models | map(attribute='model_name')
+                              | select('search', 'gpt-5.6') }}
           params: {}
         # https://docs.ansible.com/ansible/latest/collections/community/general/keep_keys_filter.html
-        existing: "{{ [user_settings.json.ui] |
+        existing: "{{ [user_settings.json.ui | default({})]  |
           community.general.keep_keys(target=desired.keys()) | first }}"
       ansible.builtin.uri:
         method: POST
@@ -560,6 +560,8 @@
             headers: "{{ auth_headers }}"
             body_format: json
             body:
+              type: user
+              path: ""
               content: "{{ item.content }}"
           loop: "{{ memories }}"
           loop_control:
