@@ -42,8 +42,8 @@ rke2_server_options:
   # https://docs.rke2.io/advanced#control-plane-component-resource-requestslimits
   - |-
     control-plane-resource-requests:
-      - kube-apiserver-cpu=300m
-      - kube-apiserver-memory=2Gi
+      - kube-apiserver-cpu=500m
+      - kube-apiserver-memory=4Gi
 
 # additional RKE2 agent configuration options
 # https://docs.rke2.io/reference/linux_agent_config

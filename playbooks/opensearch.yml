@@ -177,6 +177,8 @@
         init_check.status  == 503 and
         init_check.content is search('OpenSearch Security not initialized')
       notify: Apply (updated) security config
+      retries: 6
+      delay: 5
   handlers:
     - name: Apply (updated) security config
       # a handler cannot have block of subtasks, so the

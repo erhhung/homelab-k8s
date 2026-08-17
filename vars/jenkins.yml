@@ -7,6 +7,7 @@ jenkins_host_name: jenkins # alias of "ingress"
 # https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_filters.html#products
 jenkins_fqdn: "{{ [jenkins_host_name] | product(search_domains) | map('join','.') | first }}"
 
+jenkins_url: https://{{ jenkins_fqdn }}
 jenkins_service_host: "{{ jenkins_release_name }}.{{
   jenkins_namespace }}.svc.{{ cluster_domain }}"
 jenkins_service_port: 8080
@@ -15,7 +16,9 @@ jenkins_service_url: http://{{ jenkins_service_host }}:{{ jenkins_service_port }
 jenkins_secrets:
   ingress: jenkins-ingress-tls
   env-vars: jenkins-env-variables
+  tokens: jenkins-api-tokens
 
+jenkins_admin_user: admin
 jenkins_harbor_user: jenkins
 jenkins_harbor_pass: "{{ harbor_admin_pass }}"
 
@@ -50,7 +53,7 @@ jenkins_chart_values:
     numExecutors: 0
 
     admin:
-      username: admin
+      username: "{{ jenkins_admin_user }}"
       password: "{{ jenkins_admin_pass }}"
     # sender of Jenkins notification e-mails to project owners
     jenkinsAdminEmail: Jenkins <{{ icloud_smtp.from_email }}>
@@ -207,7 +210,7 @@ jenkins_chart_values:
 
     # max number of concurrent agent
     # pods allowed for whole cluster
-    containerCap: 10
+    containerCap: 1
 
     # https://jenkins.fourteeners.local/configuration-as-code/reference#PodTemplate-
     podTemplates:
@@ -245,6 +248,7 @@ jenkins_chart_values:
               # use same resource requests as
               # GitLab runner build container
               resourceRequestCpu: 500m
+              resourceLimitCpu: 2000m
               resourceRequestMemory: 2Gi
               resourceRequestEphemeralStorage: 40Gi
 

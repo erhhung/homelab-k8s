@@ -176,7 +176,7 @@
     # `helm template`, so these args are set in
     # an environment variable and then injected
     # by the helm.sh wrapper script
-    temp_args:
+    tmpl_args:
       - --include-crds
       - --skip-schema-validation
       - --skip-tests
@@ -227,7 +227,7 @@
                    'resources': objects,
                } } if has_extras else [] }}
 
-        # https://helmfile.readthedocs.io/en/latest#configuration
+        # https://helmfile.readthedocs.io/en/latest/configuration#full-reference
         helmfile:
           # providing cluster and API versions allows offline
           # rendering of chart templates that use conditional
@@ -258,6 +258,10 @@
             # and forbid extra values, skip validation so
             # that .exxtraas (bedag/raw) can be included
             skipSchemaValidation: true
+
+            # force server-side apply changes
+            # against conflicts (Helm 4 only)
+            forceConflicts: true
 
             historyMax: "{{  history_max  | default(helm_max_history) }}"
             wait: "{{        wait         | default(true)  }}"
@@ -422,8 +426,7 @@
         )"
         {%   endif -%}
         {% endfor  -%}
-        export HELM_TEMPLATE_ARGS="{{
-          temp_args | join(' ') }}"
+        export HELM_TEMPLATE_ARGS="{{ tmpl_args | join(' ') }}"
 
         # --skip-diff-on-install prevents "missing CRD"
         # errors when CRs are installed alongside CRDs;

@@ -731,6 +731,9 @@ actions_chart_values:
       requests:
         cpu: 50m
         memory: 512Mi
+        # ephemeral-storage: 40Gi
+      limits:
+        cpu: 2000m
 
     # StatefulSet persistentVolumeClaimRetentionPolicy
     # whenDeleted=Delete will be patched by Helmfile

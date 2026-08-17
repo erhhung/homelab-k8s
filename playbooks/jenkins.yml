@@ -171,6 +171,7 @@
         extras: # adopt extra resources into Helm release
           - cert-manager.io/v1 Certificate {{ jenkins_secrets['ingress'] }}
           - v1 Secret {{ jenkins_secrets['env-vars'] }}
+          - v1 Secret {{ jenkins_secrets['tokens']   }} ? # created later
       ansible.builtin.include_tasks: "{{ tasks_dir }}/helm/helmfile.yml"
   handlers:
     - name: Delete shared library dirs
@@ -187,6 +188,110 @@
         pod: "{{ jenkins_release_name }}-0"
         container: jenkins
         command: bash -c {{ script | quote }}
+      changed_when: true
+
+- name: Configure Jenkins deployment
+  tags: configure
+  hosts: localhost
+  pre_tasks:
+    - name: Get Jenkins API tokens
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/jenkins/tokens.yml"
+      # sets fact: jenkins_tokens
+  tasks:
+    - name: Create admin API token
+      when: jenkins_admin_user not in jenkins_tokens
+      vars:
+        uri_auth: &password-auth
+          url_username: "{{ jenkins_admin_user }}"
+          url_password: "{{ jenkins_admin_pass }}"
+          force_basic_auth: true
+      block:
+        # https://www.jenkins.io/doc/book/security/csrf-protection#working-with-scripted-clients
+        - name: Get Jenkins CSRF crumb
+          # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/uri_module.html
+          ansible.builtin.uri:
+            <<: *password-auth
+            url: "{{ jenkins_url }}/crumbIssuer/api/json"
+            return_content: true
+          register: jenkins_crumb
+
+        # https://github.com/jenkinsci/jenkins/tree/master/core/src/main/java/jenkins/security/ApiTokenProperty.java#L602
+        - name: Create admin API token
+          ansible.builtin.uri:
+            <<: *password-auth
+            method: POST
+            url: "{{ jenkins_url }}/user/{{ jenkins_admin_user
+              }}/descriptorByName/jenkins.security.ApiTokenProperty/generateNewToken"
+            headers: "{{ {
+              'Cookie':                             jenkins_crumb.cookies_string,
+              jenkins_crumb.json.crumbRequestField: jenkins_crumb.json.crumb,
+              } }}"
+            body_format: form-urlencoded
+            body:
+              newTokenName: "{{ jenkins_admin_user }}"
+              expirationDuration: never
+            return_content: true
+          register: jenkins_token
+          changed_when: true
+
+    - name: Store token in Secret
+      vars:
+        token_changes: "{{ { jenkins_admin_user:
+          jenkins_token.json.data.tokenValue } }}"
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/jenkins/tokens.yml"
+      when: jenkins_admin_user not in jenkins_tokens
+
+# trigger rerun of Jenkins jobs if
+# their last build did not succeed
+- name: Trigger Jenkins job pipelines
+  tags: jobs
+  hosts: localhost
+  vars:
+    uri_auth: &token-auth
+      url_username: "{{ jenkins_admin_user }}"
+      url_password: "{{ jenkins_tokens[jenkins_admin_user] }}"
+      force_basic_auth: true
+  pre_tasks:
+    - name: Get Jenkins API tokens
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/jenkins/tokens.yml"
+      when: jenkins_tokens is undefined
+
+    - name: Get managed Jenkins jobs
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/shell_module.html
+      ansible.builtin.shell: |
+        set -eo pipefail
+
+        sed -En "s/^pipelineJob\\(['\"](.+)['\"]\\) *\\{$/\\1/p" \
+            "{{ templates_dir }}/jenkins/jobs"/*.groovy | jo -a
+      register: job_names
+      changed_when: false
+  tasks:
+    # https://jenkins.fourteeners.local/api
+    - name: Get Jenkins job status
+      vars:
+        filter: name,url,lastBuild[number,building,result],lastCompletedBuild[number,result]
+      ansible.builtin.uri:
+        <<: *token-auth
+        url: "{{ jenkins_url }}/job/{{ item | urlencode }}/api/json?tree={{ filter }}"
+        return_content: true
+      loop: "{{ job_names.stdout | from_json }}"
+      register: job_status
+
+    # https://www.jenkins.io/doc/book/using/remote-access-api#RemoteaccessAPI-Submittingjobs
+    - name: Trigger job if needed
+      ansible.builtin.uri:
+        <<: *token-auth
+        method: POST
+        url: "{{ item.url }}build" # URL already ends with /
+        status_code: 201
+      loop: "{{ job_status.results | map(attribute='json') }}"
+      loop_control:
+        label: "{{ item.name }}"
+      when:
+        - item.lastBuild is undefined or
+          not item.lastBuild.building
+        - item.lastCompletedBuild is undefined or
+          item.lastCompletedBuild.result != 'SUCCESS'
       changed_when: true
 
 - name: Configure Jenkins dashboards

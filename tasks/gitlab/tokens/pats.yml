@@ -36,7 +36,7 @@
       vars:
         # b64_decode_k8s_secret, omit_keys: plugins/filter/filters.py
         old_pats: "{{ pats_info.resources[0] | b64_decode_k8s_secret }}"
-        # https://docs.ansible.com/projects/ansible/latest/collections/ansible/builtin/dict2items_filter.html
+        # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/dict2items_filter.html
         del_keys: "{{  changes | ansible.builtin.dict2items |
           selectattr('value', 'falsy') | map(attribute='key') }}"
         new_pats: "{{ old_pats | ansible.builtin.combine(changes) |
