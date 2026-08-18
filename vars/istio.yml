@@ -138,7 +138,8 @@ kiali_cr_spec:
     observability:
       metrics:
         enabled: true
-        port: 9090
+        # metrics port is HTTPS
+        port: 9090 # tcp-metrics
       tracing:
         enabled: true
         sampling_rate: 1.0

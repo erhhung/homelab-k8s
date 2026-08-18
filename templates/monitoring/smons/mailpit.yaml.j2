@@ -18,3 +18,10 @@ spec:
     - port: http
       path: /metrics
       interval: 60s
+      basicAuth:
+        username:
+          name: {{ mailpit_secrets['creds'] }}
+          key: http-username
+        password:
+          name: {{ mailpit_secrets['creds'] }}
+          key: http-password

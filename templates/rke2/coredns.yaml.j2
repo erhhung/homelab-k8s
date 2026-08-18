@@ -12,6 +12,19 @@ metadata:
   namespace: kube-system
 spec:
   valuesContent: |-
+    autoscaler:
+      enabled: true
+      min: {{ groups[rke_control_plane_group] | length }}
+      max: {{ groups['rke_cluster']           | length }}
+
+    resources:
+      requests:
+        cpu: 250m
+        memory: 128Mi
+      limits:
+        cpu: 500m
+        memory: 256Mi
+
     zoneFiles:
 {% for zone in search_domains %}
       - filename: {{ zone }}.conf

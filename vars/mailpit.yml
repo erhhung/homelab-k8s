@@ -22,6 +22,7 @@ mailpit_secrets:
   ingress: mailpit-ingress-tls
   smtp: mailpit-smtp-tls
   env-vars: mailpit-env-variables
+  creds: mailpit-credentials
 
 # automatically relay messages to these recipients
 mailpit_relay_matching:

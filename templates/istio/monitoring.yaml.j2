@@ -155,6 +155,8 @@ spec:
     matchLabels:
       app: kiali
   endpoints:
-    - port: http-metrics
+    - port: tcp-metrics
       path: /metrics
+      scheme: https
+      tlsConfig: {{ metric_scraper_tls_config }}
       interval: 30s

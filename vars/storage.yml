@@ -106,14 +106,44 @@ longhorn_chart_values:
     # console instead (see service.ui.type)
     enabled: false
 
+  networkPolicies:
+    # chart restricts internal traffic by default
+    # by creating various NetworkPolicy resources
+    restrictInternalTraffic: true
+
   metrics:
     # scrapes longhorn-backend service (longhorn-manager
-    # DaemonSet) on port 9500 (non-TLS) on path /metrics
+    # DaemonSet) on (non-TLS) port 9500 on path /metrics
+    # (note the extra `NetworkPolicy` to allow scraping)
     serviceMonitor:
       enabled: "{{ prometheus_crds_installed }}"
       additionalLabels: "{{ monitoring_selector_labels }}"
 
   extraObjects:
+    # due to default network traffic policies, explicitly
+    # allow Prometheus to scrape longhorn-manager metrics
+    - apiVersion: networking.k8s.io/v1
+      kind: NetworkPolicy
+      metadata:
+        name: longhorn-manager-metrics
+      spec:
+        podSelector:
+          matchLabels:
+            app: longhorn-manager
+        policyTypes:
+          - Ingress
+        ingress:
+          - from:
+              - namespaceSelector:
+                  matchLabels:
+                    kubernetes.io/metadata.name: "{{ monitoring_namespace }}"
+                podSelector:
+                  matchLabels:
+                    app.kubernetes.io/name: prometheus
+            ports:
+              - protocol: TCP
+                port: 9500
+
     # create VolumeSnapshotClass for remote backups (use
     # "bak" as parameters.type instead of "snap" because
     # in-cluster snapshots are useless in a DR scenario):

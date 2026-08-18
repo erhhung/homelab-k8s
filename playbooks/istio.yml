@@ -179,7 +179,10 @@
         secret_name: "{{ kiali_secrets['ingress'] }}"
         create_ns: true
         cert_name: kiali-ingress
-        sans: "{{ kiali_fqdns }}"
+        sans:
+          - "{{ kiali_fqdns }}"
+          - "*.{{ kiali_namespace }}.svc.{{ cluster_domain }}"
+          - "*.{{ kiali_namespace }}.svc"
       ansible.builtin.include_tasks: "{{ tasks_dir }}/k8s/secrets/tls.step.yml"
 
     # https://kiali.io/docs/configuration/authentication/openid#set-up-with-no-namespace-access-control-support
@@ -241,7 +244,13 @@
     - vars/istio.yml
   vars: *vars
   tasks:
-    - name: Create missing resources
+    - name: Create monitoring scraper secret
+      vars:
+        secret_ns: "{{ istio_namespace }}"
+        create_ns: false
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/monitoring/scraper.yml"
+
+    - name: Create ServiceMonitor resources
       vars:
         # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/template_lookup.html
         definitions: "{{ lookup('ansible.builtin.template',

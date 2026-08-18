@@ -47,6 +47,16 @@
           MP_SMTP_RELAY_PASSWORD: "{{ icloud_smtp.passwords['mailpit'] }}"
       ansible.builtin.include_tasks: "{{ tasks_dir }}/k8s/secrets/generic.yml"
 
+    - name: Create Mailpit creds secret
+      vars:
+        secret_name: "{{ mailpit_secrets['creds'] }}"
+        secret_data:
+          http-username: "{{ mailpit_ui_user   }}"
+          http-password: "{{ mailpit_ui_pass   }}"
+          smtp-username: "{{ mailpit_smtp_user }}"
+          smtp-password: "{{ mailpit_smtp_pass }}"
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/k8s/secrets/generic.yml"
+
     - name: Install Mailpit Helm chart
       vars:
         # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/template_lookup.html
@@ -85,5 +95,6 @@
           - cert-manager.io/v1 Certificate {{ mailpit_secrets['ingress'] }}
           - cert-manager.io/v1 Certificate {{ mailpit_secrets['smtp']    }}
           - v1 Secret {{ mailpit_secrets['env-vars'] }}
+          - v1 Secret {{ mailpit_secrets['creds']    }}
           - "{{ smon_manifest | from_yaml if prometheus_crds_installed else '' }}"
       ansible.builtin.include_tasks: "{{ tasks_dir }}/helm/helmfile.yml"
