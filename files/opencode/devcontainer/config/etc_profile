@@ -52,7 +52,18 @@ UV_LINK_MODE=copy
 # https://kubecolor.github.io/reference/environment-variables
 KUBECOLOR_OBJ_FRESH=1h
 
-# DOCKER_ACCESS_TOKEN and GITHUB_ACCESS_TOKEN are explicitly
-# relayed by pam_env.so from envFrom Secret in dev container
+# the following variables are explicitly relayed by
+# `pam_env.so` from envFrom Secret in dev container
+# CI_REGISTRY_PASSWORD
+# DOCKER_ACCESS_TOKEN
+# GITHUB_ACCESS_TOKEN
+# SMTP_PASSWORD
+
+CI_REGISTRY=https://harbor.fourteeners.local
+CI_REGISTRY_PATH=harbor.fourteeners.local/library
+CI_REGISTRY_USER=erhhung
 DOCKER_USER=erhhung
 GITHUB_USER=erhhung
+SMTP_USER=mailer
+SMTP_HOST=smtp.fourteeners.local
+SMTP_PORT=587

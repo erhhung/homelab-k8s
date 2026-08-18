@@ -10,6 +10,8 @@
 
 set -o pipefail
 
+kubectl="kubectl --context homelab"
+
 vol=$1
 [ "$vol" ] || {
   echo "Usage: volrepair.sh pvc-<volume-uuid>"
@@ -22,7 +24,7 @@ vol=$1
   exit 1
 }
 
-node=$(kubectl -n longhorn-system get volumes.longhorn.io \
+node=$($kubectl -n longhorn-system get volumes.longhorn.io \
   "$vol" -o jsonpath='{.status.currentNodeID}' 2> /dev/null)
 [ "$node" ] || {
   echo >&2 "Volume $vol not attached!"
@@ -30,6 +32,6 @@ node=$(kubectl -n longhorn-system get volumes.longhorn.io \
 }
 
 ssh_node() {
-  ssh -i ~/.ssh/$USER -o StrictHostKeyChecking=no $node "$@"
+  ssh -i ~/.ssh/$USER.pem -o StrictHostKeyChecking=no $node "$@"
 }
 ssh_node "sudo xfs_repair -L /dev/longhorn/$vol"

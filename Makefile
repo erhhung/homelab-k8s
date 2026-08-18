@@ -14,7 +14,7 @@ endif
 .ONESHELL:   # require GNU Make 4+
 
  PHONY := all play debug check lint cloc tags
- PHONY += vmstart vmshutdown vmsnapshot
+ PHONY += vmstart vmshutdown vmsnapshot psql
  PHONY += diskfree volrepair unseal gptauth
 .PHONY: $(PHONY)
 
@@ -118,6 +118,11 @@ args=(-s do="$(firstword $(rest_goals))")
 args=(--extra-vars "$$(jo -- $${args[@]})")
 ansible-playbook $${args[@]} playbooks/vms.snapshot.yml
 endef
+
+# run psql commands on the PostgreSQL primary node
+# (starts interactive psql if no command on stdin)
+psql:
+	@scripts/psql.sh || true
 
 # show available disk space on all cluster nodes
 diskfree:

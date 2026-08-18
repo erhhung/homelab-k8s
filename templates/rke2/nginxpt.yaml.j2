@@ -109,7 +109,7 @@ spec:
 
         annotations:
           # replaces to-be-deprecated .spec.loadBalancerIP field
-          metallb.io/loadBalancerIPs: "{{ metallb_vips['ingress-pt'] }}"
+          metallb.io/loadBalancerIPs: "{{ metallb_vips['ingresspt'] }}"
 
         # prevent kube-proxy from re-spraying traffic to all
         # nodes since pfSense is already doing that via ECMP

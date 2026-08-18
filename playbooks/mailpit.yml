@@ -1,0 +1,89 @@
+# https://mailpit.axllent.org/
+---
+- name: Install Mailpit e-mail service
+  tags: install
+  hosts: "{{ rke_control_plane_host }}"
+  vars_files:
+    - vars/kubernetes.yml
+    - vars/metallb.yml
+    - vars/storage.yml
+    - vars/monitoring.yml
+    - vars/mailpit.yml
+  vars:
+    # required kubernetes>=24.2 package only in user virtualenv
+    ansible_python_interpreter: "{{ venv_python_interpreter }}"
+    kubeconfig: "{{ rke_kubeconfig }}"
+    secret_ns: "{{ mailpit_namespace }}"
+    create_ns: false
+  pre_tasks:
+    - name: Is the monitoring stack ready?
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/monitoring/stackready.yml"
+      when: monitoring_stack_ready is undefined
+  tasks:
+    - name: Create Mailpit ingress secret
+      vars:
+        secret_name: "{{ mailpit_secrets['ingress'] }}"
+        create_ns: true
+        cert_name: mailpit-ingress
+        sans: "{{ mailpit_fqdns[:-1] }}"
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/k8s/secrets/tls.step.yml"
+
+    - name: Create Mailpit SMTP TLS secret
+      vars:
+        secret_name: "{{ mailpit_secrets['smtp'] }}"
+        cert_name: mailpit-smtp
+        sans:
+          - "{{ mailpit_fqdns[-1] }}"
+          - "*.{{ mailpit_namespace }}.svc.{{ cluster_domain }}"
+          - "*.{{ mailpit_namespace }}.svc"
+          - "{{ metallb_vips['smtp'] }}"
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/k8s/secrets/tls.step.yml"
+
+    - name: Create Mailpit envFrom secret
+      vars:
+        secret_name: "{{ mailpit_secrets['env-vars'] }}"
+        secret_data:
+          MP_SMTP_RELAY_PASSWORD: "{{ icloud_smtp.passwords['mailpit'] }}"
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/k8s/secrets/generic.yml"
+
+    - name: Install Mailpit Helm chart
+      vars:
+        # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/template_lookup.html
+        smon_manifest: "{{ lookup('ansible.builtin.template',
+          templates_dir ~ '/monitoring/smons/mailpit.yaml.j2') }}"
+
+        # === Inputs ===
+        repo_name: jouve
+        repo_url: https://jouve.github.io/charts
+        chart_ref: mailpit
+        chart_ver: "{{ mailpit_chart_version }}"
+        release: "{{ mailpit_release_name }}"
+        release_ns: "{{ mailpit_namespace }}"
+        values: "{{ mailpit_chart_values }}"
+
+        patches:
+          merge_patches:
+            # add extra label to Services so that
+            # ServiceMonitor can select right one
+            - apiVersion: v1
+              kind: Service
+              metadata:
+                name: "{{ mailpit_release_name }}-http"
+                namespace: "{{ mailpit_namespace }}"
+                labels:
+                  app.kubernetes.io/component: http
+            - apiVersion: v1
+              kind: Service
+              metadata:
+                name: "{{ mailpit_release_name }}-smtp"
+                namespace: "{{ mailpit_namespace }}"
+                labels:
+                  app.kubernetes.io/component: smtp
+
+        extras: # adopt extra resources into Helm release
+          - cert-manager.io/v1 Certificate {{ mailpit_secrets['ingress'] }}
+          - cert-manager.io/v1 Certificate {{ mailpit_secrets['smtp']    }}
+          - v1 Secret {{ mailpit_secrets['env-vars'] }}
+          - "{{ smon_manifest | from_yaml if prometheus_crds_installed else '' }}"
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/helm/helmfile.yml"

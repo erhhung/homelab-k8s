@@ -57,14 +57,14 @@
   ansible.builtin.import_playbook: playbooks/certmanager.yml
   tags: certmanager
 
+- name: Include Wave config monitoring playbook
+  ansible.builtin.import_playbook: playbooks/wave.yml
+  tags: wave
+
 # Intel Device Plugins depends on cert-manager
 - name: Include Node Feature Discovery playbook
   ansible.builtin.import_playbook: playbooks/nodefeatures.yml
   tags: nodefeatures
-
-- name: Include Wave config monitoring playbook
-  ansible.builtin.import_playbook: playbooks/wave.yml
-  tags: wave
 
 - name: Include storage provisioners playbook
   ansible.builtin.import_playbook: playbooks/storage.yml
@@ -89,6 +89,11 @@
 - name: Include Trivy security scanner playbook
   ansible.builtin.import_playbook: playbooks/trivy.yml
   tags: trivy
+
+# Mailpit depends on cert-manager and Longhorn
+- name: Include Mailpit e-mail service playbook
+  ansible.builtin.import_playbook: playbooks/mailpit.yml
+  tags: mailpit
 
 - name: Include OpenSearch cluster playbook
   ansible.builtin.import_playbook: playbooks/opensearch.yml

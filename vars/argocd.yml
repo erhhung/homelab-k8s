@@ -151,6 +151,7 @@ argocd_chart_values:
       # bcrypt hash of plain-text password:
       # htpasswd -nbBC 11 "" $ARGOCD_PASS | \
       #       tr -d ':\n' | sed 's/$2y/$2b/'
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/password_hash_filter.html
       argocdServerAdminPassword: &admin-pass >-
         {{ argocd_admin_pass | ansible.builtin.password_hash('bcrypt',
                                salt=bcrypt_salt, rounds=bcrypt_rounds) }}

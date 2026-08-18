@@ -13,6 +13,8 @@
 
 set -o pipefail
 
+kubectl="kubectl --context homelab"
+
   NAMESPACE="vault"
      SECRET="vault-unseal-keys"
    PKI_HOST="pki.fourteeners.local"
@@ -40,7 +42,7 @@ trap 'rm -f $ERROR_FILE' EXIT
 # exit loop+script on Ctrl-C
 trap "exit 130" INT
 
-pods=($(kubectl get pods -n $NAMESPACE \
+pods=($($kubectl get pods -n $NAMESPACE \
   -l app.kubernetes.io/name=vault \
   -o jsonpath="{.items[*].metadata.name}"))
 
@@ -48,7 +50,7 @@ if [ "$RESTART" ]; then
   echo -e "\n${YELLOW}Restarting Vault pods...${NOCLR}\n"
   for pod in "${pods[@]}"; do
     [ ! "$PODS" ] || [[ "$PODS" == *"${pod##*-}"* ]] || continue
-    kubectl delete pod "$pod" -n $NAMESPACE --now --wait
+    $kubectl delete pod "$pod" -n $NAMESPACE --now --wait
   done
 fi
 
@@ -68,7 +70,7 @@ unlock_yubikey() {
 get_unseal_commands() {
   local keys result
   # first try getting unredacted keys from Secret
-  keys=($(kubectl get secrets $SECRET -n $NAMESPACE -o yaml | \
+  keys=($($kubectl get secrets $SECRET -n $NAMESPACE -o yaml | \
     yq '.data.unsealKeys | @base64d | from_yaml | .[]'))
 
   if [[ "$keys" == redacted...* ]]; then
@@ -91,12 +93,12 @@ for pod in "${pods[@]}"; do
   [ ! "$PODS" ] || [[ "$PODS" == *"${pod##*-}"* ]] || continue
   echo -e "\n${YELLOW}Waiting for pod $pod to be Ready...${NOCLR}"
 
-  kubectl wait --for=condition=Ready pod/$pod \
+  $kubectl wait --for=condition=Ready pod/$pod \
     -n $NAMESPACE --timeout=$TIMEOUT &> /dev/null || {
     echo >&2 "Pod $pod failed to start after $TIMEOUT!"
     continue
   }
   echo -e "${YELLOW}Unsealing Vault node at pod $pod...${NOCLR}"
   get_unseal_commands | shuf -n $THRESHOLD | \
-    kubectl exec -i $pod -c vault -n $NAMESPACE -- sh -s
+    $kubectl exec -i $pod -c vault -n $NAMESPACE -- sh -s
 done

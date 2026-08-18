@@ -4,6 +4,7 @@
 - name: Create pfSense DNS records
   hosts: localhost
   vars_files:
+    - vars/metallb.yml
     - vars/dns.yml
 
     # *_subdomain vars

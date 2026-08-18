@@ -1,0 +1,20 @@
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: mailpit
+  # required by serviceMonitorSelector!
+  labels: {{ monitoring_selector_labels }}
+spec:
+  jobLabel: mailpit
+  namespaceSelector:
+    matchNames:
+      - {{ mailpit_namespace }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: mailpit
+      app.kubernetes.io/component: http
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 60s

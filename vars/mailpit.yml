@@ -1,0 +1,129 @@
+# mailpit_ui_pass:   {vault.yml}
+# mailpit_smtp_pass: {vault.yml}
+# icloud_smtp.*:     {vault.yml}
+
+mailpit_ui_user: "{{ user_erhhung.username }}"
+mailpit_smtp_user: mailer
+
+mailpit_namespace: mailpit
+mailpit_host_names: # aliases of "ingress"
+  - mailpit # UI-only
+  - mail # UI-only
+  - smtp
+
+# https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_filters.html#products
+mailpit_fqdns: "{{ mailpit_host_names | product(search_domains) | map('join','.') }}"
+
+mailpit_smtp_port: 587 # StartTLS
+mailpit_smtp_host: "{{ mailpit_fqdns[-1] }}"
+mailpit_smtp_service_host: mailpit-smtp.{{ mailpit_namespace }}.svc.{{ cluster_domain }}
+
+mailpit_secrets:
+  ingress: mailpit-ingress-tls
+  smtp: mailpit-smtp-tls
+  env-vars: mailpit-env-variables
+
+# automatically relay messages to these recipients
+mailpit_relay_matching:
+  - "{{  user_erhhung.email }}"
+  - "{{ homelab_admin.email }}"
+
+# https://github.com/jouve/charts/tree/main/charts/mailpit
+mailpit_chart_version: "0.35.0"
+mailpit_release_name: mailpit
+
+# https://github.com/jouve/charts/tree/main/charts/mailpit/values.yaml
+mailpit_chart_values:
+  replicaCount: 1
+  revisionHistoryLimit: "{{ k8s_max_revisions }}"
+
+  image:
+    registry: docker.io
+    repository: axllent/mailpit
+    tag: v1.30.7
+
+  extraEnvVars:
+    - name: MP_SMTP_RELAY_MATCHING
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/regex_escape_filter.html
+      value: ({{ mailpit_relay_matching | map('regex_escape') | join('|') }})$
+    - name: MP_ENABLE_PROMETHEUS
+      value: "true"
+
+  extraEnvVarsSecret: "{{ mailpit_secrets['env-vars'] }}"
+
+  mailpit:
+    ui:
+      authFile:
+        enabled: true
+        # bcrypt hash of plain-text password:
+        # htpasswd -nbBC 11 "" $MAILPIT_PASS | \
+        #       tr -d ':\n' | sed 's/$2y/$2b/'
+        # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/password_hash_filter.html
+        htpasswd: |
+          {{ mailpit_ui_user }}:{{ mailpit_ui_pass |
+             ansible.builtin.password_hash('bcrypt', salt=bcrypt_salt,
+                                                   rounds=bcrypt_rounds) }}
+        tls:
+          enabled: false # UI proxied via Ingress TLS
+
+    smtp:
+      authFile:
+        enabled: true
+        htpasswd: |
+          {{ mailpit_smtp_user }}:{{ mailpit_smtp_pass |
+             ansible.builtin.password_hash('bcrypt', salt=bcrypt_salt,
+                                                   rounds=bcrypt_rounds) }}
+      tls:
+        enabled: true
+        secretName: "{{ mailpit_secrets['smtp'] }}"
+
+    # https://mailpit.axllent.org/docs/configuration/smtp-relay
+    relay:
+      enabled: true
+      relayAll: false
+      config:
+        host: "{{ icloud_smtp.host }}"
+        port: "{{ icloud_smtp.port }}"
+        starttls: true
+        auth: plain # none|plain|login|cram-md5
+        username: "{{ icloud_smtp.username }}"
+        # password: `MP_SMTP_RELAY_PASSWORD`
+
+  persistence:
+    enabled: true
+    storageClass: "{{ storage_classes['default'] }}"
+    accessModes: ["ReadWriteOnce"]
+    size: 384Mi
+
+  # https://github.com/bitnami/charts/tree/main/bitnami/common/templates/_resources.tpl
+  # use a preset instead of explicitly configuring resources:
+  # values: none|nano|micro|small|medium|large|xlarge|2xlarge
+  # resourcesPreset: nano
+  resources:
+    requests:
+      cpu: 25m
+      memory: 64Mi
+
+  service:
+    smtp:
+      type: LoadBalancer
+      port: "{{ mailpit_smtp_port }}"
+      annotations:
+        # replaces to-be-deprecated .spec.loadBalancerIP field
+        metallb.io/loadBalancerIPs: "{{ metallb_vips['smtp'] }}"
+
+  ingress:
+    enabled: true
+    extraTls:
+      - secretName: "{{ mailpit_secrets['ingress'] }}"
+        hosts: "{{ mailpit_fqdns[:-1] }}"
+    ingressClassName: "{{ rke_ingress_class }}"
+    annotations:
+      nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+      nginx.ingress.kubernetes.io/backend-protocol: HTTP
+    path: /
+    pathType: Prefix
+    hostname: "{{ mailpit_fqdns[0] }}"
+    extraHosts:
+      - name: "{{ mailpit_fqdns[1] }}"
+        path: /

@@ -12,7 +12,7 @@
 #   sed -E 's/^([[:space:]]+- ip:.+)$/\n\1/' # add newlines
 
 pfsense_dns_records:
-  - ip: 192.168.0.164
+  - ip: "{{ hostvars['rancher'].ansible_host }}"
     host: rancher
     desc: K3s Traefik Ingress
     aliases:
@@ -30,12 +30,16 @@ pfsense_dns_records:
         domain: k3s.{{ policy_reporter_subdomain }}
         desc: Trivy Plugin API
 
-  - ip: 192.168.4.222
+  - ip: "{{ metallb_vips['ingress'] }}"
     host: ingress
     desc: RKE Nginx Ingress
     aliases:
       - host: nginx
         desc: RKE Nginx Ingress
+      - host: mailpit
+        desc: Mailpit UI
+      - host: mail
+        desc: Mailpit UI
       - host: velero
         desc: Velero Dashboard
       - host: minio
@@ -194,7 +198,7 @@ pfsense_dns_records:
         domain: "{{ vcluster_domains['dev'] }}"
         desc: Workouts Explorer
 
-  - ip: 192.168.4.223
+  - ip: "{{ metallb_vips['ingresspt'] }}"
     host: ingresspt
     desc: RKE Nginx Ingress (SSL Passthrough)
     aliases:
@@ -205,14 +209,22 @@ pfsense_dns_records:
       - host: xtest
         desc: vCluster "test"
 
-  - ip: 192.168.4.224
+  - ip: "{{ metallb_vips['smtp'] }}"
+    host: smtp
+    desc: Mailpit SMTP
+
+  - ip: "{{ metallb_vips['otlp'] }}"
+    host: otlp
+    desc: OpenTelemetry Collector
+
+  - ip: "{{ metallb_vips['opensearch'] }}"
     host: opensearch
     desc: OpenSearch Cluster
     aliases:
       - host: es
         desc: OpenSearch Cluster
 
-  - ip: 192.168.4.225
+  - ip: "{{ metallb_vips['postgresql'] }}"
     host: postgresql
     desc: PostgreSQL
     aliases:
@@ -221,7 +233,8 @@ pfsense_dns_records:
       - host: pg
         desc: PostgreSQL
 
-  - ip: 192.168.4.231
+  # https://docs.ansible.com/ansible/latest/collections/ansible/utils/ipmath_filter.html
+  - ip: "{{ metallb_vips['valkey'] | ansible.utils.ipmath(0) }}"
     host: valkey1
     desc: Valkey Node 1
     aliases:
@@ -232,41 +245,37 @@ pfsense_dns_records:
       - host: redis
         desc: Valkey Node 1
 
-  - ip: 192.168.4.232
+  - ip: "{{ metallb_vips['valkey'] | ansible.utils.ipmath(1) }}"
     host: valkey2
     desc: Valkey Node 2
     aliases:
       - host: redis2
         desc: Valkey Node 2
 
-  - ip: 192.168.4.233
+  - ip: "{{ metallb_vips['valkey'] | ansible.utils.ipmath(2) }}"
     host: valkey3
     desc: Valkey Node 3
     aliases:
       - host: redis3
         desc: Valkey Node 3
 
-  - ip: 192.168.4.234
+  - ip: "{{ metallb_vips['valkey'] | ansible.utils.ipmath(3) }}"
     host: valkey4
     desc: Valkey Node 4
     aliases:
       - host: redis4
         desc: Valkey Node 4
 
-  - ip: 192.168.4.235
+  - ip: "{{ metallb_vips['valkey'] | ansible.utils.ipmath(4) }}"
     host: valkey5
     desc: Valkey Node 5
     aliases:
       - host: redis5
         desc: Valkey Node 5
 
-  - ip: 192.168.4.236
+  - ip: "{{ metallb_vips['valkey'] | ansible.utils.ipmath(5) }}"
     host: valkey6
     desc: Valkey Node 6
     aliases:
       - host: redis6
         desc: Valkey Node 6
-
-  - ip: 192.168.4.226
-    host: otlp
-    desc: OpenTelemetry Collector

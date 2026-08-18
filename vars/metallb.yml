@@ -14,17 +14,19 @@ metallb_vips:
     end: 192.168.4.250
 
   ingress: 192.168.4.222
-  ingress-pt: 192.168.4.223 # SSL passthrough
-  opensearch: 192.168.4.224
-  postgresql: 192.168.4.225
+  ingresspt: 192.168.4.223 # SSL passthrough
+  # StartTLS port 587
+  smtp: 192.168.4.224 # Mailpit
+  # HTTPS port 4318
+  # gRPCs port 4317
+  otlp: 192.168.4.225
+  opensearch: 192.168.4.226
+  postgresql: 192.168.4.227
   # Valkey creates a LoadBalancer Service
   # for each node, so reserve 6 IPs total
   valkey: 192.168.4.231 # ..192.168.4.236
-  # HTTPS port 4318
-  # gRPCs port 4317
-  otlp: 192.168.4.226
   # HTTP port 11434
-  ollama: 192.168.4.227
+  ollama: 192.168.4.228
 
 metallb_namespace: metallb-system
 
