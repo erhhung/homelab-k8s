@@ -53,9 +53,12 @@ modprobe:
 host_pif: enX0 # XCP-ng VM physical interface
 subnet_mask: /24
 name_servers:
-  - 192.168.0.1 # first IP address is used as default gateway
-  - 9.9.9.9 # https://quad9.net/ (Swiss non-profit foundation)
-  - 1.1.1.1 # https://developers.cloudflare.com/1.1.1.1/ip-addresses
+  - 192.168.0.1 # first IP is designated default gateway
+
+  # don't include public DNS servers because we need to
+  # be able to resolve internal fourteeners.local hosts
+  # - 9.9.9.9 # https://quad9.net/ (Swiss non-profit foundation)
+  # - 1.1.1.1 # https://developers.cloudflare.com/1.1.1.1/ip-addresses
 
 add_user_to_groups:
   - user: "{{ ansible_user }}"
