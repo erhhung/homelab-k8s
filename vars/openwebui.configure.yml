@@ -31,7 +31,7 @@ openwebui_retrieval_config:
   # ===== WEB LOADER =====
   WEB_LOADER_ENGINE: playwright
   WEB_LOADER_CONCURRENT_REQUESTS: 1
-  PLAYWRIGHT_WS_URL: "{{ playwright_websocket_url }}"
+  PLAYWRIGHT_WS_URL: "{{ playwright_service_url }}"
   PLAYWRIGHT_TIMEOUT: 60000 # ms
 
 # each tool server corresponds to an MCP

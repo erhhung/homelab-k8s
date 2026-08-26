@@ -1,33 +1,43 @@
 playwright_namespace: playwright
-playwright_enable_istio: true
-playwright_use_waypoint: true
+playwright_enable_istio: false
+playwright_use_waypoint: false
 
 playwright_host_name: playwright # alias of "ingress"
 
 # https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_filters.html#products
 playwright_fqdn: "{{ [playwright_host_name] | product(search_domains) | map('join','.') | first }}"
 
+playwright_url: wss://{{ playwright_fqdn }}
 playwright_service_host: "{{ playwright_release_name }}.{{
   playwright_namespace }}.svc.{{ cluster_domain }}"
 playwright_service_port: 3000
-playwright_websocket_url: ws://{{ playwright_service_host }}:{{ playwright_service_port }}
+playwright_service_url: ws://{{ playwright_service_host }}:{{ playwright_service_port }}
 
 playwright_secrets:
   ingress: playwright-ingress-tls
 
-# IMPORTANT! the Playwright server version
-# must match the Playwright client version
-# used by Open WebUI. check by running this
-# command against an Open WebUI deployment:
+# IMPORTANT! the Playwright server version must match
+# the Playwright client version used by Open WebUI and
+# OpenCode's Playwright MCP server. verify by running
+# this command against an Open WebUI deployment:
 # kubectl -n open-webui exec deploy/open-webui -c open-webui -- \
 #   pip --no-cache-dir show playwright | sed -n 's/^Version: //p'
 # https://github.com/open-webui/open-webui/tree/main/docker-compose.playwright.yaml
-openwebui_playwright_version: "1.60.0"
+
+# while the above is true, we're intentionally breaking
+# compatibility with Open WebUI's 1.60.0 requirement to
+# satisfy Playwright MCP server's requirement in order
+# to run in OpenCode instead as it's more heavily used
+
+# https://www.npmjs.com/package/playwright?activeTab=versions
+playwright_server_version: "1.62.0"
+# https://www.npmjs.com/package/@playwright/mcp?activeTab=versions
+playwright_mcp_version: "0.0.78"
 
 # https://mcr.microsoft.com/artifact/mar/playwright
 playwright_image:
   repository: mcr.microsoft.com/playwright
-  tag: v{{ openwebui_playwright_version }}
+  tag: v{{ playwright_server_version }}
   pullPolicy: IfNotPresent
 
 # NOTE: since Playwright refuses to provide an official
@@ -76,10 +86,10 @@ playwright_chart_values:
             - -c
             - |-
               # ca.crt is already mounted
-              CA_CERT="/usr/local/share/ca-certificates/ca.crt"
-              CA_BUNDLE="/etc/ssl/certs/ca-certificates.crt"
+              CA_CERT=/usr/local/share/ca-certificates/ca.crt
+              CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt
               # /certs is mounted emptyDir
-              NSSDB_DIR="/certs/nssdb"
+              NSSDB_DIR=/certs/nssdb
 
               # create NSS database with custom CA for Chromium
               apt-get update && apt-get install -y libnss3-tools
@@ -94,6 +104,12 @@ playwright_chart_values:
               certutil -d sql:$NSSDB_DIR -A -t "C,," -n "$nickname" -i $CA_CERT
               certutil -d sql:$NSSDB_DIR -L
 
+              # Chromium runs as UID/GID 1000 and
+              # needs read/write access to NSS DB
+              chown -R 1000:1000 $NSSDB_DIR
+              chmod 700 $NSSDB_DIR
+              chmod 600 $NSSDB_DIR/*
+
               echo -e "\nUpdating trust store..."
               # ignore "rehash: warning:" output
               update-ca-certificates 2> /dev/null || exit
@@ -103,17 +119,31 @@ playwright_chart_values:
       containers:
         playwright:
           image: "{{ playwright_image }}"
-          command: ["npx"]
+          command: ["sh"]
           args:
-            - -y
-            - playwright@{{ openwebui_playwright_version }}
-            - run-server
-            - --host=0.0.0.0
-            - --port={{ playwright_service_port }}
+            - -c
+            - |-
+              ver={{ playwright_server_version }}
+              # install exact package version in MCP server dependency
+              # ver=$(npm view @playwright/mcp@{{ playwright_mcp_version
+                }} dependencies.playwright)
+
+              npm install --prefix $PLAYWRIGHT_SERVER_PATH \
+                --no-save --no-package-lock --no-audit \
+                --no-fund playwright@$ver > /dev/null
+
+              # see `rawResources` for script in ConfigMap
+              exec node $PLAYWRIGHT_SERVER_PATH/server.cjs
           env:
             TZ: "{{ system_time_zone }}"
-            PLAYWRIGHT_BROWSERS_PATH: /ms-playwright
             NSS_DEFAULT_DB_DIR: /home/ubuntu/.local/share/pki/nssdb
+            PLAYWRIGHT_SERVER_PATH: /home/ubuntu/.local/share/playwright
+            PLAYWRIGHT_BROWSERS_PATH: /ms-playwright
+            PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
+            NODE_PATH:
+              value: $(PLAYWRIGHT_SERVER_PATH)/node_modules
+              dependsOn: PLAYWRIGHT_SERVER_PATH
+            NPM_CONFIG_UPDATE_NOTIFIER: "false"
 
           ports:
             - name: ws
@@ -171,6 +201,26 @@ playwright_chart_values:
             - path: /home/ubuntu/.local/share/pki/nssdb
               subPath: nssdb
 
+    server:
+      enabled: true
+      type: emptyDir
+      advancedMounts:
+        main:
+          playwright:
+            - path: /home/ubuntu/.local/share/playwright
+
+    script:
+      enabled: true
+      type: configMap
+      name: "{{ playwright_release_name }}-server"
+      defaultMode: 420 # "0644"
+      advancedMounts:
+        main:
+          playwright:
+            - path: /home/ubuntu/.local/share/playwright/server.cjs
+              subPath: server.cjs
+              readOnly: true
+
   service:
     main:
       type: ClusterIP
@@ -201,3 +251,41 @@ playwright_chart_values:
         - host: "{{ playwright_fqdn }}"
           paths:
             - path: /
+
+  rawResources:
+    script:
+      enabled: true
+      apiVersion: v1
+      kind: ConfigMap
+      forceRename: "{{ playwright_release_name }}-server"
+      spec:
+        data:
+          # replace default Playwright server startup
+          # with script that launches Chromium browser
+          server.cjs: |
+            const { chromium } = require("playwright");
+
+            async function main() {
+              const server = await chromium.launchServer({
+                headless: true,
+                host: "0.0.0.0",
+                port: {{ playwright_service_port }},
+                wsPath: "/",
+              });
+
+              console.log(`Listening on ${server.wsEndpoint()}`);
+
+              const shutdown = async (signal) => {
+                console.log(`Received ${signal}; closing Playwright`);
+                await server.close();
+                process.exit(0);
+              };
+
+              process.once("SIGTERM", () => shutdown("SIGTERM"));
+              process.once("SIGINT",  () => shutdown("SIGINT"));
+            }
+
+            main().catch((error) => {
+              console.error(error);
+              process.exit(1);
+            });

@@ -136,11 +136,12 @@ opencode_chart_values:
             - |-
               U={{ opencode_dev_container.dev_user  }}
               G={{ opencode_dev_container.dev_group }}
+              install="install -o $U -g $G -m"
 
               [ -d /data/ca-trust  ] || \
                 mkdir -p /data/{ca-trust,host_keys}
               [ -d /data/workspace ] || \
-                install -o $U -g $G -m 700 -d /data/workspace
+                $install 700 -d /data/workspace
 
               [ -f /data/ca-trust/pem/tls-ca-bundle.pem ] || {
                 echo "Adding certs to ca-trust..."
@@ -173,8 +174,12 @@ opencode_chart_values:
               }
               ls -al $HOME_RW/
 
+              $install 755 -d /nfs/.config
+              $install 644   /etc/opencode/opencode.json \
+                              /nfs/.config/opencode.json
+
               [ -d /containers/$U   ] || \
-                install -o $U -g $G -m 700 -d /containers/$U
+                $install 700 -d /containers/$U
               [ -d /containers/root ] || \
                 mkdir -p /containers/root
 
@@ -341,10 +346,8 @@ opencode_chart_values:
       defaultMode: 420 # "0644"
       advancedMounts:
         main:
-          main:
-            # https://opencode.ai/docs/config#global
-            - path: "{{ home_dir }}/.config/opencode/opencode.json"
-              subPath: opencode.json
+          init:
+            - path: /etc/opencode
               readOnly: true
 
     kubeconfig:
@@ -369,6 +372,8 @@ opencode_chart_values:
       path: "{{   homelab_nfs.base_path }}/opencode"
       advancedMounts:
         main:
+          init:
+            - path: /nfs
           main:
             - path: "{{ home_dir }}/nfs-share"
             # these dot folders were created manually on the
@@ -441,6 +446,24 @@ opencode_config:
   # https://opencode.ai/docs/config#models
   model: litellm/gpt-5.6-sol
   small_model: litellm/gpt-5.6-luna
+
+  # https://opencode.ai/docs/config#mcp-servers
+  mcp:
+    playwright:
+      enabled: true
+      type: local
+      command:
+        - npx
+        - -y
+        # IMPORTANT! make sure MCP server's Playwright
+        # client version matches the Playwright server
+        # version. verify by running this command:
+        # npm view @playwright/mcp@0.0.78 dependencies.playwright
+        - "@playwright/mcp@{{ playwright_mcp_version }}"
+        # https://github.com/microsoft/playwright-mcp#configuration
+        - --endpoint
+        - "{{ playwright_service_url }}"
+        - --isolated
 
   # https://opencode.ai/docs/config#shell
   shell: bash

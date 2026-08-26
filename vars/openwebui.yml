@@ -183,7 +183,7 @@ openwebui_extras:
 # https://github.com/open-webui/helm-charts/tree/main/charts/open-webui
 # IMPORTANT! Playwright deployment should be synchronized with
 # Open WebUI so that both Playwright server and client versions
-# match. See openwebui_playwright_version in vars/playwright.yml
+# match. See playwright_server_version in "vars/playwright.yml"
 openwebui_chart_repo_url: https://helm.openwebui.com
 openwebui_chart_version: "15.2.0"
 openwebui_release_name: open-webui

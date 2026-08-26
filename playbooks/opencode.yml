@@ -27,11 +27,12 @@
   vars_files:
     - vars/kubernetes.yml
     - vars/storage.yml
-    - vars/litellm.yml
     - vars/minio.yml
     - vars/gitea.yml
     - vars/gitlab.yml
     - vars/harbor.yml
+    - vars/litellm.yml
+    - vars/playwright.yml
     - vars/opencode.yml
   vars:
     # required kubernetes>=24.2 package only in user virtualenv
