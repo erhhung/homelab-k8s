@@ -46,6 +46,7 @@ apt_packages:
       - tree
       - htop
       - iotop
+      - sysstat # iostat/mpstat
       - lsof # used by custom Bash function `listening`
       - rsync # required by ansible.posix.synchronize
       - unzip

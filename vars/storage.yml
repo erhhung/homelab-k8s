@@ -77,7 +77,12 @@ longhorn_chart_values:
     defaultReplicaCount: 2
     # https://longhorn.io/docs/1.12.1/high-availability/auto-balance-replicas
     replicaAutoBalance: least-effort # ignored|disabled|least-effort|best-effort
+
+    # reduce default concurrency limits
+    # to avoid overloading weak cluster
     snapshotHeavyTaskConcurrentLimit: 1
+    concurrentReplicaRebuildPerNodeLimit: 1
+    concurrentVolumeBackupRestorePerNodeLimit: 1
     # Velero is configured to perform daily
     # backups with volume snapshot TTL of 3
     # days, so set snapshotMaxCount to >= 3
