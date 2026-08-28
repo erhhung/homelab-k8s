@@ -51,6 +51,13 @@
 
     - name: Install PostgreSQL HA Helm chart
       vars:
+        # standby nodes that clone from the
+        # primary node can take a long time
+        pgnode_wait: 1800
+        # Pgpool standby nodes = replicas - 1; pods are updated in rolling fashion
+        pgpool_wait: "{{ pgnode_wait * (values.postgresql.replicaCount-1) + 180 }}"
+
+        # === Inputs ===
         repo_name: bitnami
         repo_url: https://charts.bitnami.com/bitnami
         chart_ref: postgresql-ha
@@ -58,13 +65,24 @@
         release: "{{ postgresql_release_name }}"
         release_ns: "{{ postgresql_namespace }}"
         values: "{{ postgresql_chart_values }}"
+        atomic: false
+
+        patches:
+          merge_patches:
+            - apiVersion: apps/v1
+              kind: Deployment
+              metadata:
+                name: "{{ postgresql_release_name }}-pgpool"
+                namespace: "{{ postgresql_namespace }}"
+              spec:
+                progressDeadlineSeconds: "{{ pgpool_wait }}"
 
         extras: # adopt extra resources into Helm release
           - cert-manager.io/v1 Certificate {{ postgresql_secrets['node-tls'] }}
           - cert-manager.io/v1 Certificate {{ monitoring_secrets['scraper']  }}
 
-        wait_timeout: 600
-        task_timeout: 1800
+        wait_timeout: "{{ pgpool_wait | int + 60 }}"
+        task_timeout: "{{ pgpool_wait | int + 60 * (values.pgpool.replicaCount+1) }}"
       ansible.builtin.include_tasks: "{{ tasks_dir }}/helm/helmfile.yml"
 
     # add Wave annotations so Pgpool pods restart when

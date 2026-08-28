@@ -113,6 +113,10 @@ postgresql_chart_values:
       certKeyFilename: tls.key
       certCAFilename: ca.crt
 
+    extraEnvVars: &extra-envs
+      - name: TZ
+        value: "{{ system_time_zone }}"
+
     # resourcesPreset: small
     resources:
       requests:
@@ -124,14 +128,21 @@ postgresql_chart_values:
 
     readinessProbe:
       enabled: false
+
     # chart-defined probe
     # is too complicated!
     customLivenessProbe:
       exec:
         command:
-          - sh
-          - -c
-          - test "$(psql -U postgres -c "SELECT 1" -tAq)" = 1
+          - bash
+          - -ec
+          - |
+            # don`t fail probe while a standby node
+            # is being cloned from the primary node
+            # https://github.com/bitnami/charts/pull/29948
+            ps auxw | grep "data standby clone" \
+                    | grep -v grep \
+                   || psql -U postgres -c "SELECT 1"
       initialDelaySeconds: 30
       periodSeconds: 20
       timeoutSeconds: 5
@@ -177,6 +188,8 @@ postgresql_chart_values:
     # https://github.com/bitnami/charts/tree/main/bitnami/postgresql-ha#securing-traffic-using-tls
     tls: *node-tls
 
+    extraEnvVars: *extra-envs
+
     # https://github.com/bitnami/charts/tree/main/bitnami/postgresql-ha#resource-requests-and-limits
     # use a preset instead of explicitly configuring resources:
     # values: none|nano|micro|small|medium|large|xlarge|2xlarge
@@ -195,6 +208,7 @@ postgresql_chart_values:
       timeoutSeconds: 5
       successThreshold: 1
       failureThreshold: 12
+
     readinessProbe:
       enabled: true
       initialDelaySeconds: 10
@@ -202,6 +216,7 @@ postgresql_chart_values:
       timeoutSeconds: 15
       successThreshold: 1
       failureThreshold: 10
+
     livenessProbe:
       enabled: true
       initialDelaySeconds: 60
