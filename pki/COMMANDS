@@ -128,8 +128,22 @@ cd "$HOME"
   192.168.4.225
 
 ./cert.sh --exp=365 \
+  pgadmin.fourteeners.local
+
+./cert.sh --exp=365 \
+          --out=pgadmin_db \
+  pgadmin pgadmin@fourteeners.local
+
+./cert.sh --exp=365 \
           --pk8="-v1 PBE-SHA1-3DES" \
   erhhung erhhung@gmail.com
+
+./cert.sh --exp=365 \
+     keycloak.fourteeners.local \
+          iam.fourteeners.local \
+          sso.fourteeners.local \
+  \*.keycloak.svc.cluster.local \
+  \*.keycloak.svc
 
 # .key file is binary; to convert to PEM:
 # openssl pkcs8 -inform DER -outform PEM \
@@ -139,13 +153,6 @@ cd "$HOME"
           --pk8="-outform DER" \
           --out=keycloak_db \
   keycloak keycloak@fourteeners.local
-
-./cert.sh --exp=365 \
-     keycloak.fourteeners.local \
-          iam.fourteeners.local \
-          sso.fourteeners.local \
-  \*.keycloak.svc.cluster.local \
-  \*.keycloak.svc
 
 ./cert.sh --exp=365 \
           --out=valkey \
@@ -261,18 +268,14 @@ cd "$HOME"
     security.fourteeners.local
 
 ./cert.sh --exp=365 \
-          --out=gitea_db \
-  gitea gitea@fourteeners.local
-
-./cert.sh --exp=365 \
      gitea.fourteeners.local \
        git.fourteeners.local \
   \*.gitea.svc.cluster.local \
   \*.gitea.svc
 
 ./cert.sh --exp=365 \
-          --out=gitlab_db \
-  gitlab gitlab@fourteeners.local
+          --out=gitea_db \
+  gitea gitea@fourteeners.local
 
 ./cert.sh --exp=365 \
           --out=gitlab     gitlab-node \
@@ -287,18 +290,22 @@ cd "$HOME"
                         \*.gitlab.svc
 
 ./cert.sh --exp=365 \
+          --out=gitlab_db \
+  gitlab gitlab@fourteeners.local
+
+./cert.sh --exp=365 \
   jenkins.fourteeners.local
 
 ./cert.sh --exp=365 \
   buildfarm.fourteeners.local
 
 ./cert.sh --exp=365 \
-          --out=buildbuddy_db \
-  buildbuddy buildbuddy@fourteeners.local
-
-./cert.sh --exp=365 \
          buildbuddy.fourteeners.local \
   events.buildbuddy.fourteeners.local
+
+./cert.sh --exp=365 \
+          --out=buildbuddy_db \
+  buildbuddy buildbuddy@fourteeners.local
 
 ./cert.sh --exp=365 \
   vcluster.fourteeners.local
@@ -310,12 +317,12 @@ cd "$HOME"
   \*.argocd.svc
 
 ./cert.sh --exp=365 \
-          --out=awx_db \
-  awx awx@fourteeners.local
-
-./cert.sh --exp=365 \
       awx.fourteeners.local \
   ansible.fourteeners.local
+
+./cert.sh --exp=365 \
+          --out=awx_db \
+  awx awx@fourteeners.local
 
 ./cert.sh --exp=365 \
   ollama.fourteeners.local
@@ -329,11 +336,11 @@ cd "$HOME"
   playwright.fourteeners.local
 
 ./cert.sh --exp=365 \
-          --out=litellm_db \
-  litellm litellm@fourteeners.local
+  litellm.fourteeners.local
 
 ./cert.sh --exp=365 \
-  litellm.fourteeners.local
+          --out=litellm_db \
+  litellm litellm@fourteeners.local
 
 ./cert.sh --exp=365 \
           --out=qdrant \
@@ -346,13 +353,13 @@ cd "$HOME"
   \*.qdrant.svc
 
 ./cert.sh --exp=365 \
-          --out=openwebui_db \
-  openwebui openwebui@fourteeners.local
-
-./cert.sh --exp=365 \
   openwebui.fourteeners.local \
     chatgpt.fourteeners.local \
        chat.fourteeners.local
+
+./cert.sh --exp=365 \
+          --out=openwebui_db \
+  openwebui openwebui@fourteeners.local
 
 ./cert.sh --exp=365 \
   i9mbp.fourteeners.local

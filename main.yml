@@ -108,6 +108,11 @@
   ansible.builtin.import_playbook: playbooks/postgresql.yml
   tags: postgresql
 
+# pgAdmin depends on Mountpoint S3 and PostgreSQL
+- name: Include pgAdmin4 DB manager playbook
+  ansible.builtin.import_playbook: playbooks/pgadmin.yml
+  tags: pgadmin
+
 # Keycloak depends on PostgreSQL
 - name: Include Keycloak IAM & OIDC playbook
   ansible.builtin.import_playbook: playbooks/keycloak.yml

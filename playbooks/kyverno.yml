@@ -49,6 +49,10 @@
   vars_files:
     - vars/kubernetes.yml
     - vars/kyverno.yml
+
+    # these are only needed for
+    # vars in policy templates
+    - vars/storage.s3.yml
     - vars/trivy.yml
   vars: *vars
   pre_tasks:

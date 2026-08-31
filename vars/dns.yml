@@ -36,24 +36,28 @@ pfsense_dns_records:
     aliases:
       - host: nginx
         desc: RKE Nginx Ingress
-      - host: mailpit
-        desc: Mailpit UI
-      - host: mail
-        desc: Mailpit UI
-      - host: velero
-        desc: Velero Dashboard
       - host: minio
         desc: MinIO Console
       - host: s3
         desc: MinIO S3 API
-      - host: awx
-        desc: Ansible AWX
-      - host: ansible
-        desc: Ansible AWX
+      - host: velero
+        desc: Velero Dashboard
+      - host: mailpit
+        desc: Mailpit UI
+      - host: mail
+        desc: Mailpit UI
       - host: kibana
         desc: OpenSearch Dashboards
       - host: logs
         desc: OpenSearch Dashboards
+      - host: pgadmin
+        desc: pgAdmin UI
+      - host: keycloak
+        desc: Keycloak IAM
+      - host: iam
+        desc: Keycloak IAM
+      - host: sso
+        desc: Keycloak IAM
       - host: grafana
         desc: Grafana Dashboards
       - host: monitoring
@@ -109,12 +113,6 @@ pfsense_dns_records:
         desc: Pyrra Dashboard
       - host: pyrra
         desc: Pyrra Dashboard
-      - host: keycloak
-        desc: Keycloak IAM
-      - host: iam
-        desc: Keycloak IAM
-      - host: sso
-        desc: Keycloak IAM
       - host: kiali
         desc: Kiali Dashboard
       - host: istio
@@ -156,6 +154,10 @@ pfsense_dns_records:
         desc: vCluster Platform
       - host: argocd
         desc: Argo CD GitOps
+      - host: awx
+        desc: Ansible AWX
+      - host: ansible
+        desc: Ansible AWX
       - host: ollama
         desc: Ollama Server
       - host: litellm

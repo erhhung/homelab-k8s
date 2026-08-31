@@ -12,6 +12,7 @@
 
     # these are only needed for
     # their *_db_user variables
+    - vars/pgadmin.yml
     - vars/keycloak.yml
     - vars/policyreporter.yml
     - vars/gitea.yml

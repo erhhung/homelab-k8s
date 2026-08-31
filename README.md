@@ -50,12 +50,13 @@ All cluster services will be provisioned with TLS certificates from Erhhung's pr
 |             https://velero.fourteeners.local | Velero console
 |              https://minio.fourteeners.local | MinIO console
 |                 https://s3.fourteeners.local | MinIO S3 API
-|            smtp://smtp.fourteeners.local:587 | Mailpit SMTP
+|            smtp://smtp.fourteeners.local:587 | Mailpit SMTP _(StartTLS)_
 |            https://mailpit.fourteeners.local | Mailpit UI
 |    https://opensearch.fourteeners.local:9200 | OpenSearch
 |             https://kibana.fourteeners.local | OpenSearch Dashboards
 |              postgres.fourteeners.local:5432 | PostgreSQL via Pgpool _(mTLS only)_
-|                https://sso.fourteeners.local | Keycloak IAM console
+|            https://pgadmin.fourteeners.local | pgAdmin UI
+|                https://sso.fourteeners.local | Keycloak UI
 |                valkey.fourteeners.local:6379 <br/> valkey<i>{1..6}</i>.fourteeners.local:6379 | Valkey cluster _(mTLS only)_
 |            https://grafana.fourteeners.local | Grafana dashboards
 |            https://metrics.fourteeners.local | Prometheus UI _(Keycloak SSO)_
@@ -122,6 +123,8 @@ All cluster services will be provisioned with TLS certificates from Erhhung's pr
     * Install on main RKE cluster using the [`longhorn`](https://longhorn.io/docs/latest/deploy/install/install-with-helm) Helm chart
 - [X] [NFS Dynamic Provisioner](https://computingforgeeks.com/configure-nfs-as-kubernetes-persistent-volume-storage) — create persistent volumes on NFS shares
     * Install on K3s and RKE clusters using the [`nfs-subdir-external-provisioner`](https://github.com/kubernetes-sigs/nfs-subdir-external-provisioner) Helm chart
+- [X] [Mountpoint for S3/MinIO](https://github.com/awslabs/mountpoint-s3-csi-driver) — statically mount S3-compatible buckets as PVC volumes
+    * Install on main RKE cluster using the [`aws-mountpoint-s3-csi-driver`](https://github.com/awslabs/mountpoint-s3-csi-driver/tree/main/docs/INSTALL.md#helm) Helm chart
 - [X] [MinIO Object Storage](https://github.com/minio/minio) — S3-compatible object storage with console
     * Install on main RKE cluster using the [MinIO Operator](https://min.io/docs/minio/kubernetes/upstream/operations/install-deploy-manage/deploy-operator-helm.html) and [MinIO Tenant](https://min.io/docs/minio/kubernetes/upstream/operations/install-deploy-manage/deploy-minio-tenant-helm.html) Helm charts
 - [X] [Velero Backup & Restore](https://velero.io/docs/latest/basic-install) — back up and restore persistent volumes
@@ -138,6 +141,7 @@ All cluster services will be provisioned with TLS certificates from Erhhung's pr
     * Instal Fluent Bit using the [`fluent-operator`](https://github.com/fluent/fluent-operator) Helm chart and `FluentBit` CR
 - [X] [PostgreSQL Database](https://www.postgresql.org/docs/current) — SQL database used by Keycloak and other applications
     * Install on main RKE cluster using Bitnami's [`postgresql-ha`](https://github.com/bitnami/charts/tree/main/bitnami/postgresql-ha) Helm chart
+    * [X] Install [pgAdmin 4](https://www.pgadmin.org/) in server mode using the [`pgadmin4`](https://github.com/rowanruseler/helm-charts/tree/main/charts/pgadmin4) Helm chart
     * [ ] Deploy [StackGres Operator](https://stackgres.io/) to enable app-specific Postgres instances and automatic backups
 - [X] [Keycloak IAM & OIDC Provider](https://www.keycloak.org/) — identity and access management and OpenID Connect provider
     * Install on main RKE cluster using the [`keycloakx`](https://github.com/codecentric/helm-charts/tree/master/charts/keycloakx) Helm chart
@@ -248,20 +252,20 @@ ansible-vault view   $VAULTFILE
 | `docker_access_token`             | `harbor_admin_pass`
 | `github_access_token`             | `mailpit_ui_pass`
 | `age_secret_key`                  | `opensearch_admin_pass`
-| `sops_encryption_key`             | `keycloak_admin_pass`
-| `yubikey_unlock_pin`              | `thanos_admin_pass`
+| `sops_encryption_key`             | `pgadmin_user_pass`
+| `yubikey_unlock_pin`              | `keycloak_admin_pass`
 | `pfsense_api_key`                 | `grafana_admin_pass`
-| `metallb_secret`                  | `vault_admin_pass`
-| `step_ca_provisioner_pass`        | `gitlab_root_pass`
-| `minio_client_pass`               | `gitlab_user_pass`
-| `velero_repo_pass`                | `jenkins_admin_pass`
-| `velero_passphrase`               | `vcluster_admin_pass`
-| `harbor_secret`                   | `argocd_admin_pass`
-| `mailpit_smtp_pass`               | `awx_admin_pass`
-| `dashboards_os_pass`              | `litellm_admin_pass`
-| `fluent_os_pass`                  | `openwebui_admin_pass`
-| `postgresql_pass`                 | `flowise_admin_pass`
-| `valkey_pass`                     |
+| `metallb_secret`                  | `thanos_admin_pass`
+| `step_ca_provisioner_pass`        | `vault_admin_pass`
+| `minio_client_pass`               | `gitlab_root_pass`
+| `velero_repo_pass`                | `gitlab_user_pass`
+| `velero_passphrase`               | `jenkins_admin_pass`
+| `harbor_secret`                   | `vcluster_admin_pass`
+| `mailpit_smtp_pass`               | `argocd_admin_pass`
+| `dashboards_os_pass`              | `awx_admin_pass`
+| `fluent_os_pass`                  | `litellm_admin_pass`
+| `postgresql_pass`                 | `openwebui_admin_pass`
+| `valkey_pass`                     | `flowise_admin_pass`
 | `oidc_client_secrets.*`           |
 | `oauth2_proxy_cookie_secret`      |
 | `monitoring_pass`                 |
@@ -440,16 +444,18 @@ however, all privileged operations using `sudo` will require the password stored
 </details>
 
 14. <details><summary>Install <strong>Longhorn</strong> dynamic PV provisioner<br/>
+    &nbsp; &nbsp; Install <strong>Mountpoint S3</strong> static provisioner<br/>
     &nbsp; &nbsp; Install <strong>MinIO</strong> object storage in <em><strong>HA</strong></em> mode<br/>
     &nbsp; &nbsp; Install <strong>Velero</strong> backup and restore tools</summary><br/>
 
     14.1. Create a pool of LVM logical volumes  
     14.2. Install Longhorn storage components  
     14.3. Install NFS dynamic PV provisioner  
-    14.4. Install MinIO tenant using NFS PVs  
-    14.5. Create MinIO buckets, users, groups  
-    14.6. Install Velero using MinIO as target  
-    14.7. Install Velero Dashboard  
+    14.4. Install Mountpoint for S3 CSI driver  
+    14.5. Install MinIO tenant using NFS PVs  
+    14.6. Create MinIO buckets, users, groups  
+    14.7. Install Velero using MinIO as target  
+    14.8. Install Velero Dashboard  
 
     ```bash
     make storage minio velero
@@ -501,13 +507,15 @@ however, all privileged operations using `sudo` will require the password stored
     ```
 </details>
 
-20. <details><summary>Install <strong>PostgreSQL</strong> database in <em><strong>HA</strong></em> mode</summary><br/>
+20. <details><summary>Install <strong>PostgreSQL</strong> database in <em><strong>HA</strong></em> mode<br/>
+    &nbsp; &nbsp; Install <strong>pgAdmin 4</strong> to manage databases</summary><br/>
 
     20.1. Run initialization SQL script to create roles and databases for downstream applications  
-    20.2. Create users in both PostgreSQL and **Pgpool**  
+    20.2. Create roles and users in PostgreSQL and Pgpool  
+    20.3. Add PostgreSQL server to pgAdmin Servers group  
 
     ```bash
-    make postgresql
+    make postgresql pgadmin
     ```
 </details>
 

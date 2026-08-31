@@ -4,12 +4,9 @@
   tags: prepare
   hosts: k8s_hosts
   become: true
-  vars_files: &vars_files
+  vars_files:
     - vars/kubernetes.yml
-    - vars/monitoring.yml
     - vars/storage.yml
-    - vars/basics.yml
-    - vars/minio.yml
   pre_tasks:
     - name: Is iscsi_tcp module loaded?
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/shell_module.html
@@ -24,10 +21,6 @@
       register: iscsi_tcp
       changed_when: false
       failed_when: false
-
-    - name: Ensure DNS resolution works
-      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
-      ansible.builtin.include_tasks: "{{ tasks_dir }}/dns/check.yml"
 
     - name: Is Longhorn already installed?
       become: false
@@ -183,13 +176,18 @@
   tags: longhorn
   # install just on RKE cluster for now
   hosts: "{{ rke_control_plane_host }}"
-  vars_files: *vars_files
-  vars:
+  vars_files:
+    - vars/kubernetes.yml
+    - vars/monitoring.yml
+    - vars/storage.yml
+    - vars/minio.yml
+  vars: &vars
     # required kubernetes>=24.2 package only in user virtualenv
     ansible_python_interpreter: "{{ venv_python_interpreter }}"
     kubeconfig: "{{ rke_kubeconfig }}"
   pre_tasks:
     - name: Get CA certificates from PKI
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
       ansible.builtin.include_tasks: "{{ tasks_dir }}/pki/cacerts.yml"
       when: ca_certificates is undefined
 
@@ -373,7 +371,10 @@
   hosts:
     - "{{ k3s_control_plane_host }}"
     - "{{ rke_control_plane_host }}"
-  vars_files: *vars_files
+  vars_files:
+    - vars/kubernetes.yml
+    - vars/storage.yml
+    - vars/storage.nfs.yml
   vars:
     # required kubernetes>=24.2 package only in user virtualenv
     ansible_python_interpreter: "{{ venv_python_interpreter }}"
@@ -410,10 +411,104 @@
       loop_control:
         label: "{{ item.name }}"
 
+# https://github.com/awslabs/mountpoint-s3-csi-driver/tree/main/docs/INSTALL.md
+# https://github.com/awslabs/mountpoint-s3-csi-driver/blob/main/docs/CONFIGURATION.md
+# https://github.com/awslabs/mountpoint-s3-csi-driver/tree/main/examples/kubernetes/static_provisioning
+- name: Install Mountpoint for S3/MinIO
+  tags: s3
+  # install just on RKE cluster for now
+  hosts: "{{ rke_control_plane_host }}"
+  vars_files:
+    - vars/kubernetes.yml
+    - vars/storage.s3.yml
+  vars: *vars
+  pre_tasks:
+    - name: Get CA certificates from PKI
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/pki/cacerts.yml"
+      when: ca_certificates is undefined
+  tasks:
+    - name: Create MinIO credentials secret
+      vars:
+        secret_name: "{{ mount_s3_secrets['creds'] }}"
+        secret_data:
+          AWS_ACCESS_KEY_ID: "{{     aws_profiles['personal'].access_key }}"
+          AWS_SECRET_ACCESS_KEY: "{{ aws_profiles['personal'].secret_key }}"
+        secret_ns: "{{ mount_s3_namespace }}"
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/k8s/secrets/generic.yml"
+
+    - name: Install Mountpoint S3 Helm chart
+      vars:
+        tmpdir_name: mount-s3
+        repo_name: mount-s3
+        repo_url: https://awslabs.github.io/mountpoint-s3-csi-driver
+        chart_ref: aws-mountpoint-s3-csi-driver
+        chart_ver: "{{ mount_s3_chart_version }}"
+        release: "{{ mount_s3_release_name }}"
+        release_ns: "{{ mount_s3_namespace }}"
+        values: "{{ mount_s3_chart_values }}"
+
+        extras: # adopt extra resources into Helm release
+          - v1 Secret {{ mount_s3_secrets['creds'] }}
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/helm/helmfile.yml"
+
+    - name: Create Mountpoint CAs ConfigMap
+      block:
+        - name: Get existing system trust store
+          block:
+            - name: Get Mountpoint S3 controller pod
+              kubernetes.core.k8s_info:
+                kubeconfig: "{{ kubeconfig }}"
+                namespace: "{{ mount_s3_namespace }}"
+                api_version: v1
+                kind: Pod
+                label_selectors:
+                  - app = s3-csi-controller
+              register: controller_pod
+
+            - name: Get existing system trust store
+              vars:
+                pod_name: "{{ controller_pod.resources[0].metadata.name }}"
+              # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_exec_module.html
+              kubernetes.core.k8s_exec:
+                kubeconfig: "{{ kubeconfig }}"
+                namespace: "{{ mount_s3_namespace }}"
+                pod: "{{ pod_name }}"
+                command: cat /etc/pki/tls/certs/ca-bundle.crt
+              register: os_certs
+              changed_when: false
+
+        - name: Create Mountpoint CAs ConfigMap
+          vars:
+            ca_name: "{{ homelab_domain | split('.') | first | capitalize }}"
+            # prepend/append: plugins/filter/filters.py
+            comments: |
+              {{ ['Intermediate', 'Root']
+                 | map('prepend', '# '~ ca_name ~' ')
+                 | map( 'append', ' CA'~ LF) }}
+            ca_certs: "{{ ca_certificates | map('append', LF) }}"
+            # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/zip_filter.html
+            my_certs: "{{ comments | ansible.builtin.zip(ca_certs) | map('join') | join(LF) }}\n\n"
+          kubernetes.core.k8s:
+            kubeconfig: "{{ kubeconfig }}"
+            definition:
+              apiVersion: v1
+              kind: ConfigMap
+              metadata:
+                name: "{{ mount_pt_configmaps['CAs'] }}"
+                namespace: "{{ mount_pt_namespace }}"
+              data:
+                # this will replace /etc/pki/tls/certs/ca-bundle.crt
+                ca-bundle.crt: "{{ my_certs ~ os_certs.stdout }}"
+                minio.pem: "{{ ca_certificates | join(LF) }}"
+            validate:
+              fail_on_error: true
+            state: present
+
 - name: Configure storage dashboards
   tags: dashboards
   hosts: localhost
-  vars_files: *vars_files
+  vars_files:
+    - vars/storage.yml
   tasks:
     - name: Import Grafana dashboards
       vars:

@@ -562,8 +562,8 @@ prometheus_stack_chart_values:
           secret:
             type: S3
             config:
-              # both bucket and user are
-              # created by vars/minio.yml
+              # bucket and user are created
+              # by vars/minio.configure.yml
               bucket: telemetry
               endpoint: "{{ minio_service_host }}"
               region: "{{ minio_region }}"

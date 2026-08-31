@@ -13,7 +13,7 @@ set -o pipefail
 
 kubectl="kubectl --context homelab --namespace postgresql"
 
-SCRIPT="$(cat <<'EOF'
+SCRIPT="$(cat <<'EOT'
 psql="psql -U postgres"
 
 is_primary() {
@@ -21,6 +21,7 @@ is_primary() {
 }
 
 start_psql() {
+  local stdin line
   [ -p /dev/stdin ] && stdin="$(cat)"
 
   if [ "$stdin" ]; then
@@ -30,10 +31,19 @@ start_psql() {
 
     $psql "${cmds[@]}" 2>&1
   else
-    PSQL_HISTORY=/dev/null $psql -q
+    local editrc=$(mktemp)
+
+    # allow Alt-Left/Right to move
+    # by word on psql command-line
+    cat > $editrc <<'EOF'
+bind "\e[1;3C" em-next-word
+bind "\e[1;3D" ed-prev-word
+EOF
+    PSQL_HISTORY=/dev/null EDITRC=$editrc $psql -q
+    rc=$?; rm -f $editrc; return $rc
   fi
 }
-EOF
+EOT
 )"
 
 pods=($($kubectl get pods \

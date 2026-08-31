@@ -10,8 +10,9 @@ postgresql_superuser: erhhung
 # cluster is initially deployed--new users will have
 # to be created manually afterwards
 postgresql_users:
-  - "{{  user_erhhung.username }}"
+  - "{{  postgresql_superuser  }}"
   - "{{  scraper_user.username }}"
+  - "{{    pgadmin_db_user }}"
   - "{{   keycloak_db_user }}"
   - "{{     policy_db_user }}"
   - "{{      gitea_db_user }}"
@@ -28,13 +29,13 @@ postgresql_users:
 # to replication lag:
 # https://www.pgpool.net/docs/latest/en/html/runtime-config-load-balancing.html#GUC-DATABASE-REDIRECT-PREFERENCE-LIST
 postgresql_use_primary:
-  - "{{     policy_db_name }}"
-  - "{{      gitea_db_name }}"
-  - "{{     gitlab_db_name }}"
-  - "{{        awx_db_name }}"
-  - "{{    litellm_db_name }}"
-  - "{{ buildbuddy_db_name }}"
-  - "{{  openwebui_db_name }}"
+  - "{{   pgadmin_db_name }}"
+  - "{{    policy_db_name }}"
+  - "{{     gitea_db_name }}"
+  - "{{    gitlab_db_name }}"
+  - "{{       awx_db_name }}"
+  - "{{   litellm_db_name }}"
+  - "{{ openwebui_db_name }}"
 
 postgresql_namespace: postgresql
 postgresql_host_names: # 192.168.4.225

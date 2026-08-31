@@ -1,98 +1,4 @@
-# minio_root_pass:      {vault.yml}
-# minio_admin_pass:     {vault.yml}
-# minio_client_pass:    {vault.yml}
-#      gitea_minio_key: {vault.yml}
-#     gitlab_minio_key: {vault.yml}
-# buildbuddy_minio_key: {vault.yml}
-#  openwebui_minio_key: {vault.yml}
-
-minio_region: homelab
-
-minio_buckets:
-  # backups by Longhorn, Velero, etc.
-  - name: backups
-    # https://min.io/docs/minio/linux/reference/minio-mc/mc-mb.html#parameters
-    # options: ["--with-versioning"]
-  # metrics from Thanos, traces from Tempo
-  - name: telemetry
-  # Gitea avatars/LFS/attachments/packages/artifacts/logs (bucket with prefixes)
-  - name: gitea
-  # GitLab LFS/uploads/packages/artifacts/backups/cache (all individual buckets)
-  # https://docs.ansible.com/ansible/latest/collections/community/general/dict_kv_filter.html
-  - "{{ gitlab_buckets.values() | map('community.general.dict_kv', 'name')}}"
-  - name: buildbuddy
-  # Open WebUI uploads
-  - name: openwebui
-
-# IAM-compatible policies for users and groups
-# only (there is no support for bucket policy)
-# NOTE: rendered JSON doc cannot exceed 20 KiB
-# https://min.io/docs/minio/linux/administration/identity-access-management/policy-based-access-control.html#policy-document-structure
-# plugins/lookup/one_bucket_iam_policy.py creates a broad
-# policy. ideally, allowed actions should be more limited:
-# https://github.com/vmware-tanzu/velero-plugin-for-aws#option-1-set-permissions-with-an-iam-user
-minio_policies: |
-  {{ {
-       'backups-rw': lookup('one_bucket_iam_policy', 'backups'),
-     'telemetry-rw': lookup('one_bucket_iam_policy', 'telemetry'),
-         'gitea-rw': lookup('one_bucket_iam_policy', 'gitea'),
-        'gitlab-rw': lookup('one_bucket_iam_policy', 'gitlab-*'),
-    'buildbuddy-rw': lookup('one_bucket_iam_policy', 'buildbuddy'),
-     'openwebui-rw': lookup('one_bucket_iam_policy', 'openwebui'),
-  } }}
-
-minio_users: # non-root
-  # name = access_key
-  erhhung:
-    secret_key: "{{ minio_admin_pass }}"
-    # https://min.io/docs/minio/linux/administration/identity-access-management/policy-based-access-control.html#built-in-policies
-    # policies: ["readwrite"]
-  # user authenticated by the "metrics" alias (mc alias list)
-  # to generate MinIO cluster/node/bucket scrape configs with
-  # the appropriate `bearer_token`
-  scraper:
-    secret_key: "{{ minio_client_pass }}"
-    policies: ["diagnostics"]
-  longhorn:
-    secret_key: "{{ minio_client_pass }}"
-    # policies managed by "backups" group
-  velero:
-    secret_key: "{{ minio_client_pass }}"
-    # policies managed by "backups" group
-  thanos:
-    secret_key: "{{ minio_client_pass }}"
-    # policies managed by "telemetry" group
-  tempo:
-    secret_key: "{{ minio_client_pass }}"
-    # policies managed by "telemetry" group
-  gitea:
-    secret_key: "{{ gitea_minio_key }}"
-    policies: ["gitea-rw"]
-  gitlab:
-    secret_key: "{{ gitlab_minio_key }}"
-    policies: ["gitlab-rw"]
-  buildbuddy:
-    secret_key: "{{ buildbuddy_minio_key }}"
-    policies: ["buildbuddy-rw"]
-  openwebui:
-    secret_key: "{{ openwebui_minio_key }}"
-    policies: ["openwebui-rw"]
-
-minio_groups:
-  admins:
-    members:
-      - erhhung
-    policies: ["consoleAdmin"]
-  backups:
-    members:
-      - longhorn
-      - velero
-    policies: ["backups-rw"]
-  telemetry:
-    members:
-      - thanos
-      - tempo
-    policies: ["telemetry-rw"]
+# minio_root_pass: {vault.yml}
 
 minio_host_names: # aliases of "ingress"
   - minio # console
@@ -107,13 +13,14 @@ minio_s3api_port: 9000 # internal
 
 minio_operator_namespace: minio-operator
 minio_tenant_namespace: minio
-
 minio_tenant_name: homelab
 minio_pool_name: qnap-pool
 
 minio_service_host: minio.{{ minio_tenant_namespace }}.svc.{{ cluster_domain }}
 minio_service_url: https://{{ minio_service_host }}
 minio_public_url: https://{{ minio_s3api_fqdn }}
+
+minio_region: homelab
 
 minio_secrets:
   root: minio-creds-root

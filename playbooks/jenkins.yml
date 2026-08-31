@@ -105,7 +105,7 @@
 
     - name: Create Jenkins envFrom secret
       vars:
-        ca_prefix: "{{ homelab_domain.split('.')[0] }}_"
+        ca_prefix: "{{ homelab_domain | split('.') | first }}_"
         # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/unvault_lookup.html
         ssh_key: "{{ lookup('ansible.builtin.unvault', files_dir ~ '/erhhung/id_ed25519_auth') }}"
 

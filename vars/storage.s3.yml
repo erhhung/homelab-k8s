@@ -1,0 +1,42 @@
+mount_s3_namespace: mount-s3-system
+mount_pt_namespace: mount-s3
+
+mount_s3_secrets:
+  creds: s3-csi-credentials
+
+mount_pt_configmaps:
+  CAs: mp-ca-bundles
+
+# https://github.com/awslabs/mountpoint-s3-csi-driver/tree/main/charts/aws-mountpoint-s3-csi-driver
+mount_s3_chart_version: "2.7.0"
+mount_s3_release_name: mount-s3
+
+# https://github.com/awslabs/mountpoint-s3-csi-driver/tree/main/charts/aws-mountpoint-s3-csi-driver/values.yaml
+mount_s3_chart_values:
+  # since there can only be one set of AWS credentials
+  # for the CSI driver, in order to use both MinIO and
+  # AWS S3 buckets, the MinIO user must use actual IAM
+  # credentials--endpoint URL and region can vary per
+  # PV, but credentials are global for driver/cluster
+  awsAccessSecret:
+    name: "{{ mount_s3_secrets['creds'] }}"
+    keyId: AWS_ACCESS_KEY_ID
+    accessKey: AWS_SECRET_ACCESS_KEY
+
+  controller:
+    nodeSelector:
+      node-role.kubernetes.io/control-plane: "true"
+
+  # these DaemonSet pods are privileged node-level
+  # CSI components that mount the host kubelet dir
+  # and create FS mounts using the S3 FUSE driver
+  node:
+    affinity: null # nullify default nodeAffinity
+
+  # these pods run on the same nodes as
+  # work pods that mount S3-backed PVCs
+  mountpointPod:
+    namespace: "{{ mount_pt_namespace }}"
+    # let the chart create namespace with `pod-security.kubernetes.io/enforce: restricted` label:
+    # https://kubernetes.io/docs/tasks/configure-pod-container/enforce-standards-namespace-labels
+    createNamespace: true

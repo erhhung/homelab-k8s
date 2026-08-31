@@ -1,5 +1,5 @@
 -- https://www.postgresql.org/docs/current/sql-createrole.html
-CREATE ROLE {{ user_erhhung.username }} WITH CREATEROLE
+CREATE ROLE {{ postgresql_superuser  }} WITH CREATEROLE
   LOGIN PASSWORD '{{ pgpool_pass }}' SUPERUSER CREATEDB;
 CREATE ROLE {{ scraper_user.username }} WITH
   LOGIN PASSWORD '{{ pgpool_pass }}';

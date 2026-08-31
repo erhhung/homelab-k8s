@@ -1,0 +1,90 @@
+# https://www.pgadmin.org/docs/pgadmin4/latest
+# https://github.com/pgadmin-org/pgadmin4
+---
+- name: Install pgAdmin4 on RKE cluster
+  tags: install
+  hosts: "{{ rke_control_plane_host }}"
+  vars_files:
+    - vars/kubernetes.yml
+    - vars/storage.yml
+    - vars/minio.yml
+    - vars/postgresql.yml
+    - vars/pgadmin.yml
+  vars:
+    # required kubernetes>=24.2 package only in user virtualenv
+    ansible_python_interpreter: "{{ venv_python_interpreter }}"
+    kubeconfig: "{{ rke_kubeconfig }}"
+    secret_ns: "{{ pgadmin_namespace }}"
+    create_ns: false
+  pre_tasks:
+    - name: Get the PostgreSQL image used
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/postgresql/image.yml"
+      when: postgresql_image is undefined
+  tasks:
+    - name: Create pgAdmin ingress secret
+      vars:
+        secret_name: "{{ pgadmin_secrets['ingress'] }}"
+        create_ns: true
+        cert_name: pgadmin-ingress
+        sans: "{{ [pgadmin_fqdn] }}"
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/k8s/secrets/tls.step.yml"
+
+    # client cert for pgAdmin config DB
+    - name: Create pgAdmin database secret
+      vars:
+        secret_name: "{{ pgadmin_secrets['database'] }}"
+        cert_name: pgadmin-database
+        days: 365
+        sans:
+          - "{{ pgadmin_db_user }}"
+          - "{{ pgadmin_db_user }}@{{ homelab_domain }}"
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/k8s/secrets/tls.step.yml"
+
+    # client cert for server definition
+    - name: Create database superuser secret
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/postgresql/superuser.yml"
+
+    - name: Create pgAdmin passwords secret
+      vars:
+        secret_name: "{{ pgadmin_secrets['passwords'] }}"
+        secret_data:
+          pgadmin-password: "{{    pgadmin_user_pass }}"
+          pgadmin-db-password: "{{ pgadmin_pg_pass   }}"
+          superuser-password: "{{  pgpool_pass       }}"
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/k8s/secrets/generic.yml"
+
+    - name: Install pgAdmin4 Helm chart
+      vars:
+        repo_name: runix
+        repo_url: https://helm.runix.net
+        chart_ref: pgadmin4
+        chart_ver: "{{ pgadmin_chart_version }}"
+        release: "{{ pgadmin_release_name }}"
+        release_ns: "{{ pgadmin_namespace }}"
+        values: "{{ pgadmin_chart_values }}"
+
+        patches:
+          merge_patches:
+            # change `pgadmin-data` volume
+            # /var/lib/pgadmin to be tmpfs
+            - apiVersion: apps/v1
+              kind: Deployment
+              metadata:
+                name: "{{ pgadmin_release_name }}"
+                namespace: "{{ pgadmin_namespace }}"
+              spec:
+                template:
+                  spec:
+                    volumes:
+                      # sessions and logs
+                      - name: pgadmin-data
+                        emptyDir:
+                          medium: Memory
+
+        extras: # adopt extra resources into Helm release
+          - cert-manager.io/v1 Certificate {{    pgadmin_secrets['ingress']   }}
+          - cert-manager.io/v1 Certificate {{    pgadmin_secrets['database']  }}
+          - cert-manager.io/v1 Certificate {{ postgresql_secrets['superuser'] }}
+          - v1 Secret {{ pgadmin_secrets['passwords'] }}
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/helm/helmfile.yml"

@@ -71,7 +71,7 @@
   tasks:
     - name: Create CA certificates secret
       vars:
-        ca_prefix: "{{ homelab_domain.split('.')[0] }}_"
+        ca_prefix: "{{ homelab_domain | split('.') | first }}_"
 
         # === Inputs ===
         create_ns: true

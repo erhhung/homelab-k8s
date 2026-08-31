@@ -46,8 +46,8 @@ cp /config/{.bash_completion,.dircolors,.lessopen} $HOME
 tail -n+2 /config/.bash_profile >> $HOME/.bash_profile
 touch $HOME/.hushlogin
 
-# copy config  files to $XDG_CONFIG_HOME
-cp -r /config/.config/* $XDG_CONFIG_HOME
+# copy config files into $XDG_CONFIG_HOME
+cp -rf /config/.config/* $XDG_CONFIG_HOME
 
 # enable automatic completion of aliases:
 # https://github.com/cykerway/complete-alias

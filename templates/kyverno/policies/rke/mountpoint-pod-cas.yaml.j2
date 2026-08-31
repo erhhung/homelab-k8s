@@ -1,0 +1,116 @@
+# add volume & volumeMount to generated Mountpoint S3 pods under
+# /mountpoint-s3/tls so that CA bundle files can be specified in
+# PV `mountOptions` as `ca-bundle /mountpoint-s3/tls/<file>` for
+# the S3 FUSE driver to trust private CAs
+
+# https://kyverno.io/docs/policy-types/mutating-policy
+---
+apiVersion: policies.kyverno.io/v1
+kind: MutatingPolicy
+metadata:
+  name: mountpoint-pod-cas
+  labels:
+    reports.kyverno.io/disabled: "true"
+spec:
+  evaluation:
+    admission:
+      enabled: true
+    mutateExisting:
+      enabled: false
+  failurePolicy: Fail
+
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CREATE"]
+        resources: ["pods"]
+        scope: Namespaced
+
+  matchConditions:
+    - name: mount-s3-namespace
+      expression: object.metadata.namespace == "{{ mount_pt_namespace }}"
+
+    - name: mountpoint-pod
+      expression: object.metadata.?generateName.orValue("") == "mp-"
+
+    - name: mutation-required
+      expression: |-
+        !object.spec.volumes.exists(v, v.name == "ca-bundle")
+
+  variables:
+    # private CA certs and existing system CA bundle
+    - name: caBundleVolume
+      expression: |-
+        Object.spec.volumes{
+          name:      "ca-bundle",
+          configMap:  Object.spec.volumes.configMap{
+            name: "{{ mount_pt_configmaps['CAs'] }}",
+            defaultMode: 420,
+            items: [
+              Object.spec.volumes.configMap.items{
+                key:  "ca-bundle.crt",
+                path: "ca-bundle.crt"
+              }
+            ]
+          }
+        }
+    # private CA bundles only
+    - name: caBundlesVolume
+      expression: |-
+        Object.spec.volumes{
+          name:      "ca-bundles",
+          configMap:  Object.spec.volumes.configMap{
+            name: "{{ mount_pt_configmaps['CAs'] }}",
+            defaultMode: 420,
+            items: [
+              Object.spec.volumes.configMap.items{
+                key:  "minio.pem",
+                path: "minio.pem"
+              }
+            ]
+          }
+        }
+    # replace system trust store
+    - name: caBundleVolumeMount
+      expression: |-
+        Object.spec.containers.volumeMounts{
+          name:      "ca-bundle",
+          mountPath: "/etc/pki/tls/certs/ca-bundle.crt",
+          subPath:   "ca-bundle.crt",
+          readOnly:   true
+        }
+    - name: caBundlesVolumeMount
+      expression: |-
+        Object.spec.containers.volumeMounts{
+          name:      "ca-bundles",
+          mountPath: "/mountpoint-s3/tls",
+          readOnly:   true
+        }
+
+  mutations:
+    - patchType: JSONPatch
+      jsonPatch:
+        expression: |-
+          [
+            JSONPatch{
+              op:    "add",
+              path:  "/spec/volumes/-",
+              value: variables.caBundleVolume
+            },
+            JSONPatch{
+              op:    "add",
+              path:  "/spec/volumes/-",
+              value: variables.caBundlesVolume
+            },
+            JSONPatch{
+              op:    "add",
+              path:  "/spec/containers/0/volumeMounts/-",
+              value: variables.caBundleVolumeMount
+            },
+            JSONPatch{
+              op:    "add",
+              path:  "/spec/containers/0/volumeMounts/-",
+              value: variables.caBundlesVolumeMount
+            }
+          ]

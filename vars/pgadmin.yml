@@ -1,0 +1,316 @@
+# pgadmin_user_pass: {vault.yml}
+# pgadmin_pg_pass:   {vault.yml}
+
+pgadmin_namespace: pgadmin
+pgadmin_host_name: pgadmin # alias of "ingress"
+
+pgadmin_fqdn: "{{ [pgadmin_host_name] | product(search_domains) | map('join','.') | first }}"
+
+pgadmin_secrets:
+  ingress: pgadmin-ingress-tls
+  database: pgadmin-database-tls
+  passwords: pgadmin-passwords
+
+pgadmin_db_name: pgadmin
+pgadmin_db_user: pgadmin
+# {{ pgadmin_pg_pass }}
+
+# https://docs.sqlalchemy.org/en/20/core/engines.html#database-urls
+# https://docs.sqlalchemy.org/en/20/dialects/postgresql.html#ssl-connections
+# https://www.postgresql.org/docs/current/libpq-connect.html#LIBPQ-CONNSTRING-URIS
+# https://docs.ansible.com/ansible/latest/collections/ansible/builtin/dict2items_filter.html
+# https://docs.ansible.com/ansible/latest/collections/ansible/builtin/zip_filter.html
+# (references "pgpool_service_url" var from vars/postgresql.yml)
+pgadmin_postgresql_url: >-
+  {% set params = {
+       'sslmode':     'verify-full',
+       'sslcert':     '/tls/database/tls.crt',
+       'sslkey':      '/tls/database/tls.key',
+       'sslrootcert': '/tls/database/ca.crt',
+     } -%}
+  {% set  items = params | dict2items -%}
+  {% set params =  items | map(attribute='key') |
+               zip(items | map(attribute='value')) |
+                     map('join','=') -%}
+  {% set  query = params | join('&') -%}
+  {{ pgpool_service_url  | replace('://', '+psycopg://'~
+     pgadmin_db_user ~':$(DBPASSWORD)@') }}/{{
+     pgadmin_db_name ~'?'~ query }}
+
+# https://github.com/rowanruseler/helm-charts/tree/main/charts/pgadmin4
+pgadmin_chart_version: "1.66.0"
+pgadmin_release_name: pgadmin4
+
+# https://github.com/rowanruseler/helm-charts/tree/main/charts/pgadmin4/values.yaml
+pgadmin_chart_values:
+  replicaCount: 1
+
+  workload:
+    kind: Deployment # Deployment|StatefulSet
+  revisionHistoryLimit: "{{ k8s_max_revisions }}"
+
+  serviceAccount:
+    create: true
+
+  env:
+    # this is the UI login username!
+    email: "{{ user_erhhung.email }}"
+
+  # https://www.pgadmin.org/docs/pgadmin4/latest/container_deployment.html#environment-variables
+  envVarsExtra:
+    - name: TZ
+      value: "{{ system_time_zone }}"
+    # no need for built-in SMTP server
+    # (used for password reset emails)
+    - name: PGADMIN_DISABLE_POSTFIX
+      value: "True"
+
+    - name: DBPASSWORD
+      valueFrom:
+        secretKeyRef:
+          name: "{{ pgadmin_secrets['passwords'] }}"
+          key: pgadmin-db-password
+    # env var value contains `$(DBPASSWORD)`
+    - name: PGADMIN_CONFIG_CONFIG_DATABASE_URI
+      # value must be a Python-quoted string!
+      value: "'{{ pgadmin_postgresql_url }}'"
+
+    - name: SUPASSWORD
+      valueFrom:
+        secretKeyRef:
+          name: "{{ pgadmin_secrets['passwords'] }}"
+          key: superuser-password
+    # required in server mode for `PasswordExecCommand`
+    - name: PGADMIN_CONFIG_ENABLE_SERVER_PASS_EXEC_CMD
+      value: "True"
+
+    # `PGSSL*` env vars below are workaround for bug that
+    # prevents `ConnectionParameters` from taking effect:
+    # https://github.com/pgadmin-org/pgadmin4/issues/10242
+    - name: PGSSLMODE
+      value: verify-full
+    - name: PGSSLCERT
+      value: /tls/superuser/tls.crt
+    - name: PGSSLKEY
+      value: /tls/superuser/tls.key
+    - name: PGSSLROOTCERT
+      value: /tls/superuser/ca.crt
+
+  existingSecret: "{{ pgadmin_secrets['passwords'] }}"
+  secretKeys:
+    pgadminPasswordKey: pgadmin-password
+
+  # preload pgAdmin with user preferences to
+  # override default settings such as themes,
+  # display options, and query tool behavior
+  # https://www.pgadmin.org/docs/pgadmin4/latest/preferences.html#json-format
+  preferences:
+    enabled: true
+    data:
+      misc:user_interface:theme: dark
+
+  # preload pgAdmin with servers at first
+  # startup when the config DB is created
+  # https://www.pgadmin.org/docs/pgadmin4/latest/import_export_servers.html#json-format
+  serverDefinitions:
+    enabled: true
+    resourceType: ConfigMap # ConfigMap|Secret
+    servers:
+      homelab:
+        Name: PostgreSQL on RKE cluster
+        Group: Servers
+        Host: "{{ pgpool_service_host }}"
+        Port: "{{ pgpool_service_port }}"
+        MaintenanceDB: postgres
+        Username: "{{ postgresql_superuser }}"
+        PasswordExecCommand: printf "%s" "$SUPASSWORD"
+        # NOTE! SSL parameters don't work currently due to bug:
+        # https://github.com/pgadmin-org/pgadmin4/issues/10242
+        # they must be set GLOBALLY as libpq env vars:
+        # PGSSLMODE/PGSSLCERT/PGSSLKEY/PGSSLROOTCERT
+        ConnectionParameters:
+          sslmode: verify-full
+          sslcert: /tls/superuser/tls.crt
+          sslkey: /tls/superuser/tls.key
+          sslrootcert: /tls/superuser/ca.crt
+        # legacy format uses top-level keys
+        # instead of `ConnectionParameters`
+        # SSLMode: verify-full
+        # SSLCert: /tls/superuser/tls.crt
+        # SSLKey: /tls/superuser/tls.key
+        # SSLRootCert: /tls/superuser/ca.crt
+        PostConnectionSQL: SET timezone='{{ system_time_zone }}'
+
+  resources:
+    requests:
+      cpu: 50m
+      memory: 256Mi
+
+  # initialization of an empty
+  # config DB can take a while
+  startupProbe: &probe
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 30
+
+  readinessProbe:
+    <<: *probe
+    failureThreshold: 6
+
+  livenessProbe:
+    <<: *probe
+    periodSeconds: 20
+    failureThreshold: 3
+
+  # use customized volume layout via
+  # extraVolumes & extraVolumeMounts
+  persistentVolume:
+    # when disabled, volume `pgadmin-data`
+    # will be created as an `emptyDir: {}`
+    enabled: false
+    subPath: null
+
+  extraVolumes:
+    # backups/exports/uploads
+    - name: pgadmin-storage
+      persistentVolumeClaim:
+        claimName: "{{ pgadmin_release_name }}-storage"
+    - name: database-tls
+      secret:
+        secretName: "{{ pgadmin_secrets['database'] }}"
+        defaultMode: 416 # "0640"
+    - name: superuser-tls
+      secret:
+        secretName: "{{ postgresql_secrets['superuser'] }}"
+        defaultMode: 416 # "0640"
+
+  extraVolumeMounts:
+    - name: pgadmin-storage
+      mountPath: /var/lib/pgadmin/storage
+    - name: database-tls
+      mountPath: /tls/database
+      readOnly: true
+    - name: superuser-tls
+      mountPath: /tls/superuser
+      readOnly: true
+
+  extraDeploy:
+    # statically provision a MinIO-backed
+    # volume for /var/lib/pgadmin/storage
+    - apiVersion: v1
+      kind: PersistentVolume
+      metadata:
+        name: "{{ pgadmin_release_name }}-storage"
+      spec:
+        # https://github.com/awslabs/mountpoint-s3-csi-driver/tree/main/docs/CONFIGURATION.md
+        storageClassName: "" # static provisioning
+        csi:
+          driver: "{{ mount_s3_driver }}"
+          volumeHandle: "{{ pgadmin_release_name }}-storage"
+          volumeAttributes:
+            bucketName: pgadmin
+            authenticationSource: driver
+        # NOTE: the Mountpoint pod that runs `mount-s3` will be injected with both the
+        # updated system CA bundle at /etc/pki/tls/certs/ca-bundle.crt and the private
+        # CA bundle at /mountpoint-s3/tls/minio.pem by a Kyverno `MutatingPolicy` (see
+        # templates/kyverno/policies/rke/mountpoint-pod-cas.yaml.j2)
+        mountOptions:
+          - region       {{ minio_region      }}
+          - endpoint-url {{ minio_service_url }}
+          - force-path-style
+          - maximum-throughput-gbps 1 # default=10
+          # https://github.com/awslabs/mountpoint-s3/tree/main/doc/CONFIGURATION.md#custom-ca-trust-bundle
+          # - ca-bundle /mountpoint-s3/tls/minio.pem # option only available in v2.8.0 (not available yet)
+          # https://github.com/awslabs/mountpoint-s3/tree/main/doc/CONFIGURATION.md#file-and-directory-permissions
+          - uid       5050
+          - gid       5050
+          - file-mode 0660
+          - dir-mode  0770
+          - allow-other
+        capacity:
+          storage: 100Gi # required by K8s but ignored by driver
+        accessModes: ["ReadWriteMany"]
+        claimRef:
+          # ensure no other PVC can claim this PV
+          name: "{{ pgadmin_release_name }}-storage"
+          namespace: "{{ pgadmin_namespace }}"
+
+    - apiVersion: v1
+      kind: PersistentVolumeClaim
+      metadata:
+        name: "{{ pgadmin_release_name }}-storage"
+      spec:
+        storageClassName: "" # static provisioning
+        volumeName: "{{ pgadmin_release_name }}-storage"
+        resources:
+          requests:
+            storage: 100Gi # required by K8s but ignored by driver
+        accessModes: ["ReadWriteMany"]
+
+  # NOTE: extraInitContainers value as string
+  # can be Helm-templated, so be careful with
+  # Jinja2-templating using same {{ }} syntax
+  extraInitContainers: |
+    # create PostgreSQL database
+    # "pgadmin" if doesn't exist
+    - name: create-database
+      image: {{ postgresql_image }}
+      imagePullPolicy: IfNotPresent
+      command: ["bash"]
+      args:
+        - -c
+        - |-
+          # uses connection params added
+          # by PG* environment variables
+          db_found=$(psql -d postgres -tAc "
+            SELECT COUNT(*) FROM pg_catalog.pg_database WHERE datname = '$PGDATABASE'
+          ") || exit $?
+          echo "db_found=$db_found"
+
+          [ "$db_found" -eq 1 ] || {
+            echo -e "\nCreating '$PGDATABASE' database..."
+            psql -d postgres <<EOT
+
+          -- https://www.postgresql.org/docs/current/sql-createdatabase.html
+          CREATE DATABASE $PGDATABASE WITH OWNER $PGUSER;
+          REVOKE ALL ON DATABASE $PGDATABASE FROM PUBLIC;
+          GRANT  ALL ON DATABASE $PGDATABASE  TO $PGUSER;
+          EOT
+          }
+          echo -e "\nDatabase initialization completed ✓"
+      env:
+        # https://www.postgresql.org/docs/current/libpq-envars.html
+        - name: PGHOST
+          value: {{ pgpool_service_host }}
+        - name: PGUSER
+          value: {{ pgadmin_db_user }}
+        - name: PGDATABASE
+          value: {{ pgadmin_db_name }}
+        - name: PGSSLMODE
+          value: verify-full
+        - name: PGSSLCERT
+          value: /tls/tls.crt
+        - name: PGSSLKEY
+          value: /tls/tls.key
+        - name: PGSSLROOTCERT
+          value: /tls/ca.crt
+
+      volumeMounts:
+        - name: database-tls
+          mountPath: /tls
+          readOnly: true
+
+  ingress:
+    enabled: true
+    tls:
+      - secretName: "{{ pgadmin_secrets['ingress'] }}"
+        hosts: "{{ [pgadmin_fqdn] }}"
+    ingressClassName: "{{ rke_ingress_class }}"
+    annotations:
+      nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+      nginx.ingress.kubernetes.io/backend-protocol: HTTP
+    hosts:
+      - host: "{{ pgadmin_fqdn }}"
+        paths:
+          - path: /
+            pathType: Prefix

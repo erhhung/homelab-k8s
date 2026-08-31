@@ -10,6 +10,7 @@
     - vars/storage.yml
     - vars/gitlab.yml
     - vars/minio.yml
+    - vars/minio.configure.yml
   vars:
     # required kubernetes>=24.2 package only in user virtualenv
     ansible_python_interpreter: "{{ venv_python_interpreter }}"
@@ -84,17 +85,17 @@
     # https://min.io/docs/minio/kubernetes/upstream/reference/operator-crd.html#tenantspec
     - name: Create MinIO user credentials
       vars:
-        secret_name: minio-creds-{{ item.name }}
+        secret_name: minio-creds-{{ item.key }}
         secret_data:
-          CONSOLE_ACCESS_KEY: "{{ item.name }}"
+          CONSOLE_ACCESS_KEY: "{{ item.user.access_key | default(item.key) }}"
           CONSOLE_SECRET_KEY: "{{ item.user.secret_key }}"
         secret_ns: "{{ minio_tenant_namespace }}"
         create_ns: false
       ansible.builtin.include_tasks: "{{ tasks_dir }}/k8s/secrets/generic.yml"
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/dict2items_filter.html
-      loop: "{{ minio_users | ansible.builtin.dict2items(key_name='name', value_name='user') }}"
+      loop: "{{ minio_users | ansible.builtin.dict2items(value_name='user') }}"
       loop_control:
-        label: "{{ item.name }}"
+        label: "{{ item.key }}"
 
     - name: Install MinIO Operator Helm chart
       vars:
@@ -401,7 +402,8 @@
         # https://min.io/docs/minio/linux/reference/minio-mc-admin/mc-admin-user-list.html
         echo >&2 "Getting list of existing users..."
         users="$(mc admin user list local --json | jq -r '.accessKey')"
-        {% for access_key, user in minio_users.items() %}
+        {% for key, user in minio_users.items() %}
+        {%   set access_key = user.access_key | default(key) %}
 
         grep -q '^{{ access_key }}$' <<< "$users" || {
           # https://min.io/docs/minio/linux/reference/minio-mc-admin/mc-admin-user-add.html
