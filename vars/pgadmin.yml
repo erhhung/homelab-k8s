@@ -144,7 +144,7 @@ pgadmin_chart_values:
   resources:
     requests:
       cpu: 50m
-      memory: 256Mi
+      memory: 1Gi
 
   # initialization of an empty
   # config DB can take a while

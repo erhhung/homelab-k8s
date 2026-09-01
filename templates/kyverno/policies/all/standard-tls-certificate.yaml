@@ -92,9 +92,10 @@ spec:
   mutations:
     # https://kubernetes.io/docs/reference/kubernetes-api/admissionregistration/mutating-admission-policy-v1#ApplyConfiguration
     - patchType: ApplyConfiguration
-      # NOTE: `usages` and `subject` are atomic values that cannot
-      # be operated on by `ApplyConfiguration`, so use `JSONPatch`
-      # on those fields instead
+      # NOTE: `usages` and `subject` are atomic list
+      # and map values that cannot be operated on by
+      # `ApplyConfiguration`,  so use `JSONPatch` on
+      # those fields instead
       applyConfiguration:
         expression: |-
           Object{

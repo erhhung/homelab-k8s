@@ -54,6 +54,24 @@ rke2_server_node_taints: [] # allow control plane to run workloads
 # - CriticalAddonsOnly=true:NoExecute # workloads on workers only
 rke2_agent_node_taints: []
 
+rke2_kubelet_arg:
+  - --config=/etc/rancher/rke2/kubelet-config.yaml
+rke2_kubelet_config:
+  # https://kubernetes.io/docs/tasks/administer-cluster/reserve-compute-resources
+  # confirm afterwards by running on a cluster node:
+  # { kubectl proxy & } && sleep .5
+  # curl -s http://127.0.0.1:8001/api/v1/nodes/k8s1/proxy/configz | \
+  #   jq '.kubeletconfig | {kubeReserved,systemReserved,evictionHard,enforceNodeAllocatable}'
+  # kill %1 && fg
+  kubeReserved:
+    cpu: 500m
+    memory: 1Gi
+  systemReserved:
+    cpu: 250m
+    memory: 512Mi
+  evictionHard:
+    memory.available: 512Mi
+
 rke2_kube_apiserver_args: []
 # enable Prometheus scraping
 # TIP: shell into any pod and run
