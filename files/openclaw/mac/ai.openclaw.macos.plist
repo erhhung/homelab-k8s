@@ -6,7 +6,7 @@
     <string>ai.openclaw.macos</string>
     <key>ProgramArguments</key>
     <array>
-      <string>$HOME/.openclaw/ai.openclaw.macos.sh</string>
+      <string>$OPENCLAW_STATE_DIR/ai.openclaw.macos.sh</string>
     </array>
     <key>WorkingDirectory</key>
     <string>$HOME</string>
@@ -32,10 +32,14 @@
       <string>$XDG_STATE_HOME</string>
       <key>XDG_DATA_HOME</key>
       <string>$XDG_DATA_HOME</string>
+      <key>OPENCLAW_STATE_DIR</key>
+      <string>$OPENCLAW_STATE_DIR</string>
+      <key>OPENCLAW_CONFIG_PATH</key>
+      <string>$OPENCLAW_CONFIG_PATH</string>
     </dict>
     <key>StandardOutPath</key>
-    <string>$HOME/.openclaw/logs/ai.openclaw.macos-stdout.log</string>
+    <string>$OPENCLAW_STATE_DIR/logs/ai.openclaw.macos-stdout.log</string>
     <key>StandardErrorPath</key>
-    <string>$HOME/.openclaw/logs/ai.openclaw.macos-stderr.log</string>
+    <string>$OPENCLAW_STATE_DIR/logs/ai.openclaw.macos-stderr.log</string>
   </dict>
 </plist>

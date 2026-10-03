@@ -91,39 +91,42 @@
       register: skill_config_b64
       changed_when: false
 
-    # retrieve values for `plugins.installs.*.{integrity,shasum}`
-    - name: Retrieve plugin integrity
-      delegate_to: localhost
-      vars:
-        ansible_python_interpreter: "{{ default_python_interpreter }}"
-      ansible.builtin.shell: |
-        set -o pipefail
+    # plugins must now be installed through `openclaw plugins install`,
+    # which adds integrity information to the internal SQLite database
 
-        npm view "{{ item.package }}@{{ item.version }}" \
-          dist.integrity dist.shasum --json | jq '.[0] | {
-            plugin:     "{{ item.id }}",
-            integrity: ."dist.integrity",
-            shasum:    ."dist.shasum",
-          }'
-      args: *local-shell-args
-      loop: "{{ openclaw_plugins }}"
-      loop_control:
-        label: "{{ item.id }}"
-      register: integrity_json
-      changed_when: false
+    # retrieve values for `plugins.installs.*.{integrity,shasum}`
+    # - name: Retrieve plugin integrity
+    #   delegate_to: localhost
+    #   vars:
+    #     ansible_python_interpreter: "{{ default_python_interpreter }}"
+    #   ansible.builtin.shell: |
+    #     set -o pipefail
+
+    #     npm view "{{ item.package }}@{{ item.version }}" \
+    #       dist.integrity dist.shasum --json | jq '.[0] | {
+    #         plugin:     "{{ item.id }}",
+    #         integrity: ."dist.integrity",
+    #         shasum:    ."dist.shasum",
+    #       }'
+    #   args: *local-shell-args
+    #   loop: "{{ openclaw_plugins }}"
+    #   loop_control:
+    #     label: "{{ item.id }}"
+    #   register: integrity_json
+    #   changed_when: false
 
     # plugin_integrity['plugin_id'].{integrity,shasum}
-    - name: Set plugin_integrity fact
-      vars:
-        results: "{{ integrity_json.results | map(attribute='stdout') | map('from_json') }}"
-        # https://docs.ansible.com/ansible/latest/collections/community/general/remove_keys_filter.html
-        metadata: "{{ results | community.general.remove_keys(target=['plugin']) }}"
-      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/set_fact_module.html
-      ansible.builtin.set_fact:
-        # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/zip_filter.html
-        # https://docs.ansible.com/ansible/latest/collections/community/general/dict_filter.html
-        plugin_integrity: "{{  results  | map(attribute='plugin') |
-          ansible.builtin.zip(metadata) | community.general.dict }}"
+    # - name: Set plugin_integrity fact
+    #   vars:
+    #     results: "{{ integrity_json.results | map(attribute='stdout') | map('from_json') }}"
+    #     # https://docs.ansible.com/ansible/latest/collections/community/general/remove_keys_filter.html
+    #     metadata: "{{ results | community.general.remove_keys(target=['plugin']) }}"
+    #   # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/set_fact_module.html
+    #   ansible.builtin.set_fact:
+    #     # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/zip_filter.html
+    #     # https://docs.ansible.com/ansible/latest/collections/community/general/dict_filter.html
+    #     plugin_integrity: "{{  results  | map(attribute='plugin') |
+    #       ansible.builtin.zip(metadata) | community.general.dict }}"
   tasks:
     - name: Create OpenClaw ingress secret
       vars:
@@ -187,6 +190,18 @@
         release_ns: "{{ openclaw_namespace }}"
         values: "{{ openclaw_chart_values }}"
 
+        patches:
+          merge_patches:
+            - apiVersion: apps/v1
+              kind: Deployment
+              metadata:
+                name: "{{ openclaw_release_name }}"
+                namespace: "{{ openclaw_namespace }}"
+              spec:
+                # installing plugins/skills and
+                # dependencies can take a while
+                progressDeadlineSeconds: 1800
+
         extras: # adopt extra resources into Helm release
           - cert-manager.io/v1 Certificate {{ openclaw_secrets['ingress'] }}
           - v1 Secret {{ openclaw_secrets['env-vars'] }}
@@ -197,8 +212,8 @@
 
         # installing plugins/skills and
         # dependencies can take a while
-        wait_timeout: 1200
-        task_timeout: 1600
+        wait_timeout: 1860
+        task_timeout: 1920
       ansible.builtin.include_tasks: "{{ tasks_dir }}/helm/helmfile.yml"
 
 # this setup is workaround because the Mac companion
@@ -217,22 +232,30 @@
     - mac
     - node
   hosts: localhost
+  vars_files:
+    - vars/openclaw.yml
   vars:
     host_is_mac: "{{ ansible_system == 'Darwin' }}"
+    gateway_fqdn: "{{ openclaw_fqdns | first }}"
     service_name: ai.openclaw.macos
     helper_file: "{{ service_name }}.sh"
-    plist_file: "{{ service_name }}.plist"
+    plist_file: "{{  service_name }}.plist"
     home_dir: "{{ ansible_env['HOME'] }}"
+    # local OpenClaw environment uses XDG path conventions
+    config_path: "{{ ansible_env['OPENCLAW_CONFIG_PATH'] |
+      default(home_dir ~ '/.config/openclaw/openclaw.json') }}"
+    state_dir: "{{ ansible_env['OPENCLAW_STATE_DIR'] |
+      default(home_dir ~ '/.local/state/openclaw') }}"
     plist_dir: "{{ home_dir }}/Library/LaunchAgents"
     plist_path: "{{ plist_dir }}/{{ plist_file }}"
     file_list:
       # brew install --cask openclaw
       - /Applications/OpenClaw.app/Contents/MacOS/OpenClaw
-      # app should have been configured for
-      # remote gateway WebSocket connection
-      - "{{ home_dir }}/.openclaw/openclaw.json"
       # npm install --global openclaw
       - /usr/local/bin/openclaw
+      # app should have been configured for
+      # remote gateway WebSocket connection
+      - "{{ config_path }}"
     env_defaults:
       NODE_PATH: /usr/local/lib/node_modules
       NODE_OPTIONS: "'--max-old-space-size=4096'"
@@ -248,6 +271,20 @@
         path: "{{ item }}"
       loop: "{{ file_list }}"
       register: file_stat
+
+    - name: Get gateway TLS fingerprint
+      ansible.builtin.shell: |
+        set -o pipefail
+
+        openssl s_client \
+          -connect    {{ gateway_fqdn }}:443 \
+          -servername {{ gateway_fqdn }} < /dev/null 2> /dev/null | \
+          openssl x509 -outform DER | \
+          openssl dgst -sha256      | \
+          awk '{print $2}'
+      args: *local-shell-args
+      register: tls_fingerprint
+      changed_when: false
 
     - name: Gather facts about controller
       ansible.builtin.include_tasks: "{{ tasks_dir }}/localfacts.yml"
@@ -268,11 +305,37 @@
       ansible.builtin.meta: end_play
       when: not all_found
 
+    - name: Set pinned TLS fingerprint
+      vars:
+        fingerprint: "{{ tls_fingerprint.stdout }}"
+      ansible.builtin.shell: |
+        set -o pipefail
+        rc=9 # no change
+
+        fp=$(jq -r '.gateway.remote | if .url then
+          .tlsFingerprint // "" else "NO_URL" end
+          ' "{{ config_path }}")
+
+        [[ "$fp" == NO_URL || \
+           "$fp" ==   "{{ fingerprint }}" ]] || {
+          jq --arg FP "{{ fingerprint }}" '
+            .gateway.remote.tlsFingerprint = $FP
+                 ' "{{ config_path }}" | \
+            sponge "{{ config_path }}"
+          rc=0
+        }
+        exit $rc
+      args: *local-shell-args
+      register: set_fingerprint
+      changed_when: set_fingerprint.rc == 0
+      failed_when: set_fingerprint.rc not in [0,9]
+      notify: Relaunch Mac companion app+node
+
     - name: Create "{{ helper_file }}"
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/copy_module.html
       ansible.builtin.copy:
-        src: "{{ files_dir }}/openclaw/mac/{{ helper_file }}"
-        dest: "{{ home_dir }}/.openclaw/"
+        src: "{{  files_dir }}/openclaw/mac/{{ helper_file }}"
+        dest: "{{ state_dir }}/"
         mode: "0755"
       notify: Relaunch Mac companion app+node
 
@@ -309,7 +372,8 @@
         service_target: "{{ domain_target }}/{{ service_name }}"
       ansible.builtin.shell: |
         set -o pipefail
-        launchctl print {{ service_target }} 2>/dev/null | \
+
+        launchctl print {{ service_target }} 2> /dev/null | \
           grep -qE '^\s*pid = [0-9]+'
       args: *local-shell-args
       register: svc_status
@@ -388,14 +452,18 @@
           # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/find_module.html
           ansible.builtin.find:
             paths: "{{ state_src_dir }}"
-            excludes: .*
+            exclude:
+              - .*
+              - README.md
             recurse: true
           register: state_files
 
         - name: Read workspace config files
           ansible.builtin.find:
             paths: "{{ workspace_src_dir }}"
-            excludes: .*
+            exclude:
+              - .*
+              - README.md
             recurse: true
           register: workspace_files
   tasks:
@@ -642,7 +710,7 @@
                opts | ansible.builtin.zip(values)  |
                       flatten | select('truthy')  %}
           {% if exists %}
-          {%   set _ = args.append(jobs[0].id) %}
+          {%   set _ = args.append(job[0].id) %}
           {% endif %}
           {{ args  }}
       kubernetes.core.k8s_exec:

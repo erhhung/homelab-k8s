@@ -1,14 +1,19 @@
 # explicitly allow tools in sessions because
 # `group:openclaw` doesn't appear to include
 # `exec`/`process`:
-# https://docs.openclaw.ai/tools#built-in-tools
-openclaw_allow_tools:
+# https://docs.openclaw.ai/tools#built-in-tool-categories
+openclaw_allow_tools: # NO LONGER USED!
   - exec
   - process
   - browser
   - canvas
   # - nodes
   # plugins:
+  - ls
+  - read
+  - edit
+  - write
+  - apply_patch
   - lcm_grep
   - lcm_describe
   - lcm_expand
@@ -48,7 +53,7 @@ openclaw_exec_allowlist:
 # https://docs.openclaw.ai/gateway/configuration
 # show config in YAML: yq -pj openclaw.json -Moy
 openclaw_config:
-  # https://docs.openclaw.ai/gateway/configuration-reference#gateway
+  # https://docs.openclaw.ai/gateway/config-gateway#gateway
   gateway:
     port: 18789
     bind: lan # loopback|lan
@@ -78,55 +83,56 @@ openclaw_config:
       # allowing commands like system.run.prepare
       # will not magically grant new capabilities
       # if the node doesn't implement the command.
-      # https://docs.openclaw.ai/platforms/macos#node-capabilities-mac
-      allowCommands:
-        - invoke
-        - system.which
-        - system.notify
+      # https://docs.openclaw.ai/nodes/command-policy#command-policy
+      commands:
+        allow:
+          - invoke
+          - system.which
+          - system.notify
 
-        # in-app UI surface controls
-        # via Apple native WKWebView
-        - canvas.present
-        - canvas.navigate
-        - canvas.snapshot
-        - canvas.hide
+          # in-app UI surface controls
+          # via Apple native WKWebView
+          - canvas.present
+          - canvas.navigate
+          - canvas.snapshot
+          - canvas.hide
 
-        # higher risk: run arbitrary JS
-        # in node-hosted canvas/webview
-        # - canvas.eval
+          # higher risk: run arbitrary JS
+          # in node-hosted canvas/webview
+          # - canvas.eval
 
-        # canvas streaming controls
-        # https://a2ui.org/
-        - canvas.a2ui.push
-        - canvas.a2ui.pushJSONL
-        - canvas.a2ui.reset
+          # canvas streaming controls
+          # https://a2ui.org/
+          - canvas.a2ui.push
+          - canvas.a2ui.pushJSONL
+          - canvas.a2ui.reset
 
-        # higher risk: browser access
-        # with pre-signed-in sessions
-        # https://docs.openclaw.ai/tools/browser#node-browser-proxy-zero-config-default
-        - browser.proxy
+          # higher risk: browser access
+          # with pre-signed-in sessions
+          # https://docs.openclaw.ai/tools/browser#node-browser-proxy-zero-config-default
+          - browser.proxy
 
-        # higher risk: location access
-        # https://docs.openclaw.ai/nodes/location-command
-        # - location.get
+          # higher risk: location access
+          # https://docs.openclaw.ai/nodes/location-command
+          # - location.get
 
-        # higher risk: capture screen
-        - screen.capture
-        # - screen.record
-        - screen.snap
+          # higher risk: capture screen
+          - screen.capture
+          # - screen.record
+          - screen.snap
 
-        # higher risk: camera access
-        # https://docs.openclaw.ai/nodes/camera#commands-via-gateway-node-invoke
-        # - camera.list
-        # - camera.snap
-        # - camera.clip
+          # higher risk: camera access
+          # https://docs.openclaw.ai/nodes/camera#commands-via-gateway-node-invoke
+          # - camera.list
+          # - camera.snap
+          # - camera.clip
 
-        # higher risk: arbitrary remote
-        # command execution on the node
-        - system.run
-        - system.run.prepare
+          # higher risk: arbitrary remote
+          # command execution on the node
+          - system.run
+          - system.run.prepare
 
-  # https://docs.openclaw.ai/gateway/configuration-reference#browser
+  # https://docs.openclaw.ai/gateway/config-browser-ui-desktop#browser
   browser:
     enabled: true
     ssrfPolicy:
@@ -140,26 +146,27 @@ openclaw_config:
     profiles:
       default: # Chromium sidecar
         cdpUrl: http://localhost:9222
-        color: "#4285F4"
 
   # https://docs.openclaw.ai/concepts/multi-agent
   agents:
-    # https://docs.openclaw.ai/gateway/configuration-reference#agent-defaults
+    # https://docs.openclaw.ai/gateway/config-agents/workspace-and-bootstrap
     defaults:
       workspace: ${OPENCLAW_HOME}/workspace
       userTimezone: ${TZ}
-      timeFormat: "12" # auto|12|24
 
-      # https://docs.openclaw.ai/gateway/configuration-reference#agents-defaults-model
+      # https://docs.openclaw.ai/gateway/config-agents/models#agents.defaults.model
       model:
         # prefer ChatGPT subscription
-        primary: litellm/gpt-5.6-terra
+        primary: litellm/{{ litellm_default_model }}
         fallbacks:
-          - litellm/gpt-5.6-sol
+          - litellm/{{ litellm_small_model }}
           - litellm/claude-opus-4-8
           - litellm/claude-sonnet-5
-      maxConcurrent: 1
-      timeoutSeconds: 600
+
+      # https://docs.openclaw.ai/concepts/queue
+      maxConcurrent: 2
+      # https://docs.openclaw.ai/plugins/codex-harness-reference/timeouts
+      timeoutSeconds: 1800
 
       # default thinking budget level when no `/think` directive
       thinkingDefault: low # "off"|minimal|low|medium|high|xhigh|adaptive
@@ -168,7 +175,7 @@ openclaw_config:
       # default elevated-execution mode when no `/elevated` directive
       elevatedDefault: full # "off"|"on"|ask|full
 
-      # https://docs.openclaw.ai/gateway/configuration-reference#agents-defaults-sandbox
+      # https://docs.openclaw.ai/gateway/config-agents/sandbox#agents.defaults.sandbox
       # run `openclaw sandbox explain` on gateway
       # to see effective sandbox and tool policy;
       # also `tools.sandbox.tools.alsoAllow|deny`
@@ -182,34 +189,29 @@ openclaw_config:
 
     # single "main" agent by default, but can create separate agents like "home"
     # and "work", each with independent workspaces, policies, skills, and memory
-    # https://docs.openclaw.ai/gateway/configuration-reference#agents-list-per-agent-overrides
-    list:
+    # https://docs.openclaw.ai/gateway/config-agents/entries-and-multi-agent#agents.entries-(per-agent-overrides)
+    entries:
       # https://docs.openclaw.ai/concepts/multi-agent#single-agent-mode-default
-      - id: main
-        default: true
+      main:
+        name: Main Agent
         identity:
           name: OpenClaw
           emoji: 🦞
-        tools:
-          alsoAllow: "{{ openclaw_allow_tools }}"
+        # tools:
+        #   alsoAllow: "{{ openclaw_allow_tools }}"
 
   # channel setup is not required--the
   # Control UI is suitable chat client
-  # https://docs.openclaw.ai/gateway/configuration-reference#channels
+  # https://docs.openclaw.ai/gateway/config-channels#channels
   channels:
     # https://docs.openclaw.ai/channels/slack
-    # https://docs.openclaw.ai/gateway/configuration-reference#slack
+    # https://docs.openclaw.ai/gateway/config-channels/workplace-chat#slack
     # https://api.slack.com/apps/A0ANTQVU18C/general
     slack:
       enabled: true
       mode: socket # socket|http
       appToken: ${SLACK_APP_TOKEN}
       botToken: ${SLACK_BOT_TOKEN}
-      capabilities:
-        # allow agent to generate Slack-specific
-        # UI controls like buttons and dropdowns:
-        # https://docs.openclaw.ai/channels/slack#interactive-replies
-        interactiveReplies: true
 
       dm:
         enabled: true
@@ -243,18 +245,17 @@ openclaw_config:
       # to include in the agent's chat context
       historyLimit: 10
 
-  # https://docs.openclaw.ai/gateway/configuration-reference#session
+  # https://docs.openclaw.ai/gateway/config-agents/sessions#session
   session:
     scope: per-sender
     dmScope: per-peer # main|per-peer|per-channel-peer|per-account-channel-peer
-    store: ${OPENCLAW_HOME}/sessions
     # resetting session limits
     # the agent's chat context
     reset:
-      mode: idle
+      mode: idle # daily|idle
       idleMinutes: 240
 
-  # https://docs.openclaw.ai/gateway/configuration-reference#logging
+  # https://docs.openclaw.ai/gateway/config-observability#logging
   logging:
     # `level` is for file-based logging;
     # `consoleLevel` is container stdout:
@@ -263,9 +264,8 @@ openclaw_config:
     file: /tmp/openclaw.log # JSONL format
     consoleLevel: trace
     consoleStyle: pretty # pretty|compact|json
-    redactSensitive: "off" # "off"|tools
 
-  # https://docs.openclaw.ai/logging#export-to-opentelemetry
+  # https://docs.openclaw.ai/gateway/config-observability#diagnostics
   diagnostics:
     enabled: true
     otel:
@@ -279,13 +279,14 @@ openclaw_config:
       sampleRate: 1
       flushIntervalMs: 30000
 
-  # https://docs.openclaw.ai/gateway/configuration-reference#auth-storage
+  # https://docs.openclaw.ai/gateway/config-secrets-env#auth-storage
   auth:
     profiles:
-      # https://docs.openclaw.ai/providers/openai#option-b-openai-code-codex-subscription
-      # see credentials file: files/openclaw/state/agents/main/agent/auth-providers.json
-      openai-codex:erhhung:
-        provider: openai-codex
+      # https://docs.openclaw.ai/providers/openai/runtimes
+      # NOTE: credentials file "$OPENCLAW_STATE_DIR/agents/main/agent/auth-providers.json"
+      # is obsolete as of version 2026.9.5 (see "files/openclaw/state/README.md" for info)
+      openai:erhhung:
+        provider: openai
         mode: oauth
 
   # https://docs.openclaw.ai/gateway/local-models#other-openai-compatible-local-proxies
@@ -314,32 +315,32 @@ openclaw_config:
         # in vars/litellm.yml
         models:
           # https://platform.openai.com/docs/models
-          - id: gpt-5.6-sol
-            name: GPT-5.6 Sol ⟺ LiteLLM
-          - id: gpt-5.6-terra
-            name: GPT-5.6 Terra ⟺ LiteLLM
+          - id: gpt-6.1-sol
+            name: GPT-6.1 Sol ⟺ LiteLLM
+          - id: gpt-6-luna
+            name: GPT-6 Luna ⟺ LiteLLM
           # https://www.anthropic.com/claude/sonnet
           - id: claude-opus-4-8
             name: Claude Opus 4.8 ⟺ LiteLLM
           - id: claude-sonnet-5
             name: Claude Sonnet 5 ⟺ LiteLLM
 
-  # https://docs.openclaw.ai/gateway/configuration-reference#tools
+  # https://docs.openclaw.ai/gateway/config-tools
   tools:
     profile: full # minimal|coding|messaging|full
 
     # allow all built-in tools plus additional plugin tools
-    allow: "{{ ['group:openclaw'] + openclaw_allow_tools }}"
-    deny: []
+    # allow: "{{ ['group:openclaw'] + openclaw_allow_tools }}"
+    # deny: []
 
     # https://docs.openclaw.ai/gateway/sandbox-vs-tool-policy-vs-elevated
     # run `openclaw sandbox explain` on gateway
     # to see effective sandbox and tool policy
-    sandbox:
-      tools:
-        # enable tools denied by
-        # default sandbox policy
-        alsoAllow: "{{ openclaw_allow_tools }}"
+    # sandbox:
+    #   tools:
+    #     # enable tools denied by
+    #     # default sandbox policy
+    #     alsoAllow: "{{ openclaw_allow_tools }}"
 
     # https://docs.openclaw.ai/tools/elevated
     elevated:
@@ -353,13 +354,13 @@ openclaw_config:
     # https://github.com/openclaw/openclaw/issues/59533
     # https://github.com/openclaw/openclaw/issues/20669
     exec:
-      host: auto # auto|sandbox|gateway|node
+      host: node # auto|sandbox|gateway|node
       # custom node ID is supposed to be set by `openclaw node run --node-id`
       # arg in files/openclaw/mac/ai.openclaw.macos.sh, but it's not working:
       # https://github.com/openclaw/openclaw/issues/61569
       node: Erhhung's i9 MBP # erhhungs-i9-mbp
-      security: allowlist # deny|allowlist|full
-      ask: on-miss # "off"|on-miss|always
+      # https://docs.openclaw.ai/tools/exec#modes
+      mode: ask # deny|allowlist|ask|auto|full
 
     web:
       # https://docs.openclaw.ai/tools/web-fetch
@@ -375,7 +376,7 @@ openclaw_config:
         userAgent: >-
           Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)
           AppleWebKit/537.36 (KHTML, like Gecko)
-          Chrome/146.0.0.0 Safari/537.36
+          Chrome/154.0.0.0 Safari/537.36
 
       # https://docs.openclaw.ai/tools/web
       search:
@@ -391,6 +392,7 @@ openclaw_config:
 
   # https://docs.openclaw.ai/tools/plugin
   # list plugins: `openclaw plugins list`
+  # https://docs.openclaw.ai/gateway/config-extensions#plugins
   plugins:
     # only allow listed plugins, whether bundled or
     # custom, to load (each must still be enabled):
@@ -404,30 +406,6 @@ openclaw_config:
            'perplexity',
            'memory-core',
          ]) | unique }}
-
-    # declare plugins ALREADY installed by init container
-    # or else OpenClaw annoyingly outputs "loaded without
-    # install/load-path provenance" warnings:
-    # https://github.com/openclaw/openclaw/issues/43655
-    # `plugin_integrity` is fact set by task
-    installs: |
-      {% set installs = {} %}
-      {% for plugin in openclaw_plugins %}
-      {%   set _ = installs.update({
-             plugin.id: {
-               'source':      'npm',
-               'spec':         plugin.package ~'@'~ plugin.version,
-               'version':      plugin.version,
-               'installPath': '${OPENCLAW_PLUGIN_DIR}/' ~ plugin.id,
-             } | combine(plugin_integrity[plugin.id]),
-           })     %}
-      {% endfor   %}
-      {{ installs }}
-
-    load:
-      # prepend: plugins/filter/filters.py
-      paths: "{{ openclaw_plugins | map(attribute='id') |
-        map('prepend', '${OPENCLAW_PLUGIN_DIR}/') }}"
 
     # https://docs.openclaw.ai/tools/plugin#plugin-slots-exclusive-categories
     slots:
@@ -448,6 +426,8 @@ openclaw_config:
       # https://github.com/Martian-Engineering/lossless-claw#configuration
       lossless-claw:
         enabled: true
+        hooks:
+          allowConversationAccess: true
         config:
           ignoreSessionPatterns:
             - agent:*:cron:**
@@ -471,7 +451,7 @@ openclaw_config:
             baseUrl: "{{ litellm_service_url }}/search/{{
               litellm_search_tools[0].search_tool_name }}"
 
-  # https://docs.openclaw.ai/tools/skills#config-overrides-/-openclaw/openclaw-json
+  # https://docs.openclaw.ai/gateway/config-extensions#skills
   skills:
     entries:
       # https://clawhub.ai/conorkenn/openclaw-github-assistant

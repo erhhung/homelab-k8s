@@ -23,23 +23,31 @@ openclaw_data_dir: /home/node/.openclaw
 # alphabetical ordering of dictionary keys
 openclaw_common_env:
   TZ: "{{ system_time_zone }}"
+  # home dir is on NFS volume
   OPENCLAW_HOME: "{{ openclaw_data_dir }}"
   XDG_CONFIG_HOME: $(OPENCLAW_HOME)/config
-  XDG_CACHE_HOME: $(OPENCLAW_HOME)/cache
+  XDG_CACHE_HOME:
+    value: $(OPENCLAW_STATE_DIR)/cache
+    dependsOn: OPENCLAW_STATE_DIR
   OPENCLAW_CONFIG_PATH:
     value: $(OPENCLAW_HOME)/openclaw.json
     dependsOn: OPENCLAW_HOME
+  # state dir is on PVC volume
   OPENCLAW_STATE_DIR: $(OPENCLAW_HOME)/.openclaw
   OPENCLAW_PLUGIN_DIR:
     value: $(OPENCLAW_STATE_DIR)/extensions
     dependsOn: OPENCLAW_STATE_DIR
   NODE_OPTIONS: --max-old-space-size=4096
   NPM_CONFIG_CACHE:
-    value: $(OPENCLAW_HOME)/npm/cache
-    dependsOn: OPENCLAW_HOME
+    value: $(XDG_CACHE_HOME)/npm
+    dependsOn: XDG_CACHE_HOME
   NPM_CONFIG_UPDATE_NOTIFIER: "false"
-  PNPM_HOME: $(OPENCLAW_HOME)/pnpm
-  PNPM_STORE_DIR: $(PNPM_HOME)/store
+  PNPM_HOME:
+    value: $(XDG_CACHE_HOME)/pnpm
+    dependsOn: XDG_CACHE_HOME
+  PNPM_STORE_DIR:
+    value: $(PNPM_HOME)/store
+    dependsOn: PNPM_HOME
   PNPM_CONFIG_UPDATE_NOTIFIER: "false"
   PATH:
     value: $(OPENCLAW_HOME)/bin:$(PNPM_HOME)/bin:/usr/local/bin:/usr/local/sbin:/usr/bin:/usr/sbin:/bin:/sbin
@@ -58,7 +66,7 @@ openclaw_release_name: openclaw
 # comment out `openclaw_app_version` below
 # to let playbook get chart's `appVersion`
 # https://github.com/openclaw/openclaw/pkgs/container/openclaw/versions?filters%5Bversion_type%5D=tagged
-openclaw_app_version: "2026.7.1"
+openclaw_app_version: "2026.9.6"
 
 # https://github.com/serhanekicii/openclaw-helm/tree/main/charts/openclaw/values.yaml
 openclaw_chart_values:
@@ -77,10 +85,10 @@ openclaw_chart_values:
           # doesn't complain and rewrite the file on startup
           openclaw.json: |-
             {# https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_templating_now.html -#}
+            {# 'meta.lastTouchedAt': now(utc=true, fmt='%Y-%m-%dT%H:%M:%SZ'), -#}
             {{ openclaw_config | ansible.builtin.combine({
                  'meta': {
                    'lastTouchedVersion': openclaw_app_version,
-                   'lastTouchedAt': now(utc=true, fmt='%Y-%m-%dT%H:%M:%SZ'),
                  },
                }) | ansible.builtin.to_nice_json(indent=2) }}
 
@@ -125,8 +133,13 @@ openclaw_chart_values:
             args:
               - -c
               - |-
-                mkdir -p  {{ openclaw_data_dir }}/{.openclaw,bin,lib,certs,config}
-                chmod 700 {{ openclaw_data_dir }}/{.openclaw,.}
+                set -eo pipefail
+
+                # /state/.openclaw will be mounted at {{ openclaw_data_dir }}/.openclaw
+                # in later containers (this empty mountpoint directory must be created)
+                mkdir -p        /state/.openclaw {{ openclaw_data_dir }}/{.openclaw,bin,lib,certs,config}
+                chmod 700       /state/.openclaw {{ openclaw_data_dir }}
+                chown node:node /state/.openclaw
 
                  SRC_BIN=/usr/bin
                  SRC_LIB=/usr/lib/$(uname -m)-linux-gnu
@@ -165,6 +178,8 @@ openclaw_chart_values:
             args:
               - -c
               - |-
+                set -eo pipefail
+
                 # path created by init-deps container
                 CERTS_DIR={{ openclaw_data_dir }}/certs
 
@@ -214,6 +229,10 @@ openclaw_chart_values:
                 find {{ openclaw_data_dir }} -maxdepth 2 -exec chown node:node {} \;
                 log -n "Trust store setup completed ✓"
 
+                # `openclaw plugins install` will create temp dirs under /tmp
+                # while @openclaw/fs-safe will also enforce 0700 mode on /tmp
+                rm -rf /tmp/{*,.*} 2> /dev/null; chown node:node /tmp && chmod 700 /tmp
+
           init-config:
             dependsOn: ca-bundle
             image: *openclaw-image
@@ -224,7 +243,7 @@ openclaw_chart_values:
               - |-
                 set -eo pipefail
 
-                BIN_DIR=$OPENCLAW_HOME/bin
+                BIN_DIR="$OPENCLAW_HOME/bin"
                 ARCH="$(uname -m | sed -e 's/aarch64/arm64/' \
                                        -e  's/x86_64/amd64/')"
                 log() {
@@ -233,7 +252,7 @@ openclaw_chart_values:
                 }
                 install_bin() (
                   bin=$1 src=$2
-                  cd $BIN_DIR
+                  cd "$BIN_DIR"
 
                   [ -f "$bin" ] || {
                     log  "Installing $bin..."
@@ -245,8 +264,8 @@ openclaw_chart_values:
                 install_bin jq "https://github.com/stedolan/jq/releases/latest/download/jq-linux-$ARCH"
                 install_bin yq "https://github.com/mikefarah/yq/releases/latest/download/yq_linux_$ARCH"
 
-                 TMP_CONFIG="/tmp/openclaw.json"
-                 SRC_CONFIG="/conf/openclaw.json"
+                 TMP_CONFIG=/tmp/openclaw.json
+                 SRC_CONFIG=/conf/openclaw.json
                 DEST_CONFIG="$OPENCLAW_CONFIG_PATH"
                 CONFIG_MODE="${CONFIG_MODE:-merge}"
 
@@ -265,7 +284,7 @@ openclaw_chart_values:
                 fi
                 ( set -x; jq . $OPENCLAW_CONFIG_PATH )
 
-                LOG_FILE="/tmp/openclaw.log"
+                LOG_FILE=/tmp/openclaw.log
                 MAX_LINES=1000
 
                 if [[ -f $LOG_FILE && $(wc -l $LOG_FILE) -gt $MAX_LINES ]]; then
@@ -290,7 +309,13 @@ openclaw_chart_values:
               - |-
                 set -eo pipefail
 
-                BIN_DIR=$OPENCLAW_HOME/bin
+                BIN_DIR="$OPENCLAW_HOME/bin"
+                export OPENCLAW_DEBUG=1
+
+                # use a minimal local config so OpenClaw CLI won`t
+                # warn of non-existent plugins before installation
+                export OPENCLAW_CONFIG_PATH=/tmp/openclaw.json
+                jq -n '{"gateway":{"mode":"local"}}' > $OPENCLAW_CONFIG_PATH
 
                 log() {
                   if [ "$1" == -n ]; then echo; shift; fi
@@ -299,35 +324,36 @@ openclaw_chart_values:
                 plugin_install() (
                   id=$1 pkg=$2 ver=$3
 
-                  pkg_dir="$OPENCLAW_PLUGIN_DIR/$id"
-                  if [ -d "$pkg_dir" ]; then
-                    old_ver=$(jq -r .version "$pkg_dir/package.json")
-                    if [ "$old_ver" == "$ver" ]; then
-                      log "Plugin is already installed"
-                      exit
-                    fi
-                    rm -rf "$pkg_dir"
+                  if openclaw plugins inspect $id --json 2> /dev/null | \
+                    jq --arg pkg $pkg \
+                       --arg ver $ver '
+                       .plugin.install.source       == "npm" and
+                       .plugin.install.resolvedName == $pkg  and
+                      (.plugin.install.resolvedVersion //
+                       .plugin.install.version)     == $ver
+                    ' > /dev/null; then
+                    log "Plugin $pkg@$ver is already installed."
+                    exit
                   fi
 
-                  mkdir -p $pkg_dir
-                  cd       $pkg_dir
-                  tarball=$(pnpm view $pkg@$ver dist.tarball)
-                  log "Unpacking: $tarball"
-
-                  curl -fsSL $tarball | \
-                    tar -xz --no-same-owner --strip-components=1
-                  pnpm install --prod
+                  log "Running plugins install..."
+                  openclaw plugins install "npm:$pkg@$ver" \
+                    --pin --force --accept-capabilities
+                  openclaw plugins inspect $id --runtime
+                  log "Plugin installed successfully."
                 )
 
                 [ -f "$BIN_DIR/uv" ] || {
                   log -n "Installing uv..."
                   # https://docs.astral.sh/uv/getting-started/installation
-                  curl -sfL https://astral.sh/uv/install.sh | UV_INSTALL_DIR=$BIN_DIR sh
+                  curl -sfL https://astral.sh/uv/install.sh | \
+                    env UV_INSTALL_DIR=$BIN_DIR bash -
                 }
                 [ -f "$PNPM_HOME/bin/pnpm" ] || {
                   log -n "Installing pnpm..."
                   # https://pnpm.io/installation#in-a-docker-container
-                  curl -fsL https://get.pnpm.io/install.sh | ENV=/dev/null SHELL=/bin/sh sh
+                  curl -fsL https://get.pnpm.io/install.sh | \
+                    env SHELL=/bin/bash bash -
                 }
                 hash -r
                 {% for plugin in openclaw_plugins %}
@@ -359,27 +385,25 @@ openclaw_chart_values:
                 set -eo pipefail
 
                 CONFIG_DIR=/conf/skills
-                BIN_DIR=$OPENCLAW_HOME/bin
+                BIN_DIR="$OPENCLAW_HOME/bin"
+                WORKSPACE_DIR="$OPENCLAW_HOME/workspace"
+                SKILL_DIR="$WORKSPACE_DIR/skills"
+                mkdir -p "$SKILL_DIR"
+
                 ARCH="$(uname -m | sed -e 's/aarch64/arm64/' \
                                        -e  's/x86_64/amd64/')"
-                WORKSPACE_DIR=$OPENCLAW_HOME/workspace
-                SKILL_DIR=$WORKSPACE_DIR/skills
-                mkdir -p $SKILL_DIR
-
                 log() {
                   if [ "$1" == -n ]; then echo; shift; fi
                   echo "[$(date +"%Y-%m-%d %H:%M:%S")] $*"
                 }
                 clawhub_install() (
                   slug=$1 name=$(basename "$1")
-                  if [ -d "$SKILL_DIR/$name" ]; then
+                  if [ -d "$SKILL_DIR/$slug" ]; then
                     log "Skill is already installed"
                     exit
                   fi
 
-                  cd $WORKSPACE_DIR
                   ATTEMPTS=6 delay=5
-
                   for i in $(seq 1 $ATTEMPTS); do
                     log "Running clawhub install..."
 
@@ -387,7 +411,8 @@ openclaw_chart_values:
                     # suspicious by ClawHub, but all skills selected for
                     # installation here should have already been vetted!
 
-                    if npx -y clawhub --no-input install "$slug" --force; then
+                    if npx -y clawhub --no-input install "$slug" \
+                       --workdir "$WORKSPACE_DIR" --force; then
                       log "Skill installed successfully."
                       exit
                     elif [ $i -lt $ATTEMPTS ]; then
@@ -455,6 +480,19 @@ openclaw_chart_values:
 
     # https://bjw-s-labs.github.io/helm-charts/docs/app-template/reference/persistence#type-variants
     persistence:
+      tmp:
+        enabled: true
+        type: emptyDir
+        advancedMounts:
+          main:
+            ca-bundle: &tmp-dir
+              - path: /tmp
+            init-config: *tmp-dir
+            init-plugins: *tmp-dir
+            init-skills: *tmp-dir
+            main: *tmp-dir
+            chromium: *tmp-dir
+
       ca-certs:
         enabled: true
         type: secret
@@ -479,7 +517,7 @@ openclaw_chart_values:
             init-config:
               - path: /conf
 
-      # PVC for /home/node/.openclaw
+      # volume for /home/node/.openclaw
       data:
         type: nfs
         server: "{{ homelab_nfs.server }}"
@@ -504,6 +542,24 @@ openclaw_chart_values:
               # container has no $HOME, and WORKDIR is /
               - path: /usr/local/share/pki/nssdb
                 subPath: certs/nssdb
+
+      # PVC for /home/node/.openclaw/.openclaw ($OPENCLAW_STATE_DIR)
+      # containing SQLite databases that would perform poorly on NFS
+      state:
+        enabled: true
+        type: persistentVolumeClaim
+        storageClass: "{{ storage_classes['default'] }}"
+        accessMode: ReadWriteOnce
+        size: 1Gi
+        advancedMounts:
+          main:
+            init-deps:
+              - path: /state
+            init-plugins: &state-dir
+              - path: "{{ openclaw_data_dir }}/.openclaw"
+                subPath: .openclaw
+            init-skills: *state-dir
+            main: *state-dir
 
       skill-configs:
         enabled: true
@@ -557,26 +613,31 @@ openclaw_chart_values:
 
 # {id,[setup],package,version,[env]}
 openclaw_plugins:
-  # https://clawhub.ai/plugins/@openclaw/slack
+  # https://clawhub.ai/openclaw/plugins/slack
   - id: slack
     package: "@openclaw/slack"
-    version: "2026.6.5"
+    version: "2026.9.6"
 
-  # https://github.com/Martian-Engineering/lossless-claw
+  # https://clawhub.ai/openclaw/plugins/perplexity-plugin
+  - id: perplexity
+    package: "@openclaw/perplexity-plugin"
+    version: "2026.9.6"
+
+  # https://clawhub.ai/martian-engineering/plugins/lossless-claw
   - id: lossless-claw
     package: "@martian-engineering/lossless-claw"
-    version: "0.13.0"
+    version: "1.1.1"
 
   # https://github.com/erhhung/openclaw-searxng-search
   - id: searxng-search
     package: "@erhhung/searxng-search"
-    version: "1.0.1"
+    version: "1.0.2"
 
 # https://clawhub.ai/skills
 # {slug,[setup],[env]}
 openclaw_skills:
   # https://clawhub.ai/steipete/gog
-  - slug: gog
+  - slug: "@steipete/gog"
     setup: |-
       REL="https://github.com/openclaw/gogcli/releases"
       VER=$(curl -ILs "$REL/latest" | sed -En 's/^location:.+\/tag\/v(.+)\r$/\1/p')
@@ -627,12 +688,12 @@ openclaw_skills:
       # GOG_KEYRING_PASSWORD stored in Secret
 
   # https://clawhub.ai/conorkenn/openclaw-github-assistant
-  - slug: openclaw-github-assistant
+  - slug: "@conorkenn/openclaw-github-assistant"
     # `github.username` & `github.token`
     # have been added to "openclaw.json"
 
   # https://clawhub.ai/steipete/video-frames
-  - slug: video-frames
+  - slug: "@steipete/video-frames"
     setup: |-
       cd $BIN_DIR
 
