@@ -934,7 +934,9 @@ gitlab_chart_values:
         enabled: true
         storageClass: "{{ storage_classes['default'] }}"
         accessModes: ["ReadWriteOnce"]
+        # min XFS volume size is 300Mi
         size: 384Mi
+
       persistentVolumeClaimRetentionPolicy:
         enabled: true
         whenScaled: Retain

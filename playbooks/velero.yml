@@ -112,11 +112,12 @@
         }
         ARCH=$(uname -m | sed -e 's/aarch64/arm64/' \
                               -e  's/x86_64/amd64/')
-        curl -fsSL "$REL/download/v${VER}/velero-v${VER}-linux-$ARCH.tar.gz" | \
-          tar -xz -C /usr/local/bin --no-same-owner --strip-components=1 \
-            velero-v${VER}-linux-$ARCH/velero
+        tarball="velero-v${VER}-linux-$ARCH"
+        curl -fsSL "$REL/download/v${VER}/$tarball.tar.gz" | \
+          tar -xz --no-same-owner --strip-components=1 $tarball/velero
       args:
         executable: /bin/bash
+        chdir: /usr/local/bin
       register: install_cli
       changed_when: install_cli.rc == 0
       failed_when: install_cli.rc not in [0,9]

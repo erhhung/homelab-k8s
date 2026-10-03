@@ -27,6 +27,7 @@ awx_secrets:
   scraper: monitoring-scraper-token
 
 awx_configmaps:
+  settings: awx-extra-settings
   rbac-proxy: awx-operator-kube-rbac-proxy-config
 
 awx_db_name: awx
@@ -157,11 +158,11 @@ awx_operator_chart_values:
           ephemeral-storage: 100M
 
       # https://docs.ansible.com/projects/awx-operator/en/latest/user-guide/advanced-configuration/container-probes.html
-      web_liveness_period: 20
+      web_liveness_period: 30
       web_liveness_timeout: 5
       web_readiness_period: 20
       web_readiness_timeout: 5
-      task_liveness_period: 20
+      task_liveness_period: 30
       task_liveness_timeout: 5
       task_readiness_period: 20
       task_readiness_timeout: 5
@@ -208,6 +209,12 @@ awx_operator_chart_values:
         # verbosity (`ansible-playbook -vvv`)
         - setting: PROJECT_UPDATE_VVV
           value: true
+
+      extra_settings_files:
+        # ConfigMaps are defined under `extraDeploy`
+        configmaps:
+          - name: "{{ awx_configmaps['settings'] }}"
+            key: z_credentials.py
 
   # https://github.com/ansible-community/awx-operator-helm#customsecrets
   customSecrets:
@@ -351,6 +358,32 @@ awx_operator_chart_values:
           readOnly: true
 
   extraDeploy:
+    # create files specified in `extra_settings_files`:
+    # https://docs.ansible.com/projects/awx-operator/en/latest/user-guide/advanced-configuration/extra-settings.html#add-extra-settings-with-extra_settings_files
+    - |
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: {{ awx_configmaps['settings'] }}
+      data:
+        # "z_credentials.py" is a specially chosen filename after manual testing
+        # shows that it gets loaded AFTER "credentials.py" containing `DATABASES`
+        # initialization created by the AWX Operator (doc says "files are loaded
+        # in arbitrary order that `glob` returns"):
+        # python3 <<< "import glob; print(glob.glob('/etc/tower/conf.d/*.py'))"
+        z_credentials.py: |
+          assert "default" in DATABASES, "DATABASES['default'] not initialized!"
+
+          # change default CONN_MAX_AGE value of 0 (no persistent connections)
+          # to reduce the overhead of constant SSL certificate authentications;
+          # see current settings by running this command in `awx-web` container:
+          # awx-manage shell -c '
+          # from django.conf import settings; import json
+          # print(json.dumps(settings.DATABASES, indent=2))
+          # '
+          DATABASES["default"]["CONN_MAX_AGE"] = 60
+          DATABASES["default"]["CONN_HEALTH_CHECKS"] = True
+
     # create kube-rbac-proxy auth config file so
     # Prometheus can scrape AWX Operator metrics
     - |

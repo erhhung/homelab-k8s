@@ -5,7 +5,9 @@ CREATE ROLE {{ scraper_user.username }} WITH
   LOGIN PASSWORD '{{ pgpool_pass }}';
 
 -- https://www.postgresql.org/docs/current/sql-grant.html
-GRANT SELECT PRIVILEGES ON DATABASE postgres TO {{ scraper_user.username }};
+GRANT CONNECT ON             DATABASE postgres TO {{ scraper_user.username }};
+GRANT   USAGE ON               SCHEMA public   TO {{ scraper_user.username }};
+GRANT  SELECT ON ALL TABLES IN SCHEMA public   TO {{ scraper_user.username }};
 
 {% for role in postgresql_users[2:] %}
 CREATE ROLE {{ role }} WITH CREATEDB LOGIN PASSWORD '{{

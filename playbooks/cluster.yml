@@ -38,7 +38,7 @@
       # node (systemctl restart rke2-server), wait for kube-system pods to settle,
       # and then re-run this playbook.
 
-- name: Configure kubectl usage
+- name: Configure kubectl CLI usage
   tags:
     - kubectl
     - kubeconfig
@@ -69,7 +69,7 @@
         server: https://{{ rke_fqdns | first }}:6443
       ansible.builtin.include_tasks: "{{ tasks_dir }}/k8s/kubeconfig.yml"
 
-- name: Configure kubectl usage
+- name: Configure kubectl CLI usage
   tags:
     - kubectl
     - kubeconfig
@@ -89,7 +89,6 @@
       ansible.builtin.include_tasks: "{{ tasks_dir }}/fs/readable.yml"
 
     - name: Write kubeconfig on worker node
-      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/copy_module.html
       ansible.builtin.copy:
         dest: "{{ rke_kubeconfig }}"
         content: "{{ kubeconfig_content }}"
@@ -119,8 +118,7 @@
         - path: "{{ containerd_socket }}"
           mode: "0666"
 
-    - name: Install calicoctl CLI utility
-      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/shell_module.html
+    - name: Install calicoctl CLI tool
       ansible.builtin.shell: |
         # run Bash and source /etc/profile.d
         # scripts so that kubectl is in PATH
@@ -150,6 +148,50 @@
       register: install_cli
       changed_when: install_cli.rc == 0
       failed_when: install_cli.rc not in [0,9]
+
+- name: Install etcdctl CLI tool
+  tags: etcdctl
+  hosts: "{{ rke_control_plane_group }}"
+  become: true
+  vars_files: *vars_files
+  tasks:
+    - name: Install etcdctl CLI tool
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/shell_module.html
+      ansible.builtin.shell: |
+        set -o pipefail
+
+        REL="https://github.com/etcd-io/etcd/releases"
+        VER=$(v=(`./kubectl --kubeconfig={{ rke_kubeconfig }} exec \
+          -n kube-system etcd-$(hostname) -c etcd -- etcdctl version`)
+          echo ${v[2]})
+
+        # check if correct version already installed
+        [ -x ./etcdctl ] && {
+          ver=$(v=(`./etcdctl version 2> /dev/null`); echo ${v[2]})
+          [ "$ver" == "$VER" ] && exit 9 # no change
+        }
+        ARCH=$(uname -m | sed -e 's/aarch64/arm64/' \
+                              -e  's/x86_64/amd64/')
+        tarball="etcd-v${VER}-linux-$ARCH"
+        curl -fsSL "$REL/download/v${VER}/$tarball.tar.gz" | \
+          tar -xz --no-same-owner --strip-components=1 $tarball/etcdctl
+      args:
+        executable: /bin/bash
+        chdir: "{{ rke_bin_dir }}"
+      register: install_cli
+      changed_when: install_cli.rc == 0
+      failed_when: install_cli.rc not in [0,9]
+
+    - name: Create /etc/profile.d/etcdctl.sh
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/copy_module.html
+      ansible.builtin.copy:
+        dest: /etc/profile.d/etcdctl.sh
+        content: |
+          export ETCDCTL_ENDPOINTS=https://127.0.0.1:2379
+          export ETCDCTL_CACERT={{ rke_tls_dir }}/etcd/server-ca.crt
+          export ETCDCTL_CERT={{ rke_tls_dir }}/etcd/client.crt
+          export ETCDCTL_KEY={{ rke_tls_dir }}/etcd/client.key
+        mode: "0644"
 
 - name: Configure RKE2 cluster
   tags: configure

@@ -74,23 +74,38 @@ longhorn_chart_values:
 
   defaultSettings:
     defaultDataPath: "{{ data_lv.mount }}"
+    defaultReplicaCount: 2
+
     # prefer replicas of the same volume to be
     # on different nodes, but allow them to be
     # on the same node should space be limited
     replicaSoftAntiAffinity: true
-    defaultReplicaCount: 2
+    # prefer replicas of the same volume to be
+    # in different zones, but allow them to be
+    # in the same zone should space be limited
+    # https://longhorn.io/docs/1.12.1/references/settings#replica-zone-level-soft-anti-affinity
+    replicaZoneSoftAntiAffinity: true
+
     # https://longhorn.io/docs/1.12.1/high-availability/auto-balance-replicas
     replicaAutoBalance: least-effort # ignored|disabled|least-effort|best-effort
+    # https://longhorn.io/docs/1.12.1/references/settings#storage-over-provisioning-percentage
+    storageOverProvisioningPercentage: 125
 
     # reduce default concurrency limits
     # to avoid overloading weak cluster
     snapshotHeavyTaskConcurrentLimit: 1
     concurrentReplicaRebuildPerNodeLimit: 1
     concurrentVolumeBackupRestorePerNodeLimit: 1
+
     # Velero is configured to perform daily
-    # backups with volume snapshot TTL of 3
-    # days, so set snapshotMaxCount to >= 3
-    snapshotMaxCount: 6
+    # backups with volume snapshot TTL of 2
+    # days, so set snapshotMaxCount to >= 2
+    snapshotMaxCount: 4
+    # reduce storage usage by purging backed up snapshots
+    autoCleanupSnapshotAfterOnDemandBackupCompleted: true
+
+    engineImagePodLivenessProbePeriod: 30 # default=5
+    engineImagePodLivenessProbeTimeout: 5 # default=4
 
   defaultBackupStore:
     # user "longhorn" and "backups"
@@ -175,7 +190,7 @@ longhorn_chart_values:
         backupMode: full # incremental|full
 
     # create daily CronJob to delete old Longhorn backups
-    # (set cutoff to 3 days to match Velero Schedule TTL)
+    # (set cutoff to 2 days to match Velero Schedule TTL)
     - apiVersion: batch/v1
       kind: CronJob
       metadata:
@@ -199,6 +214,7 @@ longhorn_chart_values:
                     args:
                       - -c
                       - |-
+                        CUTOFF=2 # days
                         THUMBUP=$'\U1F44D'
 
                         # print given title with
@@ -271,8 +287,8 @@ longhorn_chart_values:
 
                           elapsed 3 DELETE TIME:
                         done < <(
-                          kubectl get backups.longhorn.io -n {{ longhorn_namespace }} -o json  | \
-                            jq --arg cutoff $(date -d "-3 days" --iso-8601=seconds) -r '.items |
+                          kubectl get backups.longhorn.io -n {{ longhorn_namespace }} -o json | \
+                            jq  --arg cutoff $(date -d "-$CUTOFF days" --iso-8601=seconds) -r '.items |
                               map(select(
                                 .status.labels.KubernetesStatus and
                                 .status.backupCreatedAt < $cutoff)

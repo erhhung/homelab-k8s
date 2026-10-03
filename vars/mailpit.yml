@@ -94,6 +94,7 @@ mailpit_chart_values:
     enabled: true
     storageClass: "{{ storage_classes['default'] }}"
     accessModes: ["ReadWriteOnce"]
+    # min XFS volume size is 300Mi
     size: 384Mi
 
   # https://github.com/bitnami/charts/tree/main/bitnami/common/templates/_resources.tpl

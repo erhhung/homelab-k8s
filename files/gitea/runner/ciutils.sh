@@ -174,9 +174,13 @@ buildah_login() {
 # <repo> <args>...
 # (assumes local image is <repo>:latest)
 buildah_build() {
-  local repo="${1%:*}"; shift
-  local args=(--format docker)
-
+  local repo args
+  repo="${1%:*}"
+  shift; args=(
+    --format docker
+    --dns 192.168.0.1
+    --dns-option ndots:1
+  )
   section_start "Build $repo"
   # use --manifest for  multi-platform build
   # use -t/--tag   for single-platform build

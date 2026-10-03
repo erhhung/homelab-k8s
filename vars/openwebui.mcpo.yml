@@ -27,6 +27,7 @@ crawl4ai_image:
   # tag: 89f0ae3d
 
 # https://github.com/first-it-consulting/helm-mcpo
+# `oras repo tags ghcr.io/first-it-consulting/helm-mcpo/mcpo`
 mcpo_chart_oci_url: oci://ghcr.io/first-it-consulting/helm-mcpo/mcpo
 mcpo_chart_version: "0.2.7" # uses old mcpo image
 mcpo_release_name: mcpo
@@ -235,6 +236,7 @@ mcpo_chart_values:
       aws-api:
         command: uvx
         args:
+          # https://pypi.org/project/awslabs.aws-api-mcp-server#history
           - awslabs.aws-api-mcp-server@latest
         # https://awslabs.github.io/mcp/servers/aws-api-mcp-server#%EF%B8%8F-configuration-options
         env:

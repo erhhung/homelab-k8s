@@ -296,6 +296,7 @@ thanos_chart_values:
       storageClass: "{{ storage_classes['default'] }}"
       # min XFS volume size is 300Mi
       size: 384Mi
+
     persistentVolumeClaimRetentionPolicy: &pvc-retention-policy
       enabled: true
       whenScaled: Retain

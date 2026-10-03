@@ -41,11 +41,17 @@
         set -o pipefail
 
         curl -fsSL "{{ source.keyring.url }}" | \
-          gpg --dearmor > "{{ keyring_file }}"
+          gpg --dearmor > /tmp/keyring.gpg
+
+        keyring={{ keyring_file }}
+        [ -f $keyring ] && cmp -s /tmp/keyring.gpg $keyring \
+           && { rm -f /tmp/keyring.gpg; exit 9; } # no change
+        mv -f /tmp/keyring.gpg $keyring
       args:
         executable: /bin/bash
-      when: not file_stat.results[0].stat.exists
-      changed_when: true
+      register: download_keyring
+      changed_when: download_keyring.rc == 0
+      failed_when: download_keyring.rc not in [0,9]
 
     - name: Add to sources.list.d
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/copy_module.html

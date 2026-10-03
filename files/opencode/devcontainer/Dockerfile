@@ -17,7 +17,8 @@ SHELL ["/bin/bash", "-e", "-o", "pipefail", "-c"]
 RUN --mount=type=bind,readonly,source=install,target=/install \
     --mount=type=bind,readonly,source=config,target=/config \
 <<EOF
-dnf install -y --allowerasing sudo htop gnupg2 openssh-server
+dnf install -y --allowerasing sudo htop gnupg2 openssh-server \
+  postgresql18
 dnf clean all
 rm -rf /var/log/* /var/cache/dnf
 

@@ -274,7 +274,7 @@
                         containers:
                           - name: longhorn-manager
                             readinessProbe:
-                              timeoutSeconds: 4
+                              timeoutSeconds: 5
 
               post_renderers:
                 # annotate longhorn.io `CustomResourceDefinition` resources

@@ -94,4 +94,4 @@ $kubectl patch secret $AUTH_SECRET --type merge -p "$(cat <<EOT
 EOT
 )"
 # update Ansible-encrypted "auth.json" file
-printf '%s' "$auth_json" | ansible-vault encrypt - --output $LOCAL_FILE
+printf '%s' "$auth_json" | ansible-vault encrypt - --output $LOCAL_FILE 2>&1

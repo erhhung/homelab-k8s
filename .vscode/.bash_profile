@@ -31,6 +31,11 @@ git_root() {
   echo "$root"
 }
 
+# use VSCode to open general files
+command -v open &> /dev/null || {
+  alias open=code o=open
+}
+
 alias al='ansible-lint'
 alias ap='ansible-playbook'
 alias av='ansible-vault'

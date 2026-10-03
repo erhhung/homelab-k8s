@@ -88,7 +88,7 @@ postgresql_chart_values:
     defaultStorageClass: "{{ storage_classes['default'] }}"
 
   persistence:
-    size: 20Gi
+    size: 40Gi
     # don't change the mountPath because at least one
     # postgresql container volumeMount hardcodes this
     mountPath: /bitnami/postgresql

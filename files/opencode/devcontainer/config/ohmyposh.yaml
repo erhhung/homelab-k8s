@@ -23,7 +23,7 @@ blocks:
         trailing_diamond: 
         foreground: "#e4e4e4"
         background: "#404040"
-        template: "<b>{{ replaceP \"^/\" (replaceP \"^~<#ddee80>∕</>\" .Path \" \") \"<#ddee80>∕</>\" }}</>"
+        template: '<b>{{ if matchP "^/" .Path }}<#ddee80>∕</>{{ end }}{{ replaceP "^/" (replaceP "^~" .Path " ") "" }}</>'
         options:
           style: full
           folder_separator_icon: "<#ddee80>∕</>"

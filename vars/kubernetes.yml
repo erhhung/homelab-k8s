@@ -14,6 +14,27 @@ kube_api_url: https://kubernetes.default.svc
 
 # K3s and RKE clusters
 additional_node_labels:
+  # use zone label to indicate physical host placement:
+  # https://github.com/erhhung/homelab-xcp/tree/main/vars/vms.yml
+  - label: topology.kubernetes.io/zone
+    value: xcp6
+    nodes:
+      - k8s1
+      - k8s6
+  - label: topology.kubernetes.io/zone
+    value: xcp5
+    nodes:
+      - k8s2
+      - k8s5
+  - label: topology.kubernetes.io/zone
+    value: xcp4
+    nodes:
+      - rancher
+      - k8s4
+  - label: topology.kubernetes.io/zone
+    value: xcp3
+    nodes: ["k8s3"]
+
   # all cluster nodes, including control plane node(s),
   # can run user workloads, so they are labeled worker
   # role (control plane nodes have already been labeled

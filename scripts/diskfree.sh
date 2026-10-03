@@ -78,20 +78,20 @@ done < <(
 echo -en "\n${LTCYAN}Gathering Longhorn information...${NOCLR}"
 kubectl="kubectl --context homelab -n longhorn-system -o json"
 
-COLS=(node replicas disk capacity
-  allocatable available scheduled reserved)
-FMTS='%-4s  %8s  %-25s  %8s  %11s  %9s  %9s  %8s'
+COLS=(node replicas disk capacity reserved
+      scheduled available allocatable alloc_)
+FMTS='%-4s  %8s  %-25s  %8s  %8s  %9s  %9s  %11s  %6s%%'
 printf -v header "$FMTS" "${COLS[@]^^}"
 
-while IFS=$'\t' read -r node replicas disk capacity \
-         allocatable available scheduled reserved; do
+while IFS=$'\t' read -r node replicas disk capacity reserved \
+                scheduled available allocatable alloc_pcnt; do
   [ "$header" ] && {
     printf '\r\033[2K'
     title "${YELLOW}$header${NOCLR}"
     unset header
   }
-  sizes=($(numfmt --to=iec $capacity $allocatable \
-                   $available $scheduled $reserved))
+  sizes=($(numfmt --to=iec -- $capacity $reserved \
+    $scheduled $available $allocatable $alloc_pcnt))
   printf "$FMTS\n" $node $replicas $disk "${sizes[@]}"
 done < <(
   $kubectl get nodes.longhorn.io | \
@@ -109,20 +109,22 @@ done < <(
         ) as $replicaCounts
         | .items[] as $node
         |  $node.metadata.name            as $name
-        | ($node.spec.disks        // {}) as $specdisks
+        | ($node.spec.disks        // {}) as $specDisks
         | ($node.status.diskStatus // {})
         |  to_entries[]
         | .key as $disk
-        | ($specdisks[$disk].storageReserved // 0) as $reserved
+        | ($specDisks[$disk].storageReserved // 0) as $reserved
         | ($replicaCounts[$name]             // 0) as $replicas
         | (.value.storageMaximum             // 0) as $capacity
         | (.value.storageAvailable           // 0) as $available
         | (.value.storageScheduled           // 0) as $scheduled
         | ($capacity - $reserved - $scheduled)     as $schedulable
         | (if   $available    < $schedulable
-          then $available else $schedulable end)  as $allocatable
-        | [$name, $replicas, $disk, $capacity,
-          $allocatable, $available, $scheduled, $reserved]
+           then $available else $schedulable end) as $allocatable
+        | ($allocatable / ($capacity - $reserved) * 100 | round)
+                                                  as $alloc_pcnt
+        | [$name, $replicas, $disk, $capacity, $reserved,
+           $scheduled, $available, $allocatable, $alloc_pcnt]
         | @tsv
       '
 )

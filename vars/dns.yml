@@ -197,6 +197,9 @@ pfsense_dns_records:
       - host: void
         desc: No Such Host
       - host: workouts
+        domain: erhhungyuan.com
+        desc: Workouts Explorer
+      - host: workouts
         domain: "{{ vcluster_domains['dev'] }}"
         desc: Workouts Explorer
 

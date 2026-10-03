@@ -47,6 +47,10 @@ alias omp &> /dev/null || {
   ompinit
 }
 
+export GOPATH="$HOME/.go"
+mkdir -p $GOPATH/{pkg,bin}
+export PATH+=":$GOPATH/bin"
+
 # clear terminal buffer and screen
 c() { printf '\e[2J\e[3J\e[H'; }
 

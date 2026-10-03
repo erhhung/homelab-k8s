@@ -42,9 +42,9 @@
     - name: Set praefect_ready fact
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/set_fact_module.html
       ansible.builtin.set_fact:
-        praefect_ready: |
-          {{ curl_metrics.rc     ==    0 and
-             curl_metrics.stdout == '200' }}
+        praefect_ready: >-
+          {{ curl_metrics.rc | default(1) == 0 and
+             curl_metrics.stdout          ==  '200' }}
 
     - name: Repeat readiness check
       when: not praefect_ready

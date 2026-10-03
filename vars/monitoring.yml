@@ -356,6 +356,16 @@ prometheus_stack_chart_values:
       # hard: require different nodes
       podAntiAffinity: hard
 
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              preference:
+                matchExpressions:
+                  - key: kubernetes.io/hostname
+                    operator: NotIn
+                    values: ["k8s4"] # avoid weakest node
+
       resources:
         requests:
           cpu: 250m

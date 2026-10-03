@@ -86,7 +86,7 @@ gitea_release_name: gitea
 # IMPORTANT! do not upgrade to 1.27.x
 # until workflow parser bug is fixed:
 # https://github.com/go-gitea/gitea/issues/38596
-gitea_app_version: "1.26.2"
+gitea_app_version: "1.27.3"
 
 # chart `image.rootless` is true by default
 gitea_image: docker.gitea.com/gitea:{{ gitea_app_version }}-rootless
@@ -530,25 +530,36 @@ gitea_chart_values:
 
     # ===== GitHub Themes =====
 
-    REL="https://github.com/lutinglt/gitea-github-theme/releases/download/v{{ gitea_app_version }}"
+    REL="https://github.com/lutinglt/gitea-github-theme/releases"
+    REL+="/download/v{{ gitea_app_version }}"
+
+    installed=$(cat /data/gitea/VERSION 2> /dev/null || true)
 
      CSS_HOME=/data/gitea/public/assets/css
     TMPL_HOME=/data/gitea/templates
     mkdir -p  $CSS_HOME $TMPL_HOME
     chmod 755 $CSS_HOME $TMPL_HOME
 
+    [ "$installed" == "{{ gitea_app_version }}" ]     && \
     compgen -G "$CSS_HOME/theme-github-*" > /dev/null || {
+
+      tmp_dir=$(mktemp -d /tmp/XXXXXX)
       curl -fsSL "$REL/theme-github-base.tar.gz" | \
-        tar -xz -C $CSS_HOME --no-same-owner --strip-components=1 dist/
+        tar -xz -C $tmp_dir --no-same-owner --strip-components=1
+      mv -f  $tmp_dir/*.css $CSS_HOME
+      rm -rf $tmp_dir
     }
-    compgen -G "$TMPL_HOME/base/*.tmpl" > /dev/null  || {
+    [ "$installed" == "{{ gitea_app_version }}" ]   && \
+    compgen -G "$TMPL_HOME/base/*.tmpl" > /dev/null || {
+
       curl -fsSL "$REL/theme-github-templates.tar.gz" | \
         tar -xz -C $TMPL_HOME --no-same-owner --strip-components=1 templates/
     }
+    printf "%s" "{{ gitea_app_version }}" > /data/gitea/VERSION
 
     chown -R git:git $CSS_HOME $TMPL_HOME
-    echo; (set -x; ls -al $CSS_HOME)
-    echo; (set -x; find  $TMPL_HOME)
+    echo; (set -x; ls -al $CSS_HOME); sleep .1
+    echo; (set -x; find  $TMPL_HOME); sleep .1
 
     echo
     # =======================
@@ -678,7 +689,7 @@ actions_runner_image:
   repository: library/gitea-runner
   # build custom image using this `gitea-runner` image:
   # `skopeo list-tags docker://docker.gitea.com/runner`
-  tag: "2.3.0"
+  tag: "4.1.0"
 
 # https://gitea.com/gitea/helm-actions/src/branch/main/values.yaml
 actions_chart_values:
