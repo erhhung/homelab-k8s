@@ -1,5 +1,6 @@
 # https://docs.litellm.ai/docs#litellm-proxy-server-llm-gateway
 # https://docs.litellm.ai/docs/proxy/deploy#helm-chart
+# https://docs.litellm.ai/blog/litellm-rust-launch
 ---
 - name: Install LiteLLM on RKE cluster
   tags: install
@@ -289,11 +290,13 @@
 
     - name: Get LiteLLM users
       ansible.builtin.uri:
+        # https://litellm.fourteeners.local/docs#/Internal%20User%20management/get_users_user_list_get
         url: "{{ api_base }}/user/list"
         headers: "{{ auth_headers }}"
         return_content: true
       register: list_users
 
+    # https://docs.litellm.ai/docs/proxy/self_serve
     - name: Create/update LiteLLM user
       vars:
         users: "{{ list_users.json.users }}"
@@ -301,12 +304,17 @@
         - name: Create LiteLLM user
           vars:
             user: "{{ users | selectattr('user_id', '==', item.user_id) }}"
+            create_key: "{{ item.user_role != 'proxy_admin' }}"
           ansible.builtin.uri:
+            # https://litellm.fourteeners.local/docs#/Internal%20User%20management/new_user_user_new_post
             url: "{{ api_base }}/user/new"
             method: POST
             headers: "{{ post_headers }}"
             body_format: json
-            body: "{{ item }}"
+            body: |
+              {{ item | ansible.builtin.combine({
+                   'auto_create_key': create_key,
+                 }) }}
           loop: "{{ litellm_users }}"
           loop_control:
             label: "{{ item.user_id }}"
@@ -318,8 +326,22 @@
           vars:
             user: "{{ users | selectattr('user_id', '==', item.user_id) }}"
             existing: "{{ user | community.general.keep_keys(target=item.keys()) | first }}"
-            body: "{{ item | combine({'user_id': user[0].user_id}) }}"
+            set_pass: >-
+              {{ item.user_role == 'proxy_admin' and
+                 create_user.results is defined  and
+                 create_user.results | selectattr('json', 'defined') | map(attribute='json')
+                                     | selectattr('user_id', '==', item.user_id) is truthy
+              }}
+            body: |
+              {% set body = item %}
+              {% if set_pass %}
+              {%   set _ = body.update({
+                     'password': litellm_admin_pass,
+                   })  %}
+              {% endif %}
+              {{ body  }}
           ansible.builtin.uri:
+            # https://litellm.fourteeners.local/docs#/Internal%20User%20management/user_update_user_update_post
             url: "{{ api_base }}/user/update"
             method: POST
             headers: "{{ post_headers }}"
@@ -328,9 +350,10 @@
           loop: "{{ litellm_users }}"
           loop_control:
             label: "{{ item.user_id }}"
-          when:
-            - user is truthy
-            - existing != item
+          when: >-
+            user  is truthy  and
+            existing != item or
+            set_pass
           changed_when: true
 
     # user API keys are only
@@ -340,7 +363,8 @@
       vars:
         <<: *vars
         api_keys: |
-          {{ create_user.results | selectattr('json', 'defined') | map(attribute='json') |
+          {{ create_user.results   | selectattr('json', 'defined') |
+             map(attribute='json') | selectattr('key',  'truthy')  |
              ansible.builtin.items2dict(key_name='user_id', value_name='key') }}
       when: api_keys is truthy
       block:

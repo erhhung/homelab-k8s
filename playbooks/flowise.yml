@@ -134,11 +134,11 @@
     - documents
   hosts: localhost
   vars_files:
-    - vars/flowise.yml
     - vars/kubernetes.yml
     - vars/postgresql.yml
     - vars/qdrant.yml
     - vars/ollama.yml
+    - vars/flowise.yml
   vars:
     api_base: https://{{ flowise_fqdn }}/api/v1
     doc_store_name: Accounts
@@ -688,9 +688,10 @@
   tags: configure
   hosts: localhost
   vars_files:
-    - vars/flowise.yml
     - vars/kubernetes.yml
+    - vars/litellm.yml
     - vars/ollama.yml
+    - vars/flowise.yml
   vars:
     api_base: "{{ API_BASE }}"
   tasks:

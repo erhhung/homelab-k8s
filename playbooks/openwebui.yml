@@ -390,7 +390,7 @@
           models: "{{  [litellm_default_model] }}"
           pinnedModels: |
             {{ litellm_models | map(attribute='model_name')
-                              | select('search', 'gpt-5.6') }}
+                              | select('search', 'gpt-6') }}
           params: {}
         # https://docs.ansible.com/ansible/latest/collections/community/general/keep_keys_filter.html
         existing: "{{ [user_settings.json.ui | default({})]  |

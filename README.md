@@ -699,7 +699,7 @@ however, all privileged operations using `sudo` will require the password stored
 
 38. <details><summary>Install <strong>LiteLLM</strong> AI gateway with vendor models</summary><br/>
 
-    38.1. Proxy `gpt-5.x` models through both ChatGPT subscription _("free")_ and API _(metered)_  
+    38.1. Proxy `gpt-6.x` models through both ChatGPT subscription _("free")_ and API _(metered)_  
     38.2. Proxy Anthropic and Groq models through API _(metered)_  
     38.3. Proxy web search through local SearXNG instance  
     38.4. Send Slack alerts about LLM issues and spending reports  

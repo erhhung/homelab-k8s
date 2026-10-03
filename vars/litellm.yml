@@ -53,11 +53,14 @@ litellm_postgresql_url: >-
 
 # https://docs.litellm.ai/docs/proxy/deploy#helm-chart
 litellm_chart_oci_url: oci://docker.litellm.ai/berriai/litellm-helm
-# https://github.com/BerriAI/litellm/tree/main/deploy/charts/litellm-helm
-litellm_chart_version: "1.95.0"
+# https://github.com/BerriAI/litellm/tree/main/helm/litellm-helm
+# IMPORTANT: see relevant release notes
+# for breaking changes before upgrading:
+# https://docs.litellm.ai/release_notes
+litellm_chart_version: "1.103.2"
 litellm_release_name: litellm
 
-# https://github.com/BerriAI/litellm/tree/main/deploy/charts/litellm-helm/values.yaml
+# https://github.com/BerriAI/litellm/tree/main/helm/litellm-helm/values.yaml
 litellm_chart_values:
   replicaCount: 1
   # numWorkers: 2
@@ -75,9 +78,9 @@ litellm_chart_values:
     pullPolicy: IfNotPresent
 
   envVars:
-    # https://docs.litellm.ai/docs/proxy/ui#4-change-default-username--password
-    UI_USERNAME: admin
-    # https://docs.litellm.ai/docs/proxy/ui#5-configure-root-redirect-url
+    # https://docs.litellm.ai/docs/proxy/ui#4-sign-in-for-the-first-time
+    UI_USERNAME: bootstrap
+    # https://docs.litellm.ai/docs/proxy/ui#6-configure-root-redirect-url
     ROOT_REDIRECT_URL: /ui
     DOCS_URL: /docs
 
@@ -91,6 +94,13 @@ litellm_chart_values:
     # /data is PVC-mounted volume
     CHATGPT_TOKEN_DIR: /data/chatgpt
     CHATGPT_AUTH_FILE: auth.json
+
+    # detailed debug includes provider request/response
+    DETAILED_DEBUG: false
+    JSON_LOGS: true
+
+  # this setting renders the $LITELLM_LOG env var
+  logLevel: INFO # DEBUG|INFO|WARNING|ERROR|CRITICAL
 
   environmentSecrets:
     # UI_PASSWORD, LITELLM_MASTER_KEY, ...
@@ -106,17 +116,23 @@ litellm_chart_values:
 
     general_settings:
       master_key: os.environ/PROXY_MASTER_KEY
+      # disable $UI_USERNAME & $UI_PASSWORD
+      disable_env_credential_login: true
       # hide credentials hint on login form
       hide_default_credentials_hint: true
       # disable Prisma schema migration on
       # startup--use migration Job instead
       disable_prisma_schema_update: true
-      # enable storing models and credentials in the
-      # database instead of only in the config file,
-      # which isn't persistent for a volume-mounted
-      # ConfigMap
+      # enable storing models & credentials
+      # in the database instead of just the
+      # config file, which isn't persistent
+      # for a volume-mounted ConfigMap
       store_model_in_db: true
       store_prompts_in_spend_logs: true
+      # no need to refresh from DB every
+      # 30s when we only have one replica
+      # and don't make changes via the UI
+      proxy_config_reload_interval_seconds: 300
 
       # https://docs.litellm.ai/docs/proxy/alerting
       alerting:
@@ -262,6 +278,13 @@ litellm_chart_values:
     requests:
       cpu: 10m
       memory: 512Mi
+
+  # allow up to 10 minutes for LiteLLM to fully
+  # initialize if ChatGPT auth flow is required
+  startupProbe:
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 60
 
   volumes:
     # keep as first item
@@ -449,43 +472,59 @@ litellm_job_init_container:
 litellm_models:
   # https://docs.litellm.ai/docs/providers/openai
   - &openai-model
-    # https://developers.openai.com/api/docs/models/gpt-5.6-luna ($1 • $6)
-    model_name: gpt-5.6-luna
-    model_info:
+    # https://developers.openai.com/api/docs/models/gpt-6-luna ($0.10 • $0.50)
+    model_name: gpt-6-luna
+    model_info: &openai-info
       mode: responses
+      # simulate ChatGPT credit cost per 1M tokens:
+      # input: 2.5 | cache read: 0.25 | output: 12.5
+      # 500 credits = $20 (1 credit = $0.04)
+      # https://help.openai.com/en/articles/11481834-chatgpt-rate-card-business-enterpriseedu-credit-based-pricing
+      input_cost_per_token: 0.0000001
+      cache_creation_input_token_cost: 0
+      cache_read_input_token_cost: 0.00000001
+      output_cost_per_token: 0.0000005
     litellm_params: &openai-params
       # use ChatGPT subscription (no API usage costs):
       # https://docs.litellm.ai/docs/providers/chatgpt
-      model: chatgpt/gpt-5.6-luna
-      # model: openai/gpt-5.6-luna
+      model: chatgpt/gpt-6-luna
+      # model: openai/gpt-6-luna
       # api_base: https://api.openai.com/v1
       # api_key: os.environ/OPENAI_API_KEY
       # https://docs.litellm.ai/docs/providers/openai#advanced-using-reasoning_effort-with-summary-field
-      reasoning_effort: low # none|low|medium|high|xhigh|max
-
-  - <<: *openai-model
-    # https://developers.openai.com/api/docs/models/gpt-5.6-terra ($2.50 • $15)
-    model_name: gpt-5.6-terra
-    litellm_params:
-      <<: *openai-params
-      model: chatgpt/gpt-5.6-terra
       reasoning_effort: medium # none|low|medium|high|xhigh|max
 
-  # https://developers.openai.com/api/docs/models/gpt-5.6-sol ($5 • $30)
+  # https://developers.openai.com/api/docs/models/gpt-6.1-sol ($2 • $10)
   - <<: *openai-model
-    model_name: gpt-5.6-sol
+    model_name: gpt-6.1-sol
+    model_info:
+      <<: *openai-info
+      # simulate ChatGPT credit cost per 1M tokens:
+      # input: 50 | cache read: 2.5 | output: 250
+      # 500 credits = $20 (1 credit = $0.04)
+      input_cost_per_token: 0.000002
+      cache_read_input_token_cost: 0.0000001
+      output_cost_per_token: 0.000010
     litellm_params:
       <<: *openai-params
-      model: chatgpt/gpt-5.6-sol
-      reasoning_effort: high # none|low|medium|high|xhigh|max
+      model: chatgpt/gpt-6.1-sol
+      reasoning_effort: high # low|medium|high|xhigh|max
 
-  # https://platform.openai.com/docs/models/gpt-5.5 ($5 • $30)
   - <<: *openai-model
-    model_name: gpt-5.5
+    # https://developers.openai.com/api/docs/models/gpt-6-astra ($10 • $50)
+    model_name: gpt-6-astra
+    model_info:
+      <<: *openai-info
+      # simulate ChatGPT credit cost per 1M tokens:
+      # input: 250 | cache read: 25 | output: 1250
+      # 500 credits = $20 (1 credit = $0.04)
+      input_cost_per_token: 0.000010
+      cache_read_input_token_cost: 0.000001
+      output_cost_per_token: 0.000050
     litellm_params:
       <<: *openai-params
-      model: chatgpt/gpt-5.5
-      reasoning_effort: high # none|minimal|low|medium|high|xhigh
+      model: chatgpt/gpt-6-astra
+      reasoning_effort: high # low|medium|high|xhigh|max
 
   # https://docs.litellm.ai/docs/providers/anthropic
   - &anthropic-model
@@ -538,7 +577,8 @@ litellm_models:
       model: ollama_chat/gemma3:4b
       api_base: "{{ ollama_service_url }}"
 
-litellm_default_model: gpt-5.6-terra
+litellm_default_model: gpt-6.1-sol
+litellm_small_model: gpt-6-luna
 
 # TIP: use stable, non-provider-specific tool names so that
 # backing providers can be swapped or additional providers
@@ -562,9 +602,14 @@ litellm_teams:
 
 # POST /user/new
 litellm_users:
-  - user_id: default_user_id # expected value
+  # NOTE: only specify fields that
+  # are returned by /user/list API
+  - user_id: admin
     user_alias: "{{ homelab_admin.full_name }}"
+    # UI login MUST use email, not user_id
     user_email: "{{ homelab_admin.email }}"
+    # proxy_admin will have UI
+    # password but not API key
     user_role: proxy_admin
 
   - user_id: "{{    user_erhhung.username }}"

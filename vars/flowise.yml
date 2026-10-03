@@ -128,7 +128,9 @@ flowise_chart_values:
         enabled: true
         storageClass: "{{ storage_classes['default'] }}"
         accessModes: ["ReadWriteOnce"]
+        # min XFS volume size is 300Mi
         size: 384Mi
+
       persistentVolumeClaimRetentionPolicy:
         enabled: true
         whenScaled: Retain
@@ -343,7 +345,7 @@ flowise_chart_values:
       metadata:
         name: "{{ flowise_release_name }}-db-init"
         annotations:
-          helm.sh/hook: pre-install
+          helm.sh/hook: pre-install, pre-upgrade
           helm.sh/hook-delete-policy: before-hook-creation
       spec:
         ttlSecondsAfterFinished: 120
@@ -473,7 +475,7 @@ flowise_custom_chatflows:
       openai_cred_id: "{{ external_credentials |
         selectattr('credentialName', '==', 'openAIApi') | map(attribute='id') | first }}"
       openai_model:
-        name: gpt-5.5
+        name: "{{ litellm_default_model }}"
         temperature: 0.4
         top_p: 0.5
       memory_window: 5
