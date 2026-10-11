@@ -3,6 +3,7 @@
 ## Safety
 
 - This repository provisions the live `homelab` infrastructure. Ordinary playbook targets such as `make monitoring` mutate remote hosts and Kubernetes resources; do not run them as validation unless deployment is explicitly requested.
+- Before recreating any StatefulSet for PVC expansion, temporarily disable both admission and mutate-existing evaluations of the Kyverno MutatingPolicy `pvc-retention-policy`, which forces `whenDeleted: Delete`. Set the StatefulSet's PVC retention to `Retain` and verify PVC owner references are removed before orphaning it. Re-enable the policy only after the PVCs have expanded and the new StatefulSet has adopted the existing pods.
 - Do not target Ansible's `all` group: it includes the non-Ubuntu XCP-ng host. Use the inventory groups in `inventory/hosts.ini`.
 - Secrets live in Ansible Vault files. `ansible.cfg` calls `scripts/vaultpass.sh`, which requires macOS Keychain, an `AGE_KEY_FILE`, or the `.vaultpass` file in AWX. Never replace encrypted files with decrypted content or commit `.env`, `ansible.log`, `temp.yml`, or `.ansible/facts/`.
 

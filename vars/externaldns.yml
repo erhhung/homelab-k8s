@@ -55,7 +55,8 @@ externaldns_chart_values:
       image:
         # https://github.com/guillomep/external-dns-unbound-webhook/pkgs/container/external-dns-unbound-webhook
         repository: ghcr.io/guillomep/external-dns-unbound-webhook
-        tag: v0.1.3
+        tag: v0.1.5
+
       env:
         - name: UNBOUND_HOST
           # host:port must include "tcp://" protocol prefix!
@@ -68,21 +69,29 @@ externaldns_chart_values:
           value: /usr/local/etc/unbound/client.key
         - name: DOMAIN_FILTER
           value: "{{ homelab_domain }}"
+
+      resources:
+        requests:
+          cpu: 10m
+          memory: 128Mi
+
       readinessProbe:
         httpGet:
           path: /ready
           port: http-webhook
         initialDelaySeconds: 10
         timeoutSeconds: 5
+
       livenessProbe:
         httpGet:
           path: /health
           port: http-webhook
         initialDelaySeconds: 10
         timeoutSeconds: 5
+
       extraVolumeMounts:
         - name: unbound-certs
-          mountPath: /usr/local/etc/unbound/
+          mountPath: /usr/local/etc/unbound
 
   extraVolumes:
     - name: unbound-certs

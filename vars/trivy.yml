@@ -1,5 +1,12 @@
 trivy_namespace: trivy-system
 
+# master switch to control launching image
+# scanning jobs by toggling these options:
+#   vulnerabilityScannerEnabled
+#   exposedSecretScannerEnabled
+#         sbomGenerationEnabled
+trivy_image_scanning_enabled: false
+
 trivy_secrets:
   credentials: trivy-credentials
   env-vars: trivy-env-variables
@@ -33,8 +40,8 @@ trivy_operator_chart_values:
     # K3s cluster is too resource constrained to
     # run vulnerability scanning without causing
     # frequent cluster instability
-    vulnerabilityScannerEnabled: "{{ cluster == 'rke' }}"
-    exposedSecretScannerEnabled: true
+    vulnerabilityScannerEnabled: "{{ trivy_image_scanning_enabled and cluster == 'rke' }}"
+    exposedSecretScannerEnabled: "{{ trivy_image_scanning_enabled }}"
     infraAssessmentScannerEnabled: true
     rbacAssessmentScannerEnabled: true
     configAuditScannerEnabled: true
@@ -43,7 +50,7 @@ trivy_operator_chart_values:
     # rescan an image for vulnerabilities every 3 days
     scannerReportTTL: 72h # 3 days
     # SBOM is required for ClusterVulnerabilityReports
-    sbomGenerationEnabled: true
+    sbomGenerationEnabled: "{{ trivy_image_scanning_enabled }}"
     # create cluster-scoped ClusterSbomReport objects
     # in addition to namespaced SbomReport objects to
     # speed up SBOM generation for widely used images

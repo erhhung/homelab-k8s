@@ -40,7 +40,7 @@ done
 # https://github.com/carloscuesta/gitmoji-cli
 pnpm --config.updateNotifier=false install \
   -g --allow-build=opencode-ai gitmoji-cli \
-                   opencode-ai
+                   opencode-ai prettier
 
 # copy dot files into $HOME to be inherited by dev user
 cp /config/{.bash_completion,.dircolors,.lessopen} $HOME

@@ -7,6 +7,8 @@
 **/*.log
 **/*.lock
 **/.venv/
+.opencode/
+.playwright-mcp/
 .python-version
 temp.yml
 NOTES

@@ -39,6 +39,9 @@ start_psql() {
 bind "\e[1;3C" em-next-word
 bind "\e[1;3D" ed-prev-word
 EOF
+    # show primary node pod
+    { echo; hostname; } >&2
+
     PSQL_HISTORY=/dev/null EDITRC=$editrc $psql -q
     rc=$?; rm -f $editrc; return $rc
   fi

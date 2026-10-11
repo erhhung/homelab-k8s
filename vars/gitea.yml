@@ -212,7 +212,6 @@ gitea_chart_values:
       webhook:
         QUEUE_LENGTH: 100
         DELIVER_TIMEOUT: 5 # seconds
-        ALLOWED_HOST_LIST: hooks.slack.com
 
       # https://docs.gitea.com/administration/config-cheat-sheet#mailer-mailer
       mailer:
@@ -253,8 +252,10 @@ gitea_chart_values:
         LEVEL: Info # Trace|Debug|Info|Warn|Error|Fatal
         logger.router.MODE: console-warn
         logger.access.MODE: console-warn
+        logger.xorm.MODE: console-warn
       # https://docs.gitea.com/administration/logging-config#disable-router-logs-and-record-some-access-logs-to-file
       log.console-warn:
+        MODE: console
         LEVEL: Warn
 
       # https://docs.gitea.com/administration/config-cheat-sheet#security-security
@@ -264,6 +265,7 @@ gitea_chart_values:
         CSRF_COOKIE_HTTP_ONLY: "true"
         MIN_PASSWORD_LENGTH: 8
         PASSWORD_COMPLEXITY: lower,upper,digit # lower,upper,digit,spec|off
+        ALLOWED_HOST_LIST: hooks.slack.com
 
       # https://docs.gitea.com/administration/config-cheat-sheet#cors-cors
       cors:
@@ -387,19 +389,25 @@ gitea_chart_values:
             name: "{{ gitea_secrets['config'] }}"
             key: smtp-password
 
-    readinessProbe: &probe # nullify default
+    readinessProbe: &probe
+      # nullify default
       tcpSocket: null
+      httpGet: &probe-http
+        path: /api/healthz
+        port: http
+        scheme: HTTPS
+      failureThreshold: 6
+      timeoutSeconds: 5
+
+    livenessProbe:
+      <<: *probe
       httpGet:
+        <<: *probe-http
         # /api/healthz is too expensive as
         # it pings both database and cache
         path: /api/v1/version
-        port: http
-        scheme: HTTPS
-      failureThreshold: 10
-      timeoutSeconds: 5
-    livenessProbe:
-      <<: *probe
       initialDelaySeconds: 180
+      failureThreshold: 12
 
   # https://docs.gitea.com/administration/signing
   # https://gitea.com/gitea/helm-gitea#configure-commit-signing
@@ -427,6 +435,11 @@ gitea_chart_values:
   serviceAccount:
     create: true
     automountServiceAccountToken: true
+
+  podSecurityContext:
+    fsGroup: 1000
+    # don't change *.key 400 permission
+    fsGroupChangePolicy: OnRootMismatch
 
   containerSecurityContext:
     runAsNonRoot: true
@@ -487,20 +500,26 @@ gitea_chart_values:
     # ===== PostgreSQL mTLS =====
 
     TLS_SRC=/tls/database
-    PG_HOME=/data/git/.postgresql
-    mkdir -p $PG_HOME
-
-    cp $TLS_SRC/tls.crt $PG_HOME/postgresql.crt
-    cp $TLS_SRC/tls.key $PG_HOME/postgresql.key
-    cp $TLS_SRC/ca.crt  $PG_HOME/root.crt
-    chown -R   git:git  $PG_HOME
-    chmod 400 $PG_HOME/*.key
+    SSL_DIR=/data/git/.postgresql
+    mkdir -p $SSL_DIR
 
     # postgresql.{crt,key} and root.crt
     # are expected filenames that libpq
     # looks for under $HOME/.postgresql,
     # but $HOME is /var/lib/gitea/git
-    echo; (set -x; ls -al $PG_HOME)
+
+    cp $TLS_SRC/tls.crt $PGSSLCERT
+    cp $TLS_SRC/tls.key $PGSSLKEY
+    cp $TLS_SRC/ca.crt  $PGSSLROOTCERT
+    chmod 400 $PGSSLKEY
+    chown -R  git:git     $SSL_DIR
+    echo; (set -x; ls -al $SSL_DIR)
+
+    # ===== GnuPG Folder =====
+
+    mkdir -p  $GNUPGHOME
+    chmod 700 $GNUPGHOME
+    echo; (set -x; ls -al $GNUPGHOME)
 
     # ===== SSH Host Keys =====
 

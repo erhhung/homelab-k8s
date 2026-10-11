@@ -97,7 +97,8 @@ valkey_chart_values:
     ## no need for replicas at storage level when
     ## the cluster itself stores data in replicas
     storageClass: "{{ storage_classes['default'] }}"
-    size: 512Mi
+    size: 1Gi
+
   persistentVolumeClaimRetentionPolicy:
     enabled: true
     whenScaled: Retain
@@ -110,8 +111,14 @@ valkey_chart_values:
     # use a preset instead of explicitly configuring resources:
     # none, nano, micro, small, medium, large, xlarge, 2xlarge
     # https://github.com/bitnami/charts/tree/main/bitnami/common/templates/_resources.tpl
-    resourcesPreset: micro
-    # resources: ~
+    # resourcesPreset: micro
+    resources:
+      requests:
+        cpu: 50m
+        memory: 128Mi
+      limits:
+        cpu: 250m
+        memory: 512Mi
 
     priorityClassName: "{{ priority_classes['database'] }}"
 

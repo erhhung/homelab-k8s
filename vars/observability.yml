@@ -229,7 +229,7 @@ otel_collector_cr:
     resources:
       requests:
         cpu: 5m
-        memory: 32Mi
+        memory: 128Mi
 
     volumes:
       - name: otlp-tls

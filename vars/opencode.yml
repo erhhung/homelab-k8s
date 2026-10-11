@@ -411,6 +411,7 @@ opencode_config:
   autoupdate: false
 
   # https://opencode.ai/docs/providers#custom-provider
+  # https://opencode.ai/docs/providers#example
   provider:
     litellm:
       npm: "@ai-sdk/openai" # /responses API
@@ -429,11 +430,36 @@ opencode_config:
       # model auto-discovery hasn't been implemented
       # yet, so manually list models to pass through:
       # https://github.com/anomalyco/opencode/issues/6231
+
+      # model cost fields aren't described by the docs,
+      # but are specified in the config's JSON schema:
+      # curl -fsSL https://opencode.ai/config.json | \
+      #   jq '.. | objects | .properties?.cost? // empty'
+
+      # model cost values are $USD per million tokens:
+      # https://github.com/anomalyco/opencode/tree/dev/packages/opencode/src/session/session.ts#L380-L405
+      # NOTE: run all cost values through `round(8)` to prevent
+      # floating-point precision issue like 0.09999999999999999
       models: |
         {% set models = {} %}
         {% for model in litellm_models %}
         {%   if model.litellm_params['model'] is match('^chatgpt') %}
-        {%     set _ = models.update({model.model_name: {}}) %}
+        {%     set info = model.model_info %}
+        {%     set    _ = models.update({
+                 model.model_name: {
+                   'name':   info.display_name,
+                   'limit':  {
+                     'context': info.max_input_tokens,
+                     'output':  info.max_output_tokens,
+                   },
+                   'cost':  {
+                     'input':       (1000000 * info.input_cost_per_token)            | round(8),
+                     'output':      (1000000 * info.output_cost_per_token)           | round(8),
+                     'cache_read':  (1000000 * info.cache_read_input_token_cost)     | round(8),
+                     'cache_write': (1000000 * info.cache_creation_input_token_cost) | round(8),
+                   },
+                 }
+               })  %}
         {%   endif %}
         {% endfor  %}
         {{ models  }}
@@ -498,6 +524,8 @@ opencode_config:
     external_directory:
       ~/workspace/**: allow
       ~/nfs-share/**: allow
+      ~/.go/**: allow
+      /tmp/**: allow
 
     bash:
       "*": allow

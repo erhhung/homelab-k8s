@@ -118,7 +118,7 @@ jenkins_chart_values:
     resources:
       requests:
         cpu: 50m
-        memory: 256Mi
+        memory: 512Mi
       limits:
         cpu: 1000m
         memory: 2Gi

@@ -47,6 +47,7 @@ apt_packages:
       - htop
       - iotop
       - sysstat # iostat/mpstat
+      - strace # trace system calls and signals
       - lsof # used by custom Bash function `listening`
       - rsync # required by ansible.posix.synchronize
       - unzip

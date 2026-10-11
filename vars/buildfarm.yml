@@ -51,6 +51,8 @@ buildfarm_exec_queues:
 # add namespace prefix to all Redis keys
 # (NOTE: `redisPasswordFile` in docs has
 # been renamed to `redisCredentialFile`)
+# (NOTE: Redis key "startTime/<IP>:8980
+# or :8982" does not support prefixing)
 buildfarm_backplane_config: |
   {% set config = {
        'type':                          'SHARD',

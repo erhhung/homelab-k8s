@@ -60,7 +60,7 @@ argocd_image:
   # either specify a tag or, if registry is Harbor,
   # let Ansible task query the most recently pushed
   # tag, which is not necessarily the tag "latest"
-  # tag: cc0df98f
+  # tag: 26bb9a75
 # argocd_image:
 #   pullPolicy: IfNotPresent
 #   repository: quay.io/argoproj/argocd
@@ -69,6 +69,7 @@ argocd_image:
 # argo-cd-redis-cluster with support for Redis cluster
 # * requires installation of helm-git plugin:
 # https://github.com/aslafy-z/helm-git#usage
+# https://github.com/erhhung/argo-helm
 argocd_chart_repo_url: git+https://github.com/erhhung/argo-helm@charts/argo-cd?ref=argo-cd-redis-cluster
 # argocd_chart_repo_url: https://argoproj.github.io/argo-helm
 
@@ -77,6 +78,7 @@ argocd_chart_version: "9.4.17"
 argocd_release_name: argocd
 
 # https://github.com/argoproj/argo-helm/tree/main/charts/argo-cd/values.yaml
+# https://github.com/erhhung/argo-helm/tree/argo-cd-redis-cluster/charts/argo-cd/values.yaml
 argocd_chart_values:
   crds:
     install: true
@@ -99,6 +101,17 @@ argocd_chart_values:
         {{   omit  -}}
         {% endif    %}
       tag: "{{ argocd_image.tag | default(argocd_image_tag | default(omit)) }}"
+
+    env:
+      # Redis key prefix is a new feature in development
+      # and not yet templated by the upstream Helm chart:
+      # https://argo-cd.readthedocs.io/en/latest/user-guide/environment-variables
+      - name: ARGOCD_REDIS_KEY_PREFIX
+        valueFrom:
+          configMapKeyRef:
+            name: argocd-cmd-params-cm
+            key: redis.key.prefix
+            optional: true
 
     securityContext:
       runAsUser: 999
@@ -262,6 +275,7 @@ argocd_chart_values:
       # containing merged upstream PR #14001:
       # https://github.com/erhhung/argocd/tree/redis-cluster
       redis.cluster.mode: true
+      redis.key.prefix: "#argocd#|"
 
       controller.ignore.normalizer.jq.timeout: 2s
       reposerver.parallelism.limit: 2
