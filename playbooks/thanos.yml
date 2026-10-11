@@ -9,6 +9,7 @@
     - vars/minio.yml
     - vars/valkey.yml
     - vars/monitoring.yml
+    - vars/pyrra.yml
     - vars/thanos.yml
   vars:
     # required kubernetes>=24.2 package only in user virtualenv
@@ -20,7 +21,7 @@
     - name: Create Thanos ingress secret
       vars:
         secret_name: "{{ thanos_secrets[item.name] }}"
-        cert_name: thanos-{{ item.name }}-ingress
+        cert_name: "{{ secret_name | replace('tls', 'ingress') }}"
         sans:
           - thanos
           - "{{ item.sans | default([]) }}"
@@ -40,6 +41,15 @@
       loop_control:
         label: "{{ item.name }}"
 
+    # for Thanos Ruler to access Thanos Query
+    - name: Create Thanos Query client secret
+      vars:
+        secret_name: "{{ thanos_secrets['query-client'] }}"
+        secret_data:
+          password: "{{ monitoring_pass }}"
+          query.yml: "{{ thanos_query_client | to_nice_yaml(indent=2) }}"
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/k8s/secrets/generic.yml"
+
     - name: Install Thanos Helm chart
       vars:
         repo_name: bitnami
@@ -50,12 +60,30 @@
         release_ns: "{{ monitoring_namespace }}"
         values: "{{ thanos_chart_values }}"
 
+        patches:
+          merge_patches:
+            # patch Query Frontend deployment to use pinned
+            # image version due to unresolved startup issue
+            - apiVersion: apps/v1
+              kind: Deployment
+              metadata:
+                name: "{{ thanos_release_name }}-query-frontend"
+                namespace: "{{ monitoring_namespace }}" # required
+              spec:
+                template:
+                  spec:
+                    containers:
+                      - name: query-frontend
+                        image: "{{ values.image.registry }}/{{
+                          values.image.repository }}:{{ thanos_qfe_image_tag }}"
+
         extras: # adopt extra resources into Helm release
           - cert-manager.io/v1 Certificate thanos-query-ingress
-          - cert-manager.io/v1 Certificate thanos-rule-ingress
-          - cert-manager.io/v1 Certificate thanos-store-ingress
-          - cert-manager.io/v1 Certificate thanos-bucket-ingress
-          - cert-manager.io/v1 Certificate thanos-compact-ingress
+          - cert-manager.io/v1 Certificate thanos-ruler-ingress
+          - cert-manager.io/v1 Certificate thanos-storegateway-ingress
+          - cert-manager.io/v1 Certificate thanos-bucketweb-ingress
+          - cert-manager.io/v1 Certificate thanos-compactor-ingress
+          - v1 Secret {{ thanos_secrets['query-client'] }}
           # Thanos tripper ConfigMap for Thanos Query Frontend
           - apiVersion: v1
             kind: ConfigMap

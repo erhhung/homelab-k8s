@@ -53,14 +53,14 @@
         msg: "{{ vcluster_user_pods | join(LF) }}"
       when: vcluster_user_pods is truthy
 
-    - name: Prompt for confirmation
+    - name: Prompt for delete confirmation
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/pause_module.html
       ansible.builtin.pause:
-        prompt: Delete vCluster? (y/n)
+        prompt: Delete vCluster "{{ vcluster.name }}"? (y/n)
       when: vcluster_user_pods is truthy
       register: confirm_delete
 
-    - name: Continue with deletion
+    - name: Continue with tenant deletion
       when: >-
         confirm_delete.user_input is undefined or
         confirm_delete.user_input  | lower == 'y'

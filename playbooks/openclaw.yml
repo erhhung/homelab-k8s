@@ -14,6 +14,7 @@
   vars_files:
     - vars/kubernetes.yml
     - vars/monitoring.yml
+    - vars/pyrra.yml
     - vars/observability.yml
     - vars/storage.yml
     - vars/ollama.yml
@@ -176,8 +177,6 @@
     - name: Install OpenClaw Helm chart
       vars:
         # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/template_lookup.html
-        rule_manifests: "{{ lookup('ansible.builtin.template',
-          templates_dir ~ '/monitoring/rules/openclaw.yaml.j2') }}"
         slo_manifests: "{{ lookup('ansible.builtin.template',
           templates_dir ~ '/monitoring/slos/openclaw.yaml.j2') }}"
 
@@ -207,8 +206,7 @@
           - v1 Secret {{ openclaw_secrets['env-vars'] }}
           - v1 Secret {{ openclaw_secrets['skills']   }}
           # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/from_yaml_all_filter.html
-          - "{{ rule_manifests | from_yaml_all }}"
-          - "{{  slo_manifests | from_yaml_all }}"
+          - "{{ slo_manifests | from_yaml_all }}"
 
         # installing plugins/skills and
         # dependencies can take a while

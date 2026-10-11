@@ -18,6 +18,12 @@ sync:
       enabled: true
 
   toHost:
+    # https://www.vcluster.com/docs/vcluster/configure/vcluster-yaml/sync/to-host/advanced/namespaces
+    namespaces:
+      enabled: true
+      mappings:
+        byName:
+          "*": x${name}-*
     # https://www.vcluster.com/docs/vcluster/configure/vcluster-yaml/sync/to-host/storage/persistent-volumes
     persistentVolumes:
       enabled: true
@@ -29,6 +35,8 @@ sync:
     # https://www.vcluster.com/docs/vcluster/configure/vcluster-yaml/sync/from-host/custom-resources
     customResources:
       certificates.cert-manager.io/v1:
+        enabled: true
+      servicelevelobjectives.pyrra.dev/v1alpha1:
         enabled: true
 
 policies:

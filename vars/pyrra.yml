@@ -10,8 +10,11 @@ pyrra_secrets:
   ingress: pyrra-ingress-tls
   creds: pyrra-credentials
 
+pyrra_rule_selector_labels:
+  pyrra-rule: "true"
+
 # https://github.com/pyrra-dev/helm-charts/tree/main/charts/pyrra
-pyrra_chart_version: "1.1.1"
+pyrra_chart_version: "1.14.0"
 pyrra_release_name: pyrra
 
 # https://github.com/pyrra-dev/helm-charts/tree/main/charts/pyrra/values.yaml
@@ -41,7 +44,10 @@ pyrra_chart_values:
 
   # args for operator sidecar
   # (run `pyrra kubernetes --help` inside container)
-  extraKubernetesArgs: []
+  extraKubernetesArgs:
+    # save all generated recording rules to
+    # ConfigMaps instead of PrometheusRules
+    - --config-map-mode
 
   # webhook requires cert-manager
   validatingWebhookConfiguration:
@@ -67,17 +73,13 @@ pyrra_chart_values:
       cpu: 100m
       memory: 128Mi
 
-  # not actually supported chart value
-  # (will be patched by Helmfile task)
-  extraVolumes:
+  extraApiVolumes:
     - name: ca-tls
       secret:
         secretName: "{{ pyrra_secrets['ingress'] }}"
         defaultMode: 416 # "0640"
 
-  # not actually supported chart value
-  # (will be patched by Helmfile task)
-  extraVolumeMounts:
+  extraApiVolumeMounts:
     - name: ca-tls
       mountPath: /tls/ca.crt
       subPath: ca.crt
@@ -112,3 +114,32 @@ pyrra_chart_values:
     interval: 1m
   # monitors operator controller
   serviceMonitorOperator: *svc-mon
+
+  extraObjects:
+    # give Pyrra permission to create ConfigMaps
+    - apiVersion: rbac.authorization.k8s.io/v1
+      kind: ClusterRole
+      metadata:
+        name: "{{ pyrra_release_name }}-configmap-writer"
+      rules:
+        - apiGroups: [""]
+          resources: ["configmaps"]
+          verbs:
+            - get
+            - list
+            - watch
+            - create
+            - update
+
+    - apiVersion: rbac.authorization.k8s.io/v1
+      kind: ClusterRoleBinding
+      metadata:
+        name: "{{ pyrra_release_name }}-configmap-writer"
+      roleRef:
+        apiGroup: rbac.authorization.k8s.io
+        kind: ClusterRole
+        name: "{{ pyrra_release_name }}-configmap-writer"
+      subjects:
+        - kind: ServiceAccount
+          namespace: "{{ pyrra_namespace }}"
+          name: "{{ pyrra_release_name }}"

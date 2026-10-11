@@ -7,59 +7,67 @@ thanos_host_names:
     - query
     - querier
   rule:
-    - rule
     - ruler
+    - rule
   store:
-    - store
     - storegateway
+    - store
   bucket:
-    - bucket
     - bucketweb
+    - bucket
   compact:
-    - compact
     - compactor
+    - compact
 
 # https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_filters.html#products
 thanos_fqdns: |
-  {% set fqdns = {} %}
-  {% for service, hosts in thanos_host_names.items() %}
+  {% set fqdns  = {} %}
+  {% for service, names in thanos_host_names.items() %}
   {#   create partially qualified domains #}
   {#   append: plugins/filter/filters.py  #}
-  {%   set pqdns = hosts | map('append', '.thanos')  %}
+  {%   set pqdns = names | map('append', '.thanos')  %}
   {%   set _ = fqdns.update({
          service: pqdns | product(search_domains) | map('join','.')
        }) %}
   {% endfor %}
   {{ fqdns  }}
 
+thanos_service_hosts: |
+  {% set hosts  = {} %}
+  {% for service, names in thanos_host_names.items() %}
+  {%   set _ = hosts.update({
+         service: thanos_release_name ~'-'~ names[0] ~'.'~
+           monitoring_namespace ~'.svc.'~ cluster_domain
+       })   %}
+  {% endfor %}
+  {{ hosts  }}
 thanos_query_frontend_url: https://{{ thanos_release_name }}-query-frontend.{{
   monitoring_namespace }}.svc.{{ cluster_domain }}:{{ prometheus_service_port }}
 
 thanos_secrets:
   query: thanos-query-tls
-  rule: thanos-rule-tls
-  store: thanos-store-tls
-  bucket: thanos-bucket-tls
-  compact: thanos-compact-tls
+  rule: thanos-ruler-tls
+  store: thanos-storegateway-tls
+  bucket: thanos-bucketweb-tls
+  compact: thanos-compactor-tls
   sidecar: "{{ monitoring_secrets['thanos-tls'] }}"
   http-config: "{{ monitoring_secrets['thanos-config'] }}"
   object-store: "{{ monitoring_release_name }}-prometheus"
+  query-client: thanos-query-client
 
-# common readinessProbe & livenessProbe config
-# that includes httpGet header for basic auth
-thanos_probe:
-  httpGet:
-    path: /- # will be overridden
-    port: http
-    scheme: HTTPS
-    httpHeaders:
-      - name: Authorization
-        value: Basic {{ ('probe:'~ monitoring_passwords['probe']) | b64encode }}
-  initialDelaySeconds: 30
-  timeoutSeconds: 5
-  periodSeconds: 10
-  successThreshold: 1
-  failureThreshold: 6
+# "query.yml" config in Secret for
+# Thanos Ruler HTTPS Query client
+thanos_query_client:
+  - static_configs:
+      - dnssrv+_http._tcp.{{ thanos_service_hosts['query'] }}.
+    scheme: https
+    http_config:
+      tls_config:
+        server_name: "{{ thanos_service_hosts['query'] }}"
+        ca_file: /tls/thanos/ca.crt
+      basic_auth:
+        username: thanos
+        password_file: /conf/query-client/password
 
 # ConfigMap is mounted in Query Frontend
 # container at /conf/tripper/config.yml:
@@ -76,15 +84,45 @@ thanos_tripper_config:
       key_file:  /tls/thanos/tls.key
       ca_file:   /tls/thanos/ca.crt
 
+# common readinessProbe & livenessProbe config
+# that includes httpGet header for basic auth
+thanos_probe:
+  httpGet:
+    path: /- # will be overridden
+    port: http
+    scheme: HTTPS
+    httpHeaders:
+      - name: Authorization
+        value: Basic {{ ('probe:'~ monitoring_passwords['probe']) | b64encode }}
+  initialDelaySeconds: 30
+  periodSeconds: 10
+  timeoutSeconds: 5
+  successThreshold: 1
+  failureThreshold: 6
+
 # https://github.com/bitnami/charts/tree/main/bitnami/thanos
-# NOTE: don't upgrade past 17.0.3 for the time being
-# as Query Frontend in Thanos 0.39.x fails to start:
-# https://github.com/thanos-io/thanos/issues/8448
-thanos_chart_version: "17.0.3"
+thanos_chart_version: "17.3.1"
 thanos_release_name: thanos
+
+# Query Frontend in Thanos 0.39.x fails to start,
+# so we use Helmfile patch to pin that component:
+# https://github.com/thanos-io/thanos/issues/8448
+thanos_qfe_image_tag: v0.38.0
 
 # https://github.com/bitnami/charts/tree/main/bitnami/thanos/values.yaml
 thanos_chart_values:
+  global:
+    security:
+      # use quay.io registry because Bitnami
+      # no longer offers free public images
+      allowInsecureImages: true
+
+  image:
+    # https://quay.io/repository/thanos/thanos?tab=tags
+    registry: quay.io
+    repository: thanos/thanos
+    tag: v0.42.4 # search: v0
+
   # https://thanos.io/tip/operating/https.md
   # this secret was created for the Thanos sidecar and
   # contains "http-config.yml" that this chart expects
@@ -102,10 +140,10 @@ thanos_chart_values:
       path: objstore.yml
 
   # these aren't actual chart values
-  readinessProbe: &readiness_probe |
+  readinessProbe: &readiness-probe |
     {# https://docs.ansible.com/ansible/latest/collections/ansible/builtin/combine_filter.html #}
     {{ thanos_probe | ansible.builtin.combine({'httpGet':{'path':'/-/ready'  },}, recursive=true) }}
-  livenessProbe: &liveness_probe |
+  livenessProbe: &liveness-probe |
     {{ thanos_probe | ansible.builtin.combine({'httpGet':{'path':'/-/healthy'},}, recursive=true) }}
 
   # ======================================= Query =======================================
@@ -117,12 +155,29 @@ thanos_chart_values:
     replicaCount: 1
     revisionHistoryLimit: "{{ k8s_max_revisions }}"
 
+    # https://thanos.io/tip/components/query.md#flags
+    extraFlags:
+      - --query.max-concurrent=5
+      # allow long-window Ruler evaluations to read retained
+      # history after raw samples expire; otherwise, a 2-week
+      # expression could succeed using only the recent 2-day
+      # raw portion and give a misleading result
+      - --query.auto-downsampling
+      - --query.instant.default.max_source_resolution=1h
+
     # https://github.com/bitnami/charts/tree/main/bitnami/thanos#resource-requests-and-limits
     # use a preset instead of explicitly configuring resources:
     # none, nano, micro, small, medium, large, xlarge, 2xlarge
     # https://github.com/bitnami/charts/tree/main/bitnami/common/templates/_resources.tpl
-    resourcesPreset: micro
-    # resources: ~
+    # resourcesPreset: small
+
+    resources:
+      requests:
+        cpu: 250m
+        memory: 256Mi
+      limits:
+        cpu: 1000m
+        memory: 2Gi
 
     dnsDiscovery:
       enabled: true
@@ -165,15 +220,16 @@ thanos_chart_values:
 
     # referenced by http-config.yml
     # used by all Thanos components
-    extraVolumeMounts: &thanos-tls
-      - name: thanos-tls
+    extraVolumeMounts:
+      - &tls-mount
+        name: thanos-tls
         mountPath: /tls/thanos
         readOnly: true
 
     # override default probes in
     # order to supply basic auth
-    customReadinessProbe: *readiness_probe
-    customLivenessProbe: *liveness_probe
+    customReadinessProbe: *readiness-probe
+    customLivenessProbe: *liveness-probe
 
     ingress:
       enabled: true
@@ -241,6 +297,7 @@ thanos_chart_values:
       type: IN-MEMORY
       config:
         max_size: 64MB
+        validity: 5m
 
     resourcesPreset: nano
     # resources: ~
@@ -254,17 +311,15 @@ thanos_chart_values:
           name: thanos-query-frontend-tripper
 
     extraVolumeMounts:
-      - name: thanos-tls
-        mountPath: /tls/thanos
-        readOnly: true
+      - *tls-mount
       - name: tripper-config
         mountPath: /conf/tripper
         readOnly: true
 
     # override default probes in
     # order to supply basic auth
-    customReadinessProbe: *readiness_probe
-    customLivenessProbe: *liveness_probe
+    customReadinessProbe: *readiness-probe
+    customLivenessProbe: *liveness-probe
 
     ingress: # in-cluster access only
       enabled: false
@@ -284,6 +339,18 @@ thanos_chart_values:
     #   .prometheusSpec.evaluationInterval
     evalInterval: 1m
 
+    # https://thanos.io/tip/components/rule.md#flags
+    extraFlags:
+      # supplement default /conf/rules/*.yml
+      # Pyrra only uses .yaml ConfigMap keys
+      - --rule-file=/conf/pyrra-rules/*.yaml
+      # not sure why the chart doesn't
+      # allow gRPC server TLS settings
+      - --grpc-server-tls-cert=/tls/thanos/tls.crt
+      - --grpc-server-tls-key=/tls/thanos/tls.key
+      - --grpc-server-tls-client-ca=/tls/thanos/ca.crt
+      - --query.config-file=/conf/query-client/query.yml
+
     # https://thanos.io/tip/components/rule.md#configuring-rules
     config: |
       groups: []
@@ -294,16 +361,26 @@ thanos_chart_values:
     persistence:
       enabled: true
       storageClass: "{{ storage_classes['default'] }}"
-      # min XFS volume size is 300Mi
-      size: 384Mi
+      # Prometheus TSDB, which Thanos Ruler uses internally,
+      # preallocates chunk segment files in 512Mi increments
+      size: 1Gi
 
     persistentVolumeClaimRetentionPolicy: &pvc-retention-policy
       enabled: true
       whenScaled: Retain
       whenDeleted: Delete
 
+    hostAliases:
+      - ip: "127.0.0.1"
+        hostnames:
+          - "{{ thanos_service_hosts['rule'] }}"
+
     dnsDiscovery:
-      enabled: true
+      # suppress `--query` arg that causes connection
+      # to Query using the unauthenticated HTTP client
+      # as opposed to the HTTPS client with basic auth
+      enabled: false
+
     # externally accessible URL in alerts' "Source" field
     queryURL: https://{{ thanos_fqdns['query'] | first }}
 
@@ -322,24 +399,29 @@ thanos_chart_values:
               key_file: /tls/thanos/tls.key
               ca_file: /tls/thanos/ca.crt
 
-    # https://thanos.io/tip/components/rule.md#flags
-    extraFlags:
-      # not sure why the chart doesn't
-      # allow gRPC server TLS settings
-      - --grpc-server-tls-cert=/tls/thanos/tls.crt
-      - --grpc-server-tls-key=/tls/thanos/tls.key
-      - --grpc-server-tls-client-ca=/tls/thanos/ca.crt
-
-    extraVolumeMounts: *thanos-tls
     extraVolumes:
       - name: thanos-tls
         secret:
           secretName: "{{ thanos_secrets['rule'] }}"
+      - name: query-client
+        secret:
+          secretName: "{{ thanos_secrets['query-client'] }}"
+      - name: pyrra-rules
+        emptyDir: {}
+
+    extraVolumeMounts:
+      - *tls-mount
+      - name: query-client
+        mountPath: /conf/query-client
+        readOnly: true
+      - name: pyrra-rules
+        mountPath: /conf/pyrra-rules
+        readOnly: true
 
     # override default probes in
     # order to supply basic auth
-    customReadinessProbe: *readiness_probe
-    customLivenessProbe: *liveness_probe
+    customReadinessProbe: *readiness-probe
+    customLivenessProbe: *liveness-probe
 
     ingress:
       enabled: true
@@ -363,6 +445,96 @@ thanos_chart_values:
         - secretName: "{{ thanos_secrets['rule'] }}"
           hosts: "{{ thanos_fqdns['rule'] }}"
 
+    sidecars:
+      # deploy sidecar that watches Pyrra rule ConfigMaps having
+      # label `pyrra-rule: "true"`, writes .yaml rule files into
+      # shared volume, and triggers Thanos Ruler to reload rules
+      - name: pyrra-rules
+        # https://github.com/kiwigrid/k8s-sidecar
+        # `skopeo list-tags docker://ghcr.io/kiwigrid/k8s-sidecar`
+        image: ghcr.io/kiwigrid/k8s-sidecar:2.13.3
+        imagePullPolicy: IfNotPresent
+
+        env:
+          # k8s-sidecar is a Python app, so disable creation
+          # of "__pycache__/*.pyc" files since the container
+          # has a read-only root filesystem
+          - name: PYTHONDONTWRITEBYTECODE
+            value: "1"
+          - name: METHOD
+            value: WATCH
+          - name: RESOURCE
+            value: configmap
+          - name: NAMESPACE
+            value: ALL
+          - name: SKIP_TLS_VERIFY
+            value: "false"
+          - name: LABEL
+            value: "{{ pyrra_rule_selector_labels.items()[0][0] }}"
+          - name: LABEL_VALUE
+            value: "{{ pyrra_rule_selector_labels.items()[0][1] }}"
+          - name: FOLDER
+            value: /rules/pyrra
+          - name: UNIQUE_FILENAMES
+            value: "true"
+          - name: DEFAULT_FILE_MODE
+            value: "640"
+          - name: REQ_METHOD
+            value: POST
+          - name: REQ_URL
+            # host name resolves to 127.0.0.1 per `ruler.hostAliases` above
+            value: https://{{ thanos_service_hosts['rule'] }}:10902/-/reload
+          - name: REQ_SKIP_TLS_VERIFY
+            value: "false"
+          - name: REQUESTS_CA_BUNDLE
+            value: /tls/thanos/ca.crt
+          - name: REQ_USERNAME
+            value: thanos
+          - name: REQ_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                # all Thanos components have same basic auth
+                name: "{{ thanos_secrets['query-client'] }}"
+                key: password
+
+        securityContext:
+          runAsUser: 1001
+          runAsGroup: 1001
+          runAsNonRoot: true
+          capabilities:
+            drop: ["ALL"]
+          seccompProfile:
+            type: RuntimeDefault
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+
+        resources:
+          requests:
+            cpu: 5m
+            memory: 128Mi
+
+        readinessProbe: &sidecar-probe
+          httpGet:
+            path: /healthz
+            port: 8080
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 5
+          successThreshold: 1
+          failureThreshold: 6
+
+        livenessProbe:
+          <<: *sidecar-probe
+          initialDelaySeconds: 30
+
+        volumeMounts:
+          - name: pyrra-rules
+            mountPath: /rules/pyrra
+          - name: thanos-tls
+            mountPath: /tls/thanos/ca.crt
+            subPath: ca.crt
+            readOnly: true
+
   # =================================== Store Gateway ===================================
   #
   # https://thanos.io/tip/components/store.md#index-cache
@@ -372,6 +544,7 @@ thanos_chart_values:
       max_size: 128MB
 
   # https://thanos.io/tip/components/store.md#caching-bucket
+  # https://thanos.io/tip/components/store.md#redis-index-cache
   bucketCacheConfig: |
     type: REDIS
     config:
@@ -383,9 +556,18 @@ thanos_chart_values:
         cert_file: /tls/thanos/tls.crt
         key_file:  /tls/thanos/tls.key
         ca_file:   /tls/thanos/ca.crt
-      # enable client-side caching
-      cache_size: 64MB
-      ttl: 24h # Valkey
+      # not supported yet! requires Thanos >= 0.42.0:
+      # https://github.com/thanos-io/thanos/pull/8844
+      prefix: '#thanos#:'
+      cache_size: 128MB
+      dial_timeout: 10s
+      read_timeout:  5s
+      write_timeout: 5s
+      max_async_concurrency: 50
+      max_get_multi_concurrency: 50
+      max_set_multi_concurrency: 10
+      get_multi_batch_size: 50
+      set_multi_batch_size: 10
 
   # https://thanos.io/tip/components/store.md
   # https://github.com/bitnami/charts/tree/main/bitnami/thanos#thanos-store-gateway-parameters
@@ -394,21 +576,30 @@ thanos_chart_values:
     replicaCount: 1
     revisionHistoryLimit: "{{ k8s_max_revisions }}"
 
+    # https://thanos.io/tip/components/store.md#flags
+    extraFlags:
+      - --store.grpc.series-max-concurrency=5
+      - --chunk-pool-size=128MB
+
     # shard using StatefulSet based on
     # time ranges or hashmod of blocks
     # https://thanos.io/tip/components/store.md#time-based-partitioning
     sharded:
       enabled: false
 
-    resourcesPreset: nano
-    # resources: ~
+    # resourcesPreset: medium
+    resources:
+      requests:
+        cpu: 250m
+        memory: 2Gi
+      limits:
+        cpu: 500m
+        memory: 6Gi
 
     persistence:
       enabled: true
-      ## no need for storage replicas as
-      ## data can be recreated on startup
       storageClass: "{{ storage_classes['default'] }}"
-      size: 1Gi
+      size: 3Gi
     persistentVolumeClaimRetentionPolicy: *pvc-retention-policy
 
     grpc:
@@ -423,16 +614,25 @@ thanos_chart_values:
               ca-cert: ca.crt
           clientAuthEnabled: true
 
-    extraVolumeMounts: *thanos-tls
     extraVolumes:
       - name: thanos-tls
         secret:
           secretName: "{{ thanos_secrets['store'] }}"
 
-    # override default probes in
-    # order to supply basic auth
-    customReadinessProbe: *readiness_probe
-    customLivenessProbe: *liveness_probe
+    extraVolumeMounts:
+      - *tls-mount
+
+    # override default probes in order to supply basic auth;
+    # also, use startup probe because store gateway can take
+    # a long time on initial bucket sync: loading new blocks
+    customStartupProbe: |
+      {{ thanos_probe | ansible.builtin.combine({
+           'httpGet':{'path':'/-/ready'},
+           'initialDelaySeconds': 0,
+           'failureThreshold': 120,
+         }, recursive=true) }}
+    customReadinessProbe: *readiness-probe
+    customLivenessProbe: *liveness-probe
 
     # make Query access Store API using
     # "endpoint-group" feature if there
@@ -478,16 +678,18 @@ thanos_chart_values:
     resourcesPreset: nano
     # resources: ~
 
-    extraVolumeMounts: *thanos-tls
     extraVolumes:
       - name: thanos-tls
         secret:
           secretName: "{{ thanos_secrets['bucket'] }}"
 
+    extraVolumeMounts:
+      - *tls-mount
+
     # override default probes in
     # order to supply basic auth
-    customReadinessProbe: *readiness_probe
-    customLivenessProbe: *liveness_probe
+    customReadinessProbe: *readiness-probe
+    customLivenessProbe: *liveness-probe
 
     ingress:
       enabled: true
@@ -519,14 +721,22 @@ thanos_chart_values:
     enabled: true
     revisionHistoryLimit: "{{ k8s_max_revisions }}"
 
+    # https://thanos.io/tip/components/compact.md#flags
+    extraFlags:
+      # since Prometheus accepts samples arriving up to 5 seconds
+      # out of order (`tsdb.outOfOrderTimeWindow=5s`) they can be
+      # written into separate blocks, overlapping ordinary blocks
+      # https://thanos.io/tip/components/compact.md#vertical-compactions
+      - --compact.enable-vertical-compaction
+
     # deploy as a service
     # instead of cron job
     cronJob:
       enabled: false
 
     retentionResolutionRaw: 2d
-    retentionResolution5m: 10d # raw metrics older than 40 hours
-    retentionResolution1h: 20d #  5m metrics older than 10 days
+    retentionResolution5m: 14d # raw metrics older than 2 days
+    retentionResolution1h: 30d #  5m metrics older than 2 weeks
 
     # number of goroutines to
     # use when compact groups
@@ -551,18 +761,20 @@ thanos_chart_values:
       # no need for replicas as storage
       # is used merely as scratch space
       storageClass: "{{ storage_classes['single'] }}"
-      size: 5Gi
+      size: 10Gi
 
-    extraVolumeMounts: *thanos-tls
     extraVolumes:
       - name: thanos-tls
         secret:
           secretName: "{{ thanos_secrets['compact'] }}"
 
+    extraVolumeMounts:
+      - *tls-mount
+
     # override default probes in
     # order to supply basic auth
-    customReadinessProbe: *readiness_probe
-    customLivenessProbe: *liveness_probe
+    customReadinessProbe: *readiness-probe
+    customLivenessProbe: *liveness-probe
 
     ingress:
       enabled: true
@@ -614,3 +826,34 @@ thanos_chart_values:
     prometheusRule:
       enabled: true
       additionalLabels: "{{ monitoring_selector_labels }}"
+
+  # ======================================= Extras ======================================
+  #
+  # https://github.com/bitnami/charts/tree/main/bitnami/thanos#deploy-extra-resources
+  extraDeploy:
+    # allow Thanos Ruler k8s-sidecar to read
+    # ConfigMaps and write them as rule files
+    - apiVersion: rbac.authorization.k8s.io/v1
+      kind: ClusterRole
+      metadata:
+        name: "{{ thanos_release_name }}-configmap-reader"
+      rules:
+        - apiGroups: [""]
+          resources: ["configmaps"]
+          verbs:
+            - get
+            - list
+            - watch
+
+    - apiVersion: rbac.authorization.k8s.io/v1
+      kind: ClusterRoleBinding
+      metadata:
+        name: "{{ thanos_release_name }}-configmap-reader"
+      roleRef:
+        apiGroup: rbac.authorization.k8s.io
+        kind: ClusterRole
+        name: "{{ thanos_release_name }}-configmap-reader"
+      subjects:
+        - kind: ServiceAccount
+          namespace: "{{ monitoring_namespace }}"
+          name: "{{ thanos_release_name }}-ruler"

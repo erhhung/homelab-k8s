@@ -17,6 +17,7 @@
     - vars/qdrant.yml
     - vars/litellm.yml
     - vars/monitoring.yml
+    - vars/pyrra.yml
     - vars/observability.yml
     - vars/openwebui.yml
   vars: &vars
