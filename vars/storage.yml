@@ -317,8 +317,8 @@ longhorn_recurring_jobs:
       cron: 0 10 * * * # in UTC time; run every day at 2am Pacific time
       task: snapshot-delete
       groups: ["default"]
-      retain: 3
       concurrency: 1
+      retain: 1
 
   # Longhorn RecurringJob doesn't currently support
   # a task type for deleting backups, so a CronJob

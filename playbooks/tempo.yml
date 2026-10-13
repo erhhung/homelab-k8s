@@ -105,3 +105,13 @@
           - cert-manager.io/v1 Certificate {{ tempo_secrets['ingress'] }}
           - v1 Secret {{ tempo_secrets['s3-creds'] }}
       ansible.builtin.include_tasks: "{{ tasks_dir }}/helm/helmfile.yml"
+
+    # Tempo TLS certificate for gRPC and HTTP ports 4317 and 4318
+    # don't reload automatically when renewed (only `prom-metrics`
+    # port 3200 does), so restart pod
+    - name: Add Wave annotations to StatefulSet
+      vars:
+        res_kind: StatefulSet
+        res_name: "{{ tempo_release_name }}"
+        res_ns: "{{ tempo_namespace }}"
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/k8s/wave.yml"

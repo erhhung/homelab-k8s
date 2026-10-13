@@ -79,6 +79,22 @@
         state: present
         apply: true
 
+    # OTel collector TLS certificate for gRPC and HTTP does
+    # not reload automatically when renewed, so restart pod
+    - name: Add Wave annotations to Deployment
+      vars:
+        # both waitready.yml and wave.yml
+        # tasks expect these `res_*` vars
+        res_kind: Deployment
+        res_name: "{{ otel_collector_name }}"
+        res_ns: "{{ observability_namespace }}"
+      block:
+        - name: Wait for OTel Collector to be ready
+          ansible.builtin.include_tasks: "{{ tasks_dir }}/k8s/waitready.yml"
+
+        - name: Add Wave annotations to Deployment
+          ansible.builtin.include_tasks: "{{ tasks_dir }}/k8s/wave.yml"
+
 - name: Configure observability dashboards
   tags: dashboards
   hosts: localhost

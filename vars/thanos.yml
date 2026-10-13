@@ -19,6 +19,7 @@ thanos_host_names:
     - compactor
     - compact
 
+# e.g. {query:["query.thanos.fourteeners.local","querier.thanos.fourteeners.local"],...}
 # https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_filters.html#products
 thanos_fqdns: |
   {% set fqdns  = {} %}
@@ -32,6 +33,7 @@ thanos_fqdns: |
   {% endfor %}
   {{ fqdns  }}
 
+# e.g. {store:"thanos-storegateway.monitoring.svc.cluster.local",...}
 thanos_service_hosts: |
   {% set hosts  = {} %}
   {% for service, names in thanos_host_names.items() %}
@@ -556,8 +558,7 @@ thanos_chart_values:
         cert_file: /tls/thanos/tls.crt
         key_file:  /tls/thanos/tls.key
         ca_file:   /tls/thanos/ca.crt
-      # not supported yet! requires Thanos >= 0.42.0:
-      # https://github.com/thanos-io/thanos/pull/8844
+      # prefix requires v0.42.0+
       prefix: '#thanos#:'
       cache_size: 128MB
       dial_timeout: 10s

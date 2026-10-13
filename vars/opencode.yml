@@ -524,6 +524,7 @@ opencode_config:
     external_directory:
       ~/workspace/**: allow
       ~/nfs-share/**: allow
+      "**/bin/*": allow
       ~/.go/**: allow
       /tmp/**: allow
 

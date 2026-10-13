@@ -139,6 +139,7 @@ otel_collector_cr:
                 cert_file: /tls/otlp/tls.crt
                 key_file: /tls/otlp/tls.key
                 ca_file: /tls/otlp/ca.crt
+                reload_interval: 6h
             # https://github.com/open-telemetry/opentelemetry-collector/tree/main/config/confighttp#server-configuration
             http:
               <<: *otlp-receiver
