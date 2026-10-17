@@ -95,9 +95,11 @@ litellm_chart_values:
     CHATGPT_TOKEN_DIR: /data/chatgpt
     CHATGPT_AUTH_FILE: auth.json
 
+    JSON_LOGS: true
+    # TZ in the container only affects log timestamps
+    TZ: "{{ system_time_zone }}"
     # detailed debug includes provider request/response
     DETAILED_DEBUG: false
-    JSON_LOGS: true
 
   # this setting renders the $LITELLM_LOG env var
   logLevel: INFO # DEBUG|INFO|WARNING|ERROR|CRITICAL
@@ -172,6 +174,10 @@ litellm_chart_values:
         major_outage_alert_threshold: 50
 
     litellm_settings:
+      # only affects `budget_reset_time`, NOT usage/spend buckets:
+      # https://github.com/BerriAI/litellm/issues/31831
+      timezone: "{{ system_time_zone }}"
+
       # https://docs.litellm.ai/docs/proxy/caching
       cache: true
       cache_params:

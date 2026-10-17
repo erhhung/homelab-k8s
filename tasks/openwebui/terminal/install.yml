@@ -33,7 +33,10 @@
           - jq
           - uv
           - caddy
-        state: latest
+        # on Intel-based macOS (no longer supported), `latest` would
+        # cause prohibitively long delay due to building from source
+        # state: latest
+        state: present
 
     - name: Create server certificate
       vars:

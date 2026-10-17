@@ -894,52 +894,52 @@ to confirm available disk space on all cluster nodes.</summary><br/>
 rancher
 -------
 Filesystem                         Size  Used Avail Use% Mounted on
-/dev/mapper/ubuntu--vg-ubuntu--lv   44G   20G   22G  48% /
+/dev/mapper/ubuntu--vg-ubuntu--lv   44G   25G   18G  58% /
 
 k8s1
 ----
 Filesystem                         Size  Used Avail Use% Mounted on
-/dev/mapper/ubuntu--vg-ubuntu--lv   58G   37G   19G  67% /
-/dev/mapper/ubuntu--vg-data--lv     60G   20G   41G  33% /data
+/dev/mapper/ubuntu--vg-ubuntu--lv  101G   63G   33G  67% /
+/dev/mapper/ubuntu--vg-data--lv     90G   61G   30G  67% /data
 
 k8s2
 ----
 Filesystem                         Size  Used Avail Use% Mounted on
-/dev/mapper/ubuntu--vg-ubuntu--lv   58G   42G   14G  76% /
-/dev/mapper/ubuntu--vg-data--lv     60G  4.4G   56G   8% /data
+/dev/mapper/ubuntu--vg-ubuntu--lv   69G   51G   16G  78% /
+/dev/mapper/ubuntu--vg-data--lv    120G   45G   76G  37% /data
 
 k8s3
 ----
 Filesystem                         Size  Used Avail Use% Mounted on
-/dev/mapper/ubuntu--vg-ubuntu--lv   58G   39G   17G  71% /
-/dev/mapper/ubuntu--vg-data--lv     60G   15G   46G  25% /data
+/dev/mapper/ubuntu--vg-ubuntu--lv   69G   52G   14G  79% /
+/dev/mapper/ubuntu--vg-data--lv    120G   21G  100G  17% /data
 
 k8s4
 ----
 Filesystem                         Size  Used Avail Use% Mounted on
-/dev/mapper/ubuntu--vg-ubuntu--lv   58G   43G   13G  78% /
-/dev/mapper/ubuntu--vg-data--lv     60G   31G   30G  51% /data
+/dev/mapper/ubuntu--vg-ubuntu--lv   69G   48G   19G  73% /
+/dev/mapper/ubuntu--vg-data--lv    120G   71G   50G  59% /data
 
 k8s5
 ----
 Filesystem                         Size  Used Avail Use% Mounted on
-/dev/mapper/ubuntu--vg-ubuntu--lv   58G   45G   11G  81% /
-/dev/mapper/ubuntu--vg-data--lv     60G   15G   46G  24% /data
+/dev/mapper/ubuntu--vg-ubuntu--lv   69G   44G   23G  66% /
+/dev/mapper/ubuntu--vg-data--lv    120G   69G   52G  58% /data
 
 k8s6
 ----
 Filesystem                         Size  Used Avail Use% Mounted on
-/dev/mapper/ubuntu--vg-ubuntu--lv   82G   63G   15G  81% /
-/dev/mapper/ubuntu--vg-data--lv     60G   18G   43G  30% /data
+/dev/mapper/ubuntu--vg-ubuntu--lv  183G   83G   92G  48% /
+/dev/mapper/ubuntu--vg-data--lv    200G  111G   90G  56% /data
 
-NODE  DISK                       CAPACITY  ALLOCATABLE  AVAILABLE  SCHEDULABLE  SCHEDULED  RESERVED
----------------------------------------------------------------------------------------------------
-k8s1  default-disk-fc0100000000       60G          14G        41G          14G        29G       18G
-k8s2  default-disk-fc0100000000       60G          24G        56G          24G        19G       18G
-k8s3  default-disk-fc0100000000       60G          19G        46G          19G        24G       18G
-k8s4  default-disk-fc0100000000       60G        1010M        30G        1010M        41G       18G
-k8s5  default-disk-fc0100000000       60G          18G        46G          18G        25G       18G
-k8s6  default-disk-fc0100000000       60G          24G        43G          24G        19G       18G
+NODE  REPLICAS  DISK                       CAPACITY  RESERVED  SCHEDULED  AVAILABLE  ALLOCATABLE  ALLOC_%
+---------------------------------------------------------------------------------------------------------
+k8s1        16  default-disk-fc0100000000       90G       27G        78G        30G         -15G     -23%
+k8s2         7  default-disk-fc0100000000      120G       36G        45G        76G          40G      47%
+k8s3        12  default-disk-fc0100000000      120G       36G        34G       100G          51G      60%
+k8s4        24  default-disk-fc0100000000      120G       36G        89G        50G        -5.1G      -6%
+k8s5        28  default-disk-fc0100000000      120G       36G       102G        51G         -18G     -21%
+k8s6        12  default-disk-fc0100000000      200G       48G       139G        89G          14G       9%
 ```
 </details>
 

@@ -14,8 +14,9 @@ endif
 .ONESHELL:   # require GNU Make 4+
 
  PHONY := all play debug check lint cloc tags
- PHONY += vmstart vmshutdown vmsnapshot psql
- PHONY += diskfree volrepair unseal gptauth
+ PHONY += drainall uncordon vmstart vmshutdown
+ PHONY += vmsnapshot diskfree volrepair unseal
+ PHONY += psql gptauth
 .PHONY: $(PHONY)
 
 # targets are playbook names with optional dash prefix/suffix (refer to
@@ -88,6 +89,15 @@ cloc:
 tags:
 	@printf "%s\n" $(PLAYBOOKS)
 
+# gracefully stop cluster workloads
+# before node VMs can be shut down
+drainall:
+	@scripts/drainall.sh $(rest_goals) || true
+
+# restore workloads stopped by `drainall`
+uncordon:
+	@scripts/uncordon.sh $(rest_goals) || true
+
 # `make <vmstart|vmshutdown> [target1] [target2]...`
 vmstart vmshutdown:
 	@$(VMSTART_VMSHUTDOWN)
@@ -119,11 +129,6 @@ args=(--extra-vars "$$(jo -- $${args[@]})")
 ansible-playbook $${args[@]} playbooks/vms.snapshot.yml
 endef
 
-# run psql commands on the PostgreSQL primary node
-# (starts interactive psql if no command on stdin)
-psql:
-	@scripts/psql.sh || true
-
 # show available disk space on all cluster nodes
 diskfree:
 	@scripts/diskfree.sh || true
@@ -137,6 +142,11 @@ volrepair:
 #  `make unseal [-r|--restart] [index1] [index2]...`
 unseal:
 	@scripts/unseal.sh $(rest_goals) || true
+
+# run psql commands on the PostgreSQL primary node
+# (starts interactive psql if no command on stdin)
+psql:
+	@scripts/psql.sh || true
 
 # restart LiteLLM and force ChatGPT device flow
 # authentication, then update local "auth.json"

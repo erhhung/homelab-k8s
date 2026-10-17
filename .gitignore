@@ -8,6 +8,7 @@
 **/*.lock
 **/.venv/
 .opencode/
+.ruff_cache/
 .playwright-mcp/
 .python-version
 temp.yml

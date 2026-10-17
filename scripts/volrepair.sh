@@ -4,7 +4,9 @@
 # to fix errors like `mount system call failed:
 # Structure needs cleaning.`
 #
-# usage: volrepair.sh pvc-<volume-uuid>
+#   usage: volrepair.sh [extra-args] pvc-<volume-uuid>
+# example: volrepair.sh -L pvc-fd70bcf7-244d-4502-840e-62bbec7bff4c
+#    note: -L clears the XFS journal, potentially causing data loss
 
 # shellcheck disable=SC2086 # Double quote prevent globbing
 
@@ -12,9 +14,15 @@ set -o pipefail
 
 kubectl="kubectl --context homelab"
 
+args=()
+while [[ "$1" && "$1" != pvc-* ]]; do
+  args+=("$1")
+  shift
+done
+
 vol=$1
 [ "$vol" ] || {
-  echo "Usage: volrepair.sh pvc-<volume-uuid>"
+  echo "Usage: volrepair.sh [extra-args] pvc-<volume-uuid>"
   exit
 }
 
@@ -34,4 +42,4 @@ node=$($kubectl -n longhorn-system get volumes.longhorn.io \
 ssh_node() {
   ssh -i ~/.ssh/$USER.pem -o StrictHostKeyChecking=no $node "$@"
 }
-ssh_node "sudo xfs_repair -L /dev/longhorn/$vol"
+ssh_node "sudo xfs_repair ${args[*]} /dev/longhorn/$vol"

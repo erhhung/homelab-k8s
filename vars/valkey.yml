@@ -115,10 +115,10 @@ valkey_chart_values:
     resources:
       requests:
         cpu: 50m
-        memory: 128Mi
+        memory: 256Mi
       limits:
-        cpu: 250m
-        memory: 512Mi
+        cpu: 500m
+        memory: 1Gi
 
     priorityClassName: "{{ priority_classes['database'] }}"
 

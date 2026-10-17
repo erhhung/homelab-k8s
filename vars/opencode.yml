@@ -241,7 +241,7 @@ opencode_chart_values:
           resources:
             requests:
               cpu: 500m
-              memory: 2Gi
+              memory: 4Gi
               # ephemeral-storage: 40Gi
             limits:
               cpu: 2000m
