@@ -289,6 +289,7 @@ ansible-vault view   $VAULTFILE
 | `gogcli_keyring_pass`             |
 | `openclaw_gateway_token`          |
 | `openclaw_channel_secrets.*`      |
+| `opencode_channel_secrets.*`      |
 | `flowise_encryption_key`          |
 | `anthropic_api_key`               |
 | `openai_api_key`                  |

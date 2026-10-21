@@ -1,3 +1,5 @@
+# opencode_channel_secrets.*: {vault.yml}
+
 opencode_namespace: opencode
 opencode_host_name: opencode # alias of "ingress"
 
@@ -76,7 +78,7 @@ opencode_chart_values:
             enabled: true
             accessMode: ReadWriteOnce
             storageClass: "{{ storage_classes['default'] }}"
-            size: 10Gi
+            size: 15Gi
 
             advancedMounts:
               init:
@@ -203,6 +205,8 @@ opencode_chart_values:
                 DOCKER_ACCESS_TOKEN
                 GITHUB_ACCESS_TOKEN
                 SMTP_PASSWORD
+                SLACK_APP_TOKEN
+                SLACK_BOT_TOKEN
               )
               mkdir  -p /run/sshd
               umask 077
@@ -491,6 +495,38 @@ opencode_config:
         - "{{ playwright_service_url }}"
         - --isolated
 
+  # https://opencode.ai/docs/config#plugins
+  plugin:
+    # https://github.com/leecoder/opencode-slack-agent
+    #
+    # HINT: to link an OpenCode session to a thread in Slack, first post a
+    # message containing the name of the OpenCode session to the #opencode
+    # Slack channel, then click on the message's "Reply in thread" button
+    # to show the Thread side panel, then reply with:
+    #   @OpenCode !attach ses_<session_id>
+    # where <session_id> is the ID shown by running `opencode session list`
+    # in the project directory (use Slack auto-complete to mention the bot,
+    # and make sure the OpenCode server with the plugin is already running)
+    # confirm the bot is connected by sending a follow-up reply:
+    #   @OpenCode !dir
+    # - - opencode-slack-agent
+    # use manually installed plugin version from unmerged PR in
+    # order to get Slack messages in English instead of Korean:
+    # https://github.com/leecoder/opencode-slack-agent/pull/12
+    #   mkdir -p ~/.config/opencode/plugins
+    #   git clone https://github.com/leecoder/opencode-slack-agent.git \
+    #      ~/.config/opencode/plugins/slack-agent-pr12
+    #   cd ~/.config/opencode/plugins/slack-agent-pr12
+    #   git fetch origin pull/12/head
+    #   git checkout --detach FETCH_HEAD
+    #   npm install
+    #   npm run build
+    - - ./plugins/slack-agent-pr12/dist/plugin.js
+      # SLACK_APP_TOKEN & SLACK_BOT_TOKEN
+      # are set via environment variables
+      - ALLOWED_USERS: "{{ user_erhhung.slack.id }}"
+        LANGUAGE: en
+
   # https://opencode.ai/docs/config#shell
   shell: bash
 
@@ -526,6 +562,10 @@ opencode_config:
       ~/nfs-share/**: allow
       "**/bin/*": allow
       ~/.go/**: allow
+      ~/go/**: allow
+      /usr/**: allow
+      /opt/**: allow
+      /etc/**: allow
       /tmp/**: allow
 
     bash:

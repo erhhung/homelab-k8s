@@ -50,6 +50,8 @@ alias omp &> /dev/null || {
 export GOPATH="$HOME/.go"
 mkdir -p $GOPATH/{pkg,bin}
 export PATH+=":$GOPATH/bin"
+[ -L "$HOME/go" ] || \
+  ln -s .go "$HOME/go"
 
 # clear terminal buffer and screen
 c() { printf '\e[2J\e[3J\e[H'; }
@@ -121,6 +123,44 @@ alias ta='touchall '
 alias ta0='ta -t 00'
 alias tad='ta -d '
 alias tad0='tad -t 00'
+
+# get max widths of
+# one-word  columns
+_colwidths() {
+  awk '{for (i=1; i<=NF; i++) {l=length($i); if (l>L[i]) L[i]=l;}} END \
+       {for (i=1; i<=length(L); i++) {printf L[i] "\n";}}'
+}
+
+# format one-word columns
+# with each left-justified
+cols() {
+  local w n i table=$(cat)
+  [ "$table" ] || return 0
+
+  w=($(_colwidths <<< "$table"))
+  (( n = ${#w[@]} - 2 ))
+
+  local cols fmt=""
+  for i in $(seq 0 $n); do
+    # %b allows \xNN chars
+    fmt+="%-${w[$i]}b  "
+  done
+
+  while read -ra cols; do
+    printf "$fmt%b\n" "${cols[@]}"
+  done <<< "$table"
+}
+
+# show TCP ports currently in LISTEN state
+# (add lsof to /etc/sudoers with NOPASSWD)
+listening() {
+  # ALSO: netstat -tulpn | grep LISTEN
+  \sudo lsof -nP -iTCP -sTCP:LISTEN +c0 | \
+    awk 'NR>1 { # skip header line
+           i = split($9, p, ":");
+           printf  "%u %s\n", p[i], $1
+        }' | sort -n | uniq | cols
+}
 
 rsync() {
   local opts=(

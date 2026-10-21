@@ -306,3 +306,9 @@ openclaw_channel_secrets:
 # password used to protect keyring in
 # files/openclaw/skills/gog.tar.gz.age
 gogcli_keyring_pass: ...
+
+opencode_channel_secrets:
+  # opencode-slack-agent
+  slack:
+    app_token: xapp-...
+    bot_token: xoxb-...

@@ -15,10 +15,8 @@ alias omp &> /dev/null || {
 
 export ANSIBLE_CONFIG="./ansible.cfg"
 
-if [ "$OPENCODE_CALLER" == vscode ] && \
-   [ "$_EXTENSION_OPENCODE_PORT"  ]; then
-  exec opencode --port $_EXTENSION_OPENCODE_PORT
-fi
+[ "$OPENCODE_CALLER" == vscode ] && \
+  . .vscode/opencode.sh
 
 git_root() {
   local root

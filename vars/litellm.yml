@@ -87,7 +87,7 @@ litellm_chart_values:
     # https://docs.litellm.ai/docs/proxy/email
     SMTP_HOST: "{{ icloud_smtp.host }}"
     SMTP_PORT: "{{ icloud_smtp.port }}"
-    SMTP_TLS: true
+    SMTP_TLS: "true"
     SMTP_SENDER_EMAIL: LiteLLM <{{ icloud_smtp.from_email }}>
 
     # https://docs.litellm.ai/docs/providers/chatgpt#configuration
@@ -95,11 +95,15 @@ litellm_chart_values:
     CHATGPT_TOKEN_DIR: /data/chatgpt
     CHATGPT_AUTH_FILE: auth.json
 
-    JSON_LOGS: true
+    JSON_LOGS: "true"
     # TZ in the container only affects log timestamps
     TZ: "{{ system_time_zone }}"
     # detailed debug includes provider request/response
-    DETAILED_DEBUG: false
+    DETAILED_DEBUG: "false"
+
+    # essentially the same as default value of 1000, but suppresses
+    # log "Spend Log: response was truncated before storing in DB."
+    MAX_STRING_LENGTH_PROMPT_IN_DB: "1024"
 
   # this setting renders the $LITELLM_LOG env var
   logLevel: INFO # DEBUG|INFO|WARNING|ERROR|CRITICAL

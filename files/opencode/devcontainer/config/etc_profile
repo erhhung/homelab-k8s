@@ -67,3 +67,6 @@ GITHUB_USER=erhhung
 SMTP_USER=mailer
 SMTP_HOST=smtp.fourteeners.local
 SMTP_PORT=587
+
+# https://github.com/leecoder/opencode-slack-agent#important
+SLACK_AGENT_ENABLED=false

@@ -138,6 +138,10 @@
           DOCKER_ACCESS_TOKEN: "{{ docker_access_token }}"
           GITHUB_ACCESS_TOKEN: "{{ github_access_token }}"
           SMTP_PASSWORD: "{{ mailpit_smtp_pass }}"
+
+          # https://github.com/leecoder/opencode-slack-agent
+          SLACK_APP_TOKEN: "{{ opencode_channel_secrets['slack'].app_token }}"
+          SLACK_BOT_TOKEN: "{{ opencode_channel_secrets['slack'].bot_token }}"
       ansible.builtin.include_tasks: "{{ tasks_dir }}/k8s/secrets/generic.yml"
 
     # dev container can only access
