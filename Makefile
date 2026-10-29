@@ -15,8 +15,8 @@ endif
 
  PHONY := all play debug check lint cloc tags
  PHONY += drainall uncordon vmstart vmshutdown
- PHONY += vmsnapshot diskfree volrepair unseal
- PHONY += psql gptauth
+ PHONY += vmsnapshot diskfree trimfs volrepair
+ PHONY += unseal psql gptauth
 .PHONY: $(PHONY)
 
 # targets are playbook names with optional dash prefix/suffix (refer to
@@ -132,6 +132,10 @@ endef
 # show available disk space on all cluster nodes
 diskfree:
 	@scripts/diskfree.sh || true
+
+# trim mounted, healthy Longhorn filesystem PVCs
+trimfs:
+	@scripts/trimfs.sh $(rest_goals)
 
 # run `xfs_repair` on specified Longhorn volume
 #   `make volrepair pvc-<volume-uuid>`
