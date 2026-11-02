@@ -1,3 +1,4 @@
+# opencode_server_pass:       {vault.yml}
 # opencode_channel_secrets.*: {vault.yml}
 
 opencode_namespace: opencode
@@ -6,15 +7,7 @@ opencode_host_name: opencode # alias of "ingress"
 # https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_filters.html#products
 opencode_fqdn: "{{ [opencode_host_name] | product(search_domains) | map('join','.') | first }}"
 
-opencode_secrets:
-  secrets: opencode-secrets
-  env-vars: opencode-env-variables
-  kubeconfig: opencode-kubeconfig
-
-opencode_configmaps:
-  ca-certs: opencode-ca-certificates
-  ssh-keys: opencode-ssh-public-keys
-  config: opencode-global-config
+opencode_server_port: 4096
 
 opencode_dev_container:
   image: dev-container
@@ -25,6 +18,17 @@ opencode_dev_container:
   # make sure SSH port matches value defined by
   # `nginx_tcp_services` in vars/kubernetes.yml
   ssh_port: 1222
+
+opencode_secrets:
+  ingress: opencode-ingress
+  secrets: opencode-secrets
+  env-vars: opencode-env-variables
+  kubeconfig: opencode-kubeconfig
+
+opencode_configmaps:
+  ca-certs: opencode-ca-certificates
+  ssh-keys: opencode-ssh-public-keys
+  config: opencode-global-config
 
 # use a generic app template chart to host the dev container pod:
 # https://github.com/bjw-s-labs/helm-charts/tree/main/charts/other/app-template
@@ -59,7 +63,7 @@ opencode_chart_values:
             enabled: true
             accessMode: ReadWriteOnce
             storageClass: "{{ storage_classes['default'] }}"
-            size: 5Gi
+            size: 5Gi # pretty much all ~/workspace/**
 
             advancedMounts:
               init:
@@ -78,7 +82,9 @@ opencode_chart_values:
             enabled: true
             accessMode: ReadWriteOnce
             storageClass: "{{ storage_classes['default'] }}"
-            size: 15Gi
+            # ~/.vscode-server ~2Gi, ~/.go ~3Gi, ~/.cache ~5Gi,
+            # ~/.npm + ~/.local/share/pnpm ~2Gi
+            size: 20Gi
 
             advancedMounts:
               init:
@@ -87,17 +93,35 @@ opencode_chart_values:
                 - path: "{{ home_dir }}"
                   subPath: "{{ opencode_dev_container.dev_user }}"
 
+          - name: opencode
+            enabled: true
+            accessMode: ReadWriteOnce
+            storageClass: "{{ storage_classes['default'] }}"
+            # ~/.local/share/opencode/opencode.db > 10Gi
+            size: 20Gi
+
+            advancedMounts:
+              init:
+                - path: /opencode
+              main:
+                - path: "{{ home_dir }}/.config/opencode"
+                  subPath: config
+                - path: "{{ home_dir }}/.local/share/opencode"
+                  subPath: share
+                - path: "{{ home_dir }}/.local/state/opencode"
+                  subPath: state
+
           - name: containers
             enabled: true
             accessMode: ReadWriteOnce
             storageClass: "{{ storage_classes['single'] }}"
+            # storage for Buildah-created images/containers
             size: 30Gi
 
             advancedMounts:
               init:
                 - path: /containers
               main:
-                # storage for Buildah-created images/containers
                 - path: "{{ home_dir }}/.local/share/containers"
                   subPath: "{{ opencode_dev_container.dev_user }}"
                 - path: /var/lib/containers
@@ -176,9 +200,23 @@ opencode_chart_values:
               }
               ls -al $HOME_RW/
 
-              $install 755 -d /nfs/.config
-              $install 644   /etc/opencode/opencode.json \
-                              /nfs/.config/opencode.json
+              pnpm_home=.local/share/pnpm
+              opencode=$pnpm_home/bin/opencode
+              new_ver=$(/home/$U/$opencode --version)
+              old_ver=$($HOME_RW/$opencode --version)
+
+              [ "$new_ver" == "$old_ver" ] || {
+                printf "\nUpgrading OpenCode %s to %s..." "$old_ver" "$new_ver"
+                /usr/bin/rsync --recursive --links --times --delete \
+                  /home/$U/$pnpm_home/ \
+                  $HOME_RW/$pnpm_home/
+                echo "done."
+              }
+
+              # always update opencode.json from ConfigMap
+              $install 755 -d /opencode/{config,share,state}
+              $install 644     /etc/opencode/opencode.json \
+                            /opencode/config/opencode.json
 
               [ -d /containers/$U   ] || \
                 $install 700 -d /containers/$U
@@ -205,8 +243,10 @@ opencode_chart_values:
                 DOCKER_ACCESS_TOKEN
                 GITHUB_ACCESS_TOKEN
                 SMTP_PASSWORD
-                SLACK_APP_TOKEN
-                SLACK_BOT_TOKEN
+
+                # required to launch TUI
+                OPENCODE_SERVER_USERNAME
+                OPENCODE_SERVER_PASSWORD
               )
               mkdir  -p /run/sshd
               umask 077
@@ -216,6 +256,15 @@ opencode_chart_values:
                 done
               } > /run/sshd/session.env
 
+              # stop server: lsof -t -iTCP:4096 -sTCP:LISTEN | xargs -r kill -TERM
+              runuser -u {{ opencode_dev_container.dev_user }} -- bash -l -c '
+                opencode serve --hostname 0.0.0.0 \
+                  --port {{ opencode_server_port }} &
+              '
+              # sshd will then output
+              # "Server listening on"
+              sleep 3;  printf 'SSH ' >&2
+
               # -D: run in foreground for monitoring
               # -e: output error messages to stderr
               exec /usr/sbin/sshd -D -e
@@ -224,9 +273,13 @@ opencode_chart_values:
           envFrom:
             - secretRef:
                 name: "{{ opencode_secrets['env-vars'] }}"
+
           ports:
             - name: ssh
               containerPort: "{{ opencode_dev_container.ssh_port }}"
+              protocol: TCP
+            - name: http
+              containerPort: "{{ opencode_server_port }}"
               protocol: TCP
 
           # sshd must run as root to perform privilege separation
@@ -237,6 +290,12 @@ opencode_chart_values:
             runAsGroup: 0
             allowPrivilegeEscalation: true
             readOnlyRootFilesystem: false
+            # allow root to inspect other users' processes
+            # in order to show  listening ports by running
+            # `sudo lsof -nP -iTCP -sTCP:LISTEN +c0`
+            capabilities:
+              add:
+                - SYS_PTRACE
             # allow building OCI images using Buildah
             appArmorProfile:
               type: Localhost
@@ -376,34 +435,50 @@ opencode_chart_values:
       path: "{{   homelab_nfs.base_path }}/opencode"
       advancedMounts:
         main:
-          init:
-            - path: /nfs
           main:
             - path: "{{ home_dir }}/nfs-share"
-            # these dot folders were created manually on the
-            # NFS server so conversational history and other
-            # state can be preserved across chart reinstalls
-            - path: "{{ home_dir }}/.config/opencode"
-              subPath: .config
-            - path: "{{ home_dir }}/.local/share/opencode"
-              subPath: .share
-            - path: "{{ home_dir }}/.local/state/opencode"
-              subPath: .state
 
+  # https://bjw-s-labs.github.io/helm-charts/docs/app-template/reference/service
   service:
     main:
-      suffix: ssh
       enabled: true
       primary: true
       controller: main
       type: ClusterIP
       ports:
-        # TCP traffic will be forwarded by Nginx ingress controller
+        # SSH traffic will be forwarded by Nginx ingress controller
         # as defined by `nginx_tcp_services` in vars/kubernetes.yml
         ssh:
           primary: true
           protocol: TCP
           port: "{{ opencode_dev_container.ssh_port }}"
+        http:
+          protocol: HTTP
+          port: "{{ opencode_server_port }}"
+
+  # https://bjw-s-labs.github.io/helm-charts/docs/app-template/reference/ingress
+  ingress:
+    main:
+      enabled: true
+      tls:
+        - secretName: "{{ opencode_secrets['ingress'] }}"
+          hosts: "{{     [opencode_fqdn] }}"
+      className: "{{  rke_ingress_class  }}"
+      annotations:
+        nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+        nginx.ingress.kubernetes.io/backend-protocol: HTTP
+
+        # avoid 502 Bad Gateway due to "upstream sent too big header while reading response header from upstream":
+        # https://kubernetes.github.io/ingress-nginx/user-guide/nginx-configuration/annotations#proxy-buffer-size
+        nginx.ingress.kubernetes.io/proxy-buffer-size: 32k
+      hosts:
+        - host: "{{ opencode_fqdn }}"
+          paths:
+            - path: /
+              pathType: Prefix
+              service:
+                identifier: main
+                port: http
 
 # config will be rendered as JSON and mounted
 # at "$XDG_CONFIG_HOME/opencode/opencode.json"
@@ -426,10 +501,10 @@ opencode_config:
         apiKey: "{file:/run/secrets/LITELLM_API_KEY}"
         # apiKey: "{env:LITELLM_API_KEY}"
 
-        # overall request timeout in ms
-        timeout: 600000 # 10m
+        # overall request + response timeout in ms
+        timeout: 3600000 # 60m
         # timeout between streamed response chunks
-        chunkTimeout: 60000 # 1m
+        chunkTimeout: 600000 # 10m
 
       # model auto-discovery hasn't been implemented
       # yet, so manually list models to pass through:
@@ -560,9 +635,11 @@ opencode_config:
     external_directory:
       ~/workspace/**: allow
       ~/nfs-share/**: allow
-      "**/bin/*": allow
+      ~/.vscode-server/**: allow
+      ~/.cache/**: allow
       ~/.go/**: allow
       ~/go/**: allow
+      "**/bin/*": allow
       /usr/**: allow
       /opt/**: allow
       /etc/**: allow

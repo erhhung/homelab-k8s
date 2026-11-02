@@ -10,8 +10,9 @@
 # shellcheck disable=SC2207 # Prefer mapfile to split output
 # shellcheck disable=SC2015 # A && B || C isn't if-then-else
 
-# disable C-s/C-q flow control!
-stty -ixon
+# disable C-s/C-q flow control
+# only when stdin is a terminal
+[[ $- == *i* && -t 0 ]] && stty -ixon
 
 [ "$TERM_PROGRAM" == vscode ] && \
   . <(code --locate-shell-integration-path bash)
@@ -28,7 +29,10 @@ stty -ixon
 # https://github.com/lincheney/fzf-tab-completion#bash
 [ -f "$XDG_CONFIG_HOME/fzf/fzf-bash-completion.sh" ] && \
    . "$XDG_CONFIG_HOME/fzf/fzf-bash-completion.sh"
-bind -x '"\t": fzf_bash_completion'
+
+# invoke `bind` only if Bash is interactive or else it
+# will warn: "bind: warning: line editing not enabled"
+[[ $- == *i* ]] && bind -x '"\t": fzf_bash_completion'
 
 _fzf_bash_completion_loading_msg() {
   printf '\033[38;5;42m╍╍╍╍╍ LOADING MATCHES ╍╍╍╍╍\033[0m'

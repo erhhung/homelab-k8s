@@ -1,7 +1,7 @@
 # gather facts about the Ansible controller host
 #
 # sets the following facts:
-#   local_python_interpreter `which python3`
+#   local_python_interpreter Python running ansible-playbook
 #   local_bash_interpreter   `which bash`
 #   local_machine_arch        amd64|arm64
 #   local_tz_offset          {in_hours,in_seconds,in_hh_mm}
@@ -9,6 +9,8 @@
 - name: Gather controller facts
   delegate_to: localhost
   become: false
+  vars:
+    ansible_python_interpreter: "{{ ansible_playbook_python }}"
   block:
     - name: Get timezone offset
       # .ansible/modules/local_timezone_offset.py
@@ -25,7 +27,7 @@
           format(tz_offset.in_hours | int, tz_offset.in_seconds % 3600) }}"
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/set_fact_module.html
       ansible.builtin.set_fact:
-        local_python_interpreter: "{{ lookup('ansible.builtin.pipe', 'which python3') }}"
+        local_python_interpreter: "{{ ansible_playbook_python }}"
         local_bash_interpreter: "{{ lookup('ansible.builtin.pipe', 'which bash') }}"
         local_machine_arch: "{{ 'arm64' if arch == 'aarch64' else 'amd64' }}"
         local_tz_offset:

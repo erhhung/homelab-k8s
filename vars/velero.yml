@@ -201,7 +201,7 @@ velero_chart_values:
               velero.io/schedule-name: cluster-daily
           includedNamespaces: "{{ velero_daily_backup.include_namespaces }}"
           excludedNamespaces: "{{ velero_daily_backup.exclude_namespaces }}"
-          itemOperationTimeout: 2h
+          itemOperationTimeout: 6h
           csiSnapshotTimeout: 30m
           ttl: 48h0m0s # 2 days
 

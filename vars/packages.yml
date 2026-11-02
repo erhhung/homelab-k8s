@@ -95,6 +95,17 @@ apt_packages:
       - intel-opencl-icd
       - clinfo
       - intel-media-va-driver-non-free
+      - mesa-vulkan-drivers
+      - intel-gpu-tools
+      # `intel_gpu_top` doesn't work with Xen GPU passthrough because the actual PMU
+      # (performance monitoring unit) path is /sys/devices/i915, but `intel_gpu_top`
+      # expects /sys/devices/i915_0000_00_08.0 - run this alternate command instead:
+      # sudo perf stat -a -e i915/rcs0-busy/  \ # Render/3D         engine
+      #                   -e i915/bcs0-busy/  \ # Blitter           engine
+      #                   -e i915/vcs0-busy/  \ # Video             engine
+      #                   -e i915/vecs0-busy/ \ # Video enhancement engine
+      #                   -- sleep 10
+      - vulkan-tools # run `vulkaninfo --summary`
       - libmfx-gen1
       - libvpl2
       - libvpl-tools

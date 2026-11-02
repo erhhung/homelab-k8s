@@ -184,10 +184,11 @@ longhorn_chart_values:
       deletionPolicy: Delete
       parameters:
         type: bak
-        # full backup allows simple n-day deletion
-        # policy without worrying about incremental
-        # backup version chain dependencies
-        backupMode: full # incremental|full
+        # incremental backups retain complete restore-point
+        # block maps. Longhorn preserves shared blocks when
+        # older backups are deleted so n-day retention does
+        # not require full backups
+        backupMode: incremental # incremental|full
 
     # create daily CronJob to delete old Longhorn backups
     # (set cutoff to 2 days to match Velero Schedule TTL)
@@ -312,6 +313,7 @@ longhorn_chart_values:
 
 # https://longhorn.io/docs/latest/snapshots-and-backups/scheduling-backups-and-snapshots#set-up-recurring-jobs
 longhorn_recurring_jobs:
+  # delete old snapshots exceeding retention count
   - name: delete-snapshots
     spec:
       cron: 0 10 * * * # in UTC time; run every day at 2am Pacific time
@@ -319,6 +321,15 @@ longhorn_recurring_jobs:
       groups: ["default"]
       concurrency: 1
       retain: 1
+
+  # physically purge already removed snapshots and waits for completion
+  - name: cleanup-snapshots
+    spec:
+      cron: 30 * * * * # run hourly at :30
+      task: snapshot-cleanup
+      groups: ["default"]
+      concurrency: 1
+      retain: 0 # ignored; only purges snapshots already marked removed
 
   # Longhorn RecurringJob doesn't currently support
   # a task type for deleting backups, so a CronJob

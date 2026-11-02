@@ -1,12 +1,10 @@
-#!/usr/local/bin/python3
+#!/usr/bin/python
 
-# not sure why using shebang "#!/usr/bin/env python3" doesn't
-# work as Ansible invokes this module script via "/bin/sh -c"
-# (/bin/sh: /usr/bin/env python3: No such file or directory),
-# but actual interpreter in $PATH is "~/.pyenv/shims/python3"
+# Ansible rewrites its standard Python shebang using `ansible_python_interpreter`.
 
-from ansible.module_utils.basic import AnsibleModule
 import time
+
+from ansible.module_utils.basic import AnsibleModule  # type: ignore[import-not-found]
 
 
 def get_local_timezone_offset():

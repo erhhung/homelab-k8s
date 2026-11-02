@@ -322,8 +322,8 @@ litellm_chart_values:
     enabled: true
     tls:
       - secretName: "{{ litellm_secrets['ingress'] }}"
-        hosts: "{{ [litellm_fqdn] }}"
-    className: "{{ rke_ingress_class }}"
+        hosts: "{{     [litellm_fqdn] }}"
+    className: "{{  rke_ingress_class }}"
     annotations:
       nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
       nginx.ingress.kubernetes.io/backend-protocol: HTTP

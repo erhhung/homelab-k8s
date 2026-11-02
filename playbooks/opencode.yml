@@ -39,6 +39,7 @@
     ansible_python_interpreter: "{{ venv_python_interpreter }}"
     kubeconfig: "{{ rke_kubeconfig }}"
     secret_ns: "{{ opencode_namespace }}"
+    create_ns: false
     home_dir: /home/{{ opencode_dev_container.dev_user }}
   pre_tasks:
     - name: Get CA certificates from PKI
@@ -84,6 +85,14 @@
       register: gnupg_tar_b64
       changed_when: false
   tasks:
+    - name: Create OpenCode ingress secret
+      vars:
+        secret_name: "{{ opencode_secrets['ingress'] }}"
+        create_ns: true
+        cert_name: opencode-ingress
+        sans: "{{ [opencode_fqdn] }}"
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/k8s/secrets/tls.step.yml"
+
     - name: Create OpenCode secrets secret
       vars:
         ssh_keys: |
@@ -138,6 +147,10 @@
           DOCKER_ACCESS_TOKEN: "{{ docker_access_token }}"
           GITHUB_ACCESS_TOKEN: "{{ github_access_token }}"
           SMTP_PASSWORD: "{{ mailpit_smtp_pass }}"
+
+          # https://opencode.ai/docs/web#authentication
+          OPENCODE_SERVER_USERNAME: "{{ opencode_dev_container.dev_user }}"
+          OPENCODE_SERVER_PASSWORD: "{{ opencode_server_pass }}"
 
           # https://github.com/leecoder/opencode-slack-agent
           SLACK_APP_TOKEN: "{{ opencode_channel_secrets['slack'].app_token }}"

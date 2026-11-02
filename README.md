@@ -92,6 +92,7 @@ All cluster services will be provisioned with TLS certificates from Erhhung's pr
 |           https://openclaw.fourteeners.local | OpenClaw control
 |             wss://openclaw.fourteeners.local | OpenClaw gateway
 |            https://flowise.fourteeners.local | Flowise designer
+|           https://opencode.fourteeners.local | OpenCode web UI
 | ssh://_user_@opencode.fourteeners.local:1222 | VSCode remote SSH
 
 ## Installation Sources
@@ -200,6 +201,8 @@ All cluster services will be provisioned with TLS certificates from Erhhung's pr
     * Install on main RKE cluster using the [`openclaw`](https://github.com/serhanekicii/openclaw-helm/tree/main/charts/openclaw) Helm chart
 - [X] [Flowise Agentic Workflows](https://flowiseai.com/) — build AI agents using visual workflows
     * Install on main RKE cluster using the [`flowise`](https://github.com/erhhung/cowboysysop-charts/tree/flowise-redis-tls) Helm chart
+- [X] [OpenCode AI Coding Agent](https://opencode.ai/) — AI-driven DevOps and software development
+    * Install on main RKE cluster as part of dev container pod using `pnpm`
 - [ ] [Backstage Developer Portal](https://backstage.io/) — software catalog and developer portal
 - [ ] [SonarQube Automated Code Reviews](https://docs.sonarsource.com/sonarqube-community-build) — run static code analysis during CI/CD pipelines
     * Install on main RKE cluster using the [`sonarqube`](https://docs.sonarsource.com/sonarqube-community-build/server-installation/on-kubernetes-or-openshift/installing-helm-chart) Helm chart
@@ -265,8 +268,8 @@ ansible-vault view   $VAULTFILE
 | `dashboards_os_pass`              | `awx_admin_pass`
 | `fluent_os_pass`                  | `litellm_admin_pass`
 | `postgresql_pass`                 | `openwebui_admin_pass`
-| `valkey_pass`                     | `flowise_admin_pass`
-| `oidc_client_secrets.*`           |
+| `valkey_pass`                     | `opencode_server_pass`
+| `oidc_client_secrets.*`           | `flowise_admin_pass`
 | `oauth2_proxy_cookie_secret`      |
 | `monitoring_pass`                 |
 | `policy_reporter_api_pass`        |
@@ -749,11 +752,13 @@ however, all privileged operations using `sudo` will require the password stored
     ```
 </details>
 
-42. <details><summary>Deploy dev container with <strong>OpenCode</strong> agent</summary><br/>
+42. <details><summary>Deploy dev container with <strong>OpenCode</strong> server</summary><br/>
 
     42.1. Install OpenSSH server for VSCode remote development  
-    42.2. Customize remote terminal UX to match local desktop  
-    42.3. Proxy model access from OpenCode through LiteLLM  
+    42.2. Install OpenCode server to serve TUI and web UI clients  
+    42.3. Install command-line tools to match local desktop UX  
+    42.4. Proxy model access from OpenCode through LiteLLM  
+    42.5. Install Playwright MCP server for automated UI testing
 
     ```bash
     make opencode
@@ -888,7 +893,7 @@ The filesystem on /dev/mapper/ubuntu--vg-ubuntu--lv is now...
 </details>
 
 <details>
-<summary>After expanding all desired disks, run <code>./diskfree.sh</code>
+<summary>After expanding all desired disks, run <code>make diskfree</code>
 to confirm available disk space on all cluster nodes.</summary><br/>
 
 ```bash

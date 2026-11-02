@@ -26,5 +26,8 @@ started: $(date)
 pid: $$
 EOF
 
+# use SQLite database dedicated to project
+export OPENCODE_DB=.opencode/opencode.db
 export SLACK_AGENT_ENABLED=true
+
 exec opencode

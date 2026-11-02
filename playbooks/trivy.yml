@@ -18,6 +18,7 @@
         build_args:
           TRIVY_IMAGE_TAG: "{{ image_tag }}"
         context_dir: "{{ files_dir }}/trivy"
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
       ansible.builtin.include_tasks: "{{ tasks_dir }}/oci/build.yml"
 
 - name: Install Trivy Operator
@@ -42,7 +43,6 @@
     create_ns: false
   pre_tasks:
     - name: Is the monitoring stack ready?
-      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
       ansible.builtin.include_tasks: "{{ tasks_dir }}/monitoring/stackready.yml"
       when: monitoring_stack_ready is undefined
   tasks:

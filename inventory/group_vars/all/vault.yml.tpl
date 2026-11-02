@@ -307,6 +307,8 @@ openclaw_channel_secrets:
 # files/openclaw/skills/gog.tar.gz.age
 gogcli_keyring_pass: ...
 
+# OpenCode web UI password
+opencode_server_pass: ...
 opencode_channel_secrets:
   # opencode-slack-agent
   slack:

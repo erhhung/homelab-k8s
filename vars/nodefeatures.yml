@@ -163,9 +163,10 @@ intel_device_plugin_crs:
       image: intel/intel-gpu-plugin:{{ intel_dp_operator_chart_version }}
       nodeSelector:
         intel.feature.node.kubernetes.io/gpu: "true"
-      # number of containers that
-      # can share same GPU device
-      sharedDevNum: 1
+      # number of containers that can share same GPU device.
+      # check value of `gpu.intel.com/i915` key from output:
+      # kubectl get node k8s6 -o json | jq '.status.allocatable'
+      sharedDevNum: 4
       # "balanced", "packed" or "none"
       preferredAllocationPolicy: none
       enableMonitoring: true

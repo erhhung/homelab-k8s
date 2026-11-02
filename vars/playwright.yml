@@ -34,11 +34,10 @@ playwright_server_version: "1.62.0"
 # https://www.npmjs.com/package/@playwright/mcp?activeTab=versions
 playwright_mcp_version: "0.0.78"
 
-# https://mcr.microsoft.com/artifact/mar/playwright
 playwright_image:
-  repository: mcr.microsoft.com/playwright
+  repository: "{{ harbor_container_registry }}/library/playwright"
   tag: v{{ playwright_server_version }}
-  pullPolicy: IfNotPresent
+  pullPolicy: Always
 
 # NOTE: since Playwright refuses to provide an official
 # Helm chart, use the generic "app-template" Helm chart:
@@ -58,13 +57,35 @@ playwright_chart_values:
       seccompProfile:
         type: RuntimeDefault
 
+  # https://bjw-s-labs.github.io/helm-charts/docs/app-template/reference/controllers
   controllers:
     main:
+      enabled: true
       type: deployment
+      revisionHistoryLimit: "{{ k8s_max_revisions }}"
       replicas: 1
 
       serviceAccount:
         identifier: default
+
+      # https://bjw-s-labs.github.io/helm-charts/docs/app-template/reference/controllers/pod
+      pod:
+        # require GPU-capable node, even
+        # for headless browser rendering
+        affinity:
+          nodeAffinity:
+            requiredDuringSchedulingIgnoredDuringExecution:
+              nodeSelectorTerms:
+                - matchExpressions:
+                    - key: intel.feature.node.kubernetes.io/gpu
+                      operator: Exists # Intel GPU
+            preferredDuringSchedulingIgnoredDuringExecution:
+              - weight: 100
+                preference:
+                  matchExpressions:
+                    # custom label to select latest generation GPU
+                    - key: feature.node.kubernetes.io/gpu.preferred
+                      operator: Exists
 
       defaultContainerOptions:
         securityContext:
@@ -76,6 +97,7 @@ playwright_chart_values:
           # write to /tmp and cache dirs
           readOnlyRootFilesystem: false
 
+      # https://bjw-s-labs.github.io/helm-charts/docs/app-template/reference/controllers/initcontainers
       initContainers:
         ca-bundle:
           image: "{{ playwright_image }}"
@@ -88,11 +110,10 @@ playwright_chart_values:
               # ca.crt is already mounted
               CA_CERT=/usr/local/share/ca-certificates/ca.crt
               CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt
-              # /certs is mounted emptyDir
-              NSSDB_DIR=/certs/nssdb
 
-              # create NSS database with custom CA for Chromium
-              apt-get update && apt-get install -y libnss3-tools
+              # create NSS database with custom CA for
+              # Chromium: /certs is a mounted emptyDir
+              NSSDB_DIR=/certs/nssdb
               mkdir -p $NSSDB_DIR
 
               echo -e "\nCreating NSS database..."
@@ -116,6 +137,7 @@ playwright_chart_values:
               cp $CA_BUNDLE /certs/ca-bundle.crt
               echo; tail -n 11 $CA_BUNDLE
 
+      # https://bjw-s-labs.github.io/helm-charts/docs/app-template/reference/controllers/containers
       containers:
         playwright:
           image: "{{ playwright_image }}"
@@ -123,6 +145,8 @@ playwright_chart_values:
           args:
             - -c
             - |-
+              set -eu
+
               ver={{ playwright_server_version }}
               # install exact package version in MCP server dependency
               # ver=$(npm view @playwright/mcp@{{ playwright_mcp_version
@@ -136,6 +160,7 @@ playwright_chart_values:
               exec node $PLAYWRIGHT_SERVER_PATH/server.cjs
           env:
             TZ: "{{ system_time_zone }}"
+            XDG_RUNTIME_DIR: /run/user/1000 # `id -u ubuntu`
             NSS_DEFAULT_DB_DIR: /home/ubuntu/.local/share/pki/nssdb
             PLAYWRIGHT_SERVER_PATH: /home/ubuntu/.local/share/playwright
             PLAYWRIGHT_BROWSERS_PATH: /ms-playwright
@@ -154,9 +179,11 @@ playwright_chart_values:
             requests:
               cpu: 50m
               memory: 512Mi
+              gpu.intel.com/i915: "1"
             limits:
-              cpu: 3000m
+              cpu: 4000m
               memory: 6Gi
+              gpu.intel.com/i915: "1"
 
           probes:
             liveness: &probe
@@ -172,6 +199,7 @@ playwright_chart_values:
                 failureThreshold: 3
             readiness: *probe
 
+  # https://bjw-s-labs.github.io/helm-charts/docs/app-template/reference/persistence#type-variants
   persistence:
     ca-certs:
       enabled: true
@@ -221,6 +249,7 @@ playwright_chart_values:
               subPath: server.cjs
               readOnly: true
 
+  # https://bjw-s-labs.github.io/helm-charts/docs/app-template/reference/service
   service:
     main:
       type: ClusterIP
@@ -231,12 +260,13 @@ playwright_chart_values:
           protocol: TCP
           appProtocol: kubernetes.io/ws
 
+  # https://bjw-s-labs.github.io/helm-charts/docs/app-template/reference/ingress
   ingress:
     main:
       tls:
         - secretName: "{{ playwright_secrets['ingress'] }}"
-          hosts: "{{ [playwright_fqdn] }}"
-      className: "{{ rke_ingress_class }}"
+          hosts: "{{     [playwright_fqdn] }}"
+      className: "{{     rke_ingress_class }}"
       annotations:
         nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
         nginx.ingress.kubernetes.io/backend-protocol: HTTP
@@ -258,21 +288,29 @@ playwright_chart_values:
       apiVersion: v1
       kind: ConfigMap
       forceRename: "{{ playwright_release_name }}-server"
-      spec:
+      spec: # this is chart v4.x schema, not v5.x schema
         data:
           # replace default Playwright server startup
-          # with script that launches Chromium browser
+          # with script that launches GPU-accelerated
+          # Chromium browser:
+          # https://chromium.googlesource.com/chromium/src/%2B/HEAD/docs/gpu/using-gpu-hardware-in-headless-chrome.md
           server.cjs: |
             const { chromium } = require("playwright");
 
             async function main() {
               const server = await chromium.launchServer({
                 headless: true,
-                host: "0.0.0.0",
-                port: {{ playwright_service_port }},
-                wsPath: "/",
+                channel:  "chromium",
+                host:     "0.0.0.0",
+                port:     {{ playwright_service_port }},
+                wsPath:   "/",
+                args:     [
+                  "--enable-gpu",
+                  "--use-gl=angle",
+                  "--use-angle=vulkan",
+                  "--disable-vulkan-surface",
+                ],
               });
-
               console.log(`Listening on ${server.wsEndpoint()}`);
 
               const shutdown = async (signal) => {
@@ -280,7 +318,6 @@ playwright_chart_values:
                 await server.close();
                 process.exit(0);
               };
-
               process.once("SIGTERM", () => shutdown("SIGTERM"));
               process.once("SIGINT",  () => shutdown("SIGINT"));
             }
