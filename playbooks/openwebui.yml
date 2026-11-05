@@ -335,7 +335,7 @@
       register: admin_signin
 
     # first user created has admin rights:
-    # https://docs.openwebui.com/features/access-security/rbac/roles#initial-setup
+    # https://docs.openwebui.com/features/authentication-access/rbac/roles#initial-setup
     - name: Create Open WebUI admin user
       vars:
         image_url: "{{ openwebui_admin_user.profile_image_url }}"

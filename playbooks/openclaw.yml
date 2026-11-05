@@ -218,7 +218,7 @@
 # app isn't registering with remote gateway as node:
 # https://github.com/openclaw/openclaw/issues/57243;
 # so create a separate launchd .plist to launch both
-# the companion app and the `openclaw-node` sidekick
+# the companion app and the OpenClaw worker node
 
 # IMPORTANT!! do not reuse the "ai.openclaw.mac" label
 # and "ai.openclaw.mac.plist" filename because the app
@@ -329,13 +329,32 @@
       failed_when: set_fingerprint.rc not in [0,9]
       notify: Relaunch Mac companion app+node
 
-    - name: Create "{{ helper_file }}"
-      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/copy_module.html
-      ansible.builtin.copy:
-        src: "{{  files_dir }}/openclaw/mac/{{ helper_file }}"
-        dest: "{{ state_dir }}/"
-        mode: "0755"
+    - name: Install OpenClaw CLI/worker
+      ansible.builtin.shell: |
+        set -o pipefail
+
+        if command -v openclaw &> /dev/null; then
+          ver=($(openclaw --version)); ver=${ver[1]}
+          [ "$ver" == '{{ openclaw_app_version }}' ] && exit 9 # no change
+        fi
+        npm install --global openclaw@{{ openclaw_app_version }} \
+          --allow-scripts=@google/genai,esbuild,protobufjs,koffi,openclaw
+      args: *local-shell-args
+      register: install_cli
+      changed_when: install_cli.rc == 0
+      failed_when: install_cli.rc not in [0,9]
       notify: Relaunch Mac companion app+node
+
+    # this is no longer needed as the Mac companion app
+    # now properly registers with the gateway as a node
+    #
+    # - name: Create "{{ helper_file }}"
+    #   # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/copy_module.html
+    #   ansible.builtin.copy:
+    #     src: "{{  files_dir }}/openclaw/mac/{{ helper_file }}"
+    #     dest: "{{ state_dir }}/"
+    #     mode: "0755"
+    #   notify: Relaunch Mac companion app+node
 
     - name: Delete "ai.openclaw.mac.plist"
       # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/file_module.html
@@ -389,16 +408,10 @@
     - name: Relaunch Mac companion app+node
       vars: *svc-vars
       ansible.builtin.shell: |
-        # try restarting bootstrapped service first
-        launchctl kickstart -k {{ service_target }} 2> /dev/null
-        rc=$?
-        if [ $rc -eq 113 ]; then
-          # could not find service "{{ service_name     }}"
-          # in domain for user gui: {{ ansible_user_uid }}
-          launchctl bootstrap {{ domain_target }} {{ plist_path }}
-          rc=$?
-        fi
-        exit $rc
+        launchctl print {{ service_target }} &> /dev/null && (
+          set -x; launchctl bootout {{ service_target }}
+        )
+        set -x; launchctl bootstrap {{  domain_target }} {{ plist_path }}
       args: *local-shell-args
       changed_when: true
 
@@ -498,6 +511,109 @@
           loop: "{{ src_files }}"
           loop_control:
             label: "{{ item | substr(1) }}"
+
+    - name: Update gateway owner profile
+      vars:
+        script: |-
+          set -eo pipefail
+          rc=9 # no change
+
+          gateway_call() {
+            node --input-type=module -e '
+              // https://github.com/openclaw/openclaw/tree/main/src/cli/gateway-rpc.ts#L55
+              import { callGatewayFromCli } from "/app/dist/plugin-sdk/gateway-runtime.js";
+
+              const [, method, params] = process.argv;
+              const result = await callGatewayFromCli(method,
+                { json: true }, JSON.parse(params ?? "{}"),
+                {
+                  scopes: ["operator.admin"],
+                  sharedStateMode: "read-only",
+                  progress: false,
+                },
+              );
+              console.log(JSON.stringify(result));
+            ' "$@"
+          }
+          desired_name={{ openclaw_owner.name   | quote }}
+          avatar_url={{   openclaw_owner.avatar | quote }}
+          profile_id=gateway-owner
+
+          # https://github.com/openclaw/openclaw/tree/main/src/cli/users-cli.ts#L50
+          profiles="$(gateway_call users.list)"
+          profile="$(jq -ec --arg id "$profile_id" '
+            .profiles[] | select(.id == $id)' <<<  "$profiles")"
+
+          # {id,displayName,hasAvatar,avatarMime,createdAt,updatedAt}
+          current_name="$(jq -r '.displayName // ""'  <<< "$profile")"
+          if [ "$current_name" != "$desired_name" ]; then
+            params="$(jq -nc \
+              --arg id   "$profile_id"   \
+              --arg name "$desired_name" \
+              '{profileId: $id, displayName: $name}')"
+            gateway_call users.setDisplayName "$params"
+            rc=0
+          fi
+
+          tmp_dir="$(mktemp -d)"
+          trap 'rm -rf "$tmp_dir"' EXIT
+
+          mime="$(curl -fsSLo "$tmp_dir/avatar" \
+            --connect-timeout 10 --max-time 60  \
+            -w '%{content_type}' "$avatar_url")"
+          mime="${mime%%;*}"
+
+          case "$mime" in
+            image/png|image/jpeg|image/webp)
+               ;;
+            *) printf >&2 'Unsupported avatar MIME type: %s\n' "$mime"
+               exit 1
+               ;;
+          esac
+          # owner avatar image must be 512 KB or less
+          [ "$(wc -c < "$tmp_dir/avatar")" -le 524288 ]
+
+          # use HEAD /api/users/gateway-owner/avatar API to check if the current
+          # avatar matches the desired one by providing the desired ETag (format
+          # ETag: "<SHA-256>-<MIME-subtype>") in the "If-None-Match" header. the
+          # API will return "304 Not Modified" if the current avatar matches the
+          # desired one, or 200/404 to indicate no avatar exists or is different
+
+          read -r avatar_sha _ < <(sha256sum "$tmp_dir/avatar")
+          # ETag value must be double quoted per RFC 9110
+          desired_etag="\"${avatar_sha}-${mime#image/}\""
+
+          # don`t include --fail because 404 is valid status
+          # OPENCLAW_GATEWAY_TOKEN defined in envFrom Secret
+          status="$(curl -IsSo /dev/null -w '%{http_code}' \
+            --connect-timeout 10 --max-time 30 \
+            -H "If-None-Match: $desired_etag"  \
+            -H "Authorization: Bearer $OPENCLAW_GATEWAY_TOKEN" \
+            "http://127.0.0.1:18789/api/users/$profile_id/avatar")"
+
+          case "$status" in
+            304) # stored bytes and MIME type already match
+              ;;
+            200|404)
+              base64 -w0 "$tmp_dir/avatar" > "$tmp_dir/avatar.b64"
+              params="$(jq -nc \
+                --arg     id     "$profile_id" \
+                --arg     mime   "$mime"       \
+                --rawfile avatar "$tmp_dir/avatar.b64" \
+                '{profileId: $id, mime: $mime, avatarBase64: $avatar}')"
+              gateway_call users.setAvatar "$params"
+              rc=0
+              ;;
+            *) printf >&2 'Avatar metadata request failed: HTTP %s\n' "$status"
+               exit 1
+               ;;
+          esac
+          exit $rc
+      kubernetes.core.k8s_exec:
+        command: bash -c {{ script | quote }}
+      register: gateway_owner
+      changed_when: gateway_owner.rc == 0
+      failed_when: gateway_owner.rc not in [0,9]
 
     # https://docs.openclaw.ai/channels/pairing#2-node-device-pairing-ios/android/macos/headless-nodes
     - name: Get devices pending pairing
@@ -668,7 +784,9 @@
             {{ sched }}
           sessionTarget: "{{ item.session }}"
           payload: |
-            {% set payload = {} %}
+            {% set payload = {
+                 'toolsAllow': item.tools | default(['*']),
+               } %}
             {% if item.session == 'isolated' %}
             {%   set _ = payload.update({
                    'kind':    'agentTurn',

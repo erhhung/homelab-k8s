@@ -230,6 +230,26 @@
                             <<: *http-get
                             path: /-/liveness
 
+            # GitLab 9.10.x doesn't expose Sidekiq startupProbe
+            - apiVersion: apps/v1
+              kind: Deployment
+              metadata:
+                name: "{{ gitlab_release_name }}-sidekiq-default-v2"
+                namespace: "{{ gitlab_namespace }}"
+              spec:
+                template:
+                  spec:
+                    containers:
+                      - name: sidekiq
+                        startupProbe: |
+                          {{ gitlab_startup_probe | combine({
+                                'httpGet':  {
+                                  'path':   '/liveness',
+                                  'port':    3808,
+                                  'scheme': 'HTTP',
+                                },
+                             }) }}
+
             # the Zoekt chart templates only set each
             # probe's httpGet property, leaving other
             # properties as defaults without a way to
@@ -293,12 +313,43 @@
         # everything to be perfect in one run, so
         # allow for manual retries
         atomic: false
-        # bootstrapping empty databases could take
-        # a long time, with webservice and sidekiq
-        # pods having to restart a few times
+        # allow time for image pulls, dependency
+        # checks, and Rails/Sidekiq cold startup
         wait_timeout: 900
         task_timeout: 1200
       ansible.builtin.include_tasks: "{{ tasks_dir }}/helm/helmfile.yml"
+
+    # restart GitLab services when `gitlab-node-tls` changes
+    - name: Add Wave annotations to deployment
+      vars:
+        praefect: "{{ gitlab_chart_values.global.praefect }}"
+        gitaly: gitaly-{{ praefect.virtualStorages[0].name }}
+
+        # === Inputs ===
+        res_kind: "{{ item.kind }}"
+        res_name: "{{ gitlab_release_name ~'-'~ item.name }}"
+        res_ns: "{{ gitlab_namespace }}"
+        wait_secs: 10
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/k8s/wave.yml"
+      loop:
+        - kind: StatefulSet
+          name: praefect
+        - kind: StatefulSet
+          name: "{{ gitaly }}"
+        - kind: Deployment
+          name: sidekiq-default-v2
+        - kind: Deployment
+          name: webservice-default
+        - kind: Deployment
+          name: gitlab-shell
+        - kind: Deployment
+          name: gitlab-pages
+        - kind: Deployment
+          name: gitlab-exporter
+        - kind: Deployment
+          name: toolbox
+      loop_control:
+        label: "{{ res_name }}"
 
     - name: >-
         {{ 'Enable' if enabled else 'Disable' }}
@@ -306,6 +357,7 @@
       vars:
         praefect: "{{ gitlab_chart_values.global.praefect }}"
         gitaly: gitaly-{{ praefect.virtualStorages[0].name }}
+
         services:
           # names without gitlab- prefix
           - webservice-default

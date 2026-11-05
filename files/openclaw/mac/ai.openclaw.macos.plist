@@ -6,7 +6,8 @@
     <string>ai.openclaw.macos</string>
     <key>ProgramArguments</key>
     <array>
-      <string>$OPENCLAW_STATE_DIR/ai.openclaw.macos.sh</string>
+      <!-- <string>$OPENCLAW_STATE_DIR/ai.openclaw.macos.sh</string> -->
+      <string>/Applications/OpenClaw.app/Contents/MacOS/OpenClaw</string>
     </array>
     <key>WorkingDirectory</key>
     <string>$HOME</string>

@@ -12,9 +12,11 @@ openwebui_admin_user:
   name: "{{  user_erhhung.full_name }}"
   email: "{{ user_erhhung.email }}"
   password: "{{ openwebui_admin_pass }}"
-  # only data URI is allowed, so task
-  # will get and re-encode image data
-  profile_image_url: "{{ user_erhhung.gravatar }}"
+  # only data URI is allowed, so task will download
+  # and re-encode image data; image will be resized
+  # to 250px square, so request exact size Gravatar:
+  # https://github.com/open-webui/open-webui/tree/main/src/lib/components/chat/Settings/Account/UserProfileImage.svelte
+  profile_image_url: "{{ user_erhhung.gravatar }}?s=250&d=404"
 
 openwebui_namespace: open-webui
 openwebui_host_names: # aliases of "ingress"
@@ -185,13 +187,13 @@ openwebui_extras:
 # Open WebUI so that both Playwright server and client versions
 # match. See playwright_server_version in "vars/playwright.yml"
 openwebui_chart_repo_url: https://helm.openwebui.com
-openwebui_chart_version: "15.2.0"
+openwebui_chart_version: "17.5.0"
 openwebui_release_name: open-webui
 
 # comment out `openwebui_app_version` below
 # to let playbook get  chart's `appVersion`
 # https://github.com/open-webui/open-webui/pkgs/container/open-webui/versions?filters%5Bversion_type%5D=tagged
-openwebui_app_version: "0.10.2"
+openwebui_app_version: "0.12.5"
 
 openwebui_image:
   repository: ghcr.io/open-webui/open-webui

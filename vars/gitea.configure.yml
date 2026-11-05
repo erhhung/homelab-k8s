@@ -38,7 +38,7 @@ gitea_users:
     email: "{{ homelab_admin.email }}"
     # `avatar_url` is read-only field, so image will
     # be downloaded and re-uploaded via /user/avatar
-    avatar: "{{   homelab_admin.gravatar }}?s=512"
+    avatar: "{{   homelab_admin.gravatar }}?s=512&d=404"
     username: "{{ homelab_admin.username }}"
     password: "{{ gitea_admin_pass }}"
     is_admin: true
@@ -54,7 +54,7 @@ gitea_users:
   erhhung:
     name: "{{     user_erhhung.full_name }}"
     email: "{{    user_erhhung.email }}"
-    avatar: "{{   user_erhhung.gravatar }}?s=512"
+    avatar: "{{   user_erhhung.gravatar }}?s=512&d=404"
     username: "{{ user_erhhung.username }}"
     password: "{{ gitea_admin_pass }}"
     is_admin: false

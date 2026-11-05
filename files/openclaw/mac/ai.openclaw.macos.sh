@@ -66,7 +66,7 @@ fi
 log "OpenClaw app  PID: $app_pid"
 echo  $app_pid >> "$PID"
 
-node_pid=($(pid openclaw-node))
+node_pid=($(pid openclaw))
 if [ ! "$node_pid" ]; then
   # --node-id is supposed to override the device
   # ID, but, in practice, the node is still only
@@ -77,12 +77,12 @@ if [ ! "$node_pid" ]; then
     --host    $GATEWAY_HOST \
     --port    $GATEWAY_PORT --tls &
 
-  # get PID of `openclaw` subprocess `openclaw-node`
-  until node_pid=($(pid openclaw-node)) && [ "$node_pid" ]; do
+  # get PID of `openclaw` process
+  until node_pid=($(pid openclaw)) && [ "$node_pid" ]; do
     sleep .5
   done
 fi
-log "openclaw-node PID: $node_pid"
+log "openclaw PID: $node_pid"
 echo $node_pid >> "$PID"
 
 wait -n $app_pid $node_pid
@@ -90,5 +90,5 @@ wait -n $app_pid $node_pid
 kill -0  $app_pid 2> /dev/null || \
   log "OpenClaw app  exited; stopping node"
 kill -0 $node_pid 2> /dev/null || \
-  log "openclaw-node exited; stopping app"
+  log "openclaw exited; stopping app"
 exit 1

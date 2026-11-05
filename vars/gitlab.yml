@@ -125,6 +125,14 @@ gitlab_harbor_pass: "{{ harbor_admin_pass }}"
 gitlab_chart_version: "9.10.5"
 gitlab_release_name: gitlab
 
+# cold Rails/Sidekiq boot can exceed
+# liveness budget under CPU pressure
+gitlab_startup_probe: &startup-probe
+  periodSeconds: 10
+  timeoutSeconds: 5
+  successThreshold: 1
+  failureThreshold: 60
+
 # https://gitlab.com/gitlab-org/charts/gitlab/tree/master/values.yaml
 gitlab_chart_values:
   # advanced config using external services:
@@ -752,12 +760,20 @@ gitlab_chart_values:
           memory: 2Gi
 
       deployment:
+        startupProbe:
+          <<: *startup-probe
+          httpGet:
+            path: /-/liveness
+            port: 8080
+            scheme: HTTP
+
         readinessProbe: &ws-readiness
           initialDelaySeconds: 0
           periodSeconds: 10
           timeoutSeconds: 5
           successThreshold: 1
           failureThreshold: 3
+
         livenessProbe: &ws-liveness
           initialDelaySeconds: 20
           periodSeconds: 60
@@ -798,6 +814,13 @@ gitlab_chart_values:
           - "{{ homelab_cidr }}"
           - "{{ tailnet_cidr }}"
         trustedCIDRsForPropagation: *xff-cidrs
+
+        startupProbe:
+          <<: *startup-probe
+          httpGet:
+            path: /-/liveness
+            port: 8181
+            scheme: HTTPS
 
         readinessProbe: *ws-readiness
         livenessProbe: *ws-liveness

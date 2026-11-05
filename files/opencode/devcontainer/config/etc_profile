@@ -64,6 +64,7 @@ CI_REGISTRY_PATH=harbor.fourteeners.local/library
 CI_REGISTRY_USER=erhhung
 DOCKER_USER=erhhung
 GITHUB_USER=erhhung
+GITHUB_TOKEN=$GITHUB_ACCESS_TOKEN
 SMTP_USER=mailer
 SMTP_HOST=smtp.fourteeners.local
 SMTP_PORT=587

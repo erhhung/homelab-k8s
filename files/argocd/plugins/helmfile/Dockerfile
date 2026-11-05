@@ -172,4 +172,4 @@ EOT
 
 WORKDIR /home/argocd/cmp-server/
 # USER does NOT affect COPY permissions: use --chown
-COPY --chown=argocd:argocd --link plugin.yaml ./config/
+COPY --chown=999:999 --link plugin.yaml ./config/

@@ -23,6 +23,11 @@ openclaw_data_dir: /home/node/.openclaw
 # alphabetical ordering of dictionary keys
 openclaw_common_env:
   TZ: "{{ system_time_zone }}"
+
+  # Kubernetes (along with Ansible/Helm) is the supervisor
+  # that owns gateway installation, lifecycle and upgrades
+  OPENCLAW_SUPERVISOR_MODE: external
+
   # home dir is on NFS volume
   OPENCLAW_HOME: "{{ openclaw_data_dir }}"
   XDG_CONFIG_HOME: $(OPENCLAW_HOME)/config
@@ -37,7 +42,13 @@ openclaw_common_env:
   OPENCLAW_PLUGIN_DIR:
     value: $(OPENCLAW_STATE_DIR)/extensions
     dependsOn: OPENCLAW_STATE_DIR
-  NODE_OPTIONS: --max-old-space-size=4096
+
+  NODE_OPTIONS: >-
+    --max-old-space-size=4096
+    --trace-warnings
+  NODE_EXTRA_CA_CERTS:
+    value: $(OPENCLAW_HOME)/certs/ca-bundle.crt
+    dependsOn: OPENCLAW_HOME
   NPM_CONFIG_CACHE:
     value: $(XDG_CACHE_HOME)/npm
     dependsOn: XDG_CACHE_HOME
@@ -49,6 +60,7 @@ openclaw_common_env:
     value: $(PNPM_HOME)/store
     dependsOn: PNPM_HOME
   PNPM_CONFIG_UPDATE_NOTIFIER: "false"
+
   PATH:
     value: $(OPENCLAW_HOME)/bin:$(PNPM_HOME)/bin:/usr/local/bin:/usr/local/sbin:/usr/bin:/usr/sbin:/bin:/sbin
     dependsOn:
@@ -58,6 +70,9 @@ openclaw_common_env:
     value: $(OPENCLAW_HOME)/lib
     dependsOn: OPENCLAW_HOME
 
+  # used by GitHub skill (GitHub CLI)
+  GITHUB_TOKEN: $(GITHUB_ACCESS_TOKEN)
+
 # https://github.com/serhanekicii/openclaw-helm/tree/main/charts/openclaw
 openclaw_chart_repo_url: https://serhanekicii.github.io/openclaw-helm
 openclaw_chart_version: "1.5.40"
@@ -66,7 +81,7 @@ openclaw_release_name: openclaw
 # comment out `openclaw_app_version` below
 # to let playbook get chart's `appVersion`
 # https://github.com/openclaw/openclaw/pkgs/container/openclaw/versions?filters%5Bversion_type%5D=tagged
-openclaw_app_version: "2026.9.6"
+openclaw_app_version: "2026.10.9"
 
 # https://github.com/serhanekicii/openclaw-helm/tree/main/charts/openclaw/values.yaml
 openclaw_chart_values:
@@ -116,6 +131,10 @@ openclaw_chart_values:
             alias  lt='ll -tr '
             alias   l='less'
 
+    defaultPodOptions:
+      # allow gateway to close SQLite DB
+      terminationGracePeriodSeconds: 360
+
     controllers:
       main:
         # must be 1: OpenClaw doesn't
@@ -135,11 +154,12 @@ openclaw_chart_values:
               - |-
                 set -eo pipefail
 
-                # /state/.openclaw will be mounted at {{ openclaw_data_dir }}/.openclaw
-                # in later containers (this empty mountpoint directory must be created)
-                mkdir -p        /state/.openclaw {{ openclaw_data_dir }}/{.openclaw,bin,lib,certs,config}
-                chmod 700       /state/.openclaw {{ openclaw_data_dir }}
-                chown node:node /state/.openclaw
+                # /state/.openclaw* will be mounted at {{ openclaw_data_dir }}/.openclaw*
+                # in later containers (but empty mountpoint directories must be created)
+                mkdir -p        /state/.openclaw{,.update-captures} {{ openclaw_data_dir
+                                   }}/{.openclaw{,.update-captures},bin,lib,certs,config}
+                chmod 700       /state/.openclaw* {{ openclaw_data_dir }}
+                chown node:node /state/.openclaw*
 
                  SRC_BIN=/usr/bin
                  SRC_LIB=/usr/lib/$(uname -m)-linux-gnu
@@ -153,19 +173,20 @@ openclaw_chart_values:
                 packages=()
                 [ -L $DEST_LIB/libatomic.so.1 ] || packages+=(libatomic1) # required by pnpm
                 [ -f $DEST_BIN/xz ]             || packages+=(xz-utils) # required by tar xJ
+                [ -f $DEST_BIN/gh ]             || packages+=(gh) # required by GitHub skill
                 [ -f $DEST_BIN/less ]           || packages+=(less)
 
-                if [ ! "$packages" ]; then
-                  log "Dependencies are already installed"
-                else
+                if [ "$packages" ]; then
                   log "Installing packages: ${packages[*]}"
                   apt-get update && apt-get install -y "${packages[@]}"
 
                   [ -L $DEST_LIB/libatomic.so.1 ] || cp -a $SRC_LIB/libatomic.so.* $DEST_LIB
                   [ -f $DEST_BIN/xz ]             || cp -a $SRC_BIN/*xz*           $DEST_BIN
+                  [ -f $DEST_BIN/gh ]             || cp -a $SRC_BIN/gh             $DEST_BIN
                   [ -f $DEST_BIN/less ]           || cp -a $SRC_BIN/less           $DEST_BIN
-
-                  echo; find $DEST_BIN $DEST_LIB | sort
+                  echo; find $DEST_BIN/ $DEST_LIB/ | sort
+                else
+                  log "Dependencies are already installed"
                 fi
                 log -n "Dependencies installation completed ✓"
 
@@ -295,14 +316,28 @@ openclaw_chart_values:
                 fi
                 log -n "Configuration update completed ✓"
 
-          # https://docs.openclaw.ai/tools/plugin
-          init-plugins:
+          # fix core/config/state prerequisite
+          # issues like SQLite schema upgrades
+          doctor-fix1: &doctor-fix
             dependsOn: init-config
             image: *openclaw-image
+            env: "{{ openclaw_common_env }}"
             envFrom: &env-from
               - secretRef:
                   name: "{{ openclaw_secrets['env-vars'] }}"
+            command: ["openclaw"]
+            args:
+              - doctor
+              - --fix
+              - --non-interactive
+              - --no-workspace-suggestions
+
+          # https://docs.openclaw.ai/tools/plugin
+          init-plugins:
+            dependsOn: doctor-fix1
+            image: *openclaw-image
             env: "{{ openclaw_common_env }}"
+            envFrom: *env-from
             command: ["bash"]
             args:
               - -c
@@ -325,13 +360,12 @@ openclaw_chart_values:
                   id=$1 pkg=$2 ver=$3
 
                   if openclaw plugins inspect $id --json 2> /dev/null | \
-                    jq --arg pkg $pkg \
-                       --arg ver $ver '
-                       .plugin.install.source       == "npm" and
-                       .plugin.install.resolvedName == $pkg  and
-                      (.plugin.install.resolvedVersion //
-                       .plugin.install.version)     == $ver
-                    ' > /dev/null; then
+                    jq -e --arg pkg $pkg \
+                          --arg ver $ver '
+                       .install.source       == "npm" and
+                       .install.resolvedName == $pkg  and
+                      (.install.resolvedVersion //
+                       .install.version)     == $ver' > /dev/null; then
                     log "Plugin $pkg@$ver is already installed."
                     exit
                   fi
@@ -440,13 +474,16 @@ openclaw_chart_values:
 
                 log -n "Skills initialization completed ✓"
 
+          # perform full repair with final plugin inventory
+          doctor-fix2:
+            <<: *doctor-fix
+            dependsOn: init-skills
+
         containers:
           main: # gateway container
             envFrom: *env-from
             env: |
-              {% set env = openclaw_common_env | combine({
-                   'NODE_EXTRA_CA_CERTS': '/tls/otlp/ca.crt',
-                 }) %}
+              {% set env = openclaw_common_env %}
               {% for extra in openclaw_plugins +
                               openclaw_skills  %}
               {%   if extra.env is defined     %}
@@ -483,13 +520,16 @@ openclaw_chart_values:
       tmp:
         enabled: true
         type: emptyDir
+
         advancedMounts:
           main:
             ca-bundle: &tmp-dir
               - path: /tmp
             init-config: *tmp-dir
+            doctor-fix1: *tmp-dir
             init-plugins: *tmp-dir
             init-skills: *tmp-dir
+            doctor-fix2: *tmp-dir
             main: *tmp-dir
             chromium: *tmp-dir
 
@@ -498,6 +538,7 @@ openclaw_chart_values:
         type: secret
         name: "{{ openclaw_secrets['ingress'] }}"
         defaultMode: 420 # "0644"
+
         advancedMounts:
           main:
             ca-bundle:
@@ -512,6 +553,7 @@ openclaw_chart_values:
       config:
         type: configMap
         identifier: config
+
         advancedMounts:
           main:
             init-config:
@@ -522,14 +564,17 @@ openclaw_chart_values:
         type: nfs
         server: "{{ homelab_nfs.server }}"
         path: "{{   homelab_nfs.base_path }}/openclaw"
+
         advancedMounts:
           main:
             init-deps: &data-dir
               - path: "{{ openclaw_data_dir }}"
             ca-bundle: *data-dir
             init-config: *data-dir
+            doctor-fix1: *data-dir
             init-plugins: *data-dir
             init-skills: *data-dir
+            doctor-fix2: *data-dir
             main:
               - path: "{{ openclaw_data_dir }}"
               - path: /etc/ssl/certs/ca-certificates.crt
@@ -544,21 +589,27 @@ openclaw_chart_values:
                 subPath: certs/nssdb
 
       # PVC for /home/node/.openclaw/.openclaw ($OPENCLAW_STATE_DIR)
+      # + /home/node/.openclaw/.openclaw.update-captures directories
       # containing SQLite databases that would perform poorly on NFS
       state:
         enabled: true
         type: persistentVolumeClaim
         storageClass: "{{ storage_classes['default'] }}"
         accessMode: ReadWriteOnce
-        size: 1Gi
+        size: 5Gi
+
         advancedMounts:
           main:
             init-deps:
               - path: /state
-            init-plugins: &state-dir
+            doctor-fix1: &state-dir
               - path: "{{ openclaw_data_dir }}/.openclaw"
                 subPath: .openclaw
+              - path: "{{ openclaw_data_dir }}/.openclaw.update-captures"
+                subPath: .openclaw.update-captures
+            init-plugins: *state-dir
             init-skills: *state-dir
+            doctor-fix2: *state-dir
             main: *state-dir
 
       skill-configs:
@@ -566,6 +617,7 @@ openclaw_chart_values:
         type: secret
         name: "{{ openclaw_secrets['skills'] }}"
         defaultMode: 420 # "0644"
+
         advancedMounts:
           main:
             init-skills:
@@ -616,17 +668,17 @@ openclaw_plugins:
   # https://clawhub.ai/openclaw/plugins/slack
   - id: slack
     package: "@openclaw/slack"
-    version: "2026.9.6"
+    version: "2026.10.9"
 
   # https://clawhub.ai/openclaw/plugins/perplexity-plugin
   - id: perplexity
     package: "@openclaw/perplexity-plugin"
-    version: "2026.9.6"
+    version: "2026.10.9"
 
   # https://clawhub.ai/martian-engineering/plugins/lossless-claw
   - id: lossless-claw
     package: "@martian-engineering/lossless-claw"
-    version: "1.1.1"
+    version: "1.2.0"
 
   # https://github.com/erhhung/openclaw-searxng-search
   - id: searxng-search
@@ -686,11 +738,6 @@ openclaw_skills:
       GOG_JSON: "true"
       GOG_ACCOUNT: "{{ user_erhhung.email }}"
       # GOG_KEYRING_PASSWORD stored in Secret
-
-  # https://clawhub.ai/conorkenn/openclaw-github-assistant
-  - slug: "@conorkenn/openclaw-github-assistant"
-    # `github.username` & `github.token`
-    # have been added to "openclaw.json"
 
   # https://clawhub.ai/steipete/video-frames
   - slug: "@steipete/video-frames"

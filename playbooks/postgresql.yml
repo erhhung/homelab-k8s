@@ -89,19 +89,19 @@
     - name: Add Wave annotations to deployment
       vars:
         res_kind: "{{ item.kind }}"
-        res_name: "{{ item.name }}"
+        res_name: "{{ postgresql_release_name ~'-'~ item.name }}"
         res_ns: "{{ postgresql_namespace }}"
         wait_secs: 10
       ansible.builtin.include_tasks: "{{ tasks_dir }}/k8s/wave.yml"
       loop:
         # restart PostgreSQL nodes when `postgresql-node-tls` changes
         - kind: StatefulSet
-          name: "{{ postgresql_release_name }}-postgresql"
+          name: postgresql
         # restart Pgpool when `postgresql-pgpool-custom-users` changes
         - kind: Deployment
-          name: "{{ postgresql_release_name }}-pgpool"
+          name: pgpool
       loop_control:
-        label: "{{ item.name }}"
+        label: "{{ res_name }}"
 
     - name: Wait for PostgreSQL to be ready
       vars:

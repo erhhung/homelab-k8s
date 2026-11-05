@@ -21,6 +21,7 @@ openclaw_cron_jobs:
       - Workspace skills: `/home/node/.openclaw/workspace/skills`
       - Get gog skill description: `cat /app/skills/gog/SKILL.md`
       - Get Gmail messages: `gog gmail messages search 'from:github.com newer_than:1d' --all --include-body --json --results-only`
+    # tools: ['*'] default
     # if announce=true Ansible task will additionally append
     # `--channel` and `--to` to send the report via Slack DM
     announce: true

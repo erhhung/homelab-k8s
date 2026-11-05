@@ -1,3 +1,9 @@
+openclaw_owner:
+  name: "{{   user_erhhung.full_name }}"
+  # image will be downloaded then persisted in
+  # OpenClaw via gateway `users.setAvatar` API
+  avatar: "{{ user_erhhung.gravatar  }}?s=256&d=404"
+
 # explicitly allow tools in sessions because
 # `group:openclaw` doesn't appear to include
 # `exec`/`process`:
@@ -44,6 +50,7 @@ openclaw_exec_allowlist:
     - rg
   gateway:
     - gog
+    - gh
   # allowlist on the Mac node is
   # provisioned manually for now
   node: []
@@ -142,10 +149,36 @@ openclaw_config:
     # https://docs.openclaw.ai/tools/browser#security-&-privacy
     evaluateEnabled: false
 
-    defaultProfile: default
+    # OpenClaw automatically supplies built-in profiles:
+    # `openclaw`: OpenClaw-managed browser (separate browser instance OpenClaw would launch on the selected host)
+    # `chrome`: OpenClaw extension relay (use the OpenClaw extension in the user's one Chrome-compatible browser)
+    # `user`: Chrome DevTools MCP (attach to an existing personal browser session without the OpenClaw extension)
+    #
+    # fix OpenClaw browser extension registration for `chrome` profile:
+    # OPENCLAW_CONFIG_PATH="$XDG_CONFIG_HOME/openclaw/openclaw.json" \
+    #   OPENCLAW_STATE_DIR="$XDG_STATE_HOME/openclaw" \
+    #   openclaw browser extension install --no-store \
+    #     --browser-profile chrome --json
+    #
+    # copy bootstrap manifest into Arc's "NativeMessagingHosts" folder
+    # IMPORTANT: restarting the Mac app recreates the Chrome bootstrap
+    # manifest, so quit Arc, run these commands, then restart Arc:
+    # src="$HOME/Library/Application Support/Google/Chrome/NativeMessagingHosts"
+    # dst="$HOME/Library/Application Support/Arc/User Data/NativeMessagingHosts"
+    # install -m 700 -d "$dst"
+    # boot=ai.openclaw.browser_bootstrap.json
+    # install -m 600 "$src/$boot" "$dst/$boot"
+    #
+    # quit Arc, run `stop_openclaw_relay` (see "files/openclaw/mac/utils.sh"),
+    # quit Mac app, restart Arc and Mac app, then verify extension connection:
+    # openclaw browser extension setup --action verify \
+    #   --browser-profile chrome --json
+
+    defaultProfile: sidecar
     profiles:
-      default: # Chromium sidecar
+      sidecar: # Chromium sidecar
         cdpUrl: http://localhost:9222
+        attachOnly: true
 
   # https://docs.openclaw.ai/concepts/multi-agent
   agents:
@@ -245,6 +278,13 @@ openclaw_config:
       # to include in the agent's chat context
       historyLimit: 10
 
+  # https://docs.openclaw.ai/gateway/config-channels/commands
+  commands:
+    allowFrom: &allow-from
+      slack: *slack-allow-from
+    ownerAllowFrom:
+      - slack:{{ user_erhhung.slack.id }}
+
   # https://docs.openclaw.ai/gateway/config-agents/sessions#session
   session:
     scope: per-sender
@@ -260,9 +300,9 @@ openclaw_config:
     # `level` is for file-based logging;
     # `consoleLevel` is container stdout:
     # https://docs.openclaw.ai/logging
-    level: trace # error|warn|info|debug|trace
+    level: debug # error|warn|info|debug|trace
     file: /tmp/openclaw.log # JSONL format
-    consoleLevel: trace
+    consoleLevel: info
     consoleStyle: pretty # pretty|compact|json
 
   # https://docs.openclaw.ai/gateway/config-observability#diagnostics
@@ -292,19 +332,6 @@ openclaw_config:
   # https://docs.openclaw.ai/gateway/local-models#other-openai-compatible-local-proxies
   models:
     providers:
-      # https://docs.openclaw.ai/providers/ollama
-      ollama:
-        baseUrl: "{{ ollama_service_url }}"
-        # no auth currently enforced
-        # apiKey: ${OLLAMA_API_KEY}
-        api: ollama
-        # see `ollama_models`
-        # in vars/ollama.*.yml
-        models:
-          # https://ollama.com/library/gemma3
-          - id: gemma3:4b
-            name: Gemma 3:4b ⟺ Ollama
-
       # https://docs.openclaw.ai/providers/litellm
       # https://docs.litellm.ai/docs/tutorials/openclaw_integration#config-reference
       litellm:
@@ -325,6 +352,19 @@ openclaw_config:
           - id: claude-sonnet-5
             name: Claude Sonnet 5 ⟺ LiteLLM
 
+      # https://docs.openclaw.ai/providers/ollama
+      ollama:
+        baseUrl: "{{ ollama_service_url }}"
+        # no auth currently enforced
+        # apiKey: ${OLLAMA_API_KEY}
+        api: ollama
+        # see `ollama_models`
+        # in vars/ollama.*.yml
+        models:
+          # https://ollama.com/library/gemma3
+          - id: gemma3:4b
+            name: Gemma 3:4b ⟺ Ollama
+
   # https://docs.openclaw.ai/gateway/config-tools
   tools:
     profile: full # minimal|coding|messaging|full
@@ -344,10 +384,7 @@ openclaw_config:
 
     # https://docs.openclaw.ai/tools/elevated
     elevated:
-      allowFrom:
-        webchat:
-          - openclaw-control-ui
-        slack: *slack-allow-from
+      allowFrom: *allow-from
 
     # https://docs.openclaw.ai/tools/exec
     # exec host=node routing is currently broken:
@@ -398,13 +435,15 @@ openclaw_config:
     # custom, to load (each must still be enabled):
     allow: |
       {{ (openclaw_plugins | map(attribute='id') + [
-           'slack',
-           'browser',
+           'device-pair',
+           'memory-core',
            'diagnostics-otel',
+           'slack',
+           'github',
            'openai',
            'litellm',
+           'browser',
            'perplexity',
-           'memory-core',
          ]) | unique }}
 
     # https://docs.openclaw.ai/tools/plugin#plugin-slots-exclusive-categories
@@ -412,15 +451,21 @@ openclaw_config:
       contextEngine: lossless-claw
 
     entries:
+      device-pair:
+        enabled: true
+      memory-core:
+        enabled: true
+      diagnostics-otel:
+        enabled: true
       slack:
         enabled: true
-      browser:
+      github:
         enabled: true
       openai:
         enabled: true
       litellm:
         enabled: true
-      diagnostics-otel:
+      browser:
         enabled: true
 
       # https://github.com/Martian-Engineering/lossless-claw#configuration
@@ -454,9 +499,5 @@ openclaw_config:
   # https://docs.openclaw.ai/gateway/config-extensions#skills
   skills:
     entries:
-      # https://clawhub.ai/conorkenn/openclaw-github-assistant
-      openclaw-github-assistant:
-        config:
-          github:
-            username: erhhung
-            token: ${GITHUB_ACCESS_TOKEN}
+      github:
+        enabled: true
