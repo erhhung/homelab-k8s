@@ -17,8 +17,8 @@
     - vars/pyrra.yml
     - vars/observability.yml
     - vars/storage.yml
+    - vars/litellm.configure.yml
     - vars/ollama.yml
-    - vars/litellm.yml
     - vars/searxng.yml
     - vars/openclaw.yml
     - vars/openclaw.config.yml
@@ -270,6 +270,10 @@
       loop: "{{ file_list }}"
       register: file_stat
 
+    - name: Gather facts about controller
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/localfacts.yml"
+      when: local_bash_interpreter is undefined
+
     - name: Get gateway TLS fingerprint
       ansible.builtin.shell: |
         set -o pipefail
@@ -414,6 +418,8 @@
         set -x; launchctl bootstrap {{  domain_target }} {{ plist_path }}
       args: *local-shell-args
       changed_when: true
+      retries: 1
+      delay: 5
 
 - name: Configure OpenClaw installation
   tags: configure

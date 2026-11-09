@@ -1,0 +1,195 @@
+# ===== AVAILABLE MODELS & PRICING CHART =====
+
+# https://docs.litellm.ai/docs/providers/openai
+# https://docs.litellm.ai/docs/providers/anthropic
+# https://docs.litellm.ai/docs/providers/groq
+# https://claude.com/pricing#api
+
+# 💡 ChatGPT Authentication OAuth Device Flow 💡
+# ---------------------------------------------
+# 1. edit Secret `litellm-chatgpt-auth` and make JSON object empty
+# 2. shell into LiteLLM container and `rm /data/chatgpt/auth.json`
+# 3. restart LiteLLM pod and watch container logs for instructions
+#    Sign in with ChatGPT using device code:
+#    1) Visit https://auth.openai.com/codex/device
+#    2) Enter code: XXXX-YYYYY
+# 4. shell into container again and `cat /data/chatgpt/auth.json`
+#    to copy the entire JSON content to replace Ansible-encrypted
+#    file "files/litellm/chatgpt/auth.json" and update the Secret
+
+# https://docs.litellm.ai/docs/routing#what-is-a-deployment
+litellm_models:
+  # https://docs.litellm.ai/docs/providers/openai
+  - &openai-model
+    # https://developers.openai.com/api/docs/models/gpt-6-luna ($0.10 • $0.50)
+    model_name: gpt-6-luna
+    model_info: &openai-info
+      display_name: GPT-6 Luna
+      # same for all 6.x models
+      max_input_tokens: 1050000
+      max_output_tokens: 128000
+      mode: responses
+
+      # simulate ChatGPT credit cost per 1M tokens:
+      # input: 2.5 | cache read: 0.25 | output: 12.5
+      # 500 credits = $20 (1 credit = $0.04)
+      # e.g. input = (20 / 500 / 10**6) * 2.5
+      # https://help.openai.com/en/articles/11481834-chatgpt-rate-card-business-enterpriseedu-credit-based-pricing#chatgpt-work-and-codex
+      # https://github.com/BerriAI/litellm/tree/main/litellm/proxy/_types.py#L5834-L5839
+      input_cost_per_token: 0.0000001
+      output_cost_per_token: 0.0000005
+      cache_read_input_token_cost: 0.00000001
+      # Codex doesn't charge for cache writes
+      cache_creation_input_token_cost: 0
+
+    litellm_params: &openai-params
+      # use ChatGPT subscription (no API usage costs):
+      # https://docs.litellm.ai/docs/providers/chatgpt
+      model: chatgpt/gpt-6-luna
+      # model: openai/gpt-6-luna
+      # api_base: https://api.openai.com/v1
+      # api_key: os.environ/OPENAI_API_KEY
+      # https://docs.litellm.ai/docs/providers/openai#advanced-using-reasoning_effort-with-summary-field
+      reasoning_effort: medium # none|low|medium|high|xhigh|max
+
+  # https://developers.openai.com/api/docs/models/gpt-6.1-sol ($2 • $10)
+  - <<: *openai-model
+    model_name: gpt-6.1-sol
+    model_info:
+      <<: *openai-info
+      display_name: GPT-6.1 Sol
+      # simulate ChatGPT credit cost per 1M tokens:
+      # input: 50 | cache read: 2.5 | output: 250
+      # 500 credits = $20 (1 credit = $0.04)
+      input_cost_per_token: 0.000002
+      cache_read_input_token_cost: 0.0000001
+      output_cost_per_token: 0.000010
+
+    litellm_params:
+      <<: *openai-params
+      model: chatgpt/gpt-6.1-sol
+      reasoning_effort: high # low|medium|high|xhigh|max
+
+  - <<: *openai-model
+    # https://developers.openai.com/api/docs/models/gpt-6-astra ($10 • $50)
+    model_name: gpt-6-astra
+    model_info:
+      <<: *openai-info
+      display_name: GPT-6 Astra
+      # simulate ChatGPT credit cost per 1M tokens:
+      # input: 250 | cache read: 25 | output: 1250
+      # 500 credits = $20 (1 credit = $0.04)
+      input_cost_per_token: 0.000010
+      cache_read_input_token_cost: 0.000001
+      output_cost_per_token: 0.000050
+
+    litellm_params:
+      <<: *openai-params
+      model: chatgpt/gpt-6-astra
+      reasoning_effort: high # low|medium|high|xhigh|max
+
+  # https://docs.litellm.ai/docs/providers/anthropic
+  - &anthropic-model
+    # https://www.anthropic.com/claude/haiku ($1 • $5)
+    model_name: claude-haiku-4-5
+    model_info:
+      display_name: Claude Haiku 4.5
+    litellm_params: &anthropic-params
+      model: claude-haiku-4-5
+      # don't append /v1 to Anthropic URL
+      api_base: https://api.anthropic.com
+      api_key: os.environ/ANTHROPIC_API_KEY
+      # https://docs.litellm.ai/docs/providers/anthropic#usage---thinking--reasoning_content
+      reasoning_effort: low # low|medium|high
+      max_tokens: 8192
+
+  - <<: *anthropic-model
+    # https://www.anthropic.com/claude/sonnet ($3 • $15)
+    model_name: claude-sonnet-5
+    model_info:
+      display_name: Claude Sonnet 5
+    litellm_params:
+      <<: *anthropic-params
+      model: claude-sonnet-5
+      reasoning_effort: medium # low|medium|high
+
+  - <<: *anthropic-model
+    # https://www.anthropic.com/claude/opus ($5 • $25)
+    model_name: claude-opus-4-8
+    model_info:
+      display_name: Claude Opus 4.8
+    litellm_params:
+      <<: *anthropic-params
+      model: claude-opus-4-8
+      reasoning_effort: high # low|medium|high
+
+  # https://docs.litellm.ai/docs/providers/groq
+  - &groq-model
+    # https://console.groq.com/docs/model/llama-3.3-70b-versatile ($0.59 • $0.79)
+    model_name: llama-3.3-70b-versatile
+    model_info:
+      display_name: LLaMA 3.3 70B Versatile
+    litellm_params: &groq-params
+      model: groq/llama-3.3-70b-versatile
+      api_base: https://api.groq.com/openai/v1
+      api_key: os.environ/GROQ_API_KEY
+
+  - <<: *groq-model
+    # https://console.groq.com/docs/model/meta-llama/llama-4-maverick-17b-128e-instruct
+    model_name: llama-4-maverick-17b-instruct
+    model_info:
+      display_name: LLaMA 4 Maverick 17B Instruct
+    litellm_params:
+      <<: *groq-params
+      model: groq/meta-llama/llama-4-maverick-17b-128e-instruct
+
+  # https://ollama.com/library/gemma3
+  - model_name: gemma3-4b
+    model_info:
+      display_name: Gemma 3 4B
+    litellm_params:
+      model: ollama_chat/gemma3:4b
+      api_base: "{{ ollama_service_url }}"
+
+litellm_default_model: gpt-6.1-sol
+litellm_small_model: gpt-6-luna
+
+# TIP: use stable, non-provider-specific tool names so that
+# backing providers can be swapped or additional providers
+# added under the same name for load-balancing and failover
+# https://docs.litellm.ai/docs/search#litellm-ai-gateway-usage
+litellm_search_tools:
+  - search_tool_name: web
+    # https://docs.litellm.ai/docs/search/searxng
+    litellm_params:
+      search_provider: searxng
+      api_base: "{{ searxng_service_url }}"
+
+# POST /team/new
+litellm_teams:
+  # all properties match
+  # expected API payload
+  - team_alias: Family
+    max_budget: 20 # USD
+    budget_duration: 30d
+    models: "{{ litellm_models | map(attribute='model_name') }}"
+
+# POST /user/new
+litellm_users:
+  # NOTE: only specify fields that
+  # are returned by /user/list API
+  - user_id: admin
+    user_alias: "{{ homelab_admin.full_name }}"
+    # UI login MUST use email, not user_id
+    user_email: "{{ homelab_admin.email }}"
+    # proxy_admin will have UI
+    # password but not API key
+    user_role: proxy_admin
+
+  - user_id: "{{    user_erhhung.username }}"
+    user_alias: "{{ user_erhhung.full_name }}"
+    user_email: "{{ user_erhhung.email }}"
+    # https://github.com/BerriAI/litellm/tree/main/litellm/proxy/_types.py#L93
+    user_role: internal_user
+    # team_ids is fact set by task
+    teams: "{{ [team_ids['Family']] }}"

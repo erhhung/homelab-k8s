@@ -10,7 +10,8 @@
 #     host:     <required> host name
 #     domain:   [optional] default=<homelab_domain>
 #     desc:     [optional] host description
-#     aliases:  [optional] list of alias objects
+#     aliases:  [optional] list of individual alias objects
+#                          or nested array of alias objects
 #       host:   <required> alias host name
 #       domain: [optional] default=<homelab_domain>
 #       desc:   [optional] host description
@@ -47,8 +48,8 @@
              } %}
           {% if override.aliases is defined %}
           {#   pfSense API stores aliases sorted by host name,
-               so sort override aliases for proper comparison         #}
-          {%   for alias in override.aliases | sort(attribute='host') %}
+               so sort override aliases for proper comparison #}
+          {%   for alias in override.aliases | flatten | sort(attribute='host') %}
           {%     set _ = aliases.append({
                    'host':   alias.host,
                    'domain': alias.domain | default(homelab_domain),

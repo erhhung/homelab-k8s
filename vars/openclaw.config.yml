@@ -334,12 +334,11 @@ openclaw_config:
     providers:
       # https://docs.openclaw.ai/providers/litellm
       # https://docs.litellm.ai/docs/tutorials/openclaw_integration#config-reference
+      # see `litellm_models` in "vars/litellm.configure.yml"
       litellm:
         baseUrl: "{{ litellm_service_url }}"
         apiKey: ${LITELLM_API_KEY}
         api: openai-completions
-        # see `litellm_models`
-        # in vars/litellm.yml
         models:
           # https://platform.openai.com/docs/models
           - id: gpt-6.1-sol

@@ -2,13 +2,14 @@
 
 minio_host_names: # aliases of "ingress"
   - minio # console
+  - silo # console
   - s3 # S3 API
 
 # https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_filters.html#products
 minio_fqdns: "{{ minio_host_names | product(search_domains) | map('join','.') }}"
 
-minio_console_fqdn: "{{ minio_fqdns[0] }}"
-minio_s3api_fqdn: "{{ minio_fqdns[1] }}"
+minio_console_fqdns: "{{ minio_fqdns[0:2] }}"
+minio_s3api_fqdn: "{{    minio_fqdns[2]   }}"
 minio_s3api_port: 9000 # internal
 
 minio_operator_namespace: minio-operator
@@ -44,6 +45,19 @@ minio_tenant_release_name: tenant
 minio_operator_chart_values:
   operator:
     replicaCount: 1
+
+    # keep `harbor_mirror_images` (vars/harbor.configure.yml)
+    # in sync with specified image tags
+    image:
+      repository: "{{ harbor_container_registry }}/minio/operator"
+      tag: v7.1.1
+      pullPolicy: IfNotPresent
+
+    sidecarImage:
+      repository: "{{ harbor_container_registry }}/minio/operator-sidecar"
+      tag: v7.0.1
+      pullPolicy: IfNotPresent
+
     # https://github.com/minio/operator/tree/master/docs/env-variables.md
     env:
       - name: SUBNET_BASE_URL
@@ -109,6 +123,21 @@ minio_tenant_chart_values:
   tenant:
     name: "{{ minio_tenant_name }}"
 
+    # since MinIO GitHub repo has been archived and public
+    # images no longer available, switch to using Silo, an
+    # actively maintained fork of MinIO
+    # keep `harbor_mirror_images` (vars/harbor.configure.yml)
+    # in sync with specified image tag
+    image:
+      repository: "{{ harbor_container_registry }}/minio/silo"
+      tag: RELEASE.2026-10-26T00-00-00Z
+      pullPolicy: IfNotPresent
+
+    env:
+      # disable self-update
+      - name: MINIO_UPDATE
+        value: "off"
+
     # https://min.io/docs/minio/kubernetes/upstream/reference/operator-crd.html#pool
     pools:
       - name: "{{ minio_pool_name }}"
@@ -133,6 +162,9 @@ minio_tenant_chart_values:
                       values:
                         - "{{ minio_pool_name }}"
 
+    # feature fields have been removed by recent MinIO Operator releases, but
+    # they're still supported by the community Operator 7.1.1 + Silo releases:
+    # https://docs.min.io/aistor/reference/kubernetes/object-store-helm-chart#removed-fields
     features:
       # wildcard subdomains are required
       # on all these SANs in certificate
@@ -143,7 +175,7 @@ minio_tenant_chart_values:
           - minio.{{ minio_tenant_namespace }}.svc
           - minio.{{ minio_tenant_namespace }}.svc.{{ cluster_domain }}
           - "{{ minio_tenant_name }}-hl.{{ minio_tenant_namespace }}.svc.{{ cluster_domain }}"
-        console: "{{ minio_console_fqdn }}"
+        console: "{{ minio_console_fqdns | first }}"
       enableSFTP: false
 
     # create secret defining MINIO_ROOT_USER and MINIO_ROOT_PASSWORD environment variables:
@@ -214,9 +246,13 @@ minio_tenant_chart_values:
       enabled: true
       tls:
         - secretName: "{{ minio_secrets['console'] }}"
-          hosts: "{{ [minio_console_fqdn] }}"
+          hosts: "{{ minio_console_fqdns }}"
       ingressClassName: "{{ rke_ingress_class }}"
       annotations:
+        # the chart only renders one rule for a single host,
+        # so use `server-alias` to specify additional hosts
+        nginx.ingress.kubernetes.io/server-alias: "{{ minio_console_fqdns[1:] | join(',') }}"
+
         nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
         # don't use ssl-passthrough for the console because
         # a single minio container serves requests for both
@@ -225,7 +261,7 @@ minio_tenant_chart_values:
         # using passthrough will send the wrong certificate
         # to the browser!
         nginx.ingress.kubernetes.io/backend-protocol: HTTPS
-      host: "{{ minio_console_fqdn }}"
+      host: "{{ minio_console_fqdns[0] }}"
 
 # https://grafana.com/grafana/dashboards/?search=MinIO&dataSource=prometheus
 minio_grafana_dashboards:

@@ -11,6 +11,8 @@
     projects:
       - charts
       - bitnami
+      - minio
+      - opensearch
   block:
     - name: List mirror repos by project
       delegate_to: "{{ k3s_control_plane_host }}"

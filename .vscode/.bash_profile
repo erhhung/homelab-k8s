@@ -15,8 +15,11 @@ alias omp &> /dev/null || {
 
 export ANSIBLE_CONFIG="./ansible.cfg"
 
-[ "$OPENCODE_CALLER" == vscode ] && \
-  . .vscode/opencode.sh
+if [ "$OPENCODE_CALLER" == vscode ]; then
+  # use dedicated project SQLite database
+  export OPENCODE_DB="$PWD/.opencode/opencode.db"
+  exec opencode --continue
+fi
 
 git_root() {
   local root

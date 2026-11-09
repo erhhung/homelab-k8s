@@ -1,0 +1,172 @@
+# config will be rendered as JSON and mounted
+# at "$XDG_CONFIG_HOME/opencode/opencode.json"
+# https://opencode.ai/docs/config
+opencode_config:
+  # OpenCode is baked into the Docker image,
+  # so a pod restart will lose any updates:
+  # https://opencode.ai/docs/config#autoupdate
+  autoupdate: false
+
+  # https://opencode.ai/docs/providers#custom-provider
+  # https://opencode.ai/docs/providers#example
+  provider:
+    litellm:
+      npm: "@ai-sdk/openai" # /responses API
+      name: LiteLLM
+      options:
+        baseURL: "{{ litellm_service_url }}/v1"
+        # https://opencode.ai/docs/config#variables
+        apiKey: "{file:/run/secrets/LITELLM_API_KEY}"
+        # apiKey: "{env:LITELLM_API_KEY}"
+
+        # overall request + response timeout in ms
+        timeout: 3600000 # 60m
+        # timeout between streamed response chunks
+        chunkTimeout: 600000 # 10m
+
+      # model auto-discovery hasn't been implemented
+      # yet, so manually list models to pass through:
+      # https://github.com/anomalyco/opencode/issues/6231
+
+      # model cost fields aren't described by the docs,
+      # but are specified in the config's JSON schema:
+      # curl -fsSL https://opencode.ai/config.json | \
+      #   jq '.. | objects | .properties?.cost? // empty'
+
+      # model cost values are $USD per million tokens:
+      # https://github.com/anomalyco/opencode/tree/dev/packages/opencode/src/session/session.ts#L380-L405
+      # NOTE: run all cost values through `round(8)` to prevent
+      # floating-point precision issue like 0.09999999999999999
+      models: |
+        {% set models = {} %}
+        {% for model in litellm_models %}
+        {%   if model.litellm_params['model'] is match('^chatgpt') %}
+        {%     set info = model.model_info %}
+        {%     set    _ = models.update({
+                 model.model_name: {
+                   'name':   info.display_name,
+                   'limit':  {
+                     'context': info.max_input_tokens,
+                     'output':  info.max_output_tokens,
+                   },
+                   'cost':  {
+                     'input':       (1000000 * info.input_cost_per_token)            | round(8),
+                     'output':      (1000000 * info.output_cost_per_token)           | round(8),
+                     'cache_read':  (1000000 * info.cache_read_input_token_cost)     | round(8),
+                     'cache_write': (1000000 * info.cache_creation_input_token_cost) | round(8),
+                   },
+                 }
+               })  %}
+        {%   endif %}
+        {% endfor  %}
+        {{ models  }}
+
+  # only allow models proxied via LiteLLM:
+  # https://opencode.ai/docs/config#enabled-providers
+  enabled_providers:
+    - litellm
+
+  # https://opencode.ai/docs/config#models
+  model: litellm/{{ litellm_default_model }}
+  small_model: litellm/{{ litellm_small_model }}
+
+  # https://opencode.ai/docs/config#mcp-servers
+  mcp:
+    playwright:
+      enabled: true
+      type: local
+      command:
+        - npx
+        - -y
+        # IMPORTANT! make sure MCP server's Playwright
+        # client version matches the Playwright server
+        # version. verify by running this command:
+        # npm view @playwright/mcp@0.0.78 dependencies.playwright
+        - "@playwright/mcp@{{ playwright_mcp_version }}"
+        # https://github.com/microsoft/playwright-mcp#configuration
+        - --endpoint
+        - "{{ playwright_service_url }}"
+        - --isolated
+
+  # https://opencode.ai/docs/config#plugins
+  plugin:
+    # https://github.com/leecoder/opencode-slack-agent
+    #
+    # HINT: to link an OpenCode session to a thread in Slack, first post a
+    # message containing the name of the OpenCode session to the #opencode
+    # Slack channel, then click on the message's "Reply in thread" button
+    # to show the Thread side panel, then reply with:
+    #   @OpenCode !attach ses_<session_id>
+    # where <session_id> is the ID shown by running `opencode session list`
+    # in the project directory (use Slack auto-complete to mention the bot,
+    # and make sure the OpenCode server with the plugin is already running)
+    # confirm the bot is connected by sending a follow-up reply:
+    #   @OpenCode !dir
+    # - - opencode-slack-agent
+    # use manually installed plugin version from unmerged PR in
+    # order to get Slack messages in English instead of Korean:
+    # https://github.com/leecoder/opencode-slack-agent/pull/12
+    #   mkdir -p ~/.config/opencode/plugins
+    #   git clone https://github.com/leecoder/opencode-slack-agent.git \
+    #      ~/.config/opencode/plugins/slack-agent-pr12
+    #   cd ~/.config/opencode/plugins/slack-agent-pr12
+    #   git fetch origin pull/12/head
+    #   git checkout --detach FETCH_HEAD
+    #   npm install
+    #   npm run build
+    - - ./plugins/slack-agent-pr12/dist/plugin.js
+      # SLACK_APP_TOKEN & SLACK_BOT_TOKEN
+      # are set via environment variables
+      - ALLOWED_USERS: "{{ user_erhhung.slack.id }}"
+        LANGUAGE: en
+
+  # https://opencode.ai/docs/config#shell
+  shell: bash
+
+  # never share conversations
+  # on OpenCode cloud servers:
+  # https://opencode.ai/docs/share
+  # https://opencode.ai/docs/config#sharing
+  share: disabled
+
+  # https://opencode.ai/docs/config#watcher
+  watcher:
+    ignore:
+      - .git/**
+      - .venv/**
+      - node_modules/**
+      - build/**
+      - dist/**
+      - bazel-*
+
+  # preserve context automatically
+  # while removing old tool output:
+  # https://opencode.ai/docs/config#compaction
+  compaction:
+    auto: true
+    prune: true
+
+  # https://opencode.ai/docs/permissions
+  # https://opencode.ai/docs/config#permissions
+  permission:
+    # https://opencode.ai/docs/permissions#external-directories
+    external_directory:
+      ~/workspace/**: allow
+      ~/nfs-share/**: allow
+      ~/.vscode-server/**: allow
+      ~/.cache/**: allow
+      ~/.go/**: allow
+      ~/go/**: allow
+      "**/bin/*": allow
+      /usr/**: allow
+      /opt/**: allow
+      /etc/**: allow
+      /tmp/**: allow
+
+    bash:
+      "*": allow
+      "sudo*": ask
+      "rm -rf*": ask
+      "git push*": ask
+      "git clean*": ask
+      "git reset --hard*": ask

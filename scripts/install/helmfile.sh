@@ -25,7 +25,7 @@ cat <<'EOF' > $SCRIPT
 set -eo pipefail
 
 get_operation() {
-  [[ "$1" =~ ^(template|install|upgrade)$ ]] && echo "$1"
+  [[ "$1" =~ ^(repo|pull|template|install|upgrade)$ ]] && echo "$1"
 }
 get_chart_dir() {
   while [ "$1" ]; do
@@ -34,6 +34,9 @@ get_chart_dir() {
       return 0
     } || shift
   done
+}
+is_retryable() {
+  [[ "$1" =~ ^(repo|pull)$ ]]
 }
       args=()
 extra_args=()
@@ -77,6 +80,26 @@ while [ "$1" ]; do
   esac
   args+=("$arg")
 done
+
+if is_retryable "$op"; then
+  retry=0
+
+  for delay in 2 4 8; do
+    if helm "${args[@]}" "${extra_args[@]}"; then
+      exit 0
+    else
+      rc=$?
+    fi
+    # don't retry commands terminated by signal
+    [ "$rc" -ge 128 ] && exit "$rc"
+
+    ((++retry))
+    printf >&2 \
+      '"helm %s" failed (exit %s); retry %s/3 in %ss...\n' \
+      "$op" "$rc" "$retry" "$delay"
+    sleep $delay
+  done
+fi
 
 exec helm "${args[@]}" "${extra_args[@]}"
 EOF

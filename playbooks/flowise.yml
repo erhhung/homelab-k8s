@@ -689,7 +689,7 @@
   hosts: localhost
   vars_files:
     - vars/kubernetes.yml
-    - vars/litellm.yml
+    - vars/litellm.configure.yml
     - vars/ollama.yml
     - vars/flowise.yml
   vars:

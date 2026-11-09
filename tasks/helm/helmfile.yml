@@ -164,6 +164,7 @@
     ignore_always:
       - "annotations:"
       - volume.*\.kubernetes\.io/
+      - kubectl\.kubernetes\.io/
       - pv\.kubernetes\.io/
       - field\.cattle\.io/
       - wave\.pusher\.com/

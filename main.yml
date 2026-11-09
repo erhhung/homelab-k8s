@@ -70,7 +70,12 @@
   ansible.builtin.import_playbook: playbooks/storage.yml
   tags: storage
 
-# MinIO depends on NFS storage provisioner
+# Harbor depends on NFS storage provisioner
+- name: Include Harbor OCI registry playbook
+  ansible.builtin.import_playbook: playbooks/harbor.yml
+  tags: harbor
+
+# MinIO depends on Harbor and NFS provisioner
 - name: Include MinIO object storage playbook
   ansible.builtin.import_playbook: playbooks/minio.yml
   tags: minio
@@ -79,11 +84,6 @@
 - name: Include Velero backup/restore playbook
   ansible.builtin.import_playbook: playbooks/velero.yml
   tags: velero
-
-# Harbor depends on NFS storage provisioner
-- name: Include Harbor OCI registry playbook
-  ansible.builtin.import_playbook: playbooks/harbor.yml
-  tags: harbor
 
 # Trivy depends on Harbor and Longhorn
 - name: Include Trivy security scanner playbook

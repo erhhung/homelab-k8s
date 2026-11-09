@@ -31,8 +31,9 @@
     - vars/gitea.yml
     - vars/gitlab.yml
     - vars/harbor.yml
-    - vars/litellm.yml
     - vars/playwright.yml
+    - vars/litellm.configure.yml
+    - vars/opencode.configure.yml
     - vars/opencode.yml
   vars:
     # required kubernetes>=24.2 package only in user virtualenv

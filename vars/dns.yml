@@ -38,8 +38,21 @@ pfsense_dns_records:
         desc: RKE Nginx Ingress
       - host: minio
         desc: MinIO Console
+      - host: silo
+        desc: MinIO Console
       - host: s3
         desc: MinIO S3 API
+      # "tasks/dns/upsert.yml" will flatten nested array of alias objects
+      - |
+        {% set aliases = [] %}
+        {% for bucket in minio_buckets | flatten | map(attribute='name') %}
+        {%   set _ = aliases.append({
+               'host':    bucket,
+               'domain':  minio_s3api_fqdn,
+               'desc':   'MinIO Bucket'
+             })    %}
+        {% endfor  %}
+        {{ aliases }}
       - host: velero
         desc: Velero Dashboard
       - host: mailpit

@@ -82,6 +82,14 @@ harbor_mirror_images:
   - src: docker.io/bitnamilegacy/redis-exporter:1.76.0-debian-12-r0
     dest: bitnami/redis-exporter
 
+  # MinIO operator and Silo tenant server
+  - src: docker.io/minio/operator:v7.1.1
+    dest: minio/operator
+  - src: docker.io/minio/operator-sidecar:v7.0.1
+    dest: minio/operator-sidecar
+  - src: docker.io/pgsty/silo:RELEASE.2026-10-26T00-00-00Z
+    dest: minio/silo
+
   # OpenSearch chart v3.7.0
   - src: docker.io/opensearchproject/opensearch:3.7.0
     dest: opensearch/opensearch

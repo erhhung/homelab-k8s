@@ -4,6 +4,7 @@
 #      gitea_minio_key: {vault.yml}
 #     gitlab_minio_key: {vault.yml}
 # buildbuddy_minio_key: {vault.yml}
+#    litellm_minio_key: {vault.yml}
 #  openwebui_minio_key: {vault.yml}
 
 minio_buckets:
@@ -21,6 +22,15 @@ minio_buckets:
   # https://docs.ansible.com/ansible/latest/collections/community/general/dict_kv_filter.html
   - "{{ gitlab_buckets.values() | map('community.general.dict_kv', 'name')}}"
   - name: buildbuddy
+  # requests/responses
+  - name: litellm
+    # information lifecycle management rules (rule objects
+    # use native key names output by `mc ilm rule export`)
+    rules:
+      - ID: delete-old-logs
+        Expiration:
+          Days: 7
+        Status: Enabled
   # Open WebUI uploads
   - name: openwebui
 
@@ -39,6 +49,7 @@ minio_policies: |
          'gitea-rw': lookup('one_bucket_iam_policy', 'gitea'),
         'gitlab-rw': lookup('one_bucket_iam_policy', 'gitlab-*'),
     'buildbuddy-rw': lookup('one_bucket_iam_policy', 'buildbuddy'),
+       'litellm-rw': lookup('one_bucket_iam_policy', 'litellm'),
      'openwebui-rw': lookup('one_bucket_iam_policy', 'openwebui'),
   } }}
 
@@ -88,6 +99,9 @@ minio_users: # non-root
   buildbuddy:
     secret_key: "{{ buildbuddy_minio_key }}"
     policies: ["buildbuddy-rw"]
+  litellm:
+    secret_key: "{{ litellm_minio_key }}"
+    policies: ["litellm-rw"]
   openwebui:
     secret_key: "{{ openwebui_minio_key }}"
     policies: ["openwebui-rw"]

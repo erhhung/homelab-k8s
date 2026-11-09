@@ -8,8 +8,10 @@
     - vars/dns.yml
 
     # *_subdomain vars
-    - vars/thanos.yml
+    - vars/minio.yml
+    - vars/minio.configure.yml
     - vars/policyreporter.yml
+    - vars/thanos.yml
     - vars/gitlab.yml
     - vars/buildbuddy.yml
     - vars/vclusters.yml

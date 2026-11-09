@@ -15,7 +15,6 @@
     - vars/minio.yml
     - vars/ollama.yml
     - vars/qdrant.yml
-    - vars/litellm.yml
     - vars/monitoring.yml
     - vars/pyrra.yml
     - vars/observability.yml
@@ -292,8 +291,8 @@
     - vars/openwebui.yml
     - vars/openwebui.mcpo.yml
     - vars/openwebui.configure.yml
+    - vars/litellm.configure.yml
     - vars/ollama.yml
-    - vars/litellm.yml
     - vars/searxng.yml
     - vars/playwright.yml
   vars:
@@ -310,6 +309,9 @@
       vars:
         secret_key: "{{ user_erhhung.username }}"
       ansible.builtin.include_tasks: "{{ tasks_dir }}/litellm/apikey.yml"
+      # don't add `when` condition here and
+      # assume that `litellm_api_key`, even
+      # if defined, was set for `user_erhhung`
       # sets fact: litellm_api_key
 
     - name: Wait until Open WebUI is ready

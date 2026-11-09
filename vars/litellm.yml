@@ -1,5 +1,6 @@
-# litellm_master_key: {vault.yml}
 # litellm_admin_pass: {vault.yml}
+# litellm_master_key: {vault.yml}
+# litellm_minio_key:  {vault.yml}
 # litellm_pg_pass:    {vault.yml}
 # litellm_vk_pass:    {vault.yml}
 # icloud_smtp.*:      {vault.yml}
@@ -57,8 +58,15 @@ litellm_chart_oci_url: oci://docker.litellm.ai/berriai/litellm-helm
 # IMPORTANT: see relevant release notes
 # for breaking changes before upgrading:
 # https://docs.litellm.ai/release_notes
-litellm_chart_version: "1.103.2"
+litellm_chart_version: "1.108.3"
 litellm_release_name: litellm
+
+litellm_image:
+  repository: ghcr.io/berriai/litellm-database
+  # skopeo list-tags docker://ghcr.io/berriai/litellm-database | \
+  #   jq -r '.Tags | sort[] | capture("^(?<t>([0-9]+[.])+[0-9]+.*$)").t'
+  tag: "{{ litellm_chart_version }}"
+  pullPolicy: IfNotPresent
 
 # https://github.com/BerriAI/litellm/tree/main/helm/litellm-helm/values.yaml
 litellm_chart_values:
@@ -70,12 +78,7 @@ litellm_chart_values:
   strategy:
     type: Recreate
 
-  image:
-    repository: ghcr.io/berriai/litellm-database
-    # skopeo list-tags docker://ghcr.io/berriai/litellm-database | \
-    #   jq -r '.Tags | sort[] | capture("^(?<t>([0-9]+[.])+[0-9]+.*$)").t'
-    tag: "{{ litellm_chart_version }}"
-    pullPolicy: IfNotPresent
+  image: "{{ litellm_image }}"
 
   envVars:
     # https://docs.litellm.ai/docs/proxy/ui#4-sign-in-for-the-first-time
@@ -83,6 +86,12 @@ litellm_chart_values:
     # https://docs.litellm.ai/docs/proxy/ui#6-configure-root-redirect-url
     ROOT_REDIRECT_URL: /ui
     DOCS_URL: /docs
+
+    # Prisma migration uses v2 migration
+    # resolver, which uses psycopg/libpq
+    PGSSLCERT: /tls/database/tls.crt
+    PGSSLKEY: /tls/database/tls.key
+    PGSSLROOTCERT: /tls/database/ca.crt
 
     # https://docs.litellm.ai/docs/proxy/email
     SMTP_HOST: "{{ icloud_smtp.host }}"
@@ -104,6 +113,9 @@ litellm_chart_values:
     # essentially the same as default value of 1000, but suppresses
     # log "Spend Log: response was truncated before storing in DB."
     MAX_STRING_LENGTH_PROMPT_IN_DB: "1024"
+    # flush logs every 2s to avoid accumulating
+    # large request/response payloads in memory
+    DEFAULT_S3_FLUSH_INTERVAL_SECONDS: "2" # default=10
 
   # this setting renders the $LITELLM_LOG env var
   logLevel: INFO # DEBUG|INFO|WARNING|ERROR|CRITICAL
@@ -126,19 +138,26 @@ litellm_chart_values:
       disable_env_credential_login: true
       # hide credentials hint on login form
       hide_default_credentials_hint: true
+
       # disable Prisma schema migration on
       # startup--use migration Job instead
       disable_prisma_schema_update: true
+      # no need to refresh from DB every
+      # 30s when we only have one replica
+      # and don't make changes via the UI
+      proxy_config_reload_interval_seconds: 300
+
       # enable storing models & credentials
       # in the database instead of just the
       # config file, which isn't persistent
       # for a volume-mounted ConfigMap
       store_model_in_db: true
-      store_prompts_in_spend_logs: true
-      # no need to refresh from DB every
-      # 30s when we only have one replica
-      # and don't make changes via the UI
-      proxy_config_reload_interval_seconds: 300
+      # prevent sheer volume of prompts and
+      # responses from cluttering database;
+      # store them in the S3 bucket instead
+      store_prompts_in_spend_logs: false
+      # track spending stats for up to one year
+      maximum_spend_logs_retention_period: 366d
 
       # https://docs.litellm.ai/docs/proxy/alerting
       alerting:
@@ -203,10 +222,29 @@ litellm_chart_values:
         namespace: "#litellm#"
         ttl: 600
 
-      # enable /metrics endpoint for ServiceMonitor:
-      # https://docs.litellm.ai/docs/proxy/prometheus
       callbacks:
+        # https://docs.litellm.ai/docs/response_api#session-management
+        - s3_v2
+        # enable /metrics endpoint for ServiceMonitor:
+        # https://docs.litellm.ai/docs/proxy/prometheus
         - prometheus
+
+      # store prompts and responses in MinIO bucket instead
+      # of database (`store_prompts_in_spend_logs` setting)
+      # objects in the bucket will expire after 7 days (see
+      # bucket lifecycle rules in vars/minio.configure.yml)
+      cold_storage_custom_logger: s3_v2
+
+      # https://docs.litellm.ai/docs/proxy/logging#s3-buckets
+      s3_callback_params:
+        s3_aws_access_key_id: litellm
+        s3_aws_secret_access_key: os.environ/AWS_SECRET_KEY
+        s3_endpoint_url: "{{ minio_service_url }}"
+        s3_region_name: "{{  minio_region }}"
+        s3_bucket_name: litellm
+        # s3_path: optional/prefix/
+        s3_partition_granularity: day # day|hour
+        s3_max_concurrent_uploads: 4 # default=16
 
       # https://docs.litellm.ai/docs/proxy/ai_hub
       # mark models as public in the Model Hub (this config file
@@ -286,8 +324,8 @@ litellm_chart_values:
 
   resources:
     requests:
-      cpu: 10m
-      memory: 512Mi
+      cpu: 25m
+      memory: 1Gi
 
   # allow up to 10 minutes for LiteLLM to fully
   # initialize if ChatGPT auth flow is required
@@ -302,6 +340,8 @@ litellm_chart_values:
       secret:
         secretName: "{{ litellm_secrets['database'] }}"
         defaultMode: 416 # "0640"
+    - name: ca-bundle
+      emptyDir: {}
     - name: chatgpt-auth
       secret:
         secretName: "{{ litellm_secrets['chatgpt'] }}"
@@ -314,6 +354,11 @@ litellm_chart_values:
     # keep as first item
     - name: database-tls
       mountPath: /tls/database
+      readOnly: true
+    - name: ca-bundle
+      # container sets `SSL_CERT_FILE` to this path
+      mountPath: /etc/ssl/certs/ca-certificates.crt
+      subPath: ca-bundle.crt
       readOnly: true
     - name: litellm-data
       mountPath: /data
@@ -371,10 +416,33 @@ litellm_chart_values:
             storage: 384Mi
 
   extraInitContainers:
+    # add private CA certificate to system CA bundle
+    # so LiteLLM can reach MinIO with $SSL_CERT_FILE
+    - name: ca-bundle
+      image: "{{ litellm_image.repository ~':'~ litellm_image.tag }}"
+      imagePullPolicy: IfNotPresent
+      command: ["bash"]
+      args:
+        - -c
+        - |-
+          set -eo pipefail
+
+          # container image already sets SSL_CERT_FILE to system CA bundle
+          printf "%s\n\n%s\n" "$(< $SSL_CERT_FILE)" "$(< /tls/ca.crt)" | \
+            tee /ssl/ca-bundle.crt | tail -n 11
+
+      volumeMounts:
+        - name: database-tls
+          mountPath: /tls
+          readOnly: true
+        - name: ca-bundle
+          mountPath: /ssl
+
     # copy possibly expired ChatGPT auth tokens
-    # from Secret to PVC-backed volume; LiteLLM
-    # may refresh the access token if necessary
-    - name: init-auth
+    # from Secret to PVC-backed volume; ChatGPT
+    # authenticator may refresh access token in
+    # next init container
+    - name: copy-auth
       image: backplane/jq
       imagePullPolicy: IfNotPresent
       command: ["sh"]
@@ -400,9 +468,11 @@ litellm_chart_values:
             mkdir -p /data/chatgpt
             cp    -f  $src $dest
             chmod      600 $dest
-          else
+
+          elif [ "$dest_exp" -gt 0 ]; then
             echo "Existing ChatGPT token expiration is newer:"
             echo "$(exp_out $dest_exp) >= $(exp_out $src_exp)"
+            exit
           fi
 
       volumeMounts:
@@ -410,6 +480,55 @@ litellm_chart_values:
           mountPath: /src/chatgpt/auth.json
           subPath: auth.json
           readOnly: true
+        - name: litellm-data
+          mountPath: /data
+
+    - name: gpt-oauth
+      image: "{{ litellm_image.repository ~':'~ litellm_image.tag }}"
+      imagePullPolicy: IfNotPresent
+      command: ["python"]
+      args:
+        - -c
+        - |-
+          # https://github.com/BerriAI/litellm/tree/main/litellm/llms/chatgpt/authenticator.py#L84
+          from litellm.llms.chatgpt.authenticator import Authenticator
+          import json
+
+          class TracedAuthenticator(Authenticator):
+              def __init__(self):
+                  super().__init__()
+                  self.device_code_requested = False
+
+              def _request_device_code(self):
+                  self.device_code_requested = True
+                  return super()._request_device_code()
+
+          auth  = TracedAuthenticator()
+          token = auth.get_access_token()
+
+          # confirm that returned credentials were persisted
+          # LiteLLM logs write errors but doesn`t raise them
+          print() if auth.device_code_requested else None
+
+          with open(auth.auth_file, "r+", encoding="utf-8") as f:
+              saved = json.load(f)
+
+              if saved.get("access_token") != token:
+                  raise RuntimeError("Access token was not persisted")
+
+              if not saved.get("refresh_token") or not saved.get("id_token"):
+                  raise RuntimeError("Auth file is missing required tokens")
+
+          print("👍 ChatGPT credentials are ready.")
+      env:
+        - name: CHATGPT_TOKEN_DIR
+          value: /data/chatgpt
+        - name: CHATGPT_AUTH_FILE
+          value: auth.json
+        - name: LITELLM_LOG
+          value: ERROR
+
+      volumeMounts:
         - name: litellm-data
           mountPath: /data
 
@@ -462,199 +581,3 @@ litellm_job_init_container:
     - name: database-tls
       mountPath: /tls
       readOnly: true
-
-# ===== AVAILABLE MODELS & PRICING CHART =====
-
-# https://docs.litellm.ai/docs/providers/openai
-# https://docs.litellm.ai/docs/providers/anthropic
-# https://docs.litellm.ai/docs/providers/groq
-# https://claude.com/pricing#api
-
-# 💡 ChatGPT Authentication OAuth Device Flow 💡
-# ---------------------------------------------
-# 1. edit Secret `litellm-chatgpt-auth` and make JSON object empty
-# 2. shell into LiteLLM container and `rm /data/chatgpt/auth.json`
-# 3. restart LiteLLM pod and watch container logs for instructions
-#    Sign in with ChatGPT using device code:
-#    1) Visit https://auth.openai.com/codex/device
-#    2) Enter code: XXXX-YYYYY
-# 4. shell into container again and `cat /data/chatgpt/auth.json`
-#    to copy the entire JSON content to replace Ansible-encrypted
-#    file "files/litellm/chatgpt/auth.json" and update the Secret
-
-# https://docs.litellm.ai/docs/routing#what-is-a-deployment
-litellm_models:
-  # https://docs.litellm.ai/docs/providers/openai
-  - &openai-model
-    # https://developers.openai.com/api/docs/models/gpt-6-luna ($0.10 • $0.50)
-    model_name: gpt-6-luna
-    model_info: &openai-info
-      display_name: GPT-6 Luna
-      # same for all 6.x models
-      max_input_tokens: 1050000
-      max_output_tokens: 128000
-      mode: responses
-
-      # simulate ChatGPT credit cost per 1M tokens:
-      # input: 2.5 | cache read: 0.25 | output: 12.5
-      # 500 credits = $20 (1 credit = $0.04)
-      # e.g. input = (20 / 500 / 10**6) * 2.5
-      # https://help.openai.com/en/articles/11481834-chatgpt-rate-card-business-enterpriseedu-credit-based-pricing#chatgpt-work-and-codex
-      # https://github.com/BerriAI/litellm/tree/main/litellm/proxy/_types.py#L5834-L5839
-      input_cost_per_token: 0.0000001
-      output_cost_per_token: 0.0000005
-      cache_read_input_token_cost: 0.00000001
-      # Codex doesn't charge for cache writes
-      cache_creation_input_token_cost: 0
-
-    litellm_params: &openai-params
-      # use ChatGPT subscription (no API usage costs):
-      # https://docs.litellm.ai/docs/providers/chatgpt
-      model: chatgpt/gpt-6-luna
-      # model: openai/gpt-6-luna
-      # api_base: https://api.openai.com/v1
-      # api_key: os.environ/OPENAI_API_KEY
-      # https://docs.litellm.ai/docs/providers/openai#advanced-using-reasoning_effort-with-summary-field
-      reasoning_effort: medium # none|low|medium|high|xhigh|max
-
-  # https://developers.openai.com/api/docs/models/gpt-6.1-sol ($2 • $10)
-  - <<: *openai-model
-    model_name: gpt-6.1-sol
-    model_info:
-      <<: *openai-info
-      display_name: GPT-6.1 Sol
-      # simulate ChatGPT credit cost per 1M tokens:
-      # input: 50 | cache read: 2.5 | output: 250
-      # 500 credits = $20 (1 credit = $0.04)
-      input_cost_per_token: 0.000002
-      cache_read_input_token_cost: 0.0000001
-      output_cost_per_token: 0.000010
-
-    litellm_params:
-      <<: *openai-params
-      model: chatgpt/gpt-6.1-sol
-      reasoning_effort: high # low|medium|high|xhigh|max
-
-  - <<: *openai-model
-    # https://developers.openai.com/api/docs/models/gpt-6-astra ($10 • $50)
-    model_name: gpt-6-astra
-    model_info:
-      <<: *openai-info
-      display_name: GPT-6 Astra
-      # simulate ChatGPT credit cost per 1M tokens:
-      # input: 250 | cache read: 25 | output: 1250
-      # 500 credits = $20 (1 credit = $0.04)
-      input_cost_per_token: 0.000010
-      cache_read_input_token_cost: 0.000001
-      output_cost_per_token: 0.000050
-
-    litellm_params:
-      <<: *openai-params
-      model: chatgpt/gpt-6-astra
-      reasoning_effort: high # low|medium|high|xhigh|max
-
-  # https://docs.litellm.ai/docs/providers/anthropic
-  - &anthropic-model
-    # https://www.anthropic.com/claude/haiku ($1 • $5)
-    model_name: claude-haiku-4-5
-    model_info:
-      display_name: Claude Haiku 4.5
-    litellm_params: &anthropic-params
-      model: claude-haiku-4-5
-      # don't append /v1 to Anthropic URL
-      api_base: https://api.anthropic.com
-      api_key: os.environ/ANTHROPIC_API_KEY
-      # https://docs.litellm.ai/docs/providers/anthropic#usage---thinking--reasoning_content
-      reasoning_effort: low # low|medium|high
-      max_tokens: 8192
-
-  - <<: *anthropic-model
-    # https://www.anthropic.com/claude/sonnet ($3 • $15)
-    model_name: claude-sonnet-5
-    model_info:
-      display_name: Claude Sonnet 5
-    litellm_params:
-      <<: *anthropic-params
-      model: claude-sonnet-5
-      reasoning_effort: medium # low|medium|high
-
-  - <<: *anthropic-model
-    # https://www.anthropic.com/claude/opus ($5 • $25)
-    model_name: claude-opus-4-8
-    model_info:
-      display_name: Claude Opus 4.8
-    litellm_params:
-      <<: *anthropic-params
-      model: claude-opus-4-8
-      reasoning_effort: high # low|medium|high
-
-  # https://docs.litellm.ai/docs/providers/groq
-  - &groq-model
-    # https://console.groq.com/docs/model/llama-3.3-70b-versatile ($0.59 • $0.79)
-    model_name: llama-3.3-70b-versatile
-    model_info:
-      display_name: LLaMA 3.3 70B Versatile
-    litellm_params: &groq-params
-      model: groq/llama-3.3-70b-versatile
-      api_base: https://api.groq.com/openai/v1
-      api_key: os.environ/GROQ_API_KEY
-
-  - <<: *groq-model
-    # https://console.groq.com/docs/model/meta-llama/llama-4-maverick-17b-128e-instruct
-    model_name: llama-4-maverick-17b-instruct
-    model_info:
-      display_name: LLaMA 4 Maverick 17B Instruct
-    litellm_params:
-      <<: *groq-params
-      model: groq/meta-llama/llama-4-maverick-17b-128e-instruct
-
-  # https://ollama.com/library/gemma3
-  - model_name: gemma3-4b
-    model_info:
-      display_name: Gemma 3 4B
-    litellm_params:
-      model: ollama_chat/gemma3:4b
-      api_base: "{{ ollama_service_url }}"
-
-litellm_default_model: gpt-6.1-sol
-litellm_small_model: gpt-6-luna
-
-# TIP: use stable, non-provider-specific tool names so that
-# backing providers can be swapped or additional providers
-# added under the same name for load-balancing and failover
-# https://docs.litellm.ai/docs/search#litellm-ai-gateway-usage
-litellm_search_tools:
-  - search_tool_name: web
-    # https://docs.litellm.ai/docs/search/searxng
-    litellm_params:
-      search_provider: searxng
-      api_base: "{{ searxng_service_url }}"
-
-# POST /team/new
-litellm_teams:
-  # all properties match
-  # expected API payload
-  - team_alias: Family
-    max_budget: 20 # USD
-    budget_duration: 30d
-    models: "{{ litellm_models | map(attribute='model_name') }}"
-
-# POST /user/new
-litellm_users:
-  # NOTE: only specify fields that
-  # are returned by /user/list API
-  - user_id: admin
-    user_alias: "{{ homelab_admin.full_name }}"
-    # UI login MUST use email, not user_id
-    user_email: "{{ homelab_admin.email }}"
-    # proxy_admin will have UI
-    # password but not API key
-    user_role: proxy_admin
-
-  - user_id: "{{    user_erhhung.username }}"
-    user_alias: "{{ user_erhhung.full_name }}"
-    user_email: "{{ user_erhhung.email }}"
-    # https://github.com/BerriAI/litellm/tree/main/litellm/proxy/_types.py#L93
-    user_role: internal_user
-    # team_ids is fact set by task
-    teams: "{{ [team_ids['Family']] }}"

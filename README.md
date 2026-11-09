@@ -126,7 +126,7 @@ All cluster services will be provisioned with TLS certificates from Erhhung's pr
     * Install on K3s and RKE clusters using the [`nfs-subdir-external-provisioner`](https://github.com/kubernetes-sigs/nfs-subdir-external-provisioner) Helm chart
 - [X] [Mountpoint for S3/MinIO](https://github.com/awslabs/mountpoint-s3-csi-driver) — statically mount S3-compatible buckets as PVC volumes
     * Install on main RKE cluster using the [`aws-mountpoint-s3-csi-driver`](https://github.com/awslabs/mountpoint-s3-csi-driver/tree/main/docs/INSTALL.md#helm) Helm chart
-- [X] [MinIO Object Storage](https://github.com/minio/minio) — S3-compatible object storage with console
+- [X] [MinIO Object Storage](https://silo.pgsty.com/) — S3-compatible object storage with console
     * Install on main RKE cluster using the [MinIO Operator](https://min.io/docs/minio/kubernetes/upstream/operations/install-deploy-manage/deploy-operator-helm.html) and [MinIO Tenant](https://min.io/docs/minio/kubernetes/upstream/operations/install-deploy-manage/deploy-minio-tenant-helm.html) Helm charts
 - [X] [Velero Backup & Restore](https://velero.io/docs/latest/basic-install) — back up and restore persistent volumes
     * Install on main RKE cluster using the [`velero`](https://github.com/vmware-tanzu/helm-charts/tree/main/charts/velero) Helm chart
@@ -462,6 +462,9 @@ however, all privileged operations using `sudo` will require the password stored
     14.8. Install Velero Dashboard  
 
     ```bash
+    # IMPORTANT! MinIO now depends on Harbor while Harbor still
+    # depends on NFS provisioner; since Velero depends on MinIO,
+    # the new install order must be: storage harbor minio velero
     make storage minio velero
     ```
 </details>

@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 
+# shellcheck disable=SC2291 # Quote spaces prevent collapse
 # shellcheck disable=SC2086 # Double quote prevent globbing
 # shellcheck disable=SC2016 # Expr won't expand in '' quotes
 
@@ -29,11 +30,13 @@ AUTH_SECRET=litellm-chatgpt-auth
 REMOTE_FILE=/data/chatgpt/auth.json
  LOCAL_FILE=files/litellm/chatgpt/auth.json
 
+   RED='\x1B[0;31m'
 YELLOW='\x1B[1;33m'
 LTCYAN='\x1B[1;36m'
   PINK='\x1B[1;35m'
  NOCLR='\x1B[0m'
 
+color_red()    { echo -e    "${RED}$*${NOCLR}"; }
 color_yellow() { echo -e "${YELLOW}$*${NOCLR}"; }
 color_ltcyan() { echo -e "${LTCYAN}$*${NOCLR}"; }
 color_pink()   { echo -e   "${PINK}$*${NOCLR}"; }
@@ -48,21 +51,27 @@ $kubectl patch secret $AUTH_SECRET --type merge \
 
 # delete "chatgpt/auth.json" from container
 color_ltcyan '\n2. Shell into LiteLLM container and `rm /data/chatgpt/auth.json`'
-pod_name="$($kubectl get pod -l "$APP_SELECTOR" -o name)"
-$kubectl exec $pod_name -c litellm -- rm -vf $REMOTE_FILE
+pod_ref="$($kubectl get pod -l "$APP_SELECTOR" -o name)"
+if $kubectl get $pod_ref -o json | jq -e '
+     .status.containerStatuses[] | select(.name == "litellm")
+                                 | .state.running' > /dev/null; then
+  $kubectl exec $pod_ref -c litellm -- rm -vf $REMOTE_FILE
+else
+  color_red 'container is not running...skipping'
+fi
 
 # restart LiteLLM pod and monitor log output
 color_ltcyan '\n3. Restart LiteLLM pod and watch container logs for instructions'
 restart_ts=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-$kubectl rollout restart deployment -l "$APP_SELECTOR"
+$kubectl delete $pod_ref --now --wait
 
-# wait for new pod main container to run
+# wait for new pod init container to run
 echo "waiting for the new pod to run..."
 until pod_name=$(
   $kubectl get pod -l "$APP_SELECTOR" -o json | \
-    jq -r --arg ts "$restart_ts" '.items[]  |
-        select(.status.containerStatuses[]? |
-          select(.name == "litellm" and
+    jq -r --arg ts "$restart_ts" '.items[]    |
+        select(.status.initContainerStatuses[]? |
+          select(.name == "gpt-oauth" and
                  .state.running.startedAt > $ts)
         ) |
         .metadata.name'
@@ -71,7 +80,7 @@ until pod_name=$(
 done
 
 until auth_prompt=$(
-  $kubectl logs $pod_name -c litellm --tail=10 | \
+  $kubectl logs $pod_name -c gpt-oauth --tail=10 | \
     sed -n '/^Sign in with ChatGPT/,/^Device codes/{ /^Device codes/!p; }'
 ); [ "$auth_prompt" ]; do
   sleep 1
@@ -79,7 +88,7 @@ done
 color_yellow "\n$auth_prompt"
 
 # pod should become ready after user sign-in
-color_pink '\nwaiting for user to sign-in...'
+color_pink '\nwaiting for user to sign-in and pod to become ready...'
 $kubectl wait --for=condition=Ready pod $pod_name --timeout=5m
 
 color_ltcyan \

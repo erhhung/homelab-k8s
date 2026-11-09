@@ -1,5 +1,6 @@
 # https://operator.min.io/
 # https://resources.min.io/
+# https://silo.pgsty.com/
 ---
 - name: Install MinIO storage for QNAP
   tags: install
@@ -24,7 +25,33 @@
     - name: Is the monitoring stack ready?
       ansible.builtin.include_tasks: "{{ tasks_dir }}/monitoring/stackready.yml"
       when: monitoring_stack_ready is undefined
+
+    - name: Get active MinIO tenant image
+      kubernetes.core.k8s_info:
+        kubeconfig: "{{ kubeconfig }}"
+        api_version: minio.min.io/v2
+        kind: Tenant
+        name: "{{ minio_tenant_name }}"
+        namespace: "{{ minio_tenant_namespace }}"
+      register: active_tenant
   tasks:
+    # ask the AI agent to prescribe the appropriate
+    # coordinated server migration plan if required
+    - name: Require coordinated migration
+      vars:
+        tenant_image: "{{ minio_tenant_chart_values.tenant.image }}"
+        desired_image: "{{ tenant_image.repository }}:{{
+          tenant_image.digest | default(tenant_image.tag) }}"
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/assert_module.html
+      ansible.builtin.assert:
+        that:
+          - >-
+            active_tenant.resources is falsy or
+            active_tenant.resources[0].spec.image == desired_image
+        fail_msg: >-
+          Tenant server image has changed. Complete the coordinated
+          server migration before re-running this MinIO deployment.
+
     - name: Create MinIO ingress secret
       vars:
         secret_name: "{{ item.name }}"
@@ -38,8 +65,7 @@
       loop:
         - name: "{{ minio_secrets['console'] }}"
           cert: console
-          sans:
-            - "{{ minio_console_fqdn }}"
+          sans: "{{ minio_console_fqdns    }}"
         - name: "{{ minio_secrets['s3api'] }}"
           cert: s3
           # use longer expiration and renewal than the default
@@ -49,7 +75,7 @@
           days: 90
           renew: 30
           sans:
-            - "{{ minio_s3api_fqdn }}"
+            - "{{   minio_s3api_fqdn }}"
             - "*.{{ minio_s3api_fqdn }}"
             - "*.{{ minio_tenant_name }}-hl.{{ minio_tenant_namespace }}.svc.{{ cluster_domain }}"
             - "*.{{ minio_tenant_namespace }}.svc.{{ cluster_domain }}"
@@ -372,6 +398,24 @@
             local/{{ bucket.name }}
           rc=0
         }
+        _rules="$(mc ilm rule export local/{{ bucket.name }} 2> /dev/null | jq -cMS || true)"
+        {% if bucket.rules is defined and
+              bucket.rules is truthy  %}
+        rules="$(jq -cMS <<'JSON'
+        {{ { "Rules": bucket.rules } | to_json }}
+        JSON
+        )"
+        {% else %}
+        rules=''
+        {% endif %}
+
+        if [ "$_rules" ] && [ ! "$rules" ]; then # delete all
+          mc ilm rule remove local/{{ bucket.name }} --all --force
+          rc=0
+        elif [ "$rules" ] && [ "$_rules" != "$rules" ]; then # create/update
+          mc ilm rule import local/{{ bucket.name }} <<< "$rules"
+          rc=0
+        fi
         {% endfor %}
 
         # get list of existing policies:
