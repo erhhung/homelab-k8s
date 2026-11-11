@@ -1,0 +1,62 @@
+# all mounts will be created
+# using KV secrets engine v2
+# but versioning is disabled
+vault_kv_mounts:
+  prod: kv-prod
+
+# https://developer.hashicorp.com/vault/docs/concepts/policies
+# https://developer.hashicorp.com/vault/docs/concepts/policies#capabilities
+vault_policies:
+  admin:
+    - path: "*"
+      capabilities:
+        - create
+        - read
+        - update
+        - patch
+        - delete
+        - list
+        - sudo
+  # KV secrets engine v2 stores secret values
+  # under data/ and info for listing/undelete
+  # under metadata/
+  kv-read: |
+    {% set stanzas = [] %}
+    {% for mount in vault_kv_mounts.values() %}
+    {%   set _ = stanzas.append({
+           'path': mount ~ '/data/*',
+           'capabilities': ['read']
+         }) %}
+    {%   set _ = stanzas.append({
+           'path': mount ~ '/metadata/*',
+           'capabilities': ['list','read']
+         }) %}
+    {% endfor  %}
+    {{ stanzas }}
+
+# Userpass auth method does not support
+# roles--policies are attached directly:
+# https://developer.hashicorp.com/vault/docs/auth/userpass#configuration
+# https://developer.hashicorp.com/vault/api-docs/auth/userpass#create-update-user
+vault_users:
+  erhhung:
+    password: "{{ vault_admin_pass }}"
+    # "default" policy always applied
+    policies:
+      - admin
+
+# roles for Kubernetes auth method:
+# https://developer.hashicorp.com/vault/docs/auth/kubernetes#configuration
+# https://developer.hashicorp.com/vault/api-docs/auth/kubernetes#create-update-role
+vault_roles:
+  eso: # External Secrets Operator
+    sa_names: "{{ eso_release_name }}"
+    sa_namespaces: "{{ eso_namespace }}"
+    audience: vault
+    # all properties with token_ prefix
+    # will be passed to role API as-is:
+    token_type: service
+    token_policies:
+      - kv-read
+    # renew every hour until revoked
+    token_period: 1h

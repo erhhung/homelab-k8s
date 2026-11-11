@@ -55,8 +55,10 @@ spec:
           args:
             - -c
             - |-
-              apk add --no-cache curl jq yq kubectl &> /dev/null
-
+              apk add --no-cache curl jq yq kubectl &> /dev/null || {
+                echo >&2 "Failed to install required tools."
+                exit 1
+              }
               # https://developer.hashicorp.com/vault/api-docs/system/health
               # returns {initialized,sealed,...}
               #  status 200: initialized, unsealed, and active

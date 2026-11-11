@@ -132,8 +132,9 @@
   hosts: rke_any
   vars_files:
     - vars/kubernetes.yml
-    - vars/externalsecrets.yml
     - vars/vault.yml
+    - vars/vault.configure.yml
+    - vars/externalsecrets.yml
   pre_tasks:
     - name: Wait for Vault to be ready
       vars:
@@ -243,7 +244,7 @@
   tags: data
   hosts: rke_any
   vars_files:
-    - vars/vault.yml
+    - vars/vault.configure.yml
     # vault_secrets_data.*
     - vars/vault.secrets.yml
   tasks:

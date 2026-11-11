@@ -19,7 +19,8 @@ vault_secrets:
 
 # https://github.com/hashicorp/vault-helm
 # https://developer.hashicorp.com/vault/docs/deploy/kubernetes/helm
-vault_chart_version: "0.31.0"
+# ensure `server.image.tag` compatibility
+vault_chart_version: "0.34.1"
 vault_release_name: vault
 
 # https://github.com/hashicorp/vault-helm/tree/main/values.yaml
@@ -36,6 +37,11 @@ vault_chart_values:
 
   server:
     enabled: true
+
+    image:
+      pullPolicy: IfNotPresent
+      repository: hashicorp/vault
+      tag: "2.2.1"
 
     logLevel: info # trace|debug|info|warn|error
     logFormat: standard # standard|json
@@ -69,9 +75,12 @@ vault_chart_values:
             address         = "[::]:8200"
             cluster_address = "[::]:8201"
 
-            tls_cert_file      = "/tls/tls.crt"
-            tls_key_file       = "/tls/tls.key"
-            tls_client_ca_file = "/tls/ca.crt"
+            tls_cert_file       = "/tls/tls.crt"
+            tls_key_file        = "/tls/tls.key"
+            tls_client_ca_file  = "/tls/ca.crt"
+            # auto certificate reload is new
+            # feature available since v2.2.0
+            tls_reload_interval = "30s"
 
             # allow unauthenticated metrics access
             # (necessary for Prometheus Operator)
@@ -181,7 +190,6 @@ vault_chart_values:
 
     livenessProbe:
       <<: *probe
-      path: /v1/sys/health?standbyok=true
       initialDelaySeconds: 60
 
     service:
@@ -245,66 +253,3 @@ vault_chart_values:
       # unauthenticated_metrics_access is set to true
       # in the listener, so no credentials are needed
       authorization: {}
-
-# all mounts will be created
-# using KV secrets engine v2
-# but versioning is disabled
-vault_kv_mounts:
-  prod: kv-prod
-
-# https://developer.hashicorp.com/vault/docs/concepts/policies
-# https://developer.hashicorp.com/vault/docs/concepts/policies#capabilities
-vault_policies:
-  admin:
-    - path: "*"
-      capabilities:
-        - create
-        - read
-        - update
-        - patch
-        - delete
-        - list
-        - sudo
-  # KV secrets engine v2 stores secret values
-  # under data/ and info for listing/undelete
-  # under metadata/
-  kv-read: |
-    {% set stanzas = [] %}
-    {% for mount in vault_kv_mounts.values() %}
-    {%   set _ = stanzas.append({
-           'path': mount ~ '/data/*',
-           'capabilities': ['read']
-         }) %}
-    {%   set _ = stanzas.append({
-           'path': mount ~ '/metadata/*',
-           'capabilities': ['list','read']
-         }) %}
-    {% endfor  %}
-    {{ stanzas }}
-
-# Userpass auth method does not support
-# roles--policies are attached directly:
-# https://developer.hashicorp.com/vault/docs/auth/userpass#configuration
-# https://developer.hashicorp.com/vault/api-docs/auth/userpass#create-update-user
-vault_users:
-  erhhung:
-    password: "{{ vault_admin_pass }}"
-    # "default" policy always applied
-    policies:
-      - admin
-
-# roles for Kubernetes auth method:
-# https://developer.hashicorp.com/vault/docs/auth/kubernetes#configuration
-# https://developer.hashicorp.com/vault/api-docs/auth/kubernetes#create-update-role
-vault_roles:
-  eso: # External Secrets Operator
-    sa_names: "{{ eso_release_name }}"
-    sa_namespaces: "{{ eso_namespace }}"
-    audience: vault
-    # all properties with token_ prefix
-    # will be passed to role API as-is:
-    token_type: service
-    token_policies:
-      - kv-read
-    # renew every hour until revoked
-    token_period: 1h
