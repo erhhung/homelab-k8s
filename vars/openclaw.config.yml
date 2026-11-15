@@ -193,8 +193,8 @@ openclaw_config:
         primary: litellm/{{ litellm_default_model }}
         fallbacks:
           - litellm/{{ litellm_small_model }}
-          - litellm/claude-opus-4-8
-          - litellm/claude-sonnet-5
+          # - litellm/claude-opus-4-8
+          # - litellm/claude-sonnet-5
 
       # https://docs.openclaw.ai/concepts/queue
       maxConcurrent: 2
@@ -339,6 +339,12 @@ openclaw_config:
         baseUrl: "{{ litellm_service_url }}"
         apiKey: ${LITELLM_API_KEY}
         api: openai-completions
+        headers:
+          # LiteLLM parses this header to report requests
+          # as coming from agent named "OpenClaw" instead
+          # of using the derived agent name "OpenAI SDK":
+          # https://docs.litellm.ai/docs/tutorials/cost_tracking_coding#how-litellm-identifies-coding-tools
+          User-Agent: OpenClaw/{{ openclaw_app_version }}
         models:
           # https://platform.openai.com/docs/models
           - id: gpt-6.1-sol

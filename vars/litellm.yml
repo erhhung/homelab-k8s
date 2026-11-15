@@ -80,6 +80,7 @@ litellm_chart_values:
 
   image: "{{ litellm_image }}"
 
+  # https://docs.litellm.ai/docs/proxy/config_settings#environment-variables---reference
   envVars:
     # https://docs.litellm.ai/docs/proxy/ui#4-sign-in-for-the-first-time
     UI_USERNAME: bootstrap
@@ -132,6 +133,7 @@ litellm_chart_values:
     model_list: "{{ litellm_models }}"
     search_tools: "{{ litellm_search_tools }}"
 
+    # https://docs.litellm.ai/docs/proxy/config_settings#general_settings---reference
     general_settings:
       master_key: os.environ/PROXY_MASTER_KEY
       # disable $UI_USERNAME & $UI_PASSWORD
@@ -196,6 +198,7 @@ litellm_chart_values:
         minor_outage_alert_threshold: 25
         major_outage_alert_threshold: 50
 
+    # https://docs.litellm.ai/docs/proxy/config_settings#litellm_settings---reference
     litellm_settings:
       # only affects `budget_reset_time`, NOT usage/spend buckets:
       # https://github.com/BerriAI/litellm/issues/31831
@@ -257,6 +260,19 @@ litellm_chart_values:
       # to prevent "store: Extra inputs are not permitted" error
       # https://docs.litellm.ai/docs/completion/drop_params
       drop_params: true
+
+    # https://docs.litellm.ai/docs/proxy/config_settings#router_settings---reference
+    router_settings:
+      num_retries: 2
+      retry_after: 5 # seconds
+
+      # https://docs.litellm.ai/docs/routing#advanced-custom-retries-cooldowns-based-on-error-type
+      model_group_retry_policy:
+        gpt-6.1-sol:
+          # `litellm.BadRequestError` is a status 400 error, which LiteLLM
+          # doesn't normally retry unlike rate-limit errors, so explicitly
+          # force retries of bad requests like `invalid_encrypted_content`
+          BadRequestErrorRetries: 2
 
   redis:
     # don't install Redis as we already

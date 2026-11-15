@@ -187,13 +187,13 @@ openwebui_extras:
 # Open WebUI so that both Playwright server and client versions
 # match. See playwright_server_version in "vars/playwright.yml"
 openwebui_chart_repo_url: https://helm.openwebui.com
-openwebui_chart_version: "17.5.0"
+openwebui_chart_version: "18.3.0"
 openwebui_release_name: open-webui
 
 # comment out `openwebui_app_version` below
 # to let playbook get  chart's `appVersion`
 # https://github.com/open-webui/open-webui/pkgs/container/open-webui/versions?filters%5Bversion_type%5D=tagged
-openwebui_app_version: "0.12.5"
+openwebui_app_version: "0.13.3"
 
 openwebui_image:
   repository: ghcr.io/open-webui/open-webui
@@ -299,6 +299,10 @@ openwebui_chart_values:
       value: dev
     - name: USER_AGENT
       value: Open WebUI
+    - name: PYTHONWARNINGS
+      value: >-
+        ignore:invalid escape sequence:SyntaxWarning,
+        ignore:grpcio < 1.83.0:FutureWarning
     # https://docs.openwebui.com/reference/env-configuration#jwt_expires_in
     - name: JWT_EXPIRES_IN
       value: 8h
@@ -338,6 +342,14 @@ openwebui_chart_values:
     # https://docs.openwebui.com/reference/env-configuration#cors_allow_origin
     - name: CORS_ALLOW_ORIGIN
       value: https://{{ openwebui_fqdns | first }}
+    # https://docs.openwebui.com/reference/env-configuration#openai_api_configs
+    - name: OPENAI_API_CONFIGS
+      # LiteLLM parses `User-Agent` header to report requests as coming from
+      # agent named "Open WebUI" instead of using derived agent name "Python":
+      # https://docs.litellm.ai/docs/tutorials/cost_tracking_coding#how-litellm-identifies-coding-tools
+      value: >-
+        {{ {'1': {'headers': {'User-Agent': 'Open WebUI/'~ openwebui_app_version,
+           },},} | to_json(separators=[',',':']) }}
     - name: REDIS_CLUSTER
       value: "True"
     - name: REDIS_KEY_PREFIX
