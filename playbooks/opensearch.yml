@@ -160,7 +160,7 @@
         # and provision storage and start each StatefulSet
         # pod sequentially due to the OrderedReady policy
         wait_timeout: 1200
-        task_timeout: 1600
+        task_timeout: 1800
       ansible.builtin.include_tasks: "{{ tasks_dir }}/helm/helmfile.yml"
 
     # OpenSearch TLS certificate does not reload

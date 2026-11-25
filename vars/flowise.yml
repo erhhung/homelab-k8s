@@ -73,8 +73,8 @@ flowise_chart_values:
     repository: "{{ flowise_image.repository | default(omit) }}"
     tag: "{{ flowise_image.tag | default(flowise_image_tag | default(omit)) }}"
 
-  extraEnvVars: &env # error|info|verbose|debug
-    - name: LOG_LEVEL
+  extraEnvVars: &env
+    - name: LOG_LEVEL # error|info|verbose|debug
       value: info
     # see logs from components
     - name: DEBUG

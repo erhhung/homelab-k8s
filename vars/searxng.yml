@@ -21,7 +21,7 @@ searxng_secrets:
 # https://github.com/chr0n1x/searxng-helm-chart/tree/main/searxng
 searxng_chart_version: "1.0.4"
 # https://hub.docker.com/r/searxng/searxng/tags
-searxng_image_tag: 2026.2.6-b5bb27f23
+searxng_image_tag: 2026.11.20-d756ba75f
 searxng_release_name: searxng
 
 # https://github.com/chr0n1x/searxng-helm-chart/tree/main/searxng/values.yaml
@@ -70,6 +70,9 @@ searxng_chart_values:
 
       # https://docs.searxng.org/admin/settings/settings_general.html
       general:
+        # contact URL is required by engines:
+        # wikipedia, wikidata, openstreetmap
+        contact_url: mailto:{{ user_erhhung.forward_email }}
         # basic auth password to enable
         # /metrics; username can be any
         open_metrics: "{{ searxng_metrics_pass }}"

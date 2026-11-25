@@ -322,7 +322,7 @@
       # https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_loops.html#retrying-a-task-until-a-condition-is-met
       register: openwebui_version
       retries: 20
-      delay: 3
+      delay: 6
   tasks:
     - name: Authenticate as the admin user
       ansible.builtin.uri:
@@ -394,6 +394,15 @@
           pinnedModels: |
             {{ litellm_models | map(attribute='model_name')
                               | select('search', 'gpt-6') }}
+          # Settings -> Interface -> "Web Search in Chat"
+          # IMPORTANT: setting this to `always` overrides
+          # the effective Web Search toggle for new chats
+          webSearch: default # default|always
+          tools:
+            - server:time
+            - server:memory
+            - server:weather
+            - server:browser
           params: {}
         # https://docs.ansible.com/ansible/latest/collections/community/general/keep_keys_filter.html
         existing: "{{ [user_settings.json.ui | default({})]  |
@@ -512,8 +521,6 @@
           url: https://{{ item.fqdn ~':'~ item.proxy_port }}
           path: /openapi.json
           config: "{{ config }}"
-          policy_id: ""
-          policy: null
       ansible.builtin.include_tasks: "{{ tasks_dir }}/openwebui/terminal/config.yml"
       loop: "{{ open_terminal_hosts }}"
       loop_control:
@@ -537,7 +544,35 @@
         body_format: json
         body:
           suggestions: []
-      when: suggestions is truthy
+      when: >-
+        suggestions is none or
+        suggestions is truthy
+      changed_when: true
+
+    - name: Get Open WebUI model defaults
+      ansible.builtin.uri:
+        url: "{{ api_base }}/v1/configs/models"
+        headers: "{{ auth_headers }}"
+        return_content: true
+      register: model_defaults
+
+    - name: Set Open WebUI model defaults
+      vars:
+        desired:
+          DEFAULT_MODEL_METADATA:
+            defaultFeatureIds: ["web_search"] # also `code_interpreter`
+        # model_defaults.json: {DEFAULT_MODELS, DEFAULT_MODEL_METADATA,
+        # DEFAULT_MODEL_PARAMS, DEFAULT_PINNED_MODELS, MODEL_ORDER_LIST}
+        existing: "{{ [model_defaults.json] |
+          community.general.keep_keys(target=desired.keys()) | first }}"
+      ansible.builtin.uri:
+        method: POST
+        url: "{{ api_base }}/v1/configs/models"
+        headers: "{{ auth_headers }}"
+        body_format: json
+        body: |
+          {{ model_defaults.json | ansible.builtin.combine(desired) }}
+      when: existing != desired
       changed_when: true
 
     - name: Get Open WebUI user memories

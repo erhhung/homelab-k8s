@@ -20,7 +20,7 @@ bentopdf_release_name: bentopdf
 # comment out `bentopdf_app_version`
 # below to use  chart's `appVersion`
 # https://github.com/alam00000/bentopdf/pkgs/container/bentopdf-simple/versions?filters%5Bversion_type%5D=tagged
-bentopdf_app_version: "2.8.4"
+bentopdf_app_version: "2.8.11"
 
 # https://github.com/alam00000/bentopdf/tree/main/chart/values.yaml
 bentopdf_chart_values:

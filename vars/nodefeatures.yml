@@ -170,7 +170,8 @@ intel_device_plugin_crs:
       # "balanced", "packed" or "none"
       preferredAllocationPolicy: none
       enableMonitoring: true
-      logLevel: 4
+      # https://github.com/kubernetes/community/tree/main/contributors/devel/sig-instrumentation/logging.md#what-method-to-use
+      logLevel: 0
 
 # https://docs.nvidia.com/datacenter/cloud-native/gpu-operator/latest/overview.html
 # https://docs.nvidia.com/datacenter/cloud-native/gpu-operator/latest/getting-started.html

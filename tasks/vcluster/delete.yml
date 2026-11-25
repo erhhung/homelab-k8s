@@ -67,21 +67,17 @@
       vars:
         # required kubernetes>=24.2 package only in user virtualenv
         ansible_python_interpreter: "{{ venv_python_interpreter }}"
-        vcluster_ns: vcluster-{{ vcluster.name }}
+        tenant_ns: vcluster-{{ vcluster.name }}
       block:
         - name: Uninstall vCluster tenant Helm release
           # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/helm_module.html
           kubernetes.core.helm:
             kubeconfig: "{{ kubeconfig }}"
-            release_name: "{{ vcluster.name }}"
-            release_namespace: "{{ vcluster_ns }}"
+            release_name: "{{ vcluster.name  }}"
+            release_namespace: "{{ tenant_ns }}"
             release_state: absent
             wait: true
-          # during handling of Helm install failure, atomic
-          # install will have already deleted all resources
-          when: >-
-            helm_install is undefined or
-            helm_install.status.name  != vcluster.name
+            timeout: 300s
           register: helm_uninstall
 
         - name: Delete VirtualClusterInstance resource
@@ -95,23 +91,23 @@
             state: absent
             wait: true
 
-        - name: Delete namespace "{{ vcluster_ns }}"
+        - name: Delete namespace "{{ tenant_ns }}"
           kubernetes.core.k8s:
             kubeconfig: "{{ kubeconfig }}"
             api_version: v1
             kind: Namespace
-            name: "{{ vcluster_ns }}"
+            name: "{{ tenant_ns }}"
             state: absent
             wait: true
           # might take a while to kill non-vCluster
           # resources deployed inside the namespace
-          timeout: 300
+          timeout: 600
 
         - name: Delete vCluster persistent volumes
           vars:
             pv_names:
-              # - "{{ vcluster_ns }}-etcd-pv"
-              - "{{ vcluster_ns }}-data-pv"
+              # - "{{ tenant_ns }}-etcd-pv"
+              - "{{ tenant_ns }}-data-pv"
           block:
             # should run quickly as bound PVC should
             # have been deleted by namespace removal

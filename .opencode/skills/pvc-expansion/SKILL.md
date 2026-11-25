@@ -82,21 +82,47 @@ target size and desired replica count, then let the operator recreate the
 StatefulSet when resumed. Avoid competing with the operator by hand-creating
 its managed resources.
 
-## 3. Disable Kyverno And Protect All Claims
+## 3. Pause The Retention Policy And Protect All Claims
 
-Before any StatefulSet recreation, temporarily disable **both** admission and
-mutate-existing evaluations of `pvc-retention-policy` in `homelab`. It forces
-`whenDeleted: Delete`, which defeats attempts to retain claims if left enabled.
+Before any StatefulSet recreation, temporarily pause `pvc-retention-policy` in
+`homelab`. It forces `whenDeleted: Delete`, which defeats attempts to retain
+claims while its mutations are active. Keep admission and mutate-existing
+evaluations enabled: Kyverno v1.19+ rejects disabling both. Instead, add a
+`maintenance-pause` match condition with the CEL expression `"false"`, which
+skips both mutation paths for this same-trigger/target policy in Kyverno v1.20.
+Disabling `evaluation.background` only affects reporting, not mutation.
+
+Record the live policy, original evaluation settings, and original match
+conditions for recovery. Do not overwrite an existing `maintenance-pause` or
+assume it belongs to this operation; investigate before proceeding. The JSON
+patch below requires `jq`, preserves existing conditions, handles an absent
+condition list, and tests `resourceVersion` to avoid overwriting concurrent policy
+changes.
+Stop if any command fails; on a version conflict, re-read and inspect the policy
+before rebuilding the patch. The policy is cluster-scoped, so it has no namespace.
 
 ```bash
+policy=$(kubectl --context homelab get mutatingpolicy pvc-retention-policy -o json) || exit 1
+pause_patch=$(jq -ce '
+  if any(.spec.matchConditions[]?; .name == "maintenance-pause") then
+    error("maintenance-pause already exists; investigate before proceeding")
+  else
+    [
+      {op: "test", path: "/metadata/resourceVersion", value: .metadata.resourceVersion},
+      {op: "add", path: "/spec/matchConditions", value:
+        ((.spec.matchConditions // []) + [{name: "maintenance-pause", expression: "false"}])}
+    ]
+  end
+' <<< "$policy") || exit 1
 kubectl --context homelab patch mutatingpolicy pvc-retention-policy \
-  --type=merge \
-  -p '{"spec":{"evaluation":{"admission":{"enabled":false},"mutateExisting":{"enabled":false}}}}'
+  --type=json -p "$pause_patch" || exit 1
 ```
 
-Record the original evaluation settings and change only these fields. Verify
-they are disabled by reading the policy back. Admission configuration changes
-may take time to propagate: trust observed resource state, not patch success.
+Read the policy back and verify that `maintenance-pause` has expression `"false"`,
+all original conditions are intact, and evaluation settings are unchanged.
+Admission and background-controller caches may take time to observe the pause;
+an already in-flight mutation may still finish. Trust observed resource state,
+not patch success. Do not reapply the unpaused policy during maintenance.
 
 1. Set the affected StatefulSet retention to
    `whenDeleted: Retain` and `whenScaled: Retain` in the workload's context.
@@ -158,7 +184,7 @@ retention settings as desired configuration.
 
 ## 5. Verify Adoption And Restore Settings
 
-Before re-enabling Kyverno after a successful expansion, verify:
+Before removing the maintenance pause after a successful expansion, verify:
 
 - Every requested PVC reports the new request and actual capacity, with no
   unresolved resize condition or deletion timestamp.
@@ -178,18 +204,37 @@ and original retention settings. Resume any paused reconciliation. Original
 retention may be `Retain/Retain` in a vCluster; do not blindly impose the host
 policy's `Delete/Retain` values on virtual resources.
 
-Restore both Kyverno evaluations to their recorded values (normally `true`):
+Remove only the `maintenance-pause` added by this operation. Resolve its index
+from the current live policy by name, rather than assuming a list position.
+The patch below verifies there is exactly one such condition, its expression is
+still `"false"`, and the policy has not changed since it was read. If any check
+fails, stop and inspect the live policy; do not replace the entire condition list
+or remove another operation's pause.
 
 ```bash
+policy=$(kubectl --context homelab get mutatingpolicy pvc-retention-policy -o json) || exit 1
+resume_patch=$(jq -ce '
+  [(.spec.matchConditions // [] | to_entries[])
+    | select(.value.name == "maintenance-pause")] as $pause
+  | if ($pause | length) != 1 or $pause[0].value.expression != "false" then
+      error("expected one unchanged maintenance-pause; inspect the live policy")
+    else
+      [
+        {op: "test", path: "/metadata/resourceVersion", value: .metadata.resourceVersion},
+        {op: "remove", path: ("/spec/matchConditions/" + ($pause[0].key | tostring))}
+      ]
+    end
+' <<< "$policy") || exit 1
 kubectl --context homelab patch mutatingpolicy pvc-retention-policy \
-  --type=merge \
-  -p '{"spec":{"evaluation":{"admission":{"enabled":true},"mutateExisting":{"enabled":true}}}}'
+  --type=json -p "$resume_patch" || exit 1
 ```
 
-Read the policy back. Verify controller reconciliation, desired/ready replica
-counts, pod UIDs, restart counts, volume health, and policy state again. A
-successful rollout message alone does not prove pods are ready. Report any
-operator-induced pod replacement or remaining workload failure accurately.
+Read the policy back and verify the pause is absent, original match conditions
+are preserved, and evaluation settings remain at their recorded values. Verify
+controller reconciliation, desired/ready replica counts, pod UIDs, restart
+counts, volume health, and policy state again. A successful rollout message alone
+does not prove pods are ready. Report any operator-induced pod replacement or
+remaining workload failure accurately.
 
 ## Blocked Or Partial Expansion
 
@@ -202,18 +247,20 @@ operator-induced pod replacement or remaining workload failure accurately.
   diagnose the pending expansion; PVC shrinking is not a recovery option.
 - For a partial multi-PVC expansion, preserve successful increases and record
   which claims still need work. Do not roll them back or replace the claims.
-- Never leave the controller absent or the global policy disabled silently.
+- Never leave the controller absent or the global policy paused silently.
   On abort, restore a safe controller, verify claim protection and pod adoption,
-  restore original settings, and then restore policy evaluations. If that
-  recovery is blocked, report the exact remaining temporary state explicitly.
+  restore original settings, and then remove this operation's maintenance pause.
+  If that recovery is blocked, report the exact remaining temporary state
+  explicitly.
 - Distinguish storage completion from workload readiness: an unrelated OOM or
-  startup failure should not leave the global policy disabled once expansion
+  startup failure should not leave the global policy paused once expansion
   and adoption are verified.
 
 ## Completion Report
 
 State the context and namespace, old/new size, PVC and backing-volume identity
 preservation, claim-template size, desired/ready replicas, pod preservation or
-restarts, storage health, and final Kyverno evaluation state. For a vCluster,
-include the mapped host namespace and confirm both PVC representations reached
-the target. If blocked, report the actual capacity and safe recovery state.
+restarts, storage health, and final Kyverno evaluation settings and absence of
+the maintenance pause. For a vCluster, include the mapped host namespace and
+confirm both PVC representations reached the target. If blocked, report the
+actual capacity, pause state, and safe recovery state.

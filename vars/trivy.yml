@@ -12,7 +12,7 @@ trivy_secrets:
   env-vars: trivy-env-variables
 
 # https://github.com/aquasecurity/trivy-operator/tree/main/deploy/helm
-trivy_operator_chart_version: "0.32.1"
+trivy_operator_chart_version: "0.38.1"
 trivy_operator_release_name: trivy-operator
 
 trivy_scanner_image:
@@ -20,7 +20,7 @@ trivy_scanner_image:
   repository: library/trivy
   # build custom wrapper image based on this `trivy` image:
   # `skopeo list-tags docker://mirror.gcr.io/aquasec/trivy`
-  tag: "0.70.0"
+  tag: "0.76.2"
 
 # https://github.com/aquasecurity/trivy-operator/tree/main/deploy/helm/values.yaml
 trivy_operator_chart_values:
@@ -265,7 +265,7 @@ trivy_ignore_file:
 # ============================ Trivy Operator Polr Adapter ============================
 
 # https://github.com/fjogeleit/trivy-operator-polr-adapter
-trivy_adapter_chart_version: "0.11.3"
+trivy_adapter_chart_version: "0.11.5"
 trivy_adapter_release_name: trivy-operator-polr-adapter
 
 # https://github.com/fjogeleit/trivy-operator-polr-adapter/tree/main/charts/trivy-operator-polr-adapter/values.yaml

@@ -187,13 +187,13 @@ openwebui_extras:
 # Open WebUI so that both Playwright server and client versions
 # match. See playwright_server_version in "vars/playwright.yml"
 openwebui_chart_repo_url: https://helm.openwebui.com
-openwebui_chart_version: "18.3.0"
+openwebui_chart_version: "18.4.0"
 openwebui_release_name: open-webui
 
 # comment out `openwebui_app_version` below
 # to let playbook get  chart's `appVersion`
 # https://github.com/open-webui/open-webui/pkgs/container/open-webui/versions?filters%5Bversion_type%5D=tagged
-openwebui_app_version: "0.13.3"
+openwebui_app_version: "0.13.4"
 
 openwebui_image:
   repository: ghcr.io/open-webui/open-webui
@@ -289,9 +289,13 @@ openwebui_chart_values:
 
   # https://docs.openwebui.com/reference/env-configuration
   commonEnvVars:
+    # `ENABLE_PERSISTENT_CONFIG` sets whether config changes are stored
+    # in database or remain in-memory--good for env var-driven IaC, but
+    # lost on pod restart; since we configure tool and terminal servers
+    # via API, those will be lost on restart unless stored in database:
     # https://docs.openwebui.com/reference/env-configuration#important-note-on-persistentconfig-environment-variables
     - name: ENABLE_PERSISTENT_CONFIG
-      value: "False"
+      value: "True"
     # enable API /docs
     # https://docs.openwebui.com/reference/api-endpoints#swagger-documentation-links
     # https://docs.openwebui.com/reference/env-configuration#env

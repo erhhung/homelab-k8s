@@ -68,7 +68,7 @@ keycloak_sql_gz: keycloak.sql.gz
 #     support for auto token refresh
 
 # https://github.com/codecentric/helm-charts/tree/master/charts/keycloakx
-keycloakx_chart_version: "7.1.5"
+keycloakx_chart_version: "7.4.0"
 keycloakx_release_name: keycloakx
 
 # https://github.com/codecentric/helm-charts/tree/master/charts/keycloakx/values.yaml

@@ -69,7 +69,7 @@ buildbuddy_chart_values:
   config:
     # https://www.buildbuddy.io/docs/config-app
     app:
-      log_level: debug # fatal|error|warn|info|debug
+      log_level: info # fatal|error|warn|info|debug
       default_to_dense_mode: false
 
       build_buddy_url: https://{{ buildbuddy_fqdns | first }}

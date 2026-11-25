@@ -14,7 +14,7 @@
 #     inv_file  <required> inventory file
 #     playbooks <required> playbook names
 #     timeout   [optional] max time allowed for source
-#                          control update; default=300
+#                          control update; default=600
 ---
 - name: Create AWX project "{{ project.name }}"
   vars:
@@ -33,7 +33,7 @@
   block:
     - name: Create AWX project "{{ project.name }}"
       vars:
-        max_secs: "{{ project.timeout | default(300) }}"
+        max_secs: "{{ project.timeout | default(600) }}"
       # https://docs.ansible.com/ansible/latest/collections/awx/awx/project_module.html
       awx.awx.project: # noqa args
         name: "{{ project.name }}"

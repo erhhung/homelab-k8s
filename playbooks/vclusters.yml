@@ -185,9 +185,10 @@
         set -o pipefail
 
         REL="https://github.com/loft-sh/vcluster/releases"
-        VER=$(curl -ILs "$REL/latest" | sed -En 's/^location:.+\/tag\/v(.+)\r$/\1/p')
+        # VER=$(curl -ILs "$REL/latest" | sed -En 's/^location:.+\/tag\/v(.+)\r$/\1/p')
+        VER="{{ vcluster_chart_version }}" # CLI version should match vCluster version
 
-        # check if latest version already installed
+        # check if compatible version already installed
         command -v vcluster &> /dev/null && {
           ver=$(v=(`vcluster version`); echo ${v[-1]})
           [ "$ver" == "$VER" ] && exit 9 # no change

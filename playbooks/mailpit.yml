@@ -98,3 +98,12 @@
           - v1 Secret {{ mailpit_secrets['creds']    }}
           - "{{ smon_manifest | from_yaml if prometheus_crds_installed else '' }}"
       ansible.builtin.include_tasks: "{{ tasks_dir }}/helm/helmfile.yml"
+
+    # Mailpit SMTP TLS certificate doesn't reload
+    # automatically when renewed, so restart pod
+    - name: Add Wave annotations to Deployment
+      vars:
+        res_kind: Deployment
+        res_name: "{{ mailpit_release_name }}"
+        res_ns: "{{ mailpit_namespace }}"
+      ansible.builtin.include_tasks: "{{ tasks_dir }}/k8s/wave.yml"

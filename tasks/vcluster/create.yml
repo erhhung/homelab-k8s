@@ -5,17 +5,25 @@
 - name: Create vCluster "{{ vcluster.name }}"
   become: false
   vars:
-    vcluster_ns: vcluster-{{ vcluster.name }}
+    tenant_ns: vcluster-{{ vcluster.name }}
+    pv_list:
+      # - name: "{{ tenant_ns }}-etcd-pv"
+      #   role: etcd # controlPlane.backingStore.etcd.deploy.statefulSet.persistence
+      #   size: "{{ vcluster_pv_sizes['etcd'] }}"
+      - name: "{{ tenant_ns }}-data-pv"
+        role: data # controlPlane.statefulSet.persistence
+        size: "{{ vcluster_pv_sizes['data'] }}"
   block:
+    - name: Does tenant data PV already exist?
+      # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_info_module.html
+      kubernetes.core.k8s_info:
+        kubeconfig: "{{ kubeconfig }}"
+        api_version: v1
+        kind: PersistentVolume
+        name: "{{ pv_list[-1].name }}"
+      register: tenant_exists
+
     - name: Create vCluster persistent volumes
-      vars:
-        pv_list:
-          # - name: "{{ vcluster_ns }}-etcd-pv"
-          #   role: etcd # controlPlane.backingStore.etcd.deploy.statefulSet.persistence
-          #   size: "{{ vcluster_pv_sizes['etcd'] }}"
-          - name: "{{ vcluster_ns }}-data-pv"
-            role: data # controlPlane.statefulSet.persistence
-            size: "{{ vcluster_pv_sizes['data'] }}"
       block:
         - name: Create node-local file system path
           delegate_to: "{{ vcluster.node }}"
@@ -118,7 +126,7 @@
             access_key: "{{ (vc_access_key.stdout | from_json).accessKey }}"
 
             # === Inputs ===
-            secret_ns: "{{ vcluster_ns }}"
+            secret_ns: "{{ tenant_ns }}"
             secret_name: "{{ vcluster_platform_secrets['api-key'] }}"
             secret_data:
               accessKey: "{{ access_key }}"
@@ -149,7 +157,7 @@
             chart_ref: vcluster
             chart_ver: "{{ vcluster_chart_version }}"
             release: "{{ vcluster.name }}"
-            release_ns: "{{ vcluster_ns }}"
+            release_ns: "{{ tenant_ns  }}"
             values: "{{ values_ | from_yaml }}"
 
             patches:
@@ -189,13 +197,12 @@
           ansible.builtin.include_tasks: "{{ tasks_dir }}/helm/helmfile.yml"
 
         - name: Fetch vCluster kubeconfig
-          # https://docs.ansible.com/ansible/latest/collections/kubernetes/core/k8s_info_module.html
           kubernetes.core.k8s_info:
             kubeconfig: "{{ kubeconfig }}"
             api_version: v1
             kind: Secret
             name: vc-{{ vcluster.name }}
-            namespace: "{{ vcluster_ns }}"
+            namespace: "{{ tenant_ns  }}"
           register: vc_secret
           until: vc_secret.resources is truthy
           retries: 12
@@ -209,10 +216,15 @@
             server: https://{{ vcluster_fqdn }}
           ansible.builtin.include_tasks: "{{ tasks_dir }}/k8s/kubeconfig.yml"
       rescue:
-        - name: Delete vCluster resources
-          ansible.builtin.include_tasks: "{{ tasks_dir }}/vcluster/delete.yml"
+        - name: Handle create/update failure
+          vars:
+            op: "{{ 'create' if tenant_exists.resources is falsy else 'update' }}"
+          block:
+            - name: Delete vCluster resources
+              ansible.builtin.include_tasks: "{{ tasks_dir }}/vcluster/delete.yml"
+              when: op == 'create'
 
-        - name: Terminate play on failure
-          # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/fail_module.html
-          ansible.builtin.fail:
-            msg: Failed to create vCluster "{{ vcluster.name }}"!
+            - name: Terminate play on failure
+              # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/fail_module.html
+              ansible.builtin.fail:
+                msg: Failed to {{ op }} vCluster "{{ vcluster.name }}"!

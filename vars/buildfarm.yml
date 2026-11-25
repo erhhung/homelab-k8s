@@ -66,7 +66,7 @@ buildfarm_backplane_config: |
   {% endfor %}
   {{ config }}
 
-# https://github.com/buildfarm/buildfarm#helm-chart
+# https://github.com/buildfarm/buildfarm#deploy-with-helm
 buildfarm_chart_oci_url: oci://ghcr.io/buildfarm/buildfarm
 # skopeo list-tags docker://ghcr.io/buildfarm/buildfarm
 buildfarm_chart_version: "0.5.0"
@@ -75,7 +75,7 @@ buildfarm_release_name: buildfarm
 # comment out `buildfarm_app_version` below
 # to let playbook get the chart `appVersion`
 # https://hub.docker.com/r/bazelbuild/buildfarm-server/tags
-buildfarm_app_version: "2.17.0"
+buildfarm_app_version: "2.18.0"
 
 # https://github.com/buildfarm/buildfarm/tree/main/kubernetes/helm-charts/buildfarm/values.yaml
 buildfarm_chart_values:

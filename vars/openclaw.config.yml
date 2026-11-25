@@ -196,6 +196,10 @@ openclaw_config:
           # - litellm/claude-opus-4-8
           # - litellm/claude-sonnet-5
 
+      heartbeat:
+        every: 0m # disable heartbeat
+        target: none # owner|last|none
+
       # https://docs.openclaw.ai/concepts/queue
       maxConcurrent: 2
       # https://docs.openclaw.ai/plugins/codex-harness-reference/timeouts

@@ -101,6 +101,17 @@ postgresql_chart_values:
   postgresql:
     replicaCount: 3
 
+    affinity:
+      podAntiAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          # make sure nodes run on separate hardware
+          - topologyKey: topology.kubernetes.io/zone
+            labelSelector:
+              matchLabels:
+                app.kubernetes.io/instance: "{{ postgresql_release_name }}"
+                app.kubernetes.io/component: postgresql
+                role: data
+
     # duplicate global settings or
     # else helm diff upgrade fails
     <<: *global-postgresql

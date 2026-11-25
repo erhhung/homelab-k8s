@@ -30,7 +30,7 @@ mailpit_relay_matching:
   - "{{ homelab_admin.email }}"
 
 # https://github.com/jouve/charts/tree/main/charts/mailpit
-mailpit_chart_version: "0.35.0"
+mailpit_chart_version: "0.39.0"
 mailpit_release_name: mailpit
 
 # https://github.com/jouve/charts/tree/main/charts/mailpit/values.yaml
@@ -41,7 +41,7 @@ mailpit_chart_values:
   image:
     registry: docker.io
     repository: axllent/mailpit
-    tag: v1.30.7
+    tag: v1.32.0
 
   extraEnvVars:
     - name: MP_SMTP_RELAY_MATCHING

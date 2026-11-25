@@ -13,13 +13,20 @@ vcluster_platform_secrets:
   password: vcluster-platform-admin-password
   api-key: vcluster-platform-api-key
 
+# NOTE: vCluster Platform v5.0 is recommended only for NEW deployments:
+# https://www.vcluster.com/docs/platform/administer/upgrade-migrate/upgrade
+# helm search repo vcluster/vcluster --versions
 # https://github.com/loft-sh/loft/tree/master/chart
-vcluster_platform_chart_version: "4.11.0"
+vcluster_platform_chart_version: "4.12.7" # LTS
 vcluster_platform_release_name: vcluster-platform
 
 # https://github.com/loft-sh/loft/tree/master/chart/values.yaml
 vcluster_platform_chart_values:
   replicaCount: 1
+
+  # skopeo list-tags docker://ghcr.io/loft-sh/loft | \
+  #   jq -r '.Tags[] | select(test("^[0-9]+(\\.[0-9]+){2}$"))'
+  # image: ghcr.io/loft-sh/loft:4.12.7
 
   # https://loft.sh/docs/admin/config
   config:
@@ -119,8 +126,9 @@ vcluster_kube_urls: |
   {% endfor %}
   {{ urls   }}
 
+# helm search repo vcluster/vcluster --versions
 # https://github.com/loft-sh/vcluster/tree/main/chart
-vcluster_chart_version: "0.36.0"
+vcluster_chart_version: "0.37.7" # LTS
 # https://github.com/loft-sh/vcluster/tree/main/chart/values.yaml
 # https://www.vcluster.com/docs/vcluster/configure/vcluster-yaml
 # vcluster_chart_values: {templates/vcluster/tenant.yaml.j2}

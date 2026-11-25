@@ -9,7 +9,7 @@ unbound_host: pfsense.{{ homelab_domain }}
 unbound_port: 953
 
 # https://github.com/kubernetes-sigs/external-dns/tree/master/charts/external-dns
-externaldns_chart_version: "1.20.0"
+externaldns_chart_version: "1.23.0"
 externaldns_release_name: external-dns
 
 # https://github.com/kubernetes-sigs/external-dns/tree/master/charts/external-dns/values.yaml

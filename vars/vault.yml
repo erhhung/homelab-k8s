@@ -46,6 +46,17 @@ vault_chart_values:
     logLevel: info # trace|debug|info|warn|error
     logFormat: standard # standard|json
 
+    affinity:
+      podAntiAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          # make sure nodes run on separate hardware
+          - topologyKey: topology.kubernetes.io/zone
+            labelSelector:
+              matchLabels:
+                app.kubernetes.io/name: vault
+                app.kubernetes.io/instance: "{{ vault_release_name }}"
+                component: server
+
     standalone:
       enabled: false
     ha:

@@ -21,7 +21,7 @@ qdrant_secrets:
 qdrant_config:
   # https://qdrant.tech/documentation/guides/telemetry
   telemetry_disabled: true
-  log_level: DEBUG
+  log_level: INFO # DEBUG|INFO|WARN|ERROR
 
   # https://qdrant.tech/documentation/guides/distributed_deployment#enabling-distributed-mode-in-self-hosted-qdrant
   cluster:
@@ -68,13 +68,24 @@ qdrant_config:
       write_consistency_factor: 1
 
 # https://github.com/qdrant/qdrant-helm/tree/main/charts/qdrant
-qdrant_chart_version: "1.18.2"
+qdrant_chart_version: "1.20.2"
 qdrant_release_name: qdrant
 
 # https://github.com/qdrant/qdrant-helm/tree/main/charts/qdrant/values.yaml
 qdrant_chart_values:
   # https://qdrant.tech/documentation/guides/distributed_deployment
   replicaCount: 3
+
+  affinity:
+    podAntiAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        # make sure nodes run on separate hardware
+        - topologyKey: topology.kubernetes.io/zone
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: qdrant
+              app.kubernetes.io/instance: "{{ qdrant_release_name }}"
+              app: qdrant
 
   # settings under `config` will become config file named
   # "production.yaml" (see RUN_MODE environment variable):

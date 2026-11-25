@@ -139,8 +139,8 @@ controlPlane:
     # https://www.vcluster.com/docs/vcluster/manage/accessing-vcluster#access-vcluster-externally
     extraSANs:
       - {{ vcluster_fqdn }}
-      - {{ vcluster.name }}.{{ vcluster_ns }}.svc.{{ cluster_domain }}
-      - {{ vcluster.name }}.{{ vcluster_ns }}.svc
+      - {{ vcluster.name }}.{{ tenant_ns }}.svc.{{ cluster_domain }}
+      - {{ vcluster.name }}.{{ tenant_ns }}.svc
 
   # https://www.vcluster.com/docs/vcluster/manage/accessing-vcluster?x1=1#expose-vcluster
   ingress:

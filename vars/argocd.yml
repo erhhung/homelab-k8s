@@ -269,7 +269,7 @@ argocd_chart_values:
       applicationsetcontroller.log.format: json
       applicationsetcontroller.log.level: info
       notificationscontroller.log.format: json
-      notificationscontroller.log.level: debug
+      notificationscontroller.log.level: info
 
       # option supported only in forked repo
       # containing merged upstream PR #14001:

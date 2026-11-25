@@ -248,7 +248,7 @@
 - name: Mirror images into Harbor
   tags:
     - mirror
-    - copy
+    - images
   hosts: "{{ k3s_control_plane_host }}"
   vars_files: &vars_files
     - vars/kubernetes.yml
@@ -391,12 +391,12 @@
       loop_control:
         label: "{{ dest_path }}"
       changed_when: true
-      timeout: 900
+      timeout: 1800
 
 - name: Mirror charts into Harbor
   tags:
     - mirror
-    - copy
+    - charts
   hosts: "{{ k3s_control_plane_host }}"
   vars_files: *vars_files
   vars:

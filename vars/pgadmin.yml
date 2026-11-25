@@ -37,8 +37,11 @@ pgadmin_postgresql_url: >-
      pgadmin_db_user ~':$(DBPASSWORD)@') }}/{{
      pgadmin_db_name ~'?'~ query }}
 
+pgadmin_storage_dir: /var/lib/pgadmin/storage
+pgadmin_user_dir: "{{ pgadmin_storage_dir ~'/'~ user_erhhung.email | replace('@','_') }}"
+
 # https://github.com/rowanruseler/helm-charts/tree/main/charts/pgadmin4
-pgadmin_chart_version: "1.66.0"
+pgadmin_chart_version: "1.72.0"
 pgadmin_release_name: pgadmin4
 
 # https://github.com/rowanruseler/helm-charts/tree/main/charts/pgadmin4/values.yaml
@@ -60,6 +63,12 @@ pgadmin_chart_values:
   envVarsExtra:
     - name: TZ
       value: "{{ system_time_zone }}"
+    - name: PYTHONWARNINGS
+      value: ignore::SyntaxWarning
+    # disable HTTP request logging
+    # (prevents noise from probes)
+    - name: GUNICORN_ACCESS_LOGFILE
+      value: /dev/null
     # no need for built-in SMTP server
     # (used for password reset emails)
     - name: PGADMIN_DISABLE_POSTFIX
@@ -80,9 +89,17 @@ pgadmin_chart_values:
         secretKeyRef:
           name: "{{ pgadmin_secrets['passwords'] }}"
           key: superuser-password
-    # required in server mode for `PasswordExecCommand`
-    - name: PGADMIN_CONFIG_ENABLE_SERVER_PASS_EXEC_CMD
-      value: "True"
+    # https://www.pgadmin.org/docs/pgadmin4/latest/release_notes_9_19.html
+    - name: PGADMIN_CONFIG_SERVER_PASSEXEC_COMMANDS
+      value: >-
+        {
+          'postgresql-superuser': [ '/venv/bin/python3', '-c',
+            'import os, sys; sys.stdout.write(os.environ["SUPASSWORD"])'
+          ]
+        }
+    # https://www.pgadmin.org/docs/pgadmin4/latest/config_py.html
+    - name: PGADMIN_CONFIG_SERVER_PASSEXEC_ENV_PASSTHROUGH
+      value: "['SUPASSWORD']"
 
     # `PGSSL*` env vars below are workaround for bug that
     # prevents `ConnectionParameters` from taking effect:
@@ -121,13 +138,19 @@ pgadmin_chart_values:
         Group: Servers
         Host: "{{ pgpool_service_host }}"
         Port: "{{ pgpool_service_port }}"
+
         MaintenanceDB: postgres
         Username: "{{ postgresql_superuser }}"
-        PasswordExecCommand: printf "%s" "$SUPASSWORD"
+        # this is a command identifier set by the env
+        # var PGADMIN_CONFIG_SERVER_PASSEXEC_COMMANDS
+        PasswordExecCommand: postgresql-superuser
+
         # NOTE! SSL parameters don't work currently due to bug:
         # https://github.com/pgadmin-org/pgadmin4/issues/10242
         # they must be set GLOBALLY as libpq env vars:
         # PGSSLMODE/PGSSLCERT/PGSSLKEY/PGSSLROOTCERT
+        # OR the paths must be RELATIVE to the user's
+        # storage dir /var/lib/pgadmin/storage/<user>
         ConnectionParameters:
           sslmode: verify-full
           sslcert: /tls/superuser/tls.crt
@@ -175,6 +198,8 @@ pgadmin_chart_values:
     - name: pgadmin-storage
       persistentVolumeClaim:
         claimName: "{{ pgadmin_release_name }}-storage"
+    - name: tls-storage
+      emptyDir: {}
     - name: database-tls
       secret:
         secretName: "{{ pgadmin_secrets['database'] }}"
@@ -186,7 +211,10 @@ pgadmin_chart_values:
 
   extraVolumeMounts:
     - name: pgadmin-storage
-      mountPath: /var/lib/pgadmin/storage
+      mountPath: "{{ pgadmin_storage_dir }}"
+    - name: tls-storage
+      mountPath: "{{ pgadmin_user_dir }}/tls"
+      subPath: tls
     - name: database-tls
       mountPath: /tls/database
       readOnly: true
@@ -226,6 +254,8 @@ pgadmin_chart_values:
           - gid       5050
           - file-mode 0660
           - dir-mode  0770
+          - allow-overwrite
+          - allow-delete
           - allow-other
         capacity:
           storage: 100Gi # required by K8s but ignored by driver
@@ -298,6 +328,31 @@ pgadmin_chart_values:
       volumeMounts:
         - name: database-tls
           mountPath: /tls
+          readOnly: true
+
+    # pgAdmin expects TLS cert files to be relative to the user storage directory:
+    # https://github.com/pgadmin-org/pgadmin4/issues/10242#issuecomment-6211804232
+    - name: copy-certs
+      image: docker.io/busybox:1.38.0
+      imagePullPolicy: IfNotPresent
+      command: ["sh"]
+      args:
+        - -c
+        - |-
+          set -eo pipefail
+
+          tls_dir=/dest/tls/superuser
+          mkdir -p        $tls_dir
+          cp    -L /src/* $tls_dir/
+          chmod     640   $tls_dir/*
+          chmod     600   $tls_dir/*.key
+          chown -R 5050:5050 /dest/tls
+
+      volumeMounts:
+        - name: tls-storage
+          mountPath: /dest
+        - name: superuser-tls
+          mountPath: /src
           readOnly: true
 
   ingress:

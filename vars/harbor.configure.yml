@@ -90,8 +90,8 @@ harbor_mirror_images:
   - src: docker.io/pgsty/silo:RELEASE.2026-10-26T00-00-00Z
     dest: minio/silo
 
-  # OpenSearch chart v3.7.0
-  - src: docker.io/opensearchproject/opensearch:3.7.0
+  # OpenSearch chart v3.10.0
+  - src: docker.io/opensearchproject/opensearch:3.10.0
     dest: opensearch/opensearch
 
 # if repos are copied into new projects, remember to add

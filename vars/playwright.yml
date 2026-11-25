@@ -29,6 +29,8 @@ playwright_secrets:
 # satisfy Playwright MCP server's requirement in order
 # to run in OpenCode instead as it's more heavily used
 
+# IMPORTANT! keep deployed Playwright version in sync with the one bundled into the
+# Crawl4AI MCP server: https://github.com/erhhung/mcp-crawl4ai/tree/main/Dockerfile
 # https://www.npmjs.com/package/playwright?activeTab=versions
 playwright_server_version: "1.62.0"
 # https://www.npmjs.com/package/@playwright/mcp?activeTab=versions

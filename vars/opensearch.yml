@@ -38,12 +38,12 @@ opensearch_secrets:
 
 # keep `harbor_mirror_images` (vars/harbor.configure.yml) in sync
 # with `opensearch_version`
-opensearch_version: "3.7.0"
+opensearch_version: "3.10.0"
 # IMPORTANT! keep opensearch_version and opensearch_chart_version
 # in sync: helm show chart opensearch/opensearch --version 3.xx.x
 # opensearch_version will be used to select proper plugin version
 # https://github.com/opensearch-project/helm-charts/tree/main/charts/opensearch
-opensearch_chart_version: "3.7.0"
+opensearch_chart_version: "3.10.0"
 opensearch_release_name: opensearch
 
 # https://github.com/opensearch-project/helm-charts/tree/main/charts/opensearch/values.yaml
@@ -54,6 +54,10 @@ opensearch_chart_values:
     pullPolicy: IfNotPresent
     repository: "{{ harbor_container_registry }}/opensearch/opensearch"
     tag: "{{ opensearch_version }}"
+
+  # make sure nodes run on separate hardware
+  antiAffinityTopologyKey: topology.kubernetes.io/zone
+  antiAffinity: hard # soft|hard|custom
 
   clusterName: "{{ opensearch_cluster_name }}"
   masterService: "{{ opensearch_master_service }}"
@@ -84,7 +88,7 @@ opensearch_chart_values:
     # StatefulSet persistentVolumeClaimRetentionPolicy
     # whenDeleted=Delete will be patched by Helmfile
     storageClass: "{{ storage_classes['default'] }}"
-    size: 8Gi # allocate enough for logging
+    size: 10Gi # enough for 2-3 days of log volumes
 
   extraVolumes:
     - name: node-tls
